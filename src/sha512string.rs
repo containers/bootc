@@ -1,4 +1,10 @@
-use serde_derive::{Deserialize, Serialize};
+/*
+ * Copyright (C) 2020 Red Hat, Inc.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+ use serde_derive::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Ord, PartialOrd, PartialEq, Eq)]

@@ -1,3 +1,9 @@
+/*
+ * Copyright (C) 2020 Red Hat, Inc.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 use anyhow::{bail, Context, Result};
 use byteorder::ByteOrder;
 use chrono::prelude::*;

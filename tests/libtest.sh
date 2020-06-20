@@ -1,4 +1,6 @@
 # Source library for shell script tests
+# Copyright (C) 2020 Red Hat, Inc.
+# SPDX-License-Identifier: Apache-2.0
 
 runv() {
     (set -x && "$@")
