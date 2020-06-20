@@ -15,18 +15,20 @@
 
 use anyhow::{bail, Context, Result};
 use byteorder::ByteOrder;
-use chrono::prelude::*;
 use gio::NONE_CANCELLABLE;
 use nix;
 use openat_ext::OpenatDirExt;
 use openssl::hash::{Hasher, MessageDigest};
-use serde_derive::{Deserialize, Serialize};
 use serde_json;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt;
 use std::io::prelude::*;
 use std::path::Path;
 use structopt::StructOpt;
+
+mod sha512string;
+use sha512string::SHA512String;
+mod model;
+use model::*;
 
 /// Stored in /boot to describe our state; think of it like
 /// a tiny rpm/dpkg database.
@@ -37,153 +39,6 @@ pub(crate) const EFI_MOUNT: &'static str = "boot/efi";
 
 /// The prefix we apply to our temporary files.
 pub(crate) const TMP_PREFIX: &'static str = ".btmp.";
-
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, Ord, PartialOrd, PartialEq, Eq)]
-pub(crate) struct SHA512String(String);
-
-impl fmt::Display for SHA512String {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// Metadata for a single file
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, Ord, PartialOrd, PartialEq, Eq)]
-pub(crate) enum ComponentType {
-    #[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
-    EFI,
-    #[cfg(target_arch = "x86_64")]
-    BIOS,
-}
-
-/// Metadata for a single file
-#[derive(Serialize, Debug, Hash, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct FileMetadata {
-    /// File size in bytes
-    size: u64,
-    /// Content checksum; chose SHA-512 because there are not a lot of files here
-    /// and it's ok if the checksum is large.
-    sha512: SHA512String,
-}
-
-#[derive(Serialize, Debug, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct FileTree {
-    timestamp: NaiveDateTime,
-    children: BTreeMap<String, FileMetadata>,
-}
-
-/// Describes data that is at the block level or the filesystem level.
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct InstalledContent {
-    /// sha512 of the state of the content
-    digest: SHA512String,
-    timestamp: NaiveDateTime,
-    filesystem: Option<Box<FileTree>>,
-}
-
-/// A versioned description of something we can update,
-/// whether that is a BIOS MBR or an ESP
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct ContentVersion {
-    content_timestamp: NaiveDateTime,
-    content: InstalledContent,
-    ostree_commit: Option<String>,
-}
-
-/// The state of a particular managed component as found on disk
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ComponentInstalled {
-    Unknown(InstalledContent),
-    Tracked {
-        disk: InstalledContent,
-        saved: SavedComponent,
-        drift: bool,
-    },
-}
-
-/// The state of a particular managed component as found on disk
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ComponentState {
-    #[allow(dead_code)]
-    NotInstalled,
-    NotImplemented,
-    Found(ComponentInstalled),
-}
-
-/// The state of a particular managed component
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ComponentUpdate {
-    LatestUpdateInstalled,
-    Available {
-        update: ContentVersion,
-        diff: Option<FileTreeDiff>,
-    },
-}
-
-/// A component along with a possible update
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct Component {
-    ctype: ComponentType,
-    installed: ComponentState,
-    pending: Option<SavedPendingUpdate>,
-    update: Option<ComponentUpdate>,
-}
-
-/// Our total view of the world at a point in time
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct Status {
-    supported_architecture: bool,
-    components: Vec<Component>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct SavedPendingUpdate {
-    /// The value of /proc/sys/kernel/random/boot_id
-    boot_id: String,
-    /// The value of /etc/machine-id from the OS trying to update
-    machineid: String,
-    /// The new version we're trying to install
-    digest: SHA512String,
-    timestamp: NaiveDateTime,
-}
-
-/// Will be serialized into /boot/rpmostree-bootupd-state.json
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct SavedComponent {
-    adopted: bool,
-    digest: SHA512String,
-    timestamp: NaiveDateTime,
-    pending: Option<SavedPendingUpdate>,
-}
-
-/// Will be serialized into /boot/rpmostree-bootupd-state.json
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct SavedState {
-    components: BTreeMap<ComponentType, SavedComponent>,
-}
-
-/// Should be stored in /usr/lib/rpm-ostree/bootupdate-edge.json
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct UpgradeEdge {
-    /// Set to true if we should upgrade from an unknown state
-    #[serde(default)]
-    from_unknown: bool,
-    /// Upgrade from content past this timestamp
-    from_timestamp: Option<NaiveDateTime>,
-}
 
 #[derive(Debug, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
@@ -282,13 +137,6 @@ impl FileMetadata {
         hasher.update(&lenbuf).unwrap();
         hasher.update(&self.sha512.digest_bytes()).unwrap();
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct FileTreeDiff {
-    additions: HashSet<String>,
-    removals: HashSet<String>,
-    changes: HashSet<String>,
 }
 
 impl FileTree {
