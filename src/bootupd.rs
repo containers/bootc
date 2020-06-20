@@ -5,11 +5,9 @@
  */
 
 use anyhow::{bail, Context, Result};
-use chrono::prelude::*;
 use gio::NONE_CANCELLABLE;
 use nix;
 use openat_ext::OpenatDirExt;
-use serde_derive::{Deserialize, Serialize};
 use serde_json;
 use std::collections::{BTreeMap, HashSet};
 use std::io::prelude::*;
@@ -18,129 +16,11 @@ use structopt::StructOpt;
 
 mod filetree;
 use filetree::*;
+mod model;
+use model::*;
+mod ostreeutil;
 mod sha512string;
-use sha512string::SHA512String;
 mod util;
-
-/// Metadata for a single file
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, Ord, PartialOrd, PartialEq, Eq)]
-pub(crate) enum ComponentType {
-    #[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
-    EFI,
-    #[cfg(target_arch = "x86_64")]
-    BIOS,
-}
-
-/// Describes data that is at the block level or the filesystem level.
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct InstalledContent {
-    /// sha512 of the state of the content
-    pub(crate) digest: SHA512String,
-    pub(crate) timestamp: NaiveDateTime,
-    pub(crate) filesystem: Option<Box<FileTree>>,
-}
-
-/// A versioned description of something we can update,
-/// whether that is a BIOS MBR or an ESP
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct ContentVersion {
-    pub(crate) content_timestamp: NaiveDateTime,
-    pub(crate) content: InstalledContent,
-    pub(crate) ostree_commit: Option<String>,
-}
-
-/// The state of a particular managed component as found on disk
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ComponentInstalled {
-    Unknown(InstalledContent),
-    Tracked {
-        disk: InstalledContent,
-        saved: SavedComponent,
-        drift: bool,
-    },
-}
-
-/// The state of a particular managed component as found on disk
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ComponentState {
-    #[allow(dead_code)]
-    NotInstalled,
-    NotImplemented,
-    Found(ComponentInstalled),
-}
-
-/// The state of a particular managed component
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ComponentUpdate {
-    LatestUpdateInstalled,
-    Available {
-        update: ContentVersion,
-        diff: Option<FileTreeDiff>,
-    },
-}
-
-/// A component along with a possible update
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct Component {
-    pub(crate) ctype: ComponentType,
-    pub(crate) installed: ComponentState,
-    pub(crate) pending: Option<SavedPendingUpdate>,
-    pub(crate) update: Option<ComponentUpdate>,
-}
-
-/// Our total view of the world at a point in time
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct Status {
-    pub(crate) supported_architecture: bool,
-    pub(crate) components: Vec<Component>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct SavedPendingUpdate {
-    /// The value of /proc/sys/kernel/random/boot_id
-    pub(crate) boot_id: String,
-    /// The value of /etc/machine-id from the OS trying to update
-    pub(crate) machineid: String,
-    /// The new version we're trying to install
-    pub(crate) digest: SHA512String,
-    pub(crate) timestamp: NaiveDateTime,
-}
-
-/// Will be serialized into /boot/rpmostree-bootupd-state.json
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct SavedComponent {
-    pub(crate) adopted: bool,
-    pub(crate) digest: SHA512String,
-    pub(crate) timestamp: NaiveDateTime,
-    pub(crate) pending: Option<SavedPendingUpdate>,
-}
-
-/// Will be serialized into /boot/rpmostree-bootupd-state.json
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct SavedState {
-    pub(crate) components: BTreeMap<ComponentType, SavedComponent>,
-}
-
-/// Should be stored in /usr/lib/rpm-ostree/bootupdate-edge.json
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct UpgradeEdge {
-    /// Set to true if we should upgrade from an unknown state
-    #[serde(default)]
-    pub(crate) from_unknown: bool,
-    /// Upgrade from content past this timestamp
-    pub(crate) from_timestamp: Option<NaiveDateTime>,
-}
 
 /// Stored in /boot to describe our state; think of it like
 /// a tiny rpm/dpkg database.
@@ -202,25 +82,6 @@ enum Opt {
     /// Update the EFI System Partition
     Update(UpdateOptions),
     Status(StatusOptions),
-}
-
-impl InstalledContent {
-    fn from_file_tree(ft: FileTree) -> InstalledContent {
-        InstalledContent {
-            digest: ft.digest(),
-            timestamp: ft.timestamp,
-            filesystem: Some(Box::new(ft)),
-        }
-    }
-}
-
-impl ComponentInstalled {
-    fn get_disk_content(&self) -> &InstalledContent {
-        match self {
-            Self::Unknown(i) => i,
-            Self::Tracked { disk, .. } => disk,
-        }
-    }
 }
 
 // Recursively remove all files in the directory that start with our TMP_PREFIX
@@ -285,57 +146,21 @@ pub(crate) fn validate_esp<P: AsRef<Path>>(mnt: P) -> Result<()> {
     Ok(())
 }
 
-mod install {
-    use super::*;
+pub(crate) fn install(sysroot_path: &str) -> Result<()> {
+    let sysroot = ostree::Sysroot::new(Some(&gio::File::new_for_path(sysroot_path)));
+    sysroot.load(NONE_CANCELLABLE).context("loading sysroot")?;
 
-    fn find_deployed_commit(sysroot_path: &str) -> Result<String> {
-        // ostree_sysroot_get_deployments() isn't bound
-        // https://gitlab.com/fkrull/ostree-rs/-/issues/3
-        let ls = std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(format!("ls -d {}/ostree/deploy/*/deploy/*.0", sysroot_path))
-            .output()?;
-        if !ls.status.success() {
-            bail!("failed to find deployment")
-        }
-        let mut lines = ls.stdout.lines();
-        let deployment = if let Some(line) = lines.next() {
-            let line = line?;
-            let deploypath = Path::new(line.trim());
-            let parts: Vec<_> = deploypath
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .splitn(2, ".0")
-                .collect();
-            assert!(parts.len() == 2);
-            parts[0].to_string()
-        } else {
-            bail!("failed to find deployment");
-        };
-        if let Some(_) = lines.next() {
-            bail!("multiple deployments found")
-        }
-        Ok(deployment)
+    let _commit = ostreeutil::find_deployed_commit(sysroot_path)?;
+
+    let statepath = Path::new(sysroot_path).join(STATEFILE_PATH);
+    if statepath.exists() {
+        bail!("{:?} already exists, cannot re-install", statepath);
     }
 
-    pub(crate) fn install(sysroot_path: &str) -> Result<()> {
-        let sysroot = ostree::Sysroot::new(Some(&gio::File::new_for_path(sysroot_path)));
-        sysroot.load(NONE_CANCELLABLE).context("loading sysroot")?;
+    let bootefi = Path::new(sysroot_path).join(EFI_MOUNT);
+    validate_esp(&bootefi)?;
 
-        let _commit = find_deployed_commit(sysroot_path)?;
-
-        let statepath = Path::new(sysroot_path).join(STATEFILE_PATH);
-        if statepath.exists() {
-            bail!("{:?} already exists, cannot re-install", statepath);
-        }
-
-        let bootefi = Path::new(sysroot_path).join(EFI_MOUNT);
-        validate_esp(&bootefi)?;
-
-        Ok(())
-    }
+    Ok(())
 }
 
 fn update(opts: &UpdateOptions) -> Result<()> {
@@ -618,9 +443,7 @@ fn status(opts: &StatusOptions) -> Result<()> {
 pub fn boot_update_main(args: &Vec<String>) -> Result<()> {
     let opt = Opt::from_iter(args.iter());
     match opt {
-        Opt::Install { sysroot } => {
-            install::install(&sysroot).context("boot data installation failed")?
-        }
+        Opt::Install { sysroot } => install(&sysroot).context("boot data installation failed")?,
         Opt::Adopt { sysroot } => adopt(&sysroot)?,
         Opt::Update(ref opts) => update(opts).context("boot data update failed")?,
         Opt::Status(ref opts) => status(opts).context("status failed")?,
