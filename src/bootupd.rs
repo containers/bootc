@@ -84,46 +84,6 @@ enum Opt {
     Status(StatusOptions),
 }
 
-// Recursively remove all files in the directory that start with our TMP_PREFIX
-fn cleanup_tmp(dir: &openat::Dir) -> Result<()> {
-    for entry in dir.list_dir(".")? {
-        let entry = entry?;
-        let name = if let Some(name) = entry.file_name().to_str() {
-            name
-        } else {
-            // Skip invalid UTF-8 for now, we will barf on it later though.
-            continue;
-        };
-
-        match dir.get_file_type(&entry)? {
-            openat::SimpleType::Dir => {
-                let child = dir.sub_dir(name)?;
-                cleanup_tmp(&child)?;
-            }
-            openat::SimpleType::File => {
-                if name.starts_with(TMP_PREFIX) {
-                    dir.remove_file(name)?;
-                }
-            }
-            _ => {}
-        }
-    }
-    Ok(())
-}
-
-// struct ApplyUpdateOptions {
-//     skip_removals: bool,
-// }
-
-// fn apply_update_from_diff(
-//     src: &openat::Dir,
-//     dest: &openat::Dir,
-//     diff: FileTreeDiff,
-//     opts: Option<ApplyUpdateOptions>,
-// ) -> Result<()> {
-//     Ok(())
-// }
-
 fn running_in_test_suite() -> bool {
     !nix::unistd::getuid().is_root()
 }
@@ -163,14 +123,67 @@ pub(crate) fn install(sysroot_path: &str) -> Result<()> {
     Ok(())
 }
 
+fn update_component_filesystem_at(
+    _component: &Component,
+    src: &openat::Dir,
+    dest: &openat::Dir,
+    update: &ComponentUpdateAvailable,
+) -> Result<()> {
+    let diff = update.diff.as_ref().expect("diff");
+
+    // FIXME change this to only be true if we adopted
+    let opts = ApplyUpdateOptions {
+        skip_removals: true,
+        ..Default::default()
+    };
+    filetree::apply_diff(src, dest, diff, Some(&opts))?;
+
+    Ok(())
+}
+
 fn update(opts: &UpdateOptions) -> Result<()> {
-    let esp = Path::new(&opts.sysroot).join(EFI_MOUNT);
-    validate_esp(&esp)?;
-    let esp_dir = openat::Dir::open(&esp)?;
+    let status = compute_status(&opts.sysroot)?;
+    let sysroot_dir = openat::Dir::open(opts.sysroot.as_str())?;
 
-    // First remove any temporary files
-    cleanup_tmp(&esp_dir)?;
+    for component in status.components.iter() {
+        if let Some(update) = component.update.as_ref() {
+            match update {
+                ComponentUpdate::LatestUpdateInstalled => {
+                    println!("{:?}: At the latest version", component.ctype);
+                }
+                ComponentUpdate::Available(update) => match &component.ctype {
+                    // Yeah we need to have components be a trait with methods like update()
+                    ComponentType::EFI => {
+                        let src = sysroot_dir.sub_dir("usr/lib/ostree-boot/efi")?;
+                        let dest = sysroot_dir.sub_dir("boot/efi")?;
+                        update_component_filesystem_at(component, &src, &dest, update)?;
+                    }
+                    ctype => {
+                        panic!("Unhandled update for component {:?}", ctype);
+                    }
+                },
+            }
+        } else {
+            println!("{:?}: No updates available", component.ctype);
+        };
+    }
+    Ok(())
+}
 
+fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
+    let f = {
+        let f = sysroot_dir.new_unnamed_file(0o644)?;
+        let mut buff = std::io::BufWriter::new(f);
+        serde_json::to_writer(&mut buff, state)?;
+        buff.flush()?;
+        buff.into_inner()?
+    };
+    let dest = Path::new(STATEFILE_PATH);
+    let dest_tmp_name = format!("{}.tmp", dest.file_name().unwrap().to_str().unwrap());
+    let dest_tmp = dest.with_file_name(dest_tmp_name);
+    sysroot_dir.link_file_at(&f, &dest_tmp)?;
+    f.sync_all()?;
+    sysroot_dir.local_rename(&dest_tmp, dest)?;
     Ok(())
 }
 
@@ -219,18 +232,7 @@ fn adopt(sysroot_path: &str) -> Result<()> {
         components: new_saved_components,
     };
     let sysroot_dir = openat::Dir::open(sysroot_path)?;
-    let f = {
-        let f = sysroot_dir.new_unnamed_file(0o644)?;
-        let mut buff = std::io::BufWriter::new(f);
-        serde_json::to_writer(&mut buff, &new_saved_state)?;
-        buff.flush()?;
-        buff.into_inner()?
-    };
-    let dest = Path::new(STATEFILE_PATH);
-    let dest_tmp_name = format!("{}.tmp", dest.file_name().unwrap().to_str().unwrap());
-    let dest_tmp = dest.with_file_name(dest_tmp_name);
-    sysroot_dir.link_file_at(&f, &dest_tmp)?;
-    sysroot_dir.local_rename(&dest_tmp, dest)?;
+    update_state(&sysroot_dir, &new_saved_state)?;
     Ok(())
 }
 
@@ -311,10 +313,10 @@ fn compute_status_efi(
         ComponentUpdate::LatestUpdateInstalled
     } else {
         let diff = installed_tree.diff(update_esp_tree)?;
-        ComponentUpdate::Available {
+        ComponentUpdate::Available(ComponentUpdateAvailable {
             update: update_esp,
             diff: Some(diff),
-        }
+        })
     };
 
     Ok(Component {
@@ -392,10 +394,13 @@ fn print_component(component: &Component) {
             ComponentUpdate::LatestUpdateInstalled => {
                 println!("  Update: At latest version");
             }
-            ComponentUpdate::Available { update, diff } => {
-                let ts_str = update.content_timestamp.format("%Y-%m-%dT%H:%M:%S+00:00");
+            ComponentUpdate::Available(update) => {
+                let ts_str = update
+                    .update
+                    .content_timestamp
+                    .format("%Y-%m-%dT%H:%M:%S+00:00");
                 println!("  Update: Available: {}", ts_str);
-                if let Some(diff) = diff {
+                if let Some(diff) = &update.diff {
                     println!(
                         "    Diff: changed={} added={} removed={}",
                         diff.changes.len(),

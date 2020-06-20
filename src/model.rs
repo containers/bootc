@@ -65,12 +65,17 @@ pub(crate) enum ComponentState {
 /// The state of a particular managed component
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "kebab-case")]
+pub(crate) struct ComponentUpdateAvailable {
+    pub(crate) update: ContentVersion,
+    pub(crate) diff: Option<FileTreeDiff>,
+}
+
+/// The state of a particular managed component
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum ComponentUpdate {
     LatestUpdateInstalled,
-    Available {
-        update: ContentVersion,
-        diff: Option<FileTreeDiff>,
-    },
+    Available(ComponentUpdateAvailable),
 }
 
 /// A component along with a possible update
