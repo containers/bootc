@@ -25,7 +25,7 @@ pub(crate) const TMP_PREFIX: &'static str = ".btmp.";
 use crate::sha512string::SHA512String;
 
 /// Metadata for a single file
-#[derive(Serialize, Debug, Hash, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, Hash, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct FileMetadata {
     /// File size in bytes
@@ -35,7 +35,7 @@ pub(crate) struct FileMetadata {
     pub(crate) sha512: SHA512String,
 }
 
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct FileTree {
     pub(crate) timestamp: NaiveDateTime,
@@ -53,6 +53,10 @@ impl FileTreeDiff {
     #[allow(dead_code)] // Used for testing
     pub(crate) fn count(&self) -> usize {
         self.additions.len() + self.removals.len() + self.changes.len()
+    }
+
+    pub(crate) fn is_only_removals(&self) -> bool {
+        self.count() == self.removals.len()
     }
 }
 

@@ -9,7 +9,7 @@ use gio::NONE_CANCELLABLE;
 use nix;
 use openat_ext::OpenatDirExt;
 use serde_json;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::prelude::*;
 use std::path::Path;
 use structopt::StructOpt;
@@ -29,6 +29,9 @@ pub(crate) const STATEFILE_PATH: &'static str = "boot/rpmostree-bootupd-state.js
 #[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
 pub(crate) const EFI_MOUNT: &'static str = "boot/efi";
 
+/// Where rpm-ostree rewrites data that goes in /boot
+pub(crate) const OSTREE_BOOT_DATA: &'static str = "usr/lib/ostree-boot";
+
 #[derive(Debug, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 struct UpdateOptions {
@@ -46,6 +49,9 @@ struct UpdateOptions {
         long
     )]
     state_transition_file: String,
+
+    /// Only upgrade these components
+    components: Vec<String>,
 }
 
 #[derive(Debug, StructOpt)]
@@ -124,28 +130,93 @@ pub(crate) fn install(sysroot_path: &str) -> Result<()> {
 }
 
 fn update_component_filesystem_at(
-    _component: &Component,
+    saved: &SavedComponent,
     src: &openat::Dir,
     dest: &openat::Dir,
     update: &ComponentUpdateAvailable,
-) -> Result<()> {
+) -> Result<SavedComponent> {
     let diff = update.diff.as_ref().expect("diff");
 
-    // FIXME change this to only be true if we adopted
+    // For components which were adopted, we don't prune files that we don't know
+    // about.
     let opts = ApplyUpdateOptions {
-        skip_removals: true,
+        skip_removals: saved.adopted,
         ..Default::default()
     };
     filetree::apply_diff(src, dest, diff, Some(&opts))?;
 
-    Ok(())
+    Ok(SavedComponent {
+        adopted: saved.adopted,
+        filesystem: update.update.content.filesystem.clone(),
+        digest: update.update.content.digest.clone(),
+        timestamp: update.update.content_timestamp,
+        pending: None,
+    })
+}
+
+fn parse_componentlist(components: &Vec<String>) -> Result<Option<BTreeSet<ComponentType>>> {
+    if components.len() == 0 {
+        return Ok(None);
+    }
+    let r: std::result::Result<BTreeSet<_>, _> = components
+        .iter()
+        .map(|c| serde_plain::from_str(c))
+        .collect();
+    Ok(Some(r?))
 }
 
 fn update(opts: &UpdateOptions) -> Result<()> {
-    let status = compute_status(&opts.sysroot)?;
-    let sysroot_dir = openat::Dir::open(opts.sysroot.as_str())?;
+    let (status, mut new_saved_state) =
+        compute_status(&opts.sysroot).context("computing status")?;
+    let sysroot_dir = openat::Dir::open(opts.sysroot.as_str())
+        .with_context(|| format!("opening sysroot {}", opts.sysroot))?;
 
-    for component in status.components.iter() {
+    let specified_components = parse_componentlist(&opts.components)?;
+    for (ctype, component) in status.components.iter() {
+        let is_specified = if let Some(specified) = specified_components.as_ref() {
+            if !specified.contains(ctype) {
+                continue;
+            }
+            true
+        } else {
+            false
+        };
+        let saved = match &component.installed {
+            ComponentState::NotImplemented => {
+                if is_specified {
+                    bail!("Component {:?} is not implemented", &ctype);
+                } else {
+                    continue;
+                }
+            }
+            ComponentState::NotInstalled => {
+                if is_specified {
+                    bail!("Component {:?} is not installed", &ctype);
+                } else {
+                    continue;
+                }
+            }
+            ComponentState::Found(installed) => match installed {
+                ComponentInstalled::Unknown(_) => {
+                    if is_specified {
+                        bail!(
+                            "Component {:?} is not tracked and must be adopted before update",
+                            ctype
+                        );
+                    } else {
+                        println!(
+                            "Skipping component {:?} which is found but not adopted",
+                            ctype
+                        );
+                        continue;
+                    }
+                }
+                ComponentInstalled::Tracked { disk: _, saved, .. } => saved,
+            },
+        };
+        // If we get here, there must be saved state
+        let new_saved_state = new_saved_state.as_mut().expect("saved state");
+
         if let Some(update) = component.update.as_ref() {
             match update {
                 ComponentUpdate::LatestUpdateInstalled => {
@@ -154,9 +225,19 @@ fn update(opts: &UpdateOptions) -> Result<()> {
                 ComponentUpdate::Available(update) => match &component.ctype {
                     // Yeah we need to have components be a trait with methods like update()
                     ComponentType::EFI => {
-                        let src = sysroot_dir.sub_dir("usr/lib/ostree-boot/efi")?;
-                        let dest = sysroot_dir.sub_dir("boot/efi")?;
-                        update_component_filesystem_at(component, &src, &dest, update)?;
+                        let src = sysroot_dir
+                            .sub_dir(&Path::new(OSTREE_BOOT_DATA).join("efi"))
+                            .context("opening ostree boot data")?;
+                        let dest = sysroot_dir.sub_dir(EFI_MOUNT).context(EFI_MOUNT)?;
+                        let updated_component =
+                            update_component_filesystem_at(saved, &src, &dest, update)
+                                .with_context(|| format!("updating component {:?}", ctype))?;
+                        let updated_digest = updated_component.digest.clone();
+                        new_saved_state
+                            .components
+                            .insert(ComponentType::EFI, updated_component);
+                        update_state(&sysroot_dir, new_saved_state)?;
+                        println!("{:?}: Updated to digest={}", ctype, updated_digest);
                     }
                     ctype => {
                         panic!("Unhandled update for component {:?}", ctype);
@@ -188,11 +269,13 @@ fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
 }
 
 fn adopt(sysroot_path: &str) -> Result<()> {
-    let status = compute_status(sysroot_path)?;
-    let mut new_saved_components = BTreeMap::new();
+    let (status, saved_state) = compute_status(sysroot_path)?;
     let mut adopted = std::collections::BTreeSet::new();
-    for component in status.components {
-        let installed = match component.installed {
+    let mut saved_state = saved_state.unwrap_or_else(|| SavedState {
+        components: BTreeMap::new(),
+    });
+    for (ctype, component) in status.components.iter() {
+        let installed = match &component.installed {
             ComponentState::NotInstalled => continue,
             ComponentState::NotImplemented => continue,
             ComponentState::Found(installed) => installed,
@@ -205,34 +288,33 @@ fn adopt(sysroot_path: &str) -> Result<()> {
             }
             ComponentInstalled::Tracked {
                 disk: _,
-                saved,
+                saved: _,
                 drift,
             } => {
-                if drift {
-                    eprintln!("Warning: Skipping drifted component: {:?}", component.ctype);
+                if *drift {
+                    eprintln!("Warning: Skipping drifted component: {:?}", ctype);
                 }
-                new_saved_components.insert(component.ctype.clone(), saved.clone());
                 continue;
             }
         };
         let saved = SavedComponent {
             adopted: true,
-            digest: disk.digest,
+            digest: disk.digest.clone(),
+            filesystem: disk.filesystem.clone(),
             timestamp: disk.timestamp,
             pending: None,
         };
-        new_saved_components.insert(component.ctype, saved);
+        saved_state
+            .components
+            .insert(component.ctype.clone(), saved);
     }
     if adopted.len() == 0 {
         println!("Nothing to do.");
         return Ok(());
     }
-
-    let new_saved_state = SavedState {
-        components: new_saved_components,
-    };
+    // Must have saved state if we get here
     let sysroot_dir = openat::Dir::open(sysroot_path)?;
-    update_state(&sysroot_dir, &new_saved_state)?;
+    update_state(&sysroot_dir, &saved_state)?;
     Ok(())
 }
 
@@ -285,50 +367,84 @@ fn compute_status_efi(
     saved_components: Option<&SavedState>,
 ) -> Result<Component> {
     let sysroot_dir = openat::Dir::open(sysroot_path)?;
-    let espdir = sysroot_dir.sub_dir("boot/efi")?;
-    let content = InstalledContent::from_file_tree(FileTree::new_from_dir(&espdir)?);
-    let digest = content.digest.clone();
-    let saved_state = saved_components
+    let espdir = sysroot_dir.sub_dir(EFI_MOUNT).context(EFI_MOUNT)?;
+    let esptree = FileTree::new_from_dir(&espdir).context("computing filetree for efi")?;
+    let saved = saved_components
         .map(|s| s.components.get(&ComponentType::EFI))
         .flatten();
-    let installed_state = if let Some(saved) = saved_state {
-        let drift = saved.digest != content.digest;
-        ComponentInstalled::Tracked {
-            disk: content,
-            saved: saved.clone(),
-            drift: drift,
-        }
+    let saved = if let Some(saved) = saved {
+        saved
     } else {
-        ComponentInstalled::Unknown(content)
+        return Ok(Component {
+            ctype: ComponentType::EFI,
+            installed: ComponentState::Found(ComponentInstalled::Unknown(
+                InstalledContent::from_file_tree(esptree),
+            )),
+            pending: None,
+            update: None,
+        });
     };
-    let installed_tree = installed_state
-        .get_disk_content()
-        .filesystem
-        .as_ref()
-        .unwrap();
+    let fsdiff = if let Some(saved_filesystem) = saved.filesystem.as_ref() {
+        Some(esptree.diff(&saved_filesystem)?)
+    } else {
+        None
+    };
+    let fsdiff = fsdiff.as_ref();
+    let (installed, installed_digest) = {
+        let content = InstalledContent::from_file_tree(esptree);
+        let drift = if let Some(fsdiff) = fsdiff {
+            if saved.adopted {
+                !fsdiff.is_only_removals()
+            } else {
+                fsdiff.count() > 0
+            }
+        } else {
+            // TODO detect state outside of filesystem tree
+            false
+        };
+        let digest = if saved.adopted && !drift  {
+            saved.digest.clone()
+        } else {
+            content.digest.clone()
+        };
+        (
+            ComponentInstalled::Tracked {
+                disk: content,
+                saved: saved.clone(),
+                drift: drift,
+            },
+            digest,
+        )
+    };
+    let installed_tree = installed.get_disk_content().filesystem.as_ref().unwrap();
 
     let update_esp = efi_content_version_from_ostree(sysroot_path)?;
     let update_esp_tree = update_esp.content.filesystem.as_ref().unwrap();
-    let update = if update_esp.content.digest == digest {
+    let update = if !saved.adopted && update_esp.content.digest == installed_digest {
         ComponentUpdate::LatestUpdateInstalled
     } else {
         let diff = installed_tree.diff(update_esp_tree)?;
-        ComponentUpdate::Available(ComponentUpdateAvailable {
-            update: update_esp,
-            diff: Some(diff),
-        })
+        if saved.adopted && diff.is_only_removals() {
+            ComponentUpdate::LatestUpdateInstalled
+        } else {
+            ComponentUpdate::Available(ComponentUpdateAvailable {
+                update: update_esp,
+                diff: Some(diff),
+            })
+        }
     };
 
     Ok(Component {
         ctype: ComponentType::EFI,
-        installed: ComponentState::Found(installed_state),
-        pending: saved_state.map(|x| x.pending.clone()).flatten(),
+        installed: ComponentState::Found(installed),
+        pending: saved.pending.clone(),
         update: Some(update),
     })
 }
 
-fn compute_status(sysroot_path: &str) -> Result<Status> {
-    let sysroot_dir = openat::Dir::open(sysroot_path)?;
+fn compute_status(sysroot_path: &str) -> Result<(Status, Option<SavedState>)> {
+    let sysroot_dir = openat::Dir::open(sysroot_path)
+        .with_context(|| format!("opening sysroot {}", sysroot_path))?;
 
     let saved_state = if let Some(statusf) = sysroot_dir.open_file_optional(STATEFILE_PATH)? {
         let bufr = std::io::BufReader::new(statusf);
@@ -338,24 +454,33 @@ fn compute_status(sysroot_path: &str) -> Result<Status> {
         None
     };
 
-    let mut components = Vec::new();
+    let mut components = BTreeMap::new();
 
     #[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
-    components.push(compute_status_efi(&sysroot_path, saved_state.as_ref())?);
+    components.insert(
+        ComponentType::EFI,
+        compute_status_efi(&sysroot_path, saved_state.as_ref())?,
+    );
 
     #[cfg(target_arch = "x86_64")]
     {
-        components.push(Component {
-            ctype: ComponentType::BIOS,
-            installed: ComponentState::NotImplemented,
-            pending: None,
-            update: None,
-        });
+        components.insert(
+            ComponentType::BIOS,
+            Component {
+                ctype: ComponentType::BIOS,
+                installed: ComponentState::NotImplemented,
+                pending: None,
+                update: None,
+            },
+        );
     }
-    Ok(Status {
-        supported_architecture: components.len() > 0,
-        components: components,
-    })
+    Ok((
+        Status {
+            supported_architecture: components.len() > 0,
+            components: components,
+        },
+        saved_state,
+    ))
 }
 
 fn print_component(component: &Component) {
@@ -378,14 +503,14 @@ fn print_component(component: &Component) {
         }
         ComponentInstalled::Tracked { disk, saved, drift } => {
             if !*drift {
-                println!("  Installed: {}", disk.digest);
-                if saved.adopted {
-                    println!("    Adopted: true")
-                }
+                println!("  Installed: {}", saved.digest);
             } else {
                 println!("  Installed; warning: drift detected");
-                println!("    Recorded: {}", saved.digest);
-                println!("    Actual: {}", disk.digest);
+                println!("      Recorded: {}", saved.digest);
+                println!("      Actual: {}", disk.digest);
+            }
+            if saved.adopted {
+                println!("    Adopted: true")
             }
         }
     }
@@ -399,8 +524,10 @@ fn print_component(component: &Component) {
                     .update
                     .content_timestamp
                     .format("%Y-%m-%dT%H:%M:%S+00:00");
-                println!("  Update: Available: {}", ts_str);
-                if let Some(diff) = &update.diff {
+                    println!("  Update: Available");
+                    println!("    Timestamp: {}", ts_str);
+                    println!("    Digest: {}", update.update.content.digest);
+                    if let Some(diff) = &update.diff {
                     println!(
                         "    Diff: changed={} added={} removed={}",
                         diff.changes.len(),
@@ -414,7 +541,7 @@ fn print_component(component: &Component) {
 }
 
 fn status(opts: &StatusOptions) -> Result<()> {
-    let status = compute_status(&opts.sysroot)?;
+    let (status, _) = compute_status(&opts.sysroot)?;
     if opts.json {
         serde_json::to_writer_pretty(std::io::stdout(), &status)?;
     } else {
@@ -430,9 +557,9 @@ fn status(opts: &StatusOptions) -> Result<()> {
             } else {
                 None
             };
-            for component in &status.components {
+            for (ctype, component) in status.components.iter() {
                 if let Some(specified_components) = specified_components.as_ref() {
-                    if !specified_components.contains(&component.ctype) {
+                    if !specified_components.contains(ctype) {
                         continue;
                     }
                 }
@@ -450,8 +577,8 @@ pub fn boot_update_main(args: &Vec<String>) -> Result<()> {
     match opt {
         Opt::Install { sysroot } => install(&sysroot).context("boot data installation failed")?,
         Opt::Adopt { sysroot } => adopt(&sysroot)?,
-        Opt::Update(ref opts) => update(opts).context("boot data update failed")?,
-        Opt::Status(ref opts) => status(opts).context("status failed")?,
+        Opt::Update(ref opts) => update(opts)?,
+        Opt::Status(ref opts) => status(opts)?,
     };
     Ok(())
 }

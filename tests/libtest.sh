@@ -8,7 +8,7 @@ runv() {
 
 N_TESTS=0
 ok() {
-    echo "ok " $@
+    echo "ok" $@
     N_TESTS=$((N_TESTS + 1))
 }
 

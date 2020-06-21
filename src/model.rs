@@ -93,7 +93,7 @@ pub(crate) struct Component {
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct Status {
     pub(crate) supported_architecture: bool,
-    pub(crate) components: Vec<Component>,
+    pub(crate) components: BTreeMap<ComponentType, Component>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -113,6 +113,7 @@ pub(crate) struct SavedPendingUpdate {
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct SavedComponent {
     pub(crate) adopted: bool,
+    pub(crate) filesystem: Option<Box<FileTree>>,
     pub(crate) digest: SHA512String,
     pub(crate) timestamp: NaiveDateTime,
     pub(crate) pending: Option<SavedPendingUpdate>,
