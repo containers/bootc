@@ -24,3 +24,14 @@ However, we need to be very cautious in handling this because we basically can't
 assume we own all of the state.  We shouldn't touch any files that we
 don't know about.
 
+# Upgrade edges
+
+We don't necessarily want to update the bootloader data, even if a new update happens to be provided.
+For example, Fedora does "mass rebuilds" usually once a release, but it's not strictly necessary
+to update users' bootloaders then.
+
+A common policy in fact might be "only update bootloader for security issue or if it's strictly necessary".
+
+A "strictly necessary" upgrade would be one like the GRUB BLS parsing support.
+
+There is not yet any support for upgrade edges in the code apart from a stub structure.
