@@ -108,7 +108,6 @@ pub(crate) struct SavedPendingUpdate {
     pub(crate) timestamp: NaiveDateTime,
 }
 
-/// Will be serialized into /boot/rpmostree-bootupd-state.json
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct SavedComponent {
@@ -119,23 +118,23 @@ pub(crate) struct SavedComponent {
     pub(crate) pending: Option<SavedPendingUpdate>,
 }
 
-/// Will be serialized into /boot/rpmostree-bootupd-state.json
+/// Will be serialized into /boot/bootupd-state.json
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct SavedState {
     pub(crate) components: BTreeMap<ComponentType, SavedComponent>,
 }
 
-/// Should be stored in /usr/lib/rpm-ostree/bootupdate-edge.json
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct UpgradeEdge {
-    /// Set to true if we should upgrade from an unknown state
-    #[serde(default)]
-    pub(crate) from_unknown: bool,
-    /// Upgrade from content past this timestamp
-    pub(crate) from_timestamp: Option<NaiveDateTime>,
-}
+// Should be stored in /usr/lib/bootupd/edges.json
+//#[derive(Serialize, Deserialize, Debug)]
+// #[serde(rename_all = "kebab-case")]
+// pub(crate) struct UpgradeEdge {
+//     /// Set to true if we should upgrade from an unknown state
+//     #[serde(default)]
+//     pub(crate) from_unknown: bool,
+//     /// Upgrade from content past this timestamp
+//     pub(crate) from_timestamp: Option<NaiveDateTime>,
+// }
 
 impl InstalledContent {
     pub(crate) fn from_file_tree(ft: FileTree) -> InstalledContent {

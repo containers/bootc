@@ -24,7 +24,7 @@ mod util;
 
 /// Stored in /boot to describe our state; think of it like
 /// a tiny rpm/dpkg database.
-pub(crate) const STATEFILE_PATH: &str = "boot/rpmostree-bootupd-state.json";
+pub(crate) const STATEFILE_PATH: &str = "boot/bootupd-state.json";
 
 /// Where rpm-ostree rewrites data that goes in /boot
 pub(crate) const OSTREE_BOOT_DATA: &str = "usr/lib/ostree-boot";

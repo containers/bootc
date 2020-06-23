@@ -113,7 +113,7 @@ assert_file_has_content_literal out.txt 'Update: At latest version'
 ok 'adoption status'
 
 # Re-initialize and adopt with extra state
-rm -v root/boot/rpmostree-bootupd-state.json
+rm -v root/boot/bootupd-state.json
 initefiroot "${bootefi}"
 initefiroot "${ostefi}"
 
