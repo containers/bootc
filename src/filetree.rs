@@ -258,12 +258,9 @@ pub(crate) fn syncfs(d: &openat::Dir) -> Result<()> {
 
 fn tmpname_for_path<P: AsRef<Path>>(path: P) -> std::path::PathBuf {
     let path = path.as_ref();
-    let basename = path.file_name().expect("filename");
-    path.with_file_name(format!(
-        "{}{}",
-        TMP_PREFIX,
-        basename.to_str().expect("UTF-8 filename")
-    ))
+    let mut buf = path.file_name().expect("filename").to_os_string();
+    buf.push(TMP_PREFIX);
+    path.with_file_name(buf)
 }
 
 /// Given two directories, apply a diff generated from srcdir to destdir

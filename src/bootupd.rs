@@ -237,7 +237,12 @@ fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
         buff.into_inner()?
     };
     let dest = Path::new(STATEFILE_PATH);
-    let dest_tmp_name = format!("{}.tmp", dest.file_name().unwrap().to_str().unwrap());
+    let dest_tmp_name = {
+        // expect OK because we just created the filename above from a constant
+        let mut buf = dest.file_name().expect("filename").to_os_string();
+        buf.push(".tmp");
+        buf
+    };
     let dest_tmp = dest.with_file_name(dest_tmp_name);
     sysroot_dir.link_file_at(&f, &dest_tmp)?;
     f.sync_all()?;
