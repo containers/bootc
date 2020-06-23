@@ -27,7 +27,7 @@ mod util;
 /// a tiny rpm/dpkg database.  It's stored in /boot
 pub(crate) const STATEFILE_DIR: &str = "boot";
 pub(crate) const STATEFILE_NAME: &str = "bootupd-state.json";
-pub(crate) const WRITE_LOCK_PATH: &str = "/run/bootupd-lock";
+pub(crate) const WRITE_LOCK_PATH: &str = "run/bootupd-lock";
 
 /// Where rpm-ostree rewrites data that goes in /boot
 pub(crate) const OSTREE_BOOT_DATA: &str = "usr/lib/ostree-boot";
@@ -145,19 +145,20 @@ fn parse_componentlist(components: &[String]) -> Result<Option<BTreeSet<Componen
     Ok(Some(r?))
 }
 
-fn acquire_write_lock() -> Result<std::fs::File> {
+fn acquire_write_lock<P: AsRef<Path>>(sysroot: P) -> Result<std::fs::File> {
+    let sysroot = sysroot.as_ref();
     let mut lockf = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
-        .open(WRITE_LOCK_PATH)?;
+        .open(sysroot.join(WRITE_LOCK_PATH))?;
     lockf.lock_exclusive()?;
     writeln!(&mut lockf, "Acquired by pid {}", nix::unistd::getpid())?;
     Ok(lockf)
 }
 
 fn update(opts: &UpdateOptions) -> Result<()> {
-    let _lockf = acquire_write_lock()?;
+    let _lockf = acquire_write_lock(opts.sysroot.as_str())?;
     let (status, mut new_saved_state) =
         compute_status(&opts.sysroot).context("computing status")?;
     let sysroot_dir = openat::Dir::open(opts.sysroot.as_str())
@@ -271,7 +272,7 @@ fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
 }
 
 fn adopt(sysroot_path: &str) -> Result<()> {
-    let _lockf = acquire_write_lock()?;
+    let _lockf = acquire_write_lock(sysroot_path)?;
     let (status, saved_state) = compute_status(sysroot_path)?;
     let mut adopted = std::collections::BTreeSet::new();
     let mut saved_state = saved_state.unwrap_or_else(|| SavedState {

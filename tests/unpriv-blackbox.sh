@@ -29,6 +29,7 @@ bootupd() {
     runv ${dn}/../target/release/bootupd "$@"
 }
 
+mkdir -p root/run
 bootefi=root/boot/efi
 ostefi=root/usr/lib/ostree-boot/efi
 initefiroot() {
