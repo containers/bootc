@@ -12,6 +12,8 @@ use std::io::prelude::*;
 use std::path::Path;
 use structopt::StructOpt;
 
+#[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
+mod efi;
 mod filetree;
 use filetree::*;
 mod model;
@@ -23,9 +25,6 @@ mod util;
 /// Stored in /boot to describe our state; think of it like
 /// a tiny rpm/dpkg database.
 pub(crate) const STATEFILE_PATH: &str = "boot/rpmostree-bootupd-state.json";
-/// The path to the ESP mount
-#[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
-pub(crate) const EFI_MOUNT: &str = "boot/efi";
 
 /// Where rpm-ostree rewrites data that goes in /boot
 pub(crate) const OSTREE_BOOT_DATA: &str = "usr/lib/ostree-boot";
@@ -71,43 +70,21 @@ struct StatusOptions {
 #[structopt(name = "boot-update")]
 #[structopt(rename_all = "kebab-case")]
 enum Opt {
-    /// Install data into the EFI System Partition
+    /// Install data from available components into a disk image
     Install {
         /// Physical root mountpoint
         #[structopt(long)]
         sysroot: String,
     },
-    /// Start tracking current data found in the EFI System Partition
+    /// Start tracking current data found in available components
     Adopt {
         /// Physical root mountpoint
         #[structopt(long)]
         sysroot: String,
     },
-    /// Update the EFI System Partition
+    /// Update available components
     Update(UpdateOptions),
     Status(StatusOptions),
-}
-
-fn running_in_test_suite() -> bool {
-    !nix::unistd::getuid().is_root()
-}
-
-#[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
-pub(crate) fn validate_esp<P: AsRef<Path>>(mnt: P) -> Result<()> {
-    if running_in_test_suite() {
-        return Ok(());
-    }
-    let mnt = mnt.as_ref();
-    let stat = nix::sys::statfs::statfs(mnt)?;
-    let fstype = stat.filesystem_type();
-    if fstype != nix::sys::statfs::MSDOS_SUPER_MAGIC {
-        bail!(
-            "Mount {} is not a msdos filesystem, but is {:?}",
-            mnt.display(),
-            fstype
-        );
-    };
-    Ok(())
 }
 
 pub(crate) fn install(sysroot_path: &str) -> Result<()> {
@@ -121,8 +98,8 @@ pub(crate) fn install(sysroot_path: &str) -> Result<()> {
         bail!("{:?} already exists, cannot re-install", statepath);
     }
 
-    let bootefi = Path::new(sysroot_path).join(EFI_MOUNT);
-    validate_esp(&bootefi)?;
+    let bootefi = Path::new(sysroot_path).join(efi::MOUNT_PATH);
+    efi::validate_esp(&bootefi)?;
 
     Ok(())
 }
@@ -226,7 +203,9 @@ fn update(opts: &UpdateOptions) -> Result<()> {
                         let src = sysroot_dir
                             .sub_dir(&Path::new(OSTREE_BOOT_DATA).join("efi"))
                             .context("opening ostree boot data")?;
-                        let dest = sysroot_dir.sub_dir(EFI_MOUNT).context(EFI_MOUNT)?;
+                        let dest = sysroot_dir
+                            .sub_dir(efi::MOUNT_PATH)
+                            .context(efi::MOUNT_PATH)?;
                         let updated_component =
                             update_component_filesystem_at(saved, &src, &dest, update)
                                 .with_context(|| format!("updating component {:?}", ctype))?;
@@ -365,7 +344,9 @@ fn compute_status_efi(
     saved_components: Option<&SavedState>,
 ) -> Result<Component> {
     let sysroot_dir = openat::Dir::open(sysroot_path)?;
-    let espdir = sysroot_dir.sub_dir(EFI_MOUNT).context(EFI_MOUNT)?;
+    let espdir = sysroot_dir
+        .sub_dir(efi::MOUNT_PATH)
+        .context(efi::MOUNT_PATH)?;
     let esptree = FileTree::new_from_dir(&espdir).context("computing filetree for efi")?;
     let saved = saved_components
         .map(|s| s.components.get(&ComponentType::EFI))

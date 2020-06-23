@@ -12,3 +12,7 @@ pub(crate) fn getenv_utf8(n: &str) -> Result<Option<String>> {
         Ok(None)
     }
 }
+
+pub(crate) fn running_in_test_suite() -> bool {
+    !nix::unistd::getuid().is_root()
+}
