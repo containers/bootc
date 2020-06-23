@@ -22,4 +22,4 @@ install-units: $(units)
 
 .PHONY: install
 install: install-units
-	install -D -t ${DESTDIR}$(PREFIX)/bin target/${PROFILE}/bootupd
+	install -D -t ${DESTDIR}$(PREFIX)/libexec target/${PROFILE}/bootupd

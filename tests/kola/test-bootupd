@@ -1,0 +1,33 @@
+#!/bin/bash
+set -xeuo pipefail
+
+. ${KOLA_EXT_DATA}/libtest.sh
+
+tmpdir=$(mktemp -d)
+cd ${tmpdir}
+echo "using tmpdir: ${tmpdir}"
+touch .testtmp
+trap cleanup EXIT
+function cleanup () {
+  if test -z "${TEST_SKIP_CLEANUP:-}"; then
+    if test -f "${tmpdir}"/.testtmp; then
+      cd /
+      rm "${tmpdir}" -rf
+    fi
+  else
+    echo "Skipping cleanup of ${tmpdir}"
+  fi
+}
+
+# Shouldn't be started by default right now; distributions
+# should only enable when it was used at build time.
+runv systemctl show bootupd > out.txt
+assert_file_has_content_literal out.txt 'ActiveState=inactive'
+
+runv /usr/libexec/bootupd status --component=EFI > out.txt
+assert_file_has_content_literal out.txt 'Component EFI'
+assert_file_has_content_literal out.txt '  Unmanaged: digest='
+assert_not_file_has_content_literal out.txt 'Update: Available:'
+
+ok bootupd status
+tap_finish
