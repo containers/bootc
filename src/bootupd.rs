@@ -381,18 +381,13 @@ fn compute_status_efi(
             // TODO detect state outside of filesystem tree
             false
         };
-        let digest = if saved.adopted && !drift {
-            saved.digest.clone()
-        } else {
-            content.digest.clone()
-        };
         (
             ComponentInstalled::Tracked {
                 disk: content,
                 saved: saved.clone(),
                 drift,
             },
-            digest,
+            saved.digest.clone(),
         )
     };
     let installed_tree = installed.get_disk_content().filesystem.as_ref().unwrap();

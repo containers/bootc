@@ -112,6 +112,13 @@ assert_file_has_content_literal out.txt '  Adopted: true'
 assert_file_has_content_literal out.txt 'Update: At latest version'
 ok 'adoption status'
 
+echo 'oops state drift' >> "${bootefi}"/EFI/fedora/shimx64.efi
+bootupd status --sysroot=root --component=EFI | tee out.txt
+assert_file_has_content_literal out.txt 'warning: drift detected'
+assert_file_has_content_literal out.txt 'Recorded: '${v0_digest}
+assert_file_has_content_literal out.txt 'Actual: sha512:5Dfb6bjpfgxMN1KDAmNFnbzcQxZidiCwdZHwgQrdTrUZvExHrMCKoEnQ9muTowVkW7t4QJHve1APpwa6dLi5WDKF'
+ok 'drift detected'
+
 # Re-initialize and adopt with extra state
 rm -v root/boot/bootupd-state.json
 initefiroot "${bootefi}"
