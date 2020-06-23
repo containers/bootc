@@ -5,6 +5,7 @@
  */
 
 use anyhow::{bail, Context, Result};
+use fs2::FileExt;
 use gio::NONE_CANCELLABLE;
 use openat_ext::OpenatDirExt;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -23,8 +24,10 @@ mod sha512string;
 mod util;
 
 /// Stored in /boot to describe our state; think of it like
-/// a tiny rpm/dpkg database.
-pub(crate) const STATEFILE_PATH: &str = "boot/bootupd-state.json";
+/// a tiny rpm/dpkg database.  It's stored in /boot
+pub(crate) const STATEFILE_DIR: &str = "boot";
+pub(crate) const STATEFILE_NAME: &str = "bootupd-state.json";
+pub(crate) const WRITE_LOCK_PATH: &str = "/run/bootupd-lock";
 
 /// Where rpm-ostree rewrites data that goes in /boot
 pub(crate) const OSTREE_BOOT_DATA: &str = "usr/lib/ostree-boot";
@@ -79,7 +82,7 @@ enum Opt {
     /// Start tracking current data found in available components
     Adopt {
         /// Physical root mountpoint
-        #[structopt(long)]
+        #[structopt(default_value = "/", long)]
         sysroot: String,
     },
     /// Update available components
@@ -93,7 +96,9 @@ pub(crate) fn install(sysroot_path: &str) -> Result<()> {
 
     let _commit = ostreeutil::find_deployed_commit(sysroot_path)?;
 
-    let statepath = Path::new(sysroot_path).join(STATEFILE_PATH);
+    let statepath = Path::new(sysroot_path)
+        .join(STATEFILE_DIR)
+        .join(STATEFILE_NAME);
     if statepath.exists() {
         bail!("{:?} already exists, cannot re-install", statepath);
     }
@@ -140,7 +145,19 @@ fn parse_componentlist(components: &[String]) -> Result<Option<BTreeSet<Componen
     Ok(Some(r?))
 }
 
+fn acquire_write_lock() -> Result<std::fs::File> {
+    let mut lockf = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(WRITE_LOCK_PATH)?;
+    lockf.lock_exclusive()?;
+    writeln!(&mut lockf, "Acquired by pid {}", nix::unistd::getpid())?;
+    Ok(lockf)
+}
+
 fn update(opts: &UpdateOptions) -> Result<()> {
+    let _lockf = acquire_write_lock()?;
     let (status, mut new_saved_state) =
         compute_status(&opts.sysroot).context("computing status")?;
     let sysroot_dir = openat::Dir::open(opts.sysroot.as_str())
@@ -229,28 +246,32 @@ fn update(opts: &UpdateOptions) -> Result<()> {
 }
 
 fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
+    let subdir = sysroot_dir.sub_dir(STATEFILE_DIR)?;
     let f = {
-        let f = sysroot_dir.new_unnamed_file(0o644)?;
+        let f = subdir.new_unnamed_file(0o644)?;
         let mut buff = std::io::BufWriter::new(f);
         serde_json::to_writer(&mut buff, state)?;
         buff.flush()?;
         buff.into_inner()?
     };
-    let dest = Path::new(STATEFILE_PATH);
     let dest_tmp_name = {
         // expect OK because we just created the filename above from a constant
-        let mut buf = dest.file_name().expect("filename").to_os_string();
+        let mut buf = std::ffi::OsString::from(STATEFILE_NAME);
         buf.push(".tmp");
         buf
     };
-    let dest_tmp = dest.with_file_name(dest_tmp_name);
-    sysroot_dir.link_file_at(&f, &dest_tmp)?;
+    let dest_tmp_name = Path::new(&dest_tmp_name);
+    if subdir.exists(dest_tmp_name)? {
+        subdir.remove_file(dest_tmp_name)?;
+    }
+    subdir.link_file_at(&f, dest_tmp_name)?;
     f.sync_all()?;
-    sysroot_dir.local_rename(&dest_tmp, dest)?;
+    subdir.local_rename(dest_tmp_name, STATEFILE_NAME)?;
     Ok(())
 }
 
 fn adopt(sysroot_path: &str) -> Result<()> {
+    let _lockf = acquire_write_lock()?;
     let (status, saved_state) = compute_status(sysroot_path)?;
     let mut adopted = std::collections::BTreeSet::new();
     let mut saved_state = saved_state.unwrap_or_else(|| SavedState {
@@ -425,7 +446,8 @@ fn compute_status(sysroot_path: &str) -> Result<(Status, Option<SavedState>)> {
     let sysroot_dir = openat::Dir::open(sysroot_path)
         .with_context(|| format!("opening sysroot {}", sysroot_path))?;
 
-    let saved_state = if let Some(statusf) = sysroot_dir.open_file_optional(STATEFILE_PATH)? {
+    let statefile_path = Path::new(STATEFILE_DIR).join(STATEFILE_NAME);
+    let saved_state = if let Some(statusf) = sysroot_dir.open_file_optional(&statefile_path)? {
         let bufr = std::io::BufReader::new(statusf);
         let saved_state: SavedState = serde_json::from_reader(bufr)?;
         Some(saved_state)

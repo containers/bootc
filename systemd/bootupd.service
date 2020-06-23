@@ -1,0 +1,11 @@
+[Unit]
+Description=EFI Bootloader Update
+# Hardcoded to only update EFI right now
+ConditionDirectoryNotEmpty=/sys/firmware/efi
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/bootupd update EFI
+
+[Install]
+WantedBy=multi-user.target
