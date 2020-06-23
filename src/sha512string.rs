@@ -26,7 +26,7 @@ impl SHA512String {
     }
 
     pub(crate) fn digest_bs58(&self) -> &str {
-        self.0.splitn(2, ":").next().unwrap()
+        self.0.splitn(2, ':').next().unwrap()
     }
 
     pub(crate) fn digest_bytes(&self) -> Vec<u8> {

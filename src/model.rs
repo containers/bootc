@@ -75,7 +75,7 @@ pub(crate) struct ComponentUpdateAvailable {
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ComponentUpdate {
     LatestUpdateInstalled,
-    Available(ComponentUpdateAvailable),
+    Available(Box<ComponentUpdateAvailable>),
 }
 
 /// A component along with a possible update

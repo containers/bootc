@@ -34,7 +34,7 @@ pub(crate) fn find_deployed_commit(sysroot_path: &str) -> Result<String> {
     } else {
         bail!("failed to find deployment");
     };
-    if let Some(_) = lines.next() {
+    if lines.next().is_some() {
         bail!("multiple deployments found")
     }
     Ok(deployment)

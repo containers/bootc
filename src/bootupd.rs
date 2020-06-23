@@ -6,9 +6,7 @@
 
 use anyhow::{bail, Context, Result};
 use gio::NONE_CANCELLABLE;
-use nix;
 use openat_ext::OpenatDirExt;
-use serde_json;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::prelude::*;
 use std::path::Path;
@@ -24,13 +22,13 @@ mod util;
 
 /// Stored in /boot to describe our state; think of it like
 /// a tiny rpm/dpkg database.
-pub(crate) const STATEFILE_PATH: &'static str = "boot/rpmostree-bootupd-state.json";
+pub(crate) const STATEFILE_PATH: &str = "boot/rpmostree-bootupd-state.json";
 /// The path to the ESP mount
 #[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
-pub(crate) const EFI_MOUNT: &'static str = "boot/efi";
+pub(crate) const EFI_MOUNT: &str = "boot/efi";
 
 /// Where rpm-ostree rewrites data that goes in /boot
-pub(crate) const OSTREE_BOOT_DATA: &'static str = "usr/lib/ostree-boot";
+pub(crate) const OSTREE_BOOT_DATA: &str = "usr/lib/ostree-boot";
 
 #[derive(Debug, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
@@ -154,8 +152,8 @@ fn update_component_filesystem_at(
     })
 }
 
-fn parse_componentlist(components: &Vec<String>) -> Result<Option<BTreeSet<ComponentType>>> {
-    if components.len() == 0 {
+fn parse_componentlist(components: &[String]) -> Result<Option<BTreeSet<ComponentType>>> {
+    if components.is_empty() {
         return Ok(None);
     }
     let r: std::result::Result<BTreeSet<_>, _> = components
@@ -308,7 +306,7 @@ fn adopt(sysroot_path: &str) -> Result<()> {
             .components
             .insert(component.ctype.clone(), saved);
     }
-    if adopted.len() == 0 {
+    if adopted.is_empty() {
         println!("Nothing to do.");
         return Ok(());
     }
@@ -402,7 +400,7 @@ fn compute_status_efi(
             // TODO detect state outside of filesystem tree
             false
         };
-        let digest = if saved.adopted && !drift  {
+        let digest = if saved.adopted && !drift {
             saved.digest.clone()
         } else {
             content.digest.clone()
@@ -411,7 +409,7 @@ fn compute_status_efi(
             ComponentInstalled::Tracked {
                 disk: content,
                 saved: saved.clone(),
-                drift: drift,
+                drift,
             },
             digest,
         )
@@ -427,10 +425,10 @@ fn compute_status_efi(
         if saved.adopted && diff.is_only_removals() {
             ComponentUpdate::LatestUpdateInstalled
         } else {
-            ComponentUpdate::Available(ComponentUpdateAvailable {
+            ComponentUpdate::Available(Box::new(ComponentUpdateAvailable {
                 update: update_esp,
                 diff: Some(diff),
-            })
+            }))
         }
     };
 
@@ -476,8 +474,8 @@ fn compute_status(sysroot_path: &str) -> Result<(Status, Option<SavedState>)> {
     }
     Ok((
         Status {
-            supported_architecture: components.len() > 0,
-            components: components,
+            supported_architecture: !components.is_empty(),
+            components,
         },
         saved_state,
     ))
@@ -524,10 +522,10 @@ fn print_component(component: &Component) {
                     .update
                     .content_timestamp
                     .format("%Y-%m-%dT%H:%M:%S+00:00");
-                    println!("  Update: Available");
-                    println!("    Timestamp: {}", ts_str);
-                    println!("    Digest: {}", update.update.content.digest);
-                    if let Some(diff) = &update.diff {
+                println!("  Update: Available");
+                println!("    Timestamp: {}", ts_str);
+                println!("    Digest: {}", update.update.content.digest);
+                if let Some(diff) = &update.diff {
                     println!(
                         "    Diff: changed={} added={} removed={}",
                         diff.changes.len(),
@@ -544,27 +542,25 @@ fn status(opts: &StatusOptions) -> Result<()> {
     let (status, _) = compute_status(&opts.sysroot)?;
     if opts.json {
         serde_json::to_writer_pretty(std::io::stdout(), &status)?;
+    } else if !status.supported_architecture {
+        eprintln!("This architecture is not supported.")
     } else {
-        if !status.supported_architecture {
-            eprintln!("This architecture is not supported.")
+        let specified_components = if let Some(components) = &opts.components {
+            let r: std::result::Result<HashSet<ComponentType>, _> = components
+                .iter()
+                .map(|c| serde_plain::from_str(c))
+                .collect();
+            Some(r?)
         } else {
-            let specified_components = if let Some(components) = &opts.components {
-                let r: std::result::Result<HashSet<ComponentType>, _> = components
-                    .iter()
-                    .map(|c| serde_plain::from_str(c))
-                    .collect();
-                Some(r?)
-            } else {
-                None
-            };
-            for (ctype, component) in status.components.iter() {
-                if let Some(specified_components) = specified_components.as_ref() {
-                    if !specified_components.contains(ctype) {
-                        continue;
-                    }
+            None
+        };
+        for (ctype, component) in status.components.iter() {
+            if let Some(specified_components) = specified_components.as_ref() {
+                if !specified_components.contains(ctype) {
+                    continue;
                 }
-                print_component(component);
             }
+            print_component(component);
         }
     }
     Ok(())
@@ -572,7 +568,7 @@ fn status(opts: &StatusOptions) -> Result<()> {
 
 /// Main entrypoint
 #[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
-pub fn boot_update_main(args: &Vec<String>) -> Result<()> {
+pub fn boot_update_main(args: &[String]) -> Result<()> {
     let opt = Opt::from_iter(args.iter());
     match opt {
         Opt::Install { sysroot } => install(&sysroot).context("boot data installation failed")?,

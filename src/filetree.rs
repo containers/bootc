@@ -20,7 +20,7 @@ use std::path::Path;
 use std::io::Write;
 
 /// The prefix we apply to our temporary files.
-pub(crate) const TMP_PREFIX: &'static str = ".btmp.";
+pub(crate) const TMP_PREFIX: &str = ".btmp.";
 
 use crate::sha512string::SHA512String;
 
@@ -146,7 +146,7 @@ impl FileTree {
 
         Ok(Self {
             timestamp: chrono::NaiveDateTime::from_timestamp(stat.st_mtime, 0),
-            children: children,
+            children,
         })
     }
 
@@ -166,15 +166,15 @@ impl FileTree {
             }
         }
         for k in updated.children.keys() {
-            if let Some(_) = self.children.get(k) {
+            if self.children.get(k).is_some() {
                 continue;
             }
             additions.insert(k.clone());
         }
         Ok(FileTreeDiff {
-            additions: additions,
-            removals: removals,
-            changes: changes,
+            additions,
+            removals,
+            changes,
         })
     }
 }
