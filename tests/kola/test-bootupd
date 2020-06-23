@@ -19,15 +19,46 @@ function cleanup () {
   fi
 }
 
+efidir=/boot/efi/EFI/fedora
+
+bootupd() {
+    runv /usr/libexec/bootupd "$@"
+}
+
 # Shouldn't be started by default right now; distributions
 # should only enable when it was used at build time.
 runv systemctl show bootupd > out.txt
 assert_file_has_content_literal out.txt 'ActiveState=inactive'
 
-runv /usr/libexec/bootupd status --component=EFI > out.txt
+bootupd status --component=EFI > out.txt
 assert_file_has_content_literal out.txt 'Component EFI'
 assert_file_has_content_literal out.txt '  Unmanaged: digest='
 assert_not_file_has_content_literal out.txt 'Update: Available:'
 
-ok bootupd status
+if bootupd update EFI 2>err.txt; then
+  fatal "performed an update without adopting"
+fi
+assert_file_has_content_literal err.txt 'Component EFI is not tracked and must be adopted before update'
+ok 'cannot update without adoption'
+
+bootupd adopt | tee out.txt
+assert_file_has_content_literal out.txt "Adopting: EFI"
+ok 'adoption'
+
+bootupd adopt | tee out.txt
+assert_not_file_has_content_literal out.txt "Adopting: EFI"
+assert_file_has_content_literal out.txt "Nothing to do"
+ok 'rerunning adopt is idempotent'
+
+cp --reflink=auto ${efidir}/shimx64.efi .
+echo 'oops state drift' >> ${efidir}/shimx64.efi
+bootupd status --component=EFI | tee out.txt
+assert_file_has_content_literal out.txt 'warning: drift detected'
+assert_file_has_content_literal out.txt 'Recorded: '
+assert_file_has_content_literal out.txt 'Actual: sha512:'
+mv shimx64.efi ${efidir}/shimx64.efi
+bootupd status --component=EFI | tee out.txt
+assert_not_file_has_content_literal out.txt 'warning: drift detected'
+ok 'drift detected'
+
 tap_finish
