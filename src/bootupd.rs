@@ -42,7 +42,7 @@ struct UpdateOptions {
 
     /// The destination ESP mount point
     #[structopt(
-        default_value = "/usr/share/rpm-ostree/bootupdate-transition.json",
+        default_value = "/usr/share/bootd-transitions.json",
         long
     )]
     state_transition_file: String,
