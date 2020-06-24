@@ -23,6 +23,7 @@ mod ostreeutil;
 mod sha512string;
 mod util;
 
+pub(crate) const BOOTUPD_SOCKET: &str = "/run/bootupd.sock";
 /// Stored in /boot to describe our state; think of it like
 /// a tiny rpm/dpkg database.  It's stored in /boot
 pub(crate) const STATEFILE_DIR: &str = "boot";
@@ -88,6 +89,8 @@ enum Opt {
     /// Update available components
     Update(UpdateOptions),
     Status(StatusOptions),
+    Daemon,
+    PingDaemon,
 }
 
 pub(crate) fn install(sysroot_path: &str) -> Result<()> {
@@ -570,6 +573,51 @@ fn status(opts: &StatusOptions) -> Result<()> {
     Ok(())
 }
 
+fn daemon() -> Result<()> {
+    use libsystemd::daemon::{self, NotifyState};
+    use nix::sys::socket as nixsocket;
+    use std::os::unix::io::IntoRawFd;
+    use nix::sys::uio::IoVec;
+    if !daemon::booted() {
+        bail!("Not running systemd")
+    }
+    let mut fds = libsystemd::activation::receive_descriptors(true)
+        .map_err(|e| anyhow::anyhow!("Failed to receieve systemd descriptors: {}", e))?;
+    let srvsock_fd = if let Some(fd) = fds.pop() {
+        fd
+    } else {
+        bail!("No fd passed from systemd");
+    };
+    let srvsock_fd = srvsock_fd.into_raw_fd();
+    let sent = daemon::notify(true, &[NotifyState::Ready]).expect("notify failed");
+    if !sent {
+        bail!("Failed to notify systemd");
+    }
+    let mut buf = [0u8; 1024];
+    loop {
+        let fd = nixsocket::accept4(srvsock_fd, nixsocket::SockFlag::SOCK_CLOEXEC)?;
+        dbg!("got connection");
+        let iov = IoVec::from_mut_slice(buf.as_mut());
+        let r = nixsocket::recvmsg(fd, &[iov], None, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
+        dbg!(String::from_utf8_lossy(&buf[0..r.bytes]));
+    }
+}
+
+fn ping_daemon() -> Result<()> {
+    use nix::sys::socket as nixsocket;
+    let sock = nixsocket::socket(
+        nixsocket::AddressFamily::Unix,
+        nixsocket::SockType::SeqPacket,
+        nixsocket::SockFlag::SOCK_CLOEXEC,
+        None,
+    )?;
+    let addr = nixsocket::SockAddr::new_unix(BOOTUPD_SOCKET)?;
+    nixsocket::connect(sock, &addr)?;
+    nixsocket::send(sock, "ping".as_bytes(), nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
+
+    Ok(())
+}
+
 /// Main entrypoint
 #[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
 pub fn boot_update_main(args: &[String]) -> Result<()> {
@@ -579,6 +627,8 @@ pub fn boot_update_main(args: &[String]) -> Result<()> {
         Opt::Adopt { sysroot } => adopt(&sysroot)?,
         Opt::Update(ref opts) => update(opts)?,
         Opt::Status(ref opts) => status(opts)?,
+        Opt::Daemon => daemon()?,
+        Opt::PingDaemon => ping_daemon()?,
     };
     Ok(())
 }

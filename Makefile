@@ -10,7 +10,7 @@ else
         CARGO_ARGS =
 endif
 
-units = $(addprefix systemd/, bootupd.service)
+units = $(addprefix systemd/, bootupd.service bootupd.socket)
 
 .PHONY: all
 all: $(units)
