@@ -36,10 +36,6 @@ pub(crate) const OSTREE_BOOT_DATA: &str = "usr/lib/ostree-boot";
 #[derive(Debug, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 struct UpdateOptions {
-    /// The system root
-    #[structopt(default_value = "/", long)]
-    sysroot: String,
-
     // Perform an update even if there is no state transition
     #[structopt(long)]
     force: bool,
@@ -58,10 +54,6 @@ struct UpdateOptions {
 #[derive(Debug, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 struct StatusOptions {
-    /// System root
-    #[structopt(default_value = "/", long)]
-    sysroot: String,
-
     #[structopt(long = "component")]
     components: Option<Vec<String>>,
 
@@ -77,15 +69,10 @@ enum Opt {
     /// Install data from available components into a disk image
     Install {
         /// Physical root mountpoint
-        #[structopt(long)]
         sysroot: String,
     },
     /// Start tracking current data found in available components
-    Adopt {
-        /// Physical root mountpoint
-        #[structopt(default_value = "/", long)]
-        sysroot: String,
-    },
+    Adopt,
     /// Update available components
     Update(UpdateOptions),
     Status(StatusOptions),
@@ -161,11 +148,12 @@ fn acquire_write_lock<P: AsRef<Path>>(sysroot: P) -> Result<std::fs::File> {
 }
 
 fn update(opts: &UpdateOptions) -> Result<()> {
-    let _lockf = acquire_write_lock(opts.sysroot.as_str())?;
+    let sysroot = "/";
+    let _lockf = acquire_write_lock(sysroot)?;
     let (status, mut new_saved_state) =
-        compute_status(&opts.sysroot).context("computing status")?;
-    let sysroot_dir = openat::Dir::open(opts.sysroot.as_str())
-        .with_context(|| format!("opening sysroot {}", opts.sysroot))?;
+        compute_status(sysroot).context("computing status")?;
+    let sysroot_dir = openat::Dir::open(sysroot)
+        .with_context(|| format!("opening sysroot {}", sysroot))?;
 
     let specified_components = parse_componentlist(&opts.components)?;
     for (ctype, component) in status.components.iter() {
@@ -274,7 +262,8 @@ fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
     Ok(())
 }
 
-fn adopt(sysroot_path: &str) -> Result<()> {
+fn adopt() -> Result<()> {
+    let sysroot_path = "/";
     let _lockf = acquire_write_lock(sysroot_path)?;
     let (status, saved_state) = compute_status(sysroot_path)?;
     let mut adopted = std::collections::BTreeSet::new();
@@ -546,7 +535,7 @@ fn print_component(component: &Component) {
 }
 
 fn status(opts: &StatusOptions) -> Result<()> {
-    let (status, _) = compute_status(&opts.sysroot)?;
+    let (status, _) = compute_status("/")?;
     if opts.json {
         serde_json::to_writer_pretty(std::io::stdout(), &status)?;
     } else if !status.supported_architecture {
@@ -624,7 +613,7 @@ pub fn boot_update_main(args: &[String]) -> Result<()> {
     let opt = Opt::from_iter(args.iter());
     match opt {
         Opt::Install { sysroot } => install(&sysroot).context("boot data installation failed")?,
-        Opt::Adopt { sysroot } => adopt(&sysroot)?,
+        Opt::Adopt => adopt()?,
         Opt::Update(ref opts) => update(opts)?,
         Opt::Status(ref opts) => status(opts)?,
         Opt::Daemon => daemon()?,

@@ -87,13 +87,13 @@ bootupd status --component=EFI | tee out.txt
 assert_not_file_has_content_literal out.txt 'Update: Available'
 cp --reflink=auto ${ostefi}/${shim} shimx64.efi.backup
 echo 'updated shimx64.efi' > ${ostefi}/${shim}
-bootupd update EFI
+bootupd update EFI | tee out.txt
 assert_file_has_content_literal out.txt 'EFI: Updated to digest='
 assert_not_file_has_content_literal out.txt 'EFI: no updates available'
 bootupd status --component=EFI | tee out.txt
 assert_not_file_has_content_literal out.txt 'warning: drift detected'
 assert_not_file_has_content_literal out.txt 'Update: Available'
-if ! test -f "${bootefi}/grub.cfg"; then
+if ! test -f "${efidir}/grub.cfg"; then
   fatal "missing unmanaged grub cfg"
 fi
 ok 'update'
