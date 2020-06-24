@@ -40,7 +40,7 @@ assert_file_has_content_literal out.txt 'ActiveState=inactive'
 
 systemctl start bootupd.socket
 
-bootupd status --component=EFI > out.txt
+bootupd status EFI > out.txt
 assert_file_has_content_literal out.txt 'Component EFI'
 assert_file_has_content_literal out.txt '  Unmanaged: digest='
 assert_not_file_has_content_literal out.txt 'Update: Available:'
@@ -62,37 +62,37 @@ ok 'rerunning adopt is idempotent'
 
 cp --reflink=auto ${efidir}/${shim} shimx64.backup
 echo 'oops state drift' >> ${efidir}/shimx64.efi
-bootupd status --component=EFI | tee out.txt
+bootupd status EFI | tee out.txt
 assert_file_has_content_literal out.txt 'warning: drift detected'
 assert_file_has_content_literal out.txt 'Recorded: '
 assert_file_has_content_literal out.txt 'Actual: sha512:'
 mv shimx64.backup ${efidir}/shimx64.efi
-bootupd status --component=EFI | tee out.txt
+bootupd status EFI | tee out.txt
 assert_not_file_has_content_literal out.txt 'warning: drift detected'
 ok 'drift detected'
 
 # TODO do better tests that 
 rpm-ostree usroverlay
 
-bootupd status --component=EFI | tee out.txt
+bootupd status EFI | tee out.txt
 assert_not_file_has_content_literal out.txt 'Update: Available'
 cp --reflink=auto ${ostefi}/${shim} shimx64.efi.backup
 echo 'updated shimx64.efi' > ${ostefi}/${shim}
-bootupd status --component=EFI | tee out.txt
+bootupd status EFI | tee out.txt
 assert_file_has_content_literal out.txt 'Update: Available'
 cp --reflink=auto shimx64.efi.backup ${ostefi}/${shim}
-bootupd status --component=EFI | tee out.txt
+bootupd status EFI | tee out.txt
 assert_not_file_has_content_literal out.txt 'Update: Available'
 ok 'update available'
 
-bootupd status --component=EFI | tee out.txt
+bootupd status EFI | tee out.txt
 assert_not_file_has_content_literal out.txt 'Update: Available'
 cp --reflink=auto ${ostefi}/${shim} shimx64.efi.backup
 echo 'updated shimx64.efi' > ${ostefi}/${shim}
 bootupd update EFI | tee out.txt
 assert_file_has_content_literal out.txt 'EFI: Updated to digest='
 assert_not_file_has_content_literal out.txt 'EFI: no updates available'
-bootupd status --component=EFI | tee out.txt
+bootupd status EFI | tee out.txt
 assert_not_file_has_content_literal out.txt 'warning: drift detected'
 assert_not_file_has_content_literal out.txt 'Update: Available'
 if ! test -f "${efidir}/grub.cfg"; then

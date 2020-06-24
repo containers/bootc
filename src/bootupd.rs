@@ -10,7 +10,7 @@ use gio::NONE_CANCELLABLE;
 use nix::sys::socket as nixsocket;
 use openat_ext::OpenatDirExt;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as WriteFmt;
 use std::io::prelude::*;
 use std::os::unix::io::RawFd;
@@ -58,8 +58,7 @@ struct UpdateOptions {
 #[derive(Debug, Serialize, Deserialize, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 struct StatusOptions {
-    #[structopt(long = "component")]
-    components: Option<Vec<String>>,
+    components: Vec<String>,
 
     // Output JSON
     #[structopt(long)]
@@ -277,7 +276,7 @@ fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
     Ok(())
 }
 
-fn adopt() -> Result<String> {
+fn adopt(opts: &AdoptOptions) -> Result<String> {
     let mut r = String::new();
     let sysroot_path = "/";
     let _lockf = acquire_write_lock(sysroot_path)?;
@@ -286,7 +285,13 @@ fn adopt() -> Result<String> {
     let mut saved_state = saved_state.unwrap_or_else(|| SavedState {
         components: BTreeMap::new(),
     });
+    let specified_components = parse_componentlist(&opts.components)?;
     for (ctype, component) in status.components.iter() {
+        if let Some(specified_components) = specified_components.as_ref() {
+            if !specified_components.contains(ctype) {
+                continue;
+            }
+        }
         let installed = match &component.installed {
             ComponentState::NotInstalled => continue,
             ComponentState::NotImplemented => continue,
@@ -561,15 +566,7 @@ fn status(opts: &StatusOptions) -> Result<String> {
         Ok("This architecture is not supported.".to_string())
     } else {
         let mut r = String::new();
-        let specified_components = if let Some(components) = &opts.components {
-            let r: std::result::Result<HashSet<ComponentType>, _> = components
-                .iter()
-                .map(|c| serde_plain::from_str(c))
-                .collect();
-            Some(r?)
-        } else {
-            None
-        };
+        let specified_components = parse_componentlist(&opts.components)?;
         for (ctype, component) in status.components.iter() {
             if let Some(specified_components) = specified_components.as_ref() {
                 if !specified_components.contains(ctype) {
@@ -664,7 +661,7 @@ fn daemon_process_one(client: &mut AuthenticatedClient) -> Result<()> {
         let r = match opt {
             Opt::Adopt(ref opts) => {
                 println!("Processing adopt");
-                adopt()
+                adopt(opts)
             }
             Opt::Update(ref opts) => {
                 println!("Processing update");
