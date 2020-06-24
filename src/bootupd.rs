@@ -7,9 +7,13 @@
 use anyhow::{bail, Context, Result};
 use fs2::FileExt;
 use gio::NONE_CANCELLABLE;
+use nix::sys::socket as nixsocket;
 use openat_ext::OpenatDirExt;
+use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::fmt::Write as WriteFmt;
 use std::io::prelude::*;
+use std::os::unix::io::RawFd;
 use std::path::Path;
 use structopt::StructOpt;
 
@@ -24,6 +28,9 @@ mod sha512string;
 mod util;
 
 pub(crate) const BOOTUPD_SOCKET: &str = "/run/bootupd.sock";
+pub(crate) const MSGSIZE: usize = 1_048_576;
+/// Sent between processes along with SCM credentials
+pub(crate) const BOOTUPD_HELLO_MSG: &str = "bootupd-hello\n";
 /// Stored in /boot to describe our state; think of it like
 /// a tiny rpm/dpkg database.  It's stored in /boot
 pub(crate) const STATEFILE_DIR: &str = "boot";
@@ -33,7 +40,7 @@ pub(crate) const WRITE_LOCK_PATH: &str = "run/bootupd-lock";
 /// Where rpm-ostree rewrites data that goes in /boot
 pub(crate) const OSTREE_BOOT_DATA: &str = "usr/lib/ostree-boot";
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Serialize, Deserialize, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 struct UpdateOptions {
     // Perform an update even if there is no state transition
@@ -48,7 +55,7 @@ struct UpdateOptions {
     components: Vec<String>,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Serialize, Deserialize, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 struct StatusOptions {
     #[structopt(long = "component")]
@@ -59,7 +66,13 @@ struct StatusOptions {
     json: bool,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Serialize, Deserialize, StructOpt)]
+#[structopt(rename_all = "kebab-case")]
+struct AdoptOptions {
+    components: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, StructOpt)]
 #[structopt(name = "boot-update")]
 #[structopt(rename_all = "kebab-case")]
 enum Opt {
@@ -69,12 +82,16 @@ enum Opt {
         sysroot: String,
     },
     /// Start tracking current data found in available components
-    Adopt,
+    Adopt(AdoptOptions),
     /// Update available components
     Update(UpdateOptions),
     Status(StatusOptions),
     Daemon,
-    PingDaemon,
+}
+#[derive(Debug, Serialize, Deserialize)]
+enum DaemonToClientReply {
+    Success(String),
+    Failure(String),
 }
 
 pub(crate) fn install(sysroot_path: &str) -> Result<()> {
@@ -134,17 +151,17 @@ fn parse_componentlist(components: &[String]) -> Result<Option<BTreeSet<Componen
 
 fn acquire_write_lock<P: AsRef<Path>>(sysroot: P) -> Result<std::fs::File> {
     let sysroot = sysroot.as_ref();
-    let mut lockf = std::fs::OpenOptions::new()
+    let lockf = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .open(sysroot.join(WRITE_LOCK_PATH))?;
     lockf.lock_exclusive()?;
-    writeln!(&mut lockf, "Acquired by pid {}", nix::unistd::getpid())?;
     Ok(lockf)
 }
 
-fn update(opts: &UpdateOptions) -> Result<()> {
+fn update(opts: &UpdateOptions) -> Result<String> {
+    let mut r = String::new();
     let sysroot = "/";
     let _lockf = acquire_write_lock(sysroot)?;
     let (status, mut new_saved_state) = compute_status(sysroot).context("computing status")?;
@@ -184,10 +201,12 @@ fn update(opts: &UpdateOptions) -> Result<()> {
                             ctype
                         );
                     } else {
-                        println!(
+                        writeln!(
+                            r,
                             "Skipping component {:?} which is found but not adopted",
                             ctype
-                        );
+                        )
+                        .unwrap();
                         continue;
                     }
                 }
@@ -200,7 +219,7 @@ fn update(opts: &UpdateOptions) -> Result<()> {
         if let Some(update) = component.update.as_ref() {
             match update {
                 ComponentUpdate::LatestUpdateInstalled => {
-                    println!("{:?}: At the latest version", component.ctype);
+                    writeln!(r, "{:?}: At the latest version", component.ctype).unwrap();
                 }
                 ComponentUpdate::Available(update) => match &component.ctype {
                     // Yeah we need to have components be a trait with methods like update()
@@ -219,7 +238,7 @@ fn update(opts: &UpdateOptions) -> Result<()> {
                             .components
                             .insert(ComponentType::EFI, updated_component);
                         update_state(&sysroot_dir, new_saved_state)?;
-                        println!("{:?}: Updated to digest={}", ctype, updated_digest);
+                        writeln!(r, "{:?}: Updated to digest={}", ctype, updated_digest).unwrap();
                     }
                     ctype => {
                         panic!("Unhandled update for component {:?}", ctype);
@@ -227,10 +246,10 @@ fn update(opts: &UpdateOptions) -> Result<()> {
                 },
             }
         } else {
-            println!("{:?}: No updates available", component.ctype);
+            writeln!(r, "{:?}: No updates available", component.ctype).unwrap();
         };
     }
-    Ok(())
+    Ok(r)
 }
 
 fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
@@ -258,7 +277,8 @@ fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
     Ok(())
 }
 
-fn adopt() -> Result<()> {
+fn adopt() -> Result<String> {
+    let mut r = String::new();
     let sysroot_path = "/";
     let _lockf = acquire_write_lock(sysroot_path)?;
     let (status, saved_state) = compute_status(sysroot_path)?;
@@ -274,7 +294,7 @@ fn adopt() -> Result<()> {
         };
         let disk = match installed {
             ComponentInstalled::Unknown(state) => {
-                println!("Adopting: {:?}", component.ctype);
+                writeln!(r, "Adopting: {:?}", component.ctype).unwrap();
                 adopted.insert(component.ctype.clone());
                 state
             }
@@ -284,7 +304,7 @@ fn adopt() -> Result<()> {
                 drift,
             } => {
                 if *drift {
-                    eprintln!("Warning: Skipping drifted component: {:?}", ctype);
+                    writeln!(r, "Warning: Skipping drifted component: {:?}", ctype).unwrap();
                 }
                 continue;
             }
@@ -301,13 +321,13 @@ fn adopt() -> Result<()> {
             .insert(component.ctype.clone(), saved);
     }
     if adopted.is_empty() {
-        println!("Nothing to do.");
-        return Ok(());
+        writeln!(r, "Nothing to do.").unwrap();
+        return Ok(r);
     }
     // Must have saved state if we get here
     let sysroot_dir = openat::Dir::open(sysroot_path)?;
     update_state(&sysroot_dir, &saved_state)?;
-    Ok(())
+    Ok(r)
 }
 
 fn timestamp_and_commit_from_sysroot(
@@ -473,70 +493,74 @@ fn compute_status(sysroot_path: &str) -> Result<(Status, Option<SavedState>)> {
     ))
 }
 
-fn print_component(component: &Component) {
+fn print_component(component: &Component, r: &mut String) {
     let name = serde_plain::to_string(&component.ctype).expect("serde");
-    println!("Component {}", name);
+    writeln!(r, "Component {}", name).unwrap();
     let installed = match &component.installed {
         ComponentState::NotInstalled => {
-            println!("  Not installed.");
+            writeln!(r, "  Not installed.").unwrap();
             return;
         }
         ComponentState::NotImplemented => {
-            println!("  Not implemented.");
+            writeln!(r, "  Not implemented.").unwrap();
             return;
         }
         ComponentState::Found(installed) => installed,
     };
     match installed {
         ComponentInstalled::Unknown(disk) => {
-            println!("  Unmanaged: digest={}", disk.digest);
+            writeln!(r, "  Unmanaged: digest={}", disk.digest).unwrap();
         }
         ComponentInstalled::Tracked { disk, saved, drift } => {
             if !*drift {
-                println!("  Installed: {}", saved.digest);
+                writeln!(r, "  Installed: {}", saved.digest).unwrap();
             } else {
-                println!("  Installed; warning: drift detected");
-                println!("      Recorded: {}", saved.digest);
-                println!("      Actual: {}", disk.digest);
+                writeln!(r, "  Installed; warning: drift detected").unwrap();
+                writeln!(r, "      Recorded: {}", saved.digest).unwrap();
+                writeln!(r, "      Actual: {}", disk.digest).unwrap();
             }
             if saved.adopted {
-                println!("    Adopted: true")
+                writeln!(r, "    Adopted: true").unwrap();
             }
         }
     }
     if let Some(update) = component.update.as_ref() {
         match update {
             ComponentUpdate::LatestUpdateInstalled => {
-                println!("  Update: At latest version");
+                writeln!(r, "  Update: At latest version").unwrap();
             }
             ComponentUpdate::Available(update) => {
                 let ts_str = update
                     .update
                     .content_timestamp
                     .format("%Y-%m-%dT%H:%M:%S+00:00");
-                println!("  Update: Available");
-                println!("    Timestamp: {}", ts_str);
-                println!("    Digest: {}", update.update.content.digest);
+                writeln!(r, "  Update: Available").unwrap();
+                writeln!(r, "    Timestamp: {}", ts_str).unwrap();
+                writeln!(r, "    Digest: {}", update.update.content.digest).unwrap();
                 if let Some(diff) = &update.diff {
-                    println!(
+                    writeln!(
+                        r,
                         "    Diff: changed={} added={} removed={}",
                         diff.changes.len(),
                         diff.additions.len(),
                         diff.removals.len()
-                    );
+                    )
+                    .unwrap();
                 }
             }
         }
     }
 }
 
-fn status(opts: &StatusOptions) -> Result<()> {
+fn status(opts: &StatusOptions) -> Result<String> {
     let (status, _) = compute_status("/")?;
     if opts.json {
-        serde_json::to_writer_pretty(std::io::stdout(), &status)?;
+        let r = serde_json::to_string(&status)?;
+        Ok(r)
     } else if !status.supported_architecture {
-        eprintln!("This architecture is not supported.")
+        Ok("This architecture is not supported.".to_string())
     } else {
+        let mut r = String::new();
         let specified_components = if let Some(components) = &opts.components {
             let r: std::result::Result<HashSet<ComponentType>, _> = components
                 .iter()
@@ -552,7 +576,114 @@ fn status(opts: &StatusOptions) -> Result<()> {
                     continue;
                 }
             }
-            print_component(component);
+            print_component(component, &mut r);
+        }
+        Ok(r)
+    }
+}
+
+struct UnauthenticatedClient {
+    fd: RawFd,
+}
+
+impl UnauthenticatedClient {
+    fn new(fd: RawFd) -> Self {
+        Self { fd }
+    }
+
+    fn authenticate(mut self) -> Result<AuthenticatedClient> {
+        use nix::sys::uio::IoVec;
+        let fd = self.fd;
+        let mut buf = [0u8; 1024];
+
+        nixsocket::setsockopt(fd, nix::sys::socket::sockopt::PassCred, &true)?;
+        let iov = IoVec::from_mut_slice(buf.as_mut());
+        let mut cmsgspace = nix::cmsg_space!(nixsocket::UnixCredentials);
+        let msg = nixsocket::recvmsg(
+            fd,
+            &[iov],
+            Some(&mut cmsgspace),
+            nixsocket::MsgFlags::MSG_CMSG_CLOEXEC,
+        )?;
+        let mut creds = None;
+        for cmsg in msg.cmsgs() {
+            if let nixsocket::ControlMessageOwned::ScmCredentials(c) = cmsg {
+                creds = Some(c);
+                break;
+            }
+        }
+        if let Some(creds) = creds {
+            if creds.uid() != 0 {
+                bail!("unauthorized pid:{} uid:{}", creds.pid(), creds.uid())
+            }
+            println!("Connection from pid:{}", creds.pid());
+        } else {
+            bail!("No SCM credentials provided");
+        }
+        let hello = String::from_utf8_lossy(&buf[0..msg.bytes]);
+        if hello != BOOTUPD_HELLO_MSG {
+            bail!("Didn't receive correct hello message, found: {:?}", &hello);
+        }
+        let r = AuthenticatedClient { fd: self.fd };
+        self.fd = -1;
+        Ok(r)
+    }
+}
+
+impl Drop for UnauthenticatedClient {
+    fn drop(&mut self) {
+        if self.fd != -1 {
+            nix::unistd::close(self.fd).expect("close");
+        }
+    }
+}
+
+struct AuthenticatedClient {
+    fd: RawFd,
+}
+
+impl Drop for AuthenticatedClient {
+    fn drop(&mut self) {
+        if self.fd != -1 {
+            nix::unistd::close(self.fd).expect("close");
+        }
+    }
+}
+
+fn daemon_process_one(client: &mut AuthenticatedClient) -> Result<()> {
+    let mut buf = [0u8; MSGSIZE];
+    loop {
+        let n = nixsocket::recv(client.fd, &mut buf, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
+        let buf = &buf[0..n];
+        if buf.len() == 0 {
+            println!("Client disconnected");
+            break;
+        }
+
+        let opt = bincode::deserialize(&buf)?;
+        let r = match opt {
+            Opt::Adopt(ref opts) => {
+                println!("Processing adopt");
+                adopt()
+            }
+            Opt::Update(ref opts) => {
+                println!("Processing update");
+                update(opts)
+            }
+            Opt::Status(ref opts) => {
+                println!("Processing status");
+                status(opts)
+            }
+            _ => Err(anyhow::anyhow!("Invalid option")),
+        };
+        let r = match r {
+            Ok(s) => DaemonToClientReply::Success(s),
+            Err(e) => DaemonToClientReply::Failure(e.to_string()),
+        };
+        let r = bincode::serialize(&r)?;
+        let written = nixsocket::send(client.fd, &r, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
+        if written != r.len() {
+            bail!("Wrote {} bytes to client, expected {}", written, r.len());
         }
     }
     Ok(())
@@ -560,8 +691,6 @@ fn status(opts: &StatusOptions) -> Result<()> {
 
 fn daemon() -> Result<()> {
     use libsystemd::daemon::{self, NotifyState};
-    use nix::sys::socket as nixsocket;
-    use nix::sys::uio::IoVec;
     use std::os::unix::io::IntoRawFd;
     if !daemon::booted() {
         bail!("Not running systemd")
@@ -578,65 +707,87 @@ fn daemon() -> Result<()> {
     if !sent {
         bail!("Failed to notify systemd");
     }
-    let mut buf = [0u8; 1024];
     loop {
-        let fd = nixsocket::accept4(srvsock_fd, nixsocket::SockFlag::SOCK_CLOEXEC)?;
-        nixsocket::setsockopt(fd, nix::sys::socket::sockopt::PassCred, &true)?;
-        let iov = IoVec::from_mut_slice(buf.as_mut());
-        let mut cmsgspace = nix::cmsg_space!(nixsocket::UnixCredentials);
-        let msg = nixsocket::recvmsg(
-            fd,
-            &[iov],
-            Some(&mut cmsgspace),
-            nixsocket::MsgFlags::MSG_CMSG_CLOEXEC,
-        )?;
-        let mut uid = None;
-        for cmsg in msg.cmsgs() {
-            if let nixsocket::ControlMessageOwned::ScmCredentials(creds) = cmsg {
-                uid = Some(creds.uid());
-                break;
-            }
-        }
-        if let Some(uid) = uid {
-            if uid != 0 {
-                eprintln!("Dropping connection from unauthorized uid: {}", uid);
-                continue;
-            }
-        } else {
-            eprintln!("No SCM rights provided");
-            continue;
-        }
-        dbg!(String::from_utf8_lossy(&buf[0..msg.bytes]));
+        let client = UnauthenticatedClient::new(nixsocket::accept4(
+            srvsock_fd,
+            nixsocket::SockFlag::SOCK_CLOEXEC,
+        )?);
+        let mut client = client.authenticate()?;
+        daemon_process_one(&mut client)?;
     }
 }
 
-fn ping_daemon() -> Result<()> {
-    use nix::sys::socket as nixsocket;
-    use nix::sys::uio::IoVec;
-    let sock = nixsocket::socket(
-        nixsocket::AddressFamily::Unix,
-        nixsocket::SockType::SeqPacket,
-        nixsocket::SockFlag::SOCK_CLOEXEC,
-        None,
-    )?;
-    let addr = nixsocket::SockAddr::new_unix(BOOTUPD_SOCKET)?;
-    nixsocket::connect(sock, &addr)?;
-    let creds = libc::ucred {
-        pid: nix::unistd::getpid().as_raw(),
-        uid: nix::unistd::getuid().as_raw(),
-        gid: nix::unistd::getgid().as_raw(),
-    };
-    let creds = nixsocket::UnixCredentials::from(creds);
-    let creds = nixsocket::ControlMessage::ScmCredentials(&creds);
-    nixsocket::sendmsg(
-        sock,
-        &[IoVec::from_slice(b"ping")],
-        &[creds],
-        nixsocket::MsgFlags::MSG_CMSG_CLOEXEC,
-        None,
-    )?;
+struct ClientToDaemonConnection {
+    fd: i32,
+}
 
-    Ok(())
+impl Drop for ClientToDaemonConnection {
+    fn drop(&mut self) {
+        if self.fd != -1 {
+            nix::unistd::close(self.fd).expect("close");
+        }
+    }
+}
+
+impl ClientToDaemonConnection {
+    fn new() -> Self {
+        Self { fd: -1 }
+    }
+
+    fn connect(&mut self) -> Result<()> {
+        use nix::sys::uio::IoVec;
+        self.fd = nixsocket::socket(
+            nixsocket::AddressFamily::Unix,
+            nixsocket::SockType::SeqPacket,
+            nixsocket::SockFlag::SOCK_CLOEXEC,
+            None,
+        )?;
+        let addr = nixsocket::SockAddr::new_unix(BOOTUPD_SOCKET)?;
+        nixsocket::connect(self.fd, &addr)?;
+        let creds = libc::ucred {
+            pid: nix::unistd::getpid().as_raw(),
+            uid: nix::unistd::getuid().as_raw(),
+            gid: nix::unistd::getgid().as_raw(),
+        };
+        let creds = nixsocket::UnixCredentials::from(creds);
+        let creds = nixsocket::ControlMessage::ScmCredentials(&creds);
+        nixsocket::sendmsg(
+            self.fd,
+            &[IoVec::from_slice(BOOTUPD_HELLO_MSG.as_bytes())],
+            &[creds],
+            nixsocket::MsgFlags::MSG_CMSG_CLOEXEC,
+            None,
+        )?;
+        Ok(())
+    }
+
+    fn send(&mut self, opt: &Opt) -> Result<()> {
+        {
+            let serialized = bincode::serialize(opt)?;
+            let _ = nixsocket::send(self.fd, &serialized, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)
+                .context("client sending request")?;
+        }
+        let reply: DaemonToClientReply = {
+            let mut buf = [0u8; MSGSIZE];
+            let n = nixsocket::recv(self.fd, &mut buf, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)
+                .context("client recv")?;
+            let buf = &buf[0..n];
+            if buf.len() == 0 {
+                bail!("Server sent an empty reply");
+            }
+            bincode::deserialize(&buf).context("client parsing reply")?
+        };
+        match reply {
+            DaemonToClientReply::Success(buf) => {
+                print!("{}", buf);
+            }
+            DaemonToClientReply::Failure(buf) => {
+                bail!("error: {}", buf);
+            }
+        }
+        nixsocket::shutdown(self.fd, nixsocket::Shutdown::Both)?;
+        Ok(())
+    }
 }
 
 /// Main entrypoint
@@ -645,11 +796,12 @@ pub fn boot_update_main(args: &[String]) -> Result<()> {
     let opt = Opt::from_iter(args.iter());
     match opt {
         Opt::Install { sysroot } => install(&sysroot).context("boot data installation failed")?,
-        Opt::Adopt => adopt()?,
-        Opt::Update(ref opts) => update(opts)?,
-        Opt::Status(ref opts) => status(opts)?,
+        o @ Opt::Adopt(_) | o @ Opt::Update(_) | o @ Opt::Status(_) => {
+            let mut c = ClientToDaemonConnection::new();
+            c.connect()?;
+            c.send(&o)?
+        }
         Opt::Daemon => daemon()?,
-        Opt::PingDaemon => ping_daemon()?,
     };
     Ok(())
 }

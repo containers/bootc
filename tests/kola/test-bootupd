@@ -38,6 +38,8 @@ bootupd() {
 runv systemctl show bootupd > out.txt
 assert_file_has_content_literal out.txt 'ActiveState=inactive'
 
+systemctl start bootupd.socket
+
 bootupd status --component=EFI > out.txt
 assert_file_has_content_literal out.txt 'Component EFI'
 assert_file_has_content_literal out.txt '  Unmanaged: digest='
