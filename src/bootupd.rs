@@ -41,10 +41,7 @@ struct UpdateOptions {
     force: bool,
 
     /// The destination ESP mount point
-    #[structopt(
-        default_value = "/usr/share/bootd-transitions.json",
-        long
-    )]
+    #[structopt(default_value = "/usr/share/bootd-transitions.json", long)]
     state_transition_file: String,
 
     /// Only upgrade these components
@@ -150,10 +147,9 @@ fn acquire_write_lock<P: AsRef<Path>>(sysroot: P) -> Result<std::fs::File> {
 fn update(opts: &UpdateOptions) -> Result<()> {
     let sysroot = "/";
     let _lockf = acquire_write_lock(sysroot)?;
-    let (status, mut new_saved_state) =
-        compute_status(sysroot).context("computing status")?;
-    let sysroot_dir = openat::Dir::open(sysroot)
-        .with_context(|| format!("opening sysroot {}", sysroot))?;
+    let (status, mut new_saved_state) = compute_status(sysroot).context("computing status")?;
+    let sysroot_dir =
+        openat::Dir::open(sysroot).with_context(|| format!("opening sysroot {}", sysroot))?;
 
     let specified_components = parse_componentlist(&opts.components)?;
     for (ctype, component) in status.components.iter() {
@@ -565,8 +561,8 @@ fn status(opts: &StatusOptions) -> Result<()> {
 fn daemon() -> Result<()> {
     use libsystemd::daemon::{self, NotifyState};
     use nix::sys::socket as nixsocket;
-    use std::os::unix::io::IntoRawFd;
     use nix::sys::uio::IoVec;
+    use std::os::unix::io::IntoRawFd;
     if !daemon::booted() {
         bail!("Not running systemd")
     }
@@ -602,7 +598,7 @@ fn ping_daemon() -> Result<()> {
     )?;
     let addr = nixsocket::SockAddr::new_unix(BOOTUPD_SOCKET)?;
     nixsocket::connect(sock, &addr)?;
-    nixsocket::send(sock, "ping".as_bytes(), nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
+    nixsocket::send(sock, b"ping", nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
 
     Ok(())
 }
