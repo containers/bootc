@@ -13,7 +13,6 @@ use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as WriteFmt;
 use std::io::prelude::*;
-use std::os::unix::io::RawFd;
 use std::path::Path;
 use structopt::StructOpt;
 
@@ -21,16 +20,13 @@ use structopt::StructOpt;
 mod efi;
 mod filetree;
 use filetree::*;
+mod ipc;
 mod model;
 use model::*;
 mod ostreeutil;
 mod sha512string;
 mod util;
 
-pub(crate) const BOOTUPD_SOCKET: &str = "/run/bootupd.sock";
-pub(crate) const MSGSIZE: usize = 1_048_576;
-/// Sent between processes along with SCM credentials
-pub(crate) const BOOTUPD_HELLO_MSG: &str = "bootupd-hello\n";
 /// Stored in /boot to describe our state; think of it like
 /// a tiny rpm/dpkg database.  It's stored in /boot
 pub(crate) const STATEFILE_DIR: &str = "boot";
@@ -86,11 +82,6 @@ enum Opt {
     Update(UpdateOptions),
     Status(StatusOptions),
     Daemon,
-}
-#[derive(Debug, Serialize, Deserialize)]
-enum DaemonToClientReply {
-    Success(String),
-    Failure(String),
 }
 
 pub(crate) fn install(sysroot_path: &str) -> Result<()> {
@@ -579,80 +570,12 @@ fn status(opts: &StatusOptions) -> Result<String> {
     }
 }
 
-struct UnauthenticatedClient {
-    fd: RawFd,
-}
-
-impl UnauthenticatedClient {
-    fn new(fd: RawFd) -> Self {
-        Self { fd }
-    }
-
-    fn authenticate(mut self) -> Result<AuthenticatedClient> {
-        use nix::sys::uio::IoVec;
-        let fd = self.fd;
-        let mut buf = [0u8; 1024];
-
-        nixsocket::setsockopt(fd, nix::sys::socket::sockopt::PassCred, &true)?;
-        let iov = IoVec::from_mut_slice(buf.as_mut());
-        let mut cmsgspace = nix::cmsg_space!(nixsocket::UnixCredentials);
-        let msg = nixsocket::recvmsg(
-            fd,
-            &[iov],
-            Some(&mut cmsgspace),
-            nixsocket::MsgFlags::MSG_CMSG_CLOEXEC,
-        )?;
-        let mut creds = None;
-        for cmsg in msg.cmsgs() {
-            if let nixsocket::ControlMessageOwned::ScmCredentials(c) = cmsg {
-                creds = Some(c);
-                break;
-            }
-        }
-        if let Some(creds) = creds {
-            if creds.uid() != 0 {
-                bail!("unauthorized pid:{} uid:{}", creds.pid(), creds.uid())
-            }
-            println!("Connection from pid:{}", creds.pid());
-        } else {
-            bail!("No SCM credentials provided");
-        }
-        let hello = String::from_utf8_lossy(&buf[0..msg.bytes]);
-        if hello != BOOTUPD_HELLO_MSG {
-            bail!("Didn't receive correct hello message, found: {:?}", &hello);
-        }
-        let r = AuthenticatedClient { fd: self.fd };
-        self.fd = -1;
-        Ok(r)
-    }
-}
-
-impl Drop for UnauthenticatedClient {
-    fn drop(&mut self) {
-        if self.fd != -1 {
-            nix::unistd::close(self.fd).expect("close");
-        }
-    }
-}
-
-struct AuthenticatedClient {
-    fd: RawFd,
-}
-
-impl Drop for AuthenticatedClient {
-    fn drop(&mut self) {
-        if self.fd != -1 {
-            nix::unistd::close(self.fd).expect("close");
-        }
-    }
-}
-
-fn daemon_process_one(client: &mut AuthenticatedClient) -> Result<()> {
-    let mut buf = [0u8; MSGSIZE];
+fn daemon_process_one(client: &mut ipc::AuthenticatedClient) -> Result<()> {
+    let mut buf = [0u8; ipc::MSGSIZE];
     loop {
         let n = nixsocket::recv(client.fd, &mut buf, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
         let buf = &buf[0..n];
-        if buf.len() == 0 {
+        if buf.is_empty() {
             println!("Client disconnected");
             break;
         }
@@ -674,8 +597,8 @@ fn daemon_process_one(client: &mut AuthenticatedClient) -> Result<()> {
             _ => Err(anyhow::anyhow!("Invalid option")),
         };
         let r = match r {
-            Ok(s) => DaemonToClientReply::Success(s),
-            Err(e) => DaemonToClientReply::Failure(e.to_string()),
+            Ok(s) => ipc::DaemonToClientReply::Success(s),
+            Err(e) => ipc::DaemonToClientReply::Failure(e.to_string()),
         };
         let r = bincode::serialize(&r)?;
         let written = nixsocket::send(client.fd, &r, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
@@ -705,85 +628,12 @@ fn daemon() -> Result<()> {
         bail!("Failed to notify systemd");
     }
     loop {
-        let client = UnauthenticatedClient::new(nixsocket::accept4(
+        let client = ipc::UnauthenticatedClient::new(nixsocket::accept4(
             srvsock_fd,
             nixsocket::SockFlag::SOCK_CLOEXEC,
         )?);
         let mut client = client.authenticate()?;
         daemon_process_one(&mut client)?;
-    }
-}
-
-struct ClientToDaemonConnection {
-    fd: i32,
-}
-
-impl Drop for ClientToDaemonConnection {
-    fn drop(&mut self) {
-        if self.fd != -1 {
-            nix::unistd::close(self.fd).expect("close");
-        }
-    }
-}
-
-impl ClientToDaemonConnection {
-    fn new() -> Self {
-        Self { fd: -1 }
-    }
-
-    fn connect(&mut self) -> Result<()> {
-        use nix::sys::uio::IoVec;
-        self.fd = nixsocket::socket(
-            nixsocket::AddressFamily::Unix,
-            nixsocket::SockType::SeqPacket,
-            nixsocket::SockFlag::SOCK_CLOEXEC,
-            None,
-        )?;
-        let addr = nixsocket::SockAddr::new_unix(BOOTUPD_SOCKET)?;
-        nixsocket::connect(self.fd, &addr)?;
-        let creds = libc::ucred {
-            pid: nix::unistd::getpid().as_raw(),
-            uid: nix::unistd::getuid().as_raw(),
-            gid: nix::unistd::getgid().as_raw(),
-        };
-        let creds = nixsocket::UnixCredentials::from(creds);
-        let creds = nixsocket::ControlMessage::ScmCredentials(&creds);
-        nixsocket::sendmsg(
-            self.fd,
-            &[IoVec::from_slice(BOOTUPD_HELLO_MSG.as_bytes())],
-            &[creds],
-            nixsocket::MsgFlags::MSG_CMSG_CLOEXEC,
-            None,
-        )?;
-        Ok(())
-    }
-
-    fn send(&mut self, opt: &Opt) -> Result<()> {
-        {
-            let serialized = bincode::serialize(opt)?;
-            let _ = nixsocket::send(self.fd, &serialized, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)
-                .context("client sending request")?;
-        }
-        let reply: DaemonToClientReply = {
-            let mut buf = [0u8; MSGSIZE];
-            let n = nixsocket::recv(self.fd, &mut buf, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)
-                .context("client recv")?;
-            let buf = &buf[0..n];
-            if buf.len() == 0 {
-                bail!("Server sent an empty reply");
-            }
-            bincode::deserialize(&buf).context("client parsing reply")?
-        };
-        match reply {
-            DaemonToClientReply::Success(buf) => {
-                print!("{}", buf);
-            }
-            DaemonToClientReply::Failure(buf) => {
-                bail!("error: {}", buf);
-            }
-        }
-        nixsocket::shutdown(self.fd, nixsocket::Shutdown::Both)?;
-        Ok(())
     }
 }
 
@@ -794,9 +644,18 @@ pub fn boot_update_main(args: &[String]) -> Result<()> {
     match opt {
         Opt::Install { sysroot } => install(&sysroot).context("boot data installation failed")?,
         o @ Opt::Adopt(_) | o @ Opt::Update(_) | o @ Opt::Status(_) => {
-            let mut c = ClientToDaemonConnection::new();
+            let mut c = ipc::ClientToDaemonConnection::new();
             c.connect()?;
-            c.send(&o)?
+            let r = c.send(&o)?;
+            match r {
+                ipc::DaemonToClientReply::Success(buf) => {
+                    print!("{}", buf);
+                }
+                ipc::DaemonToClientReply::Failure(buf) => {
+                    bail!("error: {}", buf);
+                }
+            }
+            c.shutdown()?;
         }
         Opt::Daemon => daemon()?,
     };
