@@ -19,7 +19,15 @@ function cleanup () {
   fi
 }
 
-efidir=/boot/efi/EFI/fedora
+efibasedir=/boot/efi/
+ostbaseefi=/usr/lib/ostree-boot/efi/
+efisubdir=EFI/fedora
+efidir=${efibasedir}/${efisubdir}
+ostefi=${ostbaseefi}/${efisubdir}
+shim=shimx64.efi
+
+test -f "${efidir}"/${shim}
+test -f "${ostefi}"/${shim}
 
 bootupd() {
     runv /usr/libexec/bootupd "$@"
@@ -50,15 +58,44 @@ assert_not_file_has_content_literal out.txt "Adopting: EFI"
 assert_file_has_content_literal out.txt "Nothing to do"
 ok 'rerunning adopt is idempotent'
 
-cp --reflink=auto ${efidir}/shimx64.efi .
+cp --reflink=auto ${efidir}/${shim} shimx64.backup
 echo 'oops state drift' >> ${efidir}/shimx64.efi
 bootupd status --component=EFI | tee out.txt
 assert_file_has_content_literal out.txt 'warning: drift detected'
 assert_file_has_content_literal out.txt 'Recorded: '
 assert_file_has_content_literal out.txt 'Actual: sha512:'
-mv shimx64.efi ${efidir}/shimx64.efi
+mv shimx64.backup ${efidir}/shimx64.efi
 bootupd status --component=EFI | tee out.txt
 assert_not_file_has_content_literal out.txt 'warning: drift detected'
 ok 'drift detected'
+
+# TODO do better tests that 
+rpm-ostree usroverlay
+
+bootupd status --component=EFI | tee out.txt
+assert_not_file_has_content_literal out.txt 'Update: Available'
+cp --reflink=auto ${ostefi}/${shim} shimx64.efi.backup
+echo 'updated shimx64.efi' > ${ostefi}/${shim}
+bootupd status --component=EFI | tee out.txt
+assert_file_has_content_literal out.txt 'Update: Available'
+cp --reflink=auto shimx64.efi.backup ${ostefi}/${shim}
+bootupd status --component=EFI | tee out.txt
+assert_not_file_has_content_literal out.txt 'Update: Available'
+ok 'update available'
+
+bootupd status --component=EFI | tee out.txt
+assert_not_file_has_content_literal out.txt 'Update: Available'
+cp --reflink=auto ${ostefi}/${shim} shimx64.efi.backup
+echo 'updated shimx64.efi' > ${ostefi}/${shim}
+bootupd update EFI
+assert_file_has_content_literal out.txt 'EFI: Updated to digest='
+assert_not_file_has_content_literal out.txt 'EFI: no updates available'
+bootupd status --component=EFI | tee out.txt
+assert_not_file_has_content_literal out.txt 'warning: drift detected'
+assert_not_file_has_content_literal out.txt 'Update: Available'
+if ! test -f "${bootefi}/grub.cfg"; then
+  fatal "missing unmanaged grub cfg"
+fi
+ok 'update'
 
 tap_finish
