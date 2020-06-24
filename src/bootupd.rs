@@ -581,15 +581,38 @@ fn daemon() -> Result<()> {
     let mut buf = [0u8; 1024];
     loop {
         let fd = nixsocket::accept4(srvsock_fd, nixsocket::SockFlag::SOCK_CLOEXEC)?;
-        dbg!("got connection");
+        nixsocket::setsockopt(fd, nix::sys::socket::sockopt::PassCred, &true)?;
         let iov = IoVec::from_mut_slice(buf.as_mut());
-        let r = nixsocket::recvmsg(fd, &[iov], None, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
-        dbg!(String::from_utf8_lossy(&buf[0..r.bytes]));
+        let mut cmsgspace = nix::cmsg_space!(nixsocket::UnixCredentials);
+        let msg = nixsocket::recvmsg(
+            fd,
+            &[iov],
+            Some(&mut cmsgspace),
+            nixsocket::MsgFlags::MSG_CMSG_CLOEXEC,
+        )?;
+        let mut uid = None;
+        for cmsg in msg.cmsgs() {
+            if let nixsocket::ControlMessageOwned::ScmCredentials(creds) = cmsg {
+                uid = Some(creds.uid());
+                break;
+            }
+        }
+        if let Some(uid) = uid {
+            if uid != 0 {
+                eprintln!("Dropping connection from unauthorized uid: {}", uid);
+                continue;
+            }
+        } else {
+            eprintln!("No SCM rights provided");
+            continue;
+        }
+        dbg!(String::from_utf8_lossy(&buf[0..msg.bytes]));
     }
 }
 
 fn ping_daemon() -> Result<()> {
     use nix::sys::socket as nixsocket;
+    use nix::sys::uio::IoVec;
     let sock = nixsocket::socket(
         nixsocket::AddressFamily::Unix,
         nixsocket::SockType::SeqPacket,
@@ -598,7 +621,20 @@ fn ping_daemon() -> Result<()> {
     )?;
     let addr = nixsocket::SockAddr::new_unix(BOOTUPD_SOCKET)?;
     nixsocket::connect(sock, &addr)?;
-    nixsocket::send(sock, b"ping", nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
+    let creds = libc::ucred {
+        pid: nix::unistd::getpid().as_raw(),
+        uid: nix::unistd::getuid().as_raw(),
+        gid: nix::unistd::getgid().as_raw(),
+    };
+    let creds = nixsocket::UnixCredentials::from(creds);
+    let creds = nixsocket::ControlMessage::ScmCredentials(&creds);
+    nixsocket::sendmsg(
+        sock,
+        &[IoVec::from_slice(b"ping")],
+        &[creds],
+        nixsocket::MsgFlags::MSG_CMSG_CLOEXEC,
+        None,
+    )?;
 
     Ok(())
 }
