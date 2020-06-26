@@ -20,9 +20,11 @@ function cleanup () {
 }
 
 efibasedir=/boot/efi/
+bootupdir=/usr/lib/bootupd/updates
+efiupdir=${bootupdir}/EFI
 ostbaseefi=/usr/lib/ostree-boot/efi/
 efisubdir=EFI/fedora
-efidir=${efibasedir}/${efisubdir}
+efidir=${efiupdir}/${efisubdir}
 ostefi=${ostbaseefi}/${efisubdir}
 shim=shimx64.efi
 
@@ -33,71 +35,26 @@ bootupd() {
     runv /usr/libexec/bootupd "$@"
 }
 
-# Shouldn't be started by default right now; distributions
-# should only enable when it was used at build time.
-runv systemctl show bootupd > out.txt
-assert_file_has_content_literal out.txt 'ActiveState=inactive'
+prepare_efi_update() {
+  test -w /usr
+  cp -a ${efiupdir}.orig ${ostbaseefi}
+  rm -rf ${efiupdir} ${bootupdir}/EFI.json
+}
 
 systemctl start bootupd.socket
 
-bootupd status EFI > out.txt
+bootupd status > out.txt
 assert_file_has_content_literal out.txt 'Component EFI'
-assert_file_has_content_literal out.txt '  Unmanaged: digest='
-assert_not_file_has_content_literal out.txt 'Update: Available:'
+assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
+assert_file_has_content_literal out.txt 'Update: At latest version'
 
-if bootupd update EFI 2>err.txt; then
-  fatal "performed an update without adopting"
-fi
-assert_file_has_content_literal err.txt 'Component EFI is not tracked and must be adopted before update'
-ok 'cannot update without adoption'
-
-bootupd adopt | tee out.txt
-assert_file_has_content_literal out.txt "Adopting: EFI"
-ok 'adoption'
-
-bootupd adopt | tee out.txt
-assert_not_file_has_content_literal out.txt "Adopting: EFI"
-assert_file_has_content_literal out.txt "Nothing to do"
-ok 'rerunning adopt is idempotent'
-
-cp --reflink=auto ${efidir}/${shim} shimx64.backup
-echo 'oops state drift' >> ${efidir}/shimx64.efi
-bootupd status EFI | tee out.txt
-assert_file_has_content_literal out.txt 'warning: drift detected'
-assert_file_has_content_literal out.txt 'Recorded: '
-assert_file_has_content_literal out.txt 'Actual: sha512:'
-mv shimx64.backup ${efidir}/shimx64.efi
-bootupd status EFI | tee out.txt
-assert_not_file_has_content_literal out.txt 'warning: drift detected'
-ok 'drift detected'
-
-# TODO do better tests that 
+# From here we'll fake updates
 rpm-ostree usroverlay
+# Save a backup copy of the update dir
+cp -a ${efiupdir}{,.orig}
 
-bootupd status EFI | tee out.txt
-assert_not_file_has_content_literal out.txt 'Update: Available'
-cp --reflink=auto ${ostefi}/${shim} shimx64.efi.backup
-echo 'updated shimx64.efi' > ${ostefi}/${shim}
-bootupd status EFI | tee out.txt
-assert_file_has_content_literal out.txt 'Update: Available'
-cp --reflink=auto shimx64.efi.backup ${ostefi}/${shim}
-bootupd status EFI | tee out.txt
-assert_not_file_has_content_literal out.txt 'Update: Available'
-ok 'update available'
+prepare_efi_update
 
-bootupd status EFI | tee out.txt
-assert_not_file_has_content_literal out.txt 'Update: Available'
-cp --reflink=auto ${ostefi}/${shim} shimx64.efi.backup
-echo 'updated shimx64.efi' > ${ostefi}/${shim}
-bootupd update EFI | tee out.txt
-assert_file_has_content_literal out.txt 'EFI: Updated to digest='
-assert_not_file_has_content_literal out.txt 'EFI: no updates available'
-bootupd status EFI | tee out.txt
-assert_not_file_has_content_literal out.txt 'warning: drift detected'
-assert_not_file_has_content_literal out.txt 'Update: Available'
-if ! test -f "${efidir}/grub.cfg"; then
-  fatal "missing unmanaged grub cfg"
-fi
-ok 'update'
+# FIXME need to generate RPMs to sanely test updates
 
 tap_finish

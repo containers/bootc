@@ -25,13 +25,13 @@ impl SHA512String {
         ))
     }
 
-    pub(crate) fn digest_bs58(&self) -> &str {
-        self.0.splitn(2, ':').next().unwrap()
-    }
+    // pub(crate) fn digest_bs58(&self) -> &str {
+    //     self.0.splitn(2, ':').next().unwrap()
+    // }
 
-    pub(crate) fn digest_bytes(&self) -> Vec<u8> {
-        bs58::decode(self.digest_bs58())
-            .into_vec()
-            .expect("decoding bs58 hash")
-    }
+    // pub(crate) fn digest_bytes(&self) -> Vec<u8> {
+    //     bs58::decode(self.digest_bs58())
+    //         .into_vec()
+    //         .expect("decoding bs58 hash")
+    // }
 }

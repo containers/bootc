@@ -46,7 +46,8 @@ impl ClientToDaemonConnection {
             None,
         )?;
         let addr = nixsocket::SockAddr::new_unix(BOOTUPD_SOCKET)?;
-        nixsocket::connect(self.fd, &addr)?;
+        nixsocket::connect(self.fd, &addr)
+            .with_context(|| format!("connecting to {}", BOOTUPD_SOCKET))?;
         let creds = libc::ucred {
             pid: nix::unistd::getpid().as_raw(),
             uid: nix::unistd::getuid().as_raw(),
@@ -54,7 +55,7 @@ impl ClientToDaemonConnection {
         };
         let creds = nixsocket::UnixCredentials::from(creds);
         let creds = nixsocket::ControlMessage::ScmCredentials(&creds);
-        nixsocket::sendmsg(
+        let _ = nixsocket::sendmsg(
             self.fd,
             &[IoVec::from_slice(BOOTUPD_HELLO_MSG.as_bytes())],
             &[creds],

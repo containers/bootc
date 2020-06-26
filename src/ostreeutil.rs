@@ -4,38 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use anyhow::{bail, Result};
-use std::io::BufRead;
 use std::path::Path;
 
-pub(crate) fn find_deployed_commit(sysroot_path: &str) -> Result<String> {
-    // ostree_sysroot_get_deployments() isn't bound
-    // https://gitlab.com/fkrull/ostree-rs/-/issues/3
-    let ls = std::process::Command::new("/bin/sh")
-        .arg("-c")
-        .arg(format!("ls -d {}/ostree/deploy/*/deploy/*.0", sysroot_path))
-        .output()?;
-    if !ls.status.success() {
-        bail!("failed to find deployment")
-    }
-    let mut lines = ls.stdout.lines();
-    let deployment = if let Some(line) = lines.next() {
-        let line = line?;
-        let deploypath = Path::new(line.trim());
-        let parts: Vec<_> = deploypath
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .splitn(2, ".0")
-            .collect();
-        assert!(parts.len() == 2);
-        parts[0].to_string()
-    } else {
-        bail!("failed to find deployment");
+/// https://github.com/coreos/rpm-ostree/pull/969/commits/dc0e8db5bd92e1f478a0763d1a02b48e57022b59
+pub(crate) const BOOT_PREFIX: &str = "usr/lib/ostree-boot";
+
+pub(crate) fn rpm_cmd<P: AsRef<Path>>(sysroot: P) -> std::process::Command {
+    let sysroot = sysroot.as_ref();
+    let dbpath = sysroot.join("usr/share/rpm");
+    let dbpath_arg = {
+        let mut s = std::ffi::OsString::new();
+        s.push("--dbpath=");
+        s.push(dbpath.as_os_str());
+        s
     };
-    if lines.next().is_some() {
-        bail!("multiple deployments found")
-    }
-    Ok(deployment)
+    let mut c = std::process::Command::new("rpm");
+    c.arg(&dbpath_arg);
+    c
 }

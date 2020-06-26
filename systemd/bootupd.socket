@@ -1,6 +1,3 @@
-[Unit]
-ConditionDirectoryNotEmpty=/sys/firmware/efi
-
 [Socket]
 ListenSequentialPacket=/run/bootupd.sock
 SocketMode=0600

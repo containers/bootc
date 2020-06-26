@@ -13,9 +13,14 @@
 
 // To run the unit tests for this code, use `make check TESTS=tests/check/test-ex-boot-update.sh`
 
-use anyhow::Result;
-
-fn main() -> Result<()> {
+fn main() {
     let args: Vec<_> = std::env::args().collect();
-    bootupd::boot_update_main(&args)
+    match bootupd::boot_update_main(&args) {
+        Ok(_) => {}
+        Err(e) => {
+            // Use the alternative formatter to get everything on a single line...it reads better.
+            eprintln!("error: {:#}", e);
+            std::process::exit(1);
+        }
+    }
 }

@@ -5,7 +5,6 @@
  */
 
 use anyhow::{bail, Context, Result};
-use byteorder::ByteOrder;
 use chrono::prelude::*;
 use openat_ext::OpenatDirExt;
 use openssl::hash::{Hasher, MessageDigest};
@@ -20,6 +19,7 @@ use std::path::Path;
 use std::io::Write;
 
 /// The prefix we apply to our temporary files.
+#[allow(dead_code)] // Used for testing
 pub(crate) const TMP_PREFIX: &str = ".btmp.";
 
 use crate::sha512string::SHA512String;
@@ -56,6 +56,7 @@ impl FileTreeDiff {
     }
 }
 
+#[allow(dead_code)] // Used for testing
 impl FileMetadata {
     pub(crate) fn new_from_path<P: openat::AsPath>(
         dir: &openat::Dir,
@@ -65,7 +66,7 @@ impl FileMetadata {
         let meta = r.metadata()?;
         let mut hasher =
             Hasher::new(MessageDigest::sha512()).expect("openssl sha512 hasher creation failed");
-        std::io::copy(&mut r, &mut hasher)?;
+        let _ = std::io::copy(&mut r, &mut hasher)?;
         let digest = SHA512String::from_hasher(&mut hasher);
         Ok(FileMetadata {
             size: meta.len(),
@@ -73,14 +74,15 @@ impl FileMetadata {
         })
     }
 
-    pub(crate) fn extend_hash(&self, hasher: &mut Hasher) {
-        let mut lenbuf = [0; 8];
-        byteorder::BigEndian::write_u64(&mut lenbuf, self.size);
-        hasher.update(&lenbuf).unwrap();
-        hasher.update(&self.sha512.digest_bytes()).unwrap();
-    }
+    // pub(crate) fn extend_hash(&self, hasher: &mut Hasher) {
+    //     let mut lenbuf = [0; 8];
+    //     byteorder::BigEndian::write_u64(&mut lenbuf, self.size);
+    //     hasher.update(&lenbuf).unwrap();
+    //     hasher.update(&self.sha512.digest_bytes()).unwrap();
+    // }
 }
 
+#[allow(dead_code)] // Used for testing
 impl FileTree {
     // Internal helper to generate a sub-tree
     fn unsorted_from_dir(dir: &openat::Dir) -> Result<HashMap<String, FileMetadata>> {
@@ -98,7 +100,7 @@ impl FileTree {
             match dir.get_file_type(&entry)? {
                 openat::SimpleType::File => {
                     let meta = FileMetadata::new_from_path(dir, name)?;
-                    ret.insert(name.to_string(), meta);
+                    let _ = ret.insert(name.to_string(), meta);
                 }
                 openat::SimpleType::Dir => {
                     let child = dir.sub_dir(name)?;
@@ -106,7 +108,7 @@ impl FileTree {
                         k.reserve(name.len() + 1);
                         k.insert(0, '/');
                         k.insert_str(0, name);
-                        ret.insert(k, v);
+                        let _ = ret.insert(k, v);
                     }
                 }
                 openat::SimpleType::Symlink => {
@@ -120,15 +122,15 @@ impl FileTree {
         Ok(ret)
     }
 
-    pub(crate) fn digest(&self) -> SHA512String {
-        let mut hasher =
-            Hasher::new(MessageDigest::sha512()).expect("openssl sha512 hasher creation failed");
-        for (k, v) in self.children.iter() {
-            hasher.update(k.as_bytes()).unwrap();
-            v.extend_hash(&mut hasher);
-        }
-        SHA512String::from_hasher(&mut hasher)
-    }
+    // pub(crate) fn digest(&self) -> SHA512String {
+    //     let mut hasher =
+    //         Hasher::new(MessageDigest::sha512()).expect("openssl sha512 hasher creation failed");
+    //     for (k, v) in self.children.iter() {
+    //         hasher.update(k.as_bytes()).unwrap();
+    //         v.extend_hash(&mut hasher);
+    //     }
+    //     SHA512String::from_hasher(&mut hasher)
+    // }
 
     /// Create a FileTree from the target directory.
     pub(crate) fn new_from_dir(dir: &openat::Dir) -> Result<Self> {
@@ -161,6 +163,7 @@ impl FileTree {
 
     /// The inverse of `changes` - determine if there are any files
     /// changed or added in `current` compared to self.
+    #[allow(dead_code)]
     pub(crate) fn updates(&self, current: &Self) -> Result<FileTreeDiff> {
         current.diff_impl(self, false)
     }
@@ -223,30 +226,25 @@ fn cleanup_tmp(dir: &openat::Dir) -> Result<()> {
 }
 
 #[derive(Default, Clone)]
+#[allow(dead_code)] // Used for testing
 pub(crate) struct ApplyUpdateOptions {
     pub(crate) skip_removals: bool,
     pub(crate) skip_sync: bool,
 }
 
 /// A bit like std::fs::copy but operates dirfd-relative
+#[allow(dead_code)] // Used for testing
 fn copy_file_at<SP: AsRef<Path>, DP: AsRef<Path>>(
     srcdir: &openat::Dir,
     destdir: &openat::Dir,
     srcp: SP,
     destp: DP,
 ) -> Result<()> {
+    use openat_ext::FileExt as OpenatFileExt;
     let srcp = srcp.as_ref();
     let srcf = srcdir.open_file(srcp)?;
-    let srcmeta = srcf.metadata()?;
-    let mode = srcmeta.st_mode();
-    let mut srcf = std::io::BufReader::new(srcf);
-    let mut destf = destdir.write_file(destp.as_ref(), mode)?;
-    {
-        let mut destf_buf = std::io::BufWriter::new(&mut destf);
-        let _ = std::io::copy(&mut srcf, &mut destf_buf)?;
-        destf_buf.flush()?;
-    }
-    destf.flush()?;
+    let mut destf = destdir.write_file(destp.as_ref(), srcf.metadata()?.st_mode())?;
+    srcf.copy_to(&mut destf)?;
 
     Ok(())
 }
@@ -255,6 +253,7 @@ fn copy_file_at<SP: AsRef<Path>, DP: AsRef<Path>>(
 // to be bound in nix today.  I found https://github.com/XuShaohua/nc
 // but that's a nontrivial dependency with not a lot of code review.
 // Let's just fork off a helper process for now.
+#[allow(dead_code)] // Used for testing
 pub(crate) fn syncfs(d: &openat::Dir) -> Result<()> {
     let d = d.sub_dir(".").expect("subdir");
     let mut c = std::process::Command::new("sync");
@@ -272,6 +271,7 @@ pub(crate) fn syncfs(d: &openat::Dir) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)] // Used for testing
 fn tmpname_for_path<P: AsRef<Path>>(path: P) -> std::path::PathBuf {
     let path = path.as_ref();
     let mut buf = path.file_name().expect("filename").to_os_string();
@@ -280,6 +280,7 @@ fn tmpname_for_path<P: AsRef<Path>>(path: P) -> std::path::PathBuf {
 }
 
 /// Given two directories, apply a diff generated from srcdir to destdir
+#[allow(dead_code)] // Used for testing
 pub(crate) fn apply_diff(
     srcdir: &openat::Dir,
     destdir: &openat::Dir,
@@ -296,7 +297,7 @@ pub(crate) fn apply_diff(
     for pathstr in diff.additions.iter().chain(diff.changes.iter()) {
         let path = Path::new(pathstr);
         if let Some(parent) = path.parent() {
-            // TODO: care about directory modes?  Eh.
+            // TODO: care about directory modes?  We don't for FAT.
             std::fs::create_dir_all(parent)?;
         }
         let destp = tmpname_for_path(path);
