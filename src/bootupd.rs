@@ -395,7 +395,7 @@ fn compute_status_efi(
         });
     };
     let fsdiff = if let Some(saved_filesystem) = saved.filesystem.as_ref() {
-        Some(esptree.diff(&saved_filesystem)?)
+        Some(saved_filesystem.changes(&esptree)?)
     } else {
         None
     };
@@ -403,11 +403,7 @@ fn compute_status_efi(
     let (installed, installed_digest) = {
         let content = InstalledContent::from_file_tree(esptree);
         let drift = if let Some(fsdiff) = fsdiff {
-            if saved.adopted {
-                !fsdiff.is_only_removals()
-            } else {
-                fsdiff.count() > 0
-            }
+            fsdiff.count() > 0
         } else {
             // TODO detect state outside of filesystem tree
             false
@@ -425,11 +421,9 @@ fn compute_status_efi(
 
     let update_esp = efi_content_version_from_ostree(sysroot_path)?;
     let update_esp_tree = update_esp.content.filesystem.as_ref().unwrap();
-    let update = if !saved.adopted && update_esp.content.digest == installed_digest {
-        ComponentUpdate::LatestUpdateInstalled
-    } else {
-        let diff = installed_tree.diff(update_esp_tree)?;
-        if saved.adopted && diff.is_only_removals() {
+    let update = {
+        let diff = installed_tree.updates(&update_esp_tree)?;
+        if diff.count() == 0 {
             ComponentUpdate::LatestUpdateInstalled
         } else {
             ComponentUpdate::Available(Box::new(ComponentUpdateAvailable {

@@ -54,10 +54,6 @@ impl FileTreeDiff {
     pub(crate) fn count(&self) -> usize {
         self.additions.len() + self.removals.len() + self.changes.len()
     }
-
-    pub(crate) fn is_only_removals(&self) -> bool {
-        self.count() == self.removals.len()
-    }
 }
 
 impl FileMetadata {
@@ -151,7 +147,25 @@ impl FileTree {
     }
 
     /// Determine the changes *from* self to the updated tree
+    #[allow(dead_code)] // Used in tests and kept for completeness
     pub(crate) fn diff(&self, updated: &Self) -> Result<FileTreeDiff> {
+        self.diff_impl(updated, true)
+    }
+
+    /// Determine any changes only using the files tracked in self as
+    /// a reference.  In other words, this will ignore any unknown
+    /// files and not count them as additions.
+    pub(crate) fn changes(&self, current: &Self) -> Result<FileTreeDiff> {
+        self.diff_impl(current, false)
+    }
+
+    /// The inverse of `changes` - determine if there are any files
+    /// changed or added in `current` compared to self.
+    pub(crate) fn updates(&self, current: &Self) -> Result<FileTreeDiff> {
+        current.diff_impl(self, false)
+    }
+
+    fn diff_impl(&self, updated: &Self, check_additions: bool) -> Result<FileTreeDiff> {
         let mut additions = HashSet::new();
         let mut removals = HashSet::new();
         let mut changes = HashSet::new();
@@ -165,11 +179,13 @@ impl FileTree {
                 removals.insert(k.clone());
             }
         }
-        for k in updated.children.keys() {
-            if self.children.get(k).is_some() {
-                continue;
+        if check_additions {
+            for k in updated.children.keys() {
+                if self.children.get(k).is_some() {
+                    continue;
+                }
+                additions.insert(k.clone());
             }
-            additions.insert(k.clone());
         }
         Ok(FileTreeDiff {
             additions,
@@ -405,6 +421,13 @@ mod tests {
         let diff = run_diff(&a, &b)?;
         assert_eq!(diff.count(), 1);
         assert_eq!(diff.removals.len(), 1);
+        let ta = FileTree::new_from_dir(&a)?;
+        let tb = FileTree::new_from_dir(&b)?;
+        let cdiff = ta.changes(&tb)?;
+        assert_eq!(cdiff.count(), 1);
+        assert_eq!(cdiff.removals.len(), 1);
+        let udiff = ta.updates(&tb)?;
+        assert_eq!(udiff.count(), 0);
         test_apply(&pa, &pb).context("testing apply 1")?;
 
         b.create_dir("foo", 0o755)?;
