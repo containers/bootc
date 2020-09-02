@@ -24,14 +24,4 @@ impl SHA512String {
             bs58::encode(hasher.finish().expect("completing hash")).into_string()
         ))
     }
-
-    // pub(crate) fn digest_bs58(&self) -> &str {
-    //     self.0.splitn(2, ':').next().unwrap()
-    // }
-
-    // pub(crate) fn digest_bytes(&self) -> Vec<u8> {
-    //     bs58::decode(self.digest_bs58())
-    //         .into_vec()
-    //         .expect("decoding bs58 hash")
-    // }
 }
