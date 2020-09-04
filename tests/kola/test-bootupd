@@ -19,17 +19,16 @@ function cleanup () {
   fi
 }
 
-efibasedir=/boot/efi/
+bootefidir=/boot/efi/EFI
 bootupdir=/usr/lib/bootupd/updates
 efiupdir=${bootupdir}/EFI
-ostbaseefi=/usr/lib/ostree-boot/efi/
-efisubdir=EFI/fedora
+ostbaseefi=/usr/lib/ostree-boot/efi/EFI
+efisubdir=fedora
 efidir=${efiupdir}/${efisubdir}
 ostefi=${ostbaseefi}/${efisubdir}
 shim=shimx64.efi
 
-test -f "${efidir}"/${shim}
-test -f "${ostefi}"/${shim}
+test -f "${efidir}/${shim}"
 
 bootupd() {
     runv /usr/libexec/bootupd "$@"
@@ -37,7 +36,8 @@ bootupd() {
 
 prepare_efi_update() {
   test -w /usr
-  cp -a ${efiupdir}.orig ${ostbaseefi}
+  mkdir -p ${ostbaseefi}
+  cp -a ${efiupdir}.orig/* ${ostbaseefi}/
   rm -rf ${efiupdir} ${bootupdir}/EFI.json
 }
 
@@ -47,14 +47,55 @@ bootupd status > out.txt
 assert_file_has_content_literal out.txt 'Component EFI'
 assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
 assert_file_has_content_literal out.txt 'Update: At latest version'
+ok status
 
 # From here we'll fake updates
-rpm-ostree usroverlay
+test -w /usr || rpm-ostree usroverlay
 # Save a backup copy of the update dir
-cp -a ${efiupdir}{,.orig}
+cp -a ${efiupdir} ${efiupdir}.orig
 
 prepare_efi_update
+# FIXME need to synthesize an RPM for this
+# echo somenewfile > ${ostefi}/somenew.efi
+rm -v ${ostefi}/shim.efi
+echo bootupd-test-changes >> ${ostefi}/grubx64.efi
+bootupd generate-update-metadata /
+ver=$(jq -r .version < ${bootupdir}/EFI.json)
+cat >ver.json << EOF
+{ "version": "${ver},test" }
+EOF
+jq -s add ${bootupdir}/EFI.json ver.json > new.json
+mv new.json ${bootupdir}/EFI.json
 
-# FIXME need to generate RPMs to sanely test updates
+bootupd status | tee out.txt
+assert_file_has_content_literal out.txt 'Component EFI'
+assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
+assert_not_file_has_content out.txt '  Installed: grub2-efi-x64.*,test'
+assert_file_has_content_literal out.txt 'Update: Available:'
+ok update avail
+
+bootupd update | tee out.txt
+assert_file_has_content out.txt 'Updated EFI: grub2-efi-x64.*,test'
+
+bootupd status > out.txt
+assert_file_has_content_literal out.txt 'Component EFI'
+assert_file_has_content out.txt '  Installed: grub2-efi-x64.*,test'
+assert_file_has_content_literal out.txt 'Update: At latest version'
+ok status after update
+
+# FIXME see above
+# assert_file_has_content ${bootefidir}/${efisubdir}/somenew.efi 'somenewfile'
+if test -f ${bootefidir}/${efisubdir}/shim.efi; then 
+  fatal "failed to remove file"
+fi
+if ! grep -q 'bootupd-test-changes' ${bootefidir}/${efisubdir}/grubx64.efi; then
+  fatal "failed to update modified file"
+fi
+cmp ${bootefidir}/${efisubdir}/shimx64.efi ${efiupdir}/${efisubdir}/shimx64.efi
+ok filesystem changes
+
+bootupd update | tee out.txt
+assert_file_has_content_literal out.txt 'No update available for EFI'
+assert_not_file_has_content_literal out.txt 'Updated EFI'
 
 tap_finish

@@ -140,34 +140,49 @@ fn acquire_write_lock<P: AsRef<Path>>(sysroot: P) -> Result<std::fs::File> {
 }
 
 fn update(_opts: &UpdateOptions) -> Result<String> {
+    let sysroot = openat::Dir::open("/")?;
     let _lock = acquire_write_lock("/")?;
     let mut r = String::new();
-    let state = get_saved_state("/")?.unwrap_or_else(|| SavedState {
+    let mut state = get_saved_state("/")?.unwrap_or_else(|| SavedState {
         ..Default::default()
     });
     for component in get_components() {
         let installed = if let Some(i) = state.installed.get(component.name()) {
             i
         } else {
-            writeln!(r, "Component {} is not installed", component.name()).unwrap();
+            writeln!(r, "Component {} is not installed", component.name())?;
             continue;
         };
-        if let Some(update) = component.query_update()? {
-            component
+        let pending = component.query_update()?;
+        let update = match pending.as_ref() {
+            Some(p) if !p.compare(&installed.meta) => Some(p),
+            _ => None,
+        };
+        if let Some(update) = update {
+            // FIXME make this more transactional by recording the fact that
+            // we're starting an update at least so we can detect if we
+            // were interrupted.
+            let newinst = component
                 .run_update(&installed)
                 .with_context(|| format!("Failed to update {}", component.name()))?;
-            writeln!(r, "Updated {}: {:?}", component.name(), update).unwrap();
+            writeln!(
+                r,
+                "Updated {}: {}",
+                component.name(),
+                format_version(&update)
+            )?;
+            state.installed.insert(component.name().into(), newinst);
+            update_state(&sysroot, &state)?;
         } else {
             writeln!(
                 r,
                 "No update available for {}: {:?}",
                 component.name(),
                 installed
-            )
-            .unwrap();
+            )?;
         }
     }
-    Ok("".into())
+    Ok(r)
 }
 
 fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
@@ -224,19 +239,17 @@ fn print_component(
     r: &mut String,
 ) -> Result<()> {
     let name = component.name();
-    writeln!(r, "Component {}", name).unwrap();
-    writeln!(r, "  Installed: {}", format_version(installed)).unwrap();
+    writeln!(r, "Component {}", name)?;
+    writeln!(r, "  Installed: {}", format_version(installed))?;
     let pending = component.query_update()?;
     let update = match pending.as_ref() {
         Some(p) if !p.compare(installed) => Some(p),
         _ => None,
     };
-    dbg!(&pending);
-    dbg!(&update);
     if let Some(update) = update {
-        writeln!(r, "  Update: Available: {}", format_version(&update)).unwrap();
+        writeln!(r, "  Update: Available: {}", format_version(&update))?;
     } else {
-        writeln!(r, "  Update: At latest version").unwrap();
+        writeln!(r, "  Update: At latest version")?;
     }
 
     Ok(())
@@ -284,7 +297,7 @@ fn daemon_process_one(client: &mut ipc::AuthenticatedClient) -> Result<()> {
         };
         let r = match r {
             Ok(s) => ipc::DaemonToClientReply::Success(s),
-            Err(e) => ipc::DaemonToClientReply::Failure(e.to_string()),
+            Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
         };
         let r = bincode::serialize(&r)?;
         let written = nixsocket::send(client.fd, &r, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
@@ -348,7 +361,7 @@ pub fn boot_update_main(args: &[String]) -> Result<()> {
                     print!("{}", buf);
                 }
                 ipc::DaemonToClientReply::Failure(buf) => {
-                    bail!("error: {}", buf);
+                    bail!("{}", buf);
                 }
             }
             c.shutdown()?;

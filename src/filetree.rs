@@ -73,13 +73,6 @@ impl FileMetadata {
             sha512: digest,
         })
     }
-
-    // pub(crate) fn extend_hash(&self, hasher: &mut Hasher) {
-    //     let mut lenbuf = [0; 8];
-    //     byteorder::BigEndian::write_u64(&mut lenbuf, self.size);
-    //     hasher.update(&lenbuf).unwrap();
-    //     hasher.update(&self.sha512.digest_bytes()).unwrap();
-    // }
 }
 
 #[allow(dead_code)] // Used for testing
@@ -121,16 +114,6 @@ impl FileTree {
         }
         Ok(ret)
     }
-
-    // pub(crate) fn digest(&self) -> SHA512String {
-    //     let mut hasher =
-    //         Hasher::new(MessageDigest::sha512()).expect("openssl sha512 hasher creation failed");
-    //     for (k, v) in self.children.iter() {
-    //         hasher.update(k.as_bytes()).unwrap();
-    //         v.extend_hash(&mut hasher);
-    //     }
-    //     SHA512String::from_hasher(&mut hasher)
-    // }
 
     /// Create a FileTree from the target directory.
     pub(crate) fn new_from_dir(dir: &openat::Dir) -> Result<Self> {
@@ -243,8 +226,8 @@ fn copy_file_at<SP: AsRef<Path>, DP: AsRef<Path>>(
     use openat_ext::FileExt as OpenatFileExt;
     let srcp = srcp.as_ref();
     let srcf = srcdir.open_file(srcp)?;
-    let mut destf = destdir.write_file(destp.as_ref(), srcf.metadata()?.st_mode())?;
-    srcf.copy_to(&mut destf)?;
+    let destf = destdir.write_file(destp.as_ref(), srcf.metadata()?.st_mode())?;
+    srcf.copy_to(&destf)?;
 
     Ok(())
 }

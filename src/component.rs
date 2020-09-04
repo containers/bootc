@@ -21,7 +21,7 @@ pub(crate) trait Component {
 
     fn query_update(&self) -> Result<Option<ContentMetadata>>;
 
-    fn run_update(&self, current: &InstalledContent) -> Result<()>;
+    fn run_update(&self, current: &InstalledContent) -> Result<InstalledContent>;
 }
 
 pub(crate) fn new_from_name(name: &str) -> Result<Box<dyn Component>> {
@@ -36,14 +36,12 @@ pub(crate) fn component_update_metapath(sysroot: &str, component: &dyn Component
     Path::new(sysroot)
         .join(BOOTUPD_UPDATES_DIR)
         .join(format!("{}.json", component.name()))
-        .to_path_buf()
 }
 
 pub(crate) fn component_updatedir(sysroot: &str, component: &dyn Component) -> PathBuf {
     Path::new(sysroot)
         .join(BOOTUPD_UPDATES_DIR)
         .join(component.name())
-        .to_path_buf()
 }
 
 /// Helper method for writing an update file

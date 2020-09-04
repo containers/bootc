@@ -57,22 +57,26 @@ impl Component for EFI {
             anyhow::bail!("Failed to copy");
         }
         Ok(InstalledContent {
-            meta: meta,
+            meta,
             filetree: Some(ft),
         })
     }
 
-    fn run_update(&self, current: &InstalledContent) -> Result<()> {
+    fn run_update(&self, current: &InstalledContent) -> Result<InstalledContent> {
         let currentf = current
             .filetree
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No filetree for installed EFI found!"))?;
+        let updatemeta = self.query_update()?.expect("update available");
         let updated = openat::Dir::open(&component_updatedir("/", self))?;
         let updatef = filetree::FileTree::new_from_dir(&updated)?;
         let diff = currentf.diff(&updatef)?;
-        let destdir = openat::Dir::open(&Path::new("/").join(MOUNT_PATH))?;
+        let destdir = openat::Dir::open(&Path::new("/").join(MOUNT_PATH).join("EFI"))?;
         filetree::apply_diff(&updated, &destdir, &diff, None)?;
-        Ok(())
+        Ok(InstalledContent {
+            meta: updatemeta,
+            filetree: Some(updatef),
+        })
     }
 
     fn generate_update_metadata(&self, sysroot_path: &str) -> Result<ContentMetadata> {
@@ -97,7 +101,7 @@ impl Component for EFI {
             // directory today, and this will handle the copy fallback.
             let parent = dest_efidir
                 .parent()
-                .ok_or(anyhow::anyhow!("Expected parent directory"))?;
+                .ok_or_else(|| anyhow::anyhow!("Expected parent directory"))?;
             std::fs::create_dir_all(&parent)?;
             Command::new("mv").args(&[&efisrc, &dest_efidir]).run()?;
         }
@@ -136,6 +140,7 @@ impl Component for EFI {
             bail!("Failed to find any RPM packages matching files in source efidir");
         }
         let timestamps: BTreeSet<&NaiveDateTime> = pkgs.values().collect();
+        // Unwrap safety: We validated pkgs has at least one value above
         let largest_timestamp = timestamps.iter().last().unwrap();
         let version = pkgs.keys().fold("".to_string(), |mut s, n| {
             if !s.is_empty() {
