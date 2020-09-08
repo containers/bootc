@@ -46,7 +46,7 @@ perform any updates to the `shimx64.efi` binary
 ### fwupd
 
 bootupd could be compared to [fwupd](https://github.com/fwupd/fwupd/) which is
-project that exists today to update hardware device firmware - things not managed
+a project that exists today to update hardware device firmware - things not managed
 by e.g. `apt/zypper/yum/rpm-ostree update` today.
 
 fwupd comes as a UEFI binary today, so bootupd *could* take care of updating `fwupd`
