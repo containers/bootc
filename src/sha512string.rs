@@ -21,7 +21,7 @@ impl SHA512String {
     pub(crate) fn from_hasher(hasher: &mut Hasher) -> Self {
         Self(format!(
             "sha512:{}",
-            bs58::encode(hasher.finish().expect("completing hash")).into_string()
+            hex::encode(hasher.finish().expect("completing hash"))
         ))
     }
 }
