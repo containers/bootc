@@ -6,7 +6,7 @@
 
 use anyhow::{bail, Context, Result};
 use nix::sys::socket as nixsocket;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::os::unix::io::RawFd;
 
 pub(crate) const BOOTUPD_SOCKET: &str = "/run/bootupd.sock";
