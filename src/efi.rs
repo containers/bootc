@@ -10,7 +10,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{bail, Result};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use chrono::NaiveDateTime;
 

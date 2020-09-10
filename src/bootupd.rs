@@ -10,7 +10,7 @@ use anyhow::{bail, Context, Result};
 use fs2::FileExt;
 use nix::sys::socket as nixsocket;
 use openat_ext::OpenatDirExt;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::fmt::Write as WriteFmt;
 use std::io::prelude::*;
 use std::path::Path;

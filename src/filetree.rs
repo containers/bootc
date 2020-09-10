@@ -8,7 +8,7 @@ use anyhow::{bail, Context, Result};
 use chrono::prelude::*;
 use openat_ext::OpenatDirExt;
 use openssl::hash::{Hasher, MessageDigest};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::os::linux::fs::MetadataExt;
 use std::os::unix::io::AsRawFd;
