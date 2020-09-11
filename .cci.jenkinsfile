@@ -1,0 +1,56 @@
+// Documentation: https://github.com/coreos/coreos-ci/blob/master/README-upstream-ci.md
+
+stage("Build") {
+parallel build: {
+  def n = 5
+  cosaPod(buildroot: true, runAsUser: 0, memory: "2Gi", cpu: "${n}") {
+      checkout scm
+      stage("Core build") {
+        shwrap("""
+          make -j ${n} 
+        """)
+      }
+      stage("Unit tests") {
+        shwrap("""
+          cargo test
+        """)
+      }
+      shwrap("""
+        make install DESTDIR=\$(pwd)/insttree/
+        tar -c -C insttree/ -zvf insttree.tar.gz .
+      """)
+      stash includes: 'insttree.tar.gz', name: 'build'
+  }
+},
+codestyle: {
+  cosaPod {
+      checkout scm
+      shwrap("cargo fmt -- --check")
+  }
+}
+}
+
+// Build FCOS and do a kola basic run
+// stage("FCOS") {
+//   cosaPod(buildroot: true, runAsUser: 0, memory: "3072Mi", cpu: "4") {
+//     stage("Build FCOS") {
+//       checkout scm
+//       unstash 'build'
+//       shwrap("""
+//         mkdir insttree
+//         tar -C insttree -xzvf insttree.tar.gz
+//         rsync -rlv insttree/ /
+//         coreos-assembler init --force https://github.com/coreos/fedora-coreos-config
+//         mkdir -p overrides/rootfs
+//         mv insttree/* overrides/rootfs/
+//         rmdir insttree
+//         coreos-assembler fetch
+//         coreos-assembler build
+//       """)
+//     }
+//     stage("Test") {
+//       fcosKola(cosaDir: "${env.WORKSPACE}")
+//     }
+//   }
+// }
+
