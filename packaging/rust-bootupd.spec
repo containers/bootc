@@ -36,7 +36,7 @@ License:        ASL 2.0
 %files -n %{crate}
 %license LICENSE
 %doc README.md
-%{_libexecdir}/bootupd
+%{_bindir}/bootupctl
 %{_unitdir}/*
 
 %prep
