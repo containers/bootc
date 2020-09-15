@@ -1,6 +1,11 @@
 [Unit]
 Description=bootloader update daemon
+Documentation=https://github.com/coreos/bootupd
 
 [Service]
 Type=notify
 ExecStart=/usr/libexec/bootupd daemon
+# On general principle
+ProtectHome=yes
+# So we can remount /boot writable
+MountFlags=slave
