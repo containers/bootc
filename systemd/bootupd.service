@@ -4,7 +4,7 @@ Documentation=https://github.com/coreos/bootupd
 
 [Service]
 Type=notify
-ExecStart=/usr/libexec/bootupd daemon
+ExecStart=/usr/bin/bootupctl daemon
 # On general principle
 ProtectHome=yes
 # So we can remount /boot writable

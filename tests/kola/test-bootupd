@@ -30,10 +30,6 @@ shim=shimx64.efi
 
 test -f "${efidir}/${shim}"
 
-bootupd() {
-    runv /usr/libexec/bootupd "$@"
-}
-
 prepare_efi_update() {
   test -w /usr
   mkdir -p ${ostbaseefi}
@@ -43,7 +39,7 @@ prepare_efi_update() {
 
 systemctl start bootupd.socket
 
-bootupd status > out.txt
+bootupctl status > out.txt
 assert_file_has_content_literal out.txt 'Component EFI'
 assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
 assert_file_has_content_literal out.txt 'Update: At latest version'
@@ -59,7 +55,7 @@ prepare_efi_update
 # echo somenewfile > ${ostefi}/somenew.efi
 rm -v ${ostefi}/shim.efi
 echo bootupd-test-changes >> ${ostefi}/grubx64.efi
-bootupd generate-update-metadata /
+bootupctl backend generate-update-metadata /
 ver=$(jq -r .version < ${bootupdir}/EFI.json)
 cat >ver.json << EOF
 { "version": "${ver},test" }
@@ -67,17 +63,17 @@ EOF
 jq -s add ${bootupdir}/EFI.json ver.json > new.json
 mv new.json ${bootupdir}/EFI.json
 
-bootupd status | tee out.txt
+bootupctl status | tee out.txt
 assert_file_has_content_literal out.txt 'Component EFI'
 assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
 assert_not_file_has_content out.txt '  Installed: grub2-efi-x64.*,test'
 assert_file_has_content_literal out.txt 'Update: Available:'
 ok update avail
 
-bootupd update | tee out.txt
+bootupctl update | tee out.txt
 assert_file_has_content out.txt 'Updated EFI: grub2-efi-x64.*,test'
 
-bootupd status > out.txt
+bootupctl status > out.txt
 assert_file_has_content_literal out.txt 'Component EFI'
 assert_file_has_content out.txt '  Installed: grub2-efi-x64.*,test'
 assert_file_has_content_literal out.txt 'Update: At latest version'
@@ -94,7 +90,7 @@ fi
 cmp ${bootefidir}/${efisubdir}/shimx64.efi ${efiupdir}/${efisubdir}/shimx64.efi
 ok filesystem changes
 
-bootupd update | tee out.txt
+bootupctl update | tee out.txt
 assert_file_has_content_literal out.txt 'No update available for EFI'
 assert_not_file_has_content_literal out.txt 'Updated EFI'
 

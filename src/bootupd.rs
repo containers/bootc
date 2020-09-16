@@ -58,10 +58,11 @@ struct StatusOptions {
     json: bool,
 }
 
+// Options exposed by `bootupctl backend`
 #[derive(Debug, Serialize, Deserialize, StructOpt)]
 #[structopt(name = "boot-update")]
 #[structopt(rename_all = "kebab-case")]
-enum Opt {
+enum BackendOpt {
     /// Install data from available components into a disk image
     Install {
         /// Source root
@@ -75,6 +76,13 @@ enum Opt {
         /// Physical root mountpoint
         sysroot: String,
     },
+}
+
+// "end user" options, i.e. what people should run on client systems
+#[derive(Debug, Serialize, Deserialize, StructOpt)]
+#[structopt(name = "boot-update")]
+#[structopt(rename_all = "kebab-case")]
+enum Opt {
     /// Update available components
     Update(UpdateOptions),
     /// Print the current state
@@ -293,7 +301,6 @@ fn daemon_process_one(client: &mut ipc::AuthenticatedClient) -> Result<()> {
                 println!("Processing status");
                 status(opts)
             }
-            _ => Err(anyhow::anyhow!("Invalid option")),
         };
         let r = match r {
             Ok(s) => ipc::DaemonToClientReply::Success(s),
@@ -336,36 +343,47 @@ fn daemon() -> Result<()> {
     }
 }
 
-/// Main entrypoint
-pub fn boot_update_main(args: &[String]) -> Result<()> {
-    if let Some(arg1) = args.get(1) {
-        if arg1 == "daemon" {
-            return daemon();
-        }
-    }
-    let opt = Opt::from_iter(args.iter());
+pub fn backend_main(args: &[&str]) -> Result<()> {
+    let opt = BackendOpt::from_iter(args.iter());
     match opt {
-        Opt::Install {
+        BackendOpt::Install {
             src_root,
             dest_root,
         } => install(&src_root, &dest_root).context("boot data installation failed")?,
-        Opt::GenerateUpdateMetadata { sysroot } => {
+        BackendOpt::GenerateUpdateMetadata { sysroot } => {
             generate_update_metadata(&sysroot).context("generating metadata failed")?
-        }
-        o @ Opt::Update(_) | o @ Opt::Status(_) => {
-            let mut c = ipc::ClientToDaemonConnection::new();
-            c.connect()?;
-            let r = c.send(&o)?;
-            match r {
-                ipc::DaemonToClientReply::Success(buf) => {
-                    print!("{}", buf);
-                }
-                ipc::DaemonToClientReply::Failure(buf) => {
-                    bail!("{}", buf);
-                }
-            }
-            c.shutdown()?;
         }
     };
     Ok(())
+}
+
+pub fn frontend_main(args: &[&str]) -> Result<()> {
+    let opt = Opt::from_iter(args.iter());
+    let mut c = ipc::ClientToDaemonConnection::new();
+    c.connect()?;
+    let r = c.send(&opt)?;
+    match r {
+        ipc::DaemonToClientReply::Success(buf) => {
+            print!("{}", buf);
+        }
+        ipc::DaemonToClientReply::Failure(buf) => {
+            bail!("{}", buf);
+        }
+    }
+    c.shutdown()?;
+    Ok(())
+}
+
+/// Main entrypoint
+pub fn boot_update_main(args: &[String]) -> Result<()> {
+    let mut args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    if let Some(&argv1) = args.get(1) {
+        if argv1 == "backend" {
+            args.remove(1);
+            return backend_main(&args);
+        } else if argv1 == "daemon" {
+            return daemon();
+        }
+    }
+    return frontend_main(&args);
 }
