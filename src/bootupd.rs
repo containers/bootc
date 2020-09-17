@@ -385,5 +385,5 @@ pub fn boot_update_main(args: &[String]) -> Result<()> {
             return daemon();
         }
     }
-    return frontend_main(&args);
+    frontend_main(&args)
 }
