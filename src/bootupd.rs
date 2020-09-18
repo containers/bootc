@@ -104,6 +104,7 @@ pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
     }
     let mut state = SavedState {
         installed: Default::default(),
+        pending: Default::default(),
     };
     for component in components {
         let meta = component.install(source_root, dest_root)?;
@@ -161,15 +162,23 @@ fn update(_opts: &UpdateOptions) -> Result<String> {
             writeln!(r, "Component {} is not installed", component.name())?;
             continue;
         };
-        let pending = component.query_update()?;
-        let update = match pending.as_ref() {
+        let update = component.query_update()?;
+        let update = match update.as_ref() {
             Some(p) if !p.compare(&installed.meta) => Some(p),
             _ => None,
         };
         if let Some(update) = update {
-            // FIXME make this more transactional by recording the fact that
-            // we're starting an update at least so we can detect if we
-            // were interrupted.
+            let mut pending_container = state.pending.take().unwrap_or_default();
+            if let Some(pending) = pending_container.get(component.name()) {
+                writeln!(
+                    r,
+                    "warning: Previous update {} was interrupted, continuing",
+                    format_version(&pending)
+                )?;
+            }
+
+            pending_container.insert(component.name().into(), update.clone());
+            update_state(&sysroot, &state)?;
             let newinst = component
                 .run_update(&installed)
                 .with_context(|| format!("Failed to update {}", component.name()))?;
@@ -180,6 +189,7 @@ fn update(_opts: &UpdateOptions) -> Result<String> {
                 format_version(&update)
             )?;
             state.installed.insert(component.name().into(), newinst);
+            pending_container.remove(component.name());
             update_state(&sysroot, &state)?;
         } else {
             writeln!(
@@ -244,16 +254,24 @@ fn format_version(meta: &ContentMetadata) -> String {
 fn print_component(
     component: &dyn Component,
     installed: &ContentMetadata,
+    pending: Option<&ContentMetadata>,
     r: &mut String,
 ) -> Result<()> {
     let name = component.name();
     writeln!(r, "Component {}", name)?;
     writeln!(r, "  Installed: {}", format_version(installed))?;
-    let pending = component.query_update()?;
-    let update = match pending.as_ref() {
+    let update = component.query_update()?;
+    let update = match update.as_ref() {
         Some(p) if !p.compare(installed) => Some(p),
         _ => None,
     };
+    if let Some(pending) = pending {
+        writeln!(
+            r,
+            "  WARNING: Update to {} was interrupted",
+            format_version(&pending)
+        )?;
+    }
     if let Some(update) = update {
         writeln!(r, "  Update: Available: {}", format_version(&update))?;
     } else {
@@ -273,7 +291,16 @@ fn status(opts: &StatusOptions) -> Result<String> {
         for (name, ic) in state.installed.iter() {
             let component = component::new_from_name(&name)?;
             let component = component.as_ref();
-            print_component(component, &ic.meta, &mut r)?;
+            print_component(
+                component,
+                &ic.meta,
+                state
+                    .pending
+                    .as_ref()
+                    .map(|p| p.get(name.as_str()))
+                    .flatten(),
+                &mut r,
+            )?;
         }
         Ok(r)
     } else {
