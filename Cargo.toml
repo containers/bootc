@@ -2,7 +2,7 @@
 name = "bootupd"
 description = "Bootloader updater"
 license = "Apache-2.0"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Colin Walters <walters@verbum.org>"]
 edition = "2018"
 
