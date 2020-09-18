@@ -40,7 +40,10 @@ pub(crate) struct InstalledContent {
 #[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct SavedState {
+    /// Maps a component name to its currently installed version
     pub(crate) installed: BTreeMap<String, InstalledContent>,
+    /// Maps a component name to an in progress update
+    pub(crate) pending: Option<BTreeMap<String, ContentMetadata>>,
 }
 
 // Should be stored in /usr/lib/bootupd/edges.json
