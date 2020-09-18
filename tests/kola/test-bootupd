@@ -70,6 +70,10 @@ assert_not_file_has_content out.txt '  Installed: grub2-efi-x64.*,test'
 assert_file_has_content_literal out.txt 'Update: Available:'
 ok update avail
 
+bootupctl status --json > status.json
+jq -r '.components.EFI.installed.version' < status.json > installed.txt
+assert_file_has_content installed.txt '^grub2-efi-x64'
+
 bootupctl update | tee out.txt
 assert_file_has_content out.txt 'Updated EFI: grub2-efi-x64.*,test'
 

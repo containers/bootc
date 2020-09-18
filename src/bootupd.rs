@@ -51,8 +51,6 @@ struct UpdateOptions {
 #[derive(Debug, Serialize, Deserialize, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 struct StatusOptions {
-    components: Vec<String>,
-
     // Output JSON
     #[structopt(long)]
     json: bool,
@@ -251,61 +249,29 @@ fn format_version(meta: &ContentMetadata) -> String {
     }
 }
 
-fn print_component(
-    component: &dyn Component,
-    installed: &ContentMetadata,
-    pending: Option<&ContentMetadata>,
-    r: &mut String,
-) -> Result<()> {
-    let name = component.name();
-    writeln!(r, "Component {}", name)?;
-    writeln!(r, "  Installed: {}", format_version(installed))?;
-    let update = component.query_update()?;
-    let update = match update.as_ref() {
-        Some(p) if !p.compare(installed) => Some(p),
-        _ => None,
-    };
-    if let Some(pending) = pending {
-        writeln!(
-            r,
-            "  WARNING: Update to {} was interrupted",
-            format_version(&pending)
-        )?;
-    }
-    if let Some(update) = update {
-        writeln!(r, "  Update: Available: {}", format_version(&update))?;
-    } else {
-        writeln!(r, "  Update: At latest version")?;
-    }
-
-    Ok(())
-}
-
-fn status(opts: &StatusOptions) -> Result<String> {
-    let state = get_saved_state("/")?;
-    if opts.json {
-        let r = serde_json::to_string(&state)?;
-        Ok(r)
-    } else if let Some(state) = state {
-        let mut r = String::new();
+fn status(_opts: &StatusOptions) -> Result<Status> {
+    let mut ret: Status = Default::default();
+    if let Some(state) = get_saved_state("/")? {
         for (name, ic) in state.installed.iter() {
             let component = component::new_from_name(&name)?;
             let component = component.as_ref();
-            print_component(
-                component,
-                &ic.meta,
-                state
-                    .pending
-                    .as_ref()
-                    .map(|p| p.get(name.as_str()))
-                    .flatten(),
-                &mut r,
-            )?;
+            let interrupted = state
+                .pending
+                .as_ref()
+                .map(|p| p.get(name.as_str()))
+                .flatten();
+            let update = component.query_update()?;
+            ret.components.insert(
+                name.to_string(),
+                ComponentStatus {
+                    installed: ic.meta.clone(),
+                    interrupted: interrupted.cloned(),
+                    update,
+                },
+            );
         }
-        Ok(r)
-    } else {
-        Ok("No components installed.".to_string())
-    }
+    };
+    Ok(ret)
 }
 
 fn daemon_process_one(client: &mut ipc::AuthenticatedClient) -> Result<()> {
@@ -322,18 +288,19 @@ fn daemon_process_one(client: &mut ipc::AuthenticatedClient) -> Result<()> {
         let r = match opt {
             Opt::Update(ref opts) => {
                 println!("Processing update");
-                update(opts)
+                bincode::serialize(&match update(opts) {
+                    Ok(v) => ipc::DaemonToClientReply::Success::<String>(v),
+                    Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
+                })?
             }
             Opt::Status(ref opts) => {
                 println!("Processing status");
-                status(opts)
+                bincode::serialize(&match status(opts) {
+                    Ok(v) => ipc::DaemonToClientReply::Success::<Status>(v),
+                    Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
+                })?
             }
         };
-        let r = match r {
-            Ok(s) => ipc::DaemonToClientReply::Success(s),
-            Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
-        };
-        let r = bincode::serialize(&r)?;
         let written = nixsocket::send(client.fd, &r, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
         if written != r.len() {
             bail!("Wrote {} bytes to client, expected {}", written, r.len());
@@ -384,12 +351,49 @@ pub fn backend_main(args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+fn print_status(status: &Status) {
+    for (name, component) in status.components.iter() {
+        println!("Component {}", name);
+        println!("  Installed: {}", format_version(&component.installed));
+
+        if let Some(i) = component.interrupted.as_ref() {
+            println!(
+                "  WARNING: Previous update to {} was interrupted",
+                format_version(i)
+            );
+        }
+        let update = match component.update.as_ref() {
+            Some(p) if !p.compare(&component.installed) => Some(p),
+            _ => None,
+        };
+        if let Some(update) = update {
+            println!("  Update: Available: {}", format_version(&update));
+        } else {
+            println!("  Update: At latest version");
+        }
+    }
+}
+
 pub fn frontend_main(args: &[&str]) -> Result<()> {
     let opt = Opt::from_iter(args.iter());
     let mut c = ipc::ClientToDaemonConnection::new();
     c.connect()?;
-    let r: String = c.send(&opt)?;
-    print!("{}", r);
+    match &opt {
+        Opt::Status(statusopts) => {
+            let r: Status = c.send(&opt)?;
+            if statusopts.json {
+                let stdout = std::io::stdout();
+                let mut stdout = stdout.lock();
+                serde_json::to_writer_pretty(&mut stdout, &r)?;
+            } else {
+                print_status(&r);
+            }
+        }
+        Opt::Update(_) => {
+            let r: String = c.send(&opt)?;
+            print!("{}", r);
+        }
+    }
     c.shutdown()?;
     Ok(())
 }

@@ -46,6 +46,29 @@ pub(crate) struct SavedState {
     pub(crate) pending: Option<BTreeMap<String, ContentMetadata>>,
 }
 
+/// The status of an individual component.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct ComponentStatus {
+    /// Currently installed version
+    pub(crate) installed: ContentMetadata,
+    /// In progress update that was interrupted
+    pub(crate) interrupted: Option<ContentMetadata>,
+    /// Update in the deployed filesystem tree
+    pub(crate) update: Option<ContentMetadata>,
+}
+
+/// Representation of bootupd's worldview at a point in time.
+/// This is intended to be a stable format that is output by `bootupctl status --json`
+/// and parsed by higher level management tools.  Transitively then
+/// everything referenced from here should also be stable.
+#[derive(Serialize, Deserialize, Default, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct Status {
+    /// Maps a component name to status
+    pub(crate) components: BTreeMap<String, ComponentStatus>,
+}
+
 // Should be stored in /usr/lib/bootupd/edges.json
 //#[derive(Serialize, Deserialize, Debug)]
 // #[serde(rename_all = "kebab-case")]
