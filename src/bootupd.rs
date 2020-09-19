@@ -388,15 +388,8 @@ pub fn frontend_main(args: &[&str]) -> Result<()> {
     let opt = Opt::from_iter(args.iter());
     let mut c = ipc::ClientToDaemonConnection::new();
     c.connect()?;
-    let r = c.send(&opt)?;
-    match r {
-        ipc::DaemonToClientReply::Success(buf) => {
-            print!("{}", buf);
-        }
-        ipc::DaemonToClientReply::Failure(buf) => {
-            bail!("{}", buf);
-        }
-    }
+    let r: String = c.send(&opt)?;
+    print!("{}", r);
     c.shutdown()?;
     Ok(())
 }
