@@ -95,7 +95,7 @@ cmp ${bootefidir}/${efisubdir}/shimx64.efi ${efiupdir}/${efisubdir}/shimx64.efi
 ok filesystem changes
 
 bootupctl update | tee out.txt
-assert_file_has_content_literal out.txt 'No update available for EFI'
+assert_file_has_content_literal out.txt 'No update available for any component'
 assert_not_file_has_content_literal out.txt 'Updated EFI'
 
 tap_finish

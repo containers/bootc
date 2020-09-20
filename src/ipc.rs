@@ -65,9 +65,12 @@ impl ClientToDaemonConnection {
         Ok(())
     }
 
-    pub(crate) fn send<T: serde::de::DeserializeOwned>(&mut self, opt: &crate::Opt) -> Result<T> {
+    pub(crate) fn send<S: serde::ser::Serialize, T: serde::de::DeserializeOwned>(
+        &mut self,
+        msg: &S,
+    ) -> Result<T> {
         {
-            let serialized = bincode::serialize(opt)?;
+            let serialized = bincode::serialize(msg)?;
             let _ = nixsocket::send(self.fd, &serialized, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)
                 .context("client sending request")?;
         }

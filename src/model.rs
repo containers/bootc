@@ -56,6 +56,8 @@ pub(crate) struct ComponentStatus {
     pub(crate) interrupted: Option<ContentMetadata>,
     /// Update in the deployed filesystem tree
     pub(crate) update: Option<ContentMetadata>,
+    /// Is true if the version in `update` is different from `installed`
+    pub(crate) updatable: bool,
 }
 
 /// Representation of bootupd's worldview at a point in time.

@@ -11,7 +11,6 @@ use fs2::FileExt;
 use nix::sys::socket as nixsocket;
 use openat_ext::OpenatDirExt;
 use serde::{Deserialize, Serialize};
-use std::fmt::Write as WriteFmt;
 use std::io::prelude::*;
 use std::path::Path;
 use structopt::StructOpt;
@@ -35,18 +34,6 @@ mod util;
 pub(crate) const STATEFILE_DIR: &str = "boot";
 pub(crate) const STATEFILE_NAME: &str = "bootupd-state.json";
 pub(crate) const WRITE_LOCK_PATH: &str = "run/bootupd-lock";
-
-#[derive(Debug, Serialize, Deserialize, StructOpt)]
-#[structopt(rename_all = "kebab-case")]
-struct UpdateOptions {
-    // Perform an update even if there is no state transition
-    #[structopt(long)]
-    force: bool,
-
-    /// The destination ESP mount point
-    #[structopt(default_value = "/usr/share/bootd-transitions.json", long)]
-    state_transition_file: String,
-}
 
 #[derive(Debug, Serialize, Deserialize, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
@@ -81,10 +68,19 @@ enum BackendOpt {
 #[structopt(name = "boot-update")]
 #[structopt(rename_all = "kebab-case")]
 enum Opt {
-    /// Update available components
-    Update(UpdateOptions),
+    /// Update all components
+    Update,
     /// Print the current state
     Status(StatusOptions),
+}
+
+/// A message sent from client to server
+#[derive(Debug, Serialize, Deserialize, StructOpt)]
+enum ClientRequest {
+    /// Update a component
+    Update { component: String },
+    /// Print the current state
+    Status,
 }
 
 pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
@@ -146,59 +142,49 @@ fn acquire_write_lock<P: AsRef<Path>>(sysroot: P) -> Result<std::fs::File> {
     Ok(lockf)
 }
 
-fn update(_opts: &UpdateOptions) -> Result<String> {
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
+enum ComponentUpdateResult {
+    AtLatestVersion,
+    Updated {
+        previous: ContentMetadata,
+        interrupted: Option<ContentMetadata>,
+        new: ContentMetadata,
+    },
+}
+
+fn update(name: &str) -> Result<ComponentUpdateResult> {
     let sysroot = openat::Dir::open("/")?;
     let _lock = acquire_write_lock("/")?;
-    let mut r = String::new();
     let mut state = get_saved_state("/")?.unwrap_or_else(|| SavedState {
         ..Default::default()
     });
-    for component in get_components() {
-        let installed = if let Some(i) = state.installed.get(component.name()) {
-            i
-        } else {
-            writeln!(r, "Component {} is not installed", component.name())?;
-            continue;
-        };
+    let component = component::new_from_name(name)?;
+    if let Some(inst) = state.installed.get(name).cloned() {
         let update = component.query_update()?;
         let update = match update.as_ref() {
-            Some(p) if !p.compare(&installed.meta) => Some(p),
-            _ => None,
+            Some(p) if !p.compare(&inst.meta) => p,
+            _ => return Ok(ComponentUpdateResult::AtLatestVersion),
         };
-        if let Some(update) = update {
-            let mut pending_container = state.pending.take().unwrap_or_default();
-            if let Some(pending) = pending_container.get(component.name()) {
-                writeln!(
-                    r,
-                    "warning: Previous update {} was interrupted, continuing",
-                    format_version(&pending)
-                )?;
-            }
+        let mut pending_container = state.pending.take().unwrap_or_default();
+        let interrupted = pending_container.get(component.name()).cloned();
 
-            pending_container.insert(component.name().into(), update.clone());
-            update_state(&sysroot, &state)?;
-            let newinst = component
-                .run_update(&installed)
-                .with_context(|| format!("Failed to update {}", component.name()))?;
-            writeln!(
-                r,
-                "Updated {}: {}",
-                component.name(),
-                format_version(&update)
-            )?;
-            state.installed.insert(component.name().into(), newinst);
-            pending_container.remove(component.name());
-            update_state(&sysroot, &state)?;
-        } else {
-            writeln!(
-                r,
-                "No update available for {}: {:?}",
-                component.name(),
-                installed
-            )?;
-        }
+        pending_container.insert(component.name().into(), update.clone());
+        update_state(&sysroot, &state)?;
+        let newinst = component
+            .run_update(&inst)
+            .with_context(|| format!("Failed to update {}", component.name()))?;
+        state.installed.insert(component.name().into(), newinst);
+        pending_container.remove(component.name());
+        update_state(&sysroot, &state)?;
+        Ok(ComponentUpdateResult::Updated {
+            previous: inst.meta,
+            interrupted,
+            new: update.clone(),
+        })
+    } else {
+        anyhow::bail!("Component {} is not installed", name);
     }
-    Ok(r)
 }
 
 fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
@@ -249,7 +235,7 @@ fn format_version(meta: &ContentMetadata) -> String {
     }
 }
 
-fn status(_opts: &StatusOptions) -> Result<Status> {
+fn status() -> Result<Status> {
     let mut ret: Status = Default::default();
     if let Some(state) = get_saved_state("/")? {
         for (name, ic) in state.installed.iter() {
@@ -261,12 +247,17 @@ fn status(_opts: &StatusOptions) -> Result<Status> {
                 .map(|p| p.get(name.as_str()))
                 .flatten();
             let update = component.query_update()?;
+            let updatable = match update.as_ref() {
+                Some(p) if !p.compare(&ic.meta) => true,
+                _ => false,
+            };
             ret.components.insert(
                 name.to_string(),
                 ComponentStatus {
                     installed: ic.meta.clone(),
                     interrupted: interrupted.cloned(),
                     update,
+                    updatable,
                 },
             );
         }
@@ -284,18 +275,18 @@ fn daemon_process_one(client: &mut ipc::AuthenticatedClient) -> Result<()> {
             break;
         }
 
-        let opt = bincode::deserialize(&buf)?;
-        let r = match opt {
-            Opt::Update(ref opts) => {
+        let msg = bincode::deserialize(&buf)?;
+        let r = match msg {
+            ClientRequest::Update { component } => {
                 println!("Processing update");
-                bincode::serialize(&match update(opts) {
-                    Ok(v) => ipc::DaemonToClientReply::Success::<String>(v),
+                bincode::serialize(&match update(component.as_str()) {
+                    Ok(v) => ipc::DaemonToClientReply::Success::<ComponentUpdateResult>(v),
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
                 })?
             }
-            Opt::Status(ref opts) => {
+            ClientRequest::Status => {
                 println!("Processing status");
-                bincode::serialize(&match status(opts) {
+                bincode::serialize(&match status() {
                     Ok(v) => ipc::DaemonToClientReply::Success::<Status>(v),
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
                 })?
@@ -362,16 +353,59 @@ fn print_status(status: &Status) {
                 format_version(i)
             );
         }
-        let update = match component.update.as_ref() {
-            Some(p) if !p.compare(&component.installed) => Some(p),
-            _ => None,
-        };
-        if let Some(update) = update {
+        if component.updatable {
+            let update = component.update.as_ref().expect("update");
             println!("  Update: Available: {}", format_version(&update));
-        } else {
+        } else if component.update.is_some() {
             println!("  Update: At latest version");
+        } else {
+            println!("  Update: No update found");
         }
     }
+}
+
+fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
+    let status: Status = c.send(&ClientRequest::Status)?;
+    if status.components.is_empty() {
+        println!("No components installed.");
+        return Ok(());
+    }
+    let mut updated = false;
+    for (name, cstatus) in status.components.iter() {
+        if !cstatus.updatable {
+            continue;
+        }
+        match c.send(&ClientRequest::Update {
+            component: name.to_string(),
+        })? {
+            ComponentUpdateResult::AtLatestVersion => {
+                // Shouldn't happen unless we raced with another client
+                eprintln!(
+                    "warning: Expected update for {}, raced with a different client?",
+                    name
+                );
+                continue;
+            }
+            ComponentUpdateResult::Updated {
+                previous: _,
+                interrupted,
+                new,
+            } => {
+                if let Some(i) = interrupted {
+                    eprintln!(
+                        "warning: Continued from previous interrupted update: {}",
+                        format_version(&i)
+                    );
+                }
+                println!("Updated {}: {}", name, format_version(&new));
+            }
+        }
+        updated = true;
+    }
+    if !updated {
+        println!("No update available for any component.");
+    }
+    Ok(())
 }
 
 pub fn frontend_main(args: &[&str]) -> Result<()> {
@@ -380,7 +414,7 @@ pub fn frontend_main(args: &[&str]) -> Result<()> {
     c.connect()?;
     match &opt {
         Opt::Status(statusopts) => {
-            let r: Status = c.send(&opt)?;
+            let r: Status = c.send(&ClientRequest::Status)?;
             if statusopts.json {
                 let stdout = std::io::stdout();
                 let mut stdout = stdout.lock();
@@ -389,9 +423,8 @@ pub fn frontend_main(args: &[&str]) -> Result<()> {
                 print_status(&r);
             }
         }
-        Opt::Update(_) => {
-            let r: String = c.send(&opt)?;
-            print!("{}", r);
+        Opt::Update => {
+            client_run_update(&mut c)?;
         }
     }
     c.shutdown()?;
