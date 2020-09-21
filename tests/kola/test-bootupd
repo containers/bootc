@@ -45,6 +45,11 @@ assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
 assert_file_has_content_literal out.txt 'Update: At latest version'
 ok status
 
+if env LANG=C.UTF-8 runuser -u bin bootupctl status 2>err.txt; then
+  fatal "Was able to bootupctl status as non-root"
+fi
+assert_file_has_content err.txt 'error:.*: Permission denied'
+
 # From here we'll fake updates
 test -w /usr || rpm-ostree usroverlay
 # Save a backup copy of the update dir
