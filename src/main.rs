@@ -1,26 +1,33 @@
-/*
- * Copyright (C) 2020 Red Hat, Inc.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+//! Bootupd command-line application.
 
-//! See: https://github.com/coreos/fedora-coreos-tracker/issues/510
-//! This is an early prototype hidden/not-yet-standardized mechanism
-//! which just updates EFI for now (x86_64/aarch64 only).
-//!
-//! But in the future will hopefully gain some independence from
-//! ostree and also support e.g. updating the MBR etc.
+use log::LevelFilter;
+use structopt::clap::crate_name;
 
-// To run the unit tests for this code, use `make check TESTS=tests/check/test-ex-boot-update.sh`
-
+/// Binary entrypoint, for both daemon and client logic.
 fn main() {
+    let exit_code = run_cli();
+    std::process::exit(exit_code);
+}
+
+/// CLI logic.
+fn run_cli() -> i32 {
+    // Gather command-line options.
     let args: Vec<_> = std::env::args().collect();
+
+    // Setup logging.
+    env_logger::Builder::from_default_env()
+        .format_timestamp(None)
+        .format_module_path(false)
+        .filter(Some(crate_name!()), LevelFilter::Warn)
+        .init();
+
+    // Dispatch CLI subcommand.
     match bootupd::boot_update_main(&args) {
-        Ok(_) => {}
+        Ok(_) => libc::EXIT_SUCCESS,
         Err(e) => {
             // Use the alternative formatter to get everything on a single line...it reads better.
             eprintln!("error: {:#}", e);
-            std::process::exit(1);
+            libc::EXIT_FAILURE
         }
     }
 }

@@ -1,8 +1,15 @@
-/*
- * Copyright (C) 2020 Red Hat, Inc.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+/*!
+**Boot**loader **upd**ater.
+
+This is an early prototype hidden/not-yet-standardized mechanism
+which just updates EFI for now (x86_64/aarch64 only).
+
+But in the future will hopefully gain some independence from
+ostree and also support e.g. updating the MBR etc.
+
+Refs:
+ * <https://github.com/coreos/fedora-coreos-tracker/issues/510>
+!*/
 
 #![deny(unused_must_use)]
 
