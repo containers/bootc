@@ -25,7 +25,7 @@ use structopt::StructOpt;
 // #[cfg(any(target_arch = "x86_64"))]
 // mod bios;
 mod component;
-#[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod efi;
 mod filetree;
 mod ipc;
@@ -121,7 +121,7 @@ pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
 pub(crate) fn get_components() -> Vec<Box<dyn Component>> {
     let mut components: Vec<Box<dyn Component>> = Vec::new();
 
-    #[cfg(any(target_arch = "x86_64", target_arch = "arm"))]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     components.push(Box::new(efi::EFI::new()));
 
     // #[cfg(target_arch = "x86_64")]
