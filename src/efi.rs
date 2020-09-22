@@ -9,10 +9,10 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
-use chrono::NaiveDateTime;
+use chrono::prelude::*;
 
 use crate::component::*;
 use crate::filetree;
@@ -130,16 +130,18 @@ impl Component for EFI {
                 let parts: Vec<_> = s.splitn(2, ',').collect();
                 let name = parts[0];
                 if let Some(ts) = parts.get(1) {
-                    Ok((name, NaiveDateTime::parse_from_str(ts, "%s")?))
+                    let nt = NaiveDateTime::parse_from_str(ts, "%s")
+                        .context("Failed to parse rpm buildtime")?;
+                    Ok((name, DateTime::<Utc>::from_utc(nt, Utc)))
                 } else {
                     bail!("Failed to parse: {}", s);
                 }
             })
-            .collect::<Result<BTreeMap<&str, NaiveDateTime>>>()?;
+            .collect::<Result<BTreeMap<&str, DateTime<Utc>>>>()?;
         if pkgs.is_empty() {
             bail!("Failed to find any RPM packages matching files in source efidir");
         }
-        let timestamps: BTreeSet<&NaiveDateTime> = pkgs.values().collect();
+        let timestamps: BTreeSet<&DateTime<Utc>> = pkgs.values().collect();
         // Unwrap safety: We validated pkgs has at least one value above
         let largest_timestamp = timestamps.iter().last().unwrap();
         let version = pkgs.keys().fold("".to_string(), |mut s, n| {

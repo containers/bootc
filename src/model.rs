@@ -14,7 +14,7 @@ pub(crate) const BOOTUPD_UPDATES_DIR: &str = "usr/lib/bootupd/updates";
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct ContentMetadata {
     /// The timestamp, which is used to determine update availability
-    pub(crate) timestamp: NaiveDateTime,
+    pub(crate) timestamp: DateTime<Utc>,
     /// Human readable version number, like ostree it is not ever parsed, just displayed
     pub(crate) version: Option<String>,
 }
