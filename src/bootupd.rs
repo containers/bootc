@@ -134,7 +134,12 @@ pub(crate) fn get_components() -> Vec<Box<dyn Component>> {
 
 pub(crate) fn generate_update_metadata(sysroot_path: &str) -> Result<()> {
     for component in get_components() {
-        let _ = component.generate_update_metadata(sysroot_path)?;
+        let v = component.generate_update_metadata(sysroot_path)?;
+        println!(
+            "Generated update layout for {}: {}",
+            component.name(),
+            format_version(&v)
+        );
     }
 
     Ok(())
