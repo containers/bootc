@@ -66,7 +66,7 @@ echo bootupd-test-changes >> ${ostefi}/grubx64.efi
 bootupctl backend generate-update-metadata /
 ver=$(jq -r .version < ${bootupdir}/EFI.json)
 cat >ver.json << EOF
-{ "version": "${ver},test" }
+{ "version": "${ver},test", "timestamp": "$(date -u --iso-8601=seconds)" }
 EOF
 jq -s add ${bootupdir}/EFI.json ver.json > new.json
 mv new.json ${bootupdir}/EFI.json

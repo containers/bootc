@@ -16,15 +16,16 @@ pub(crate) struct ContentMetadata {
     /// The timestamp, which is used to determine update availability
     pub(crate) timestamp: DateTime<Utc>,
     /// Human readable version number, like ostree it is not ever parsed, just displayed
-    pub(crate) version: Option<String>,
+    pub(crate) version: String,
 }
 
 impl ContentMetadata {
-    pub(crate) fn compare(&self, other: &Self) -> bool {
-        match (self.version.as_ref(), other.version.as_ref()) {
-            (Some(a), Some(b)) => a.as_str() == b.as_str(),
-            _ => self.timestamp == other.timestamp,
+    /// Returns `true` if `target` is different and chronologically newer
+    pub(crate) fn can_upgrade_to(&self, target: &Self) -> bool {
+        if self.version == target.version {
+            return false;
         }
+        return target.timestamp > self.timestamp;
     }
 }
 
@@ -49,6 +50,33 @@ pub(crate) struct SavedState {
 /// The status of an individual component.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
+pub(crate) enum ComponentUpdatable {
+    NoUpdateAvailable,
+    AtLatestVersion,
+    Upgradable,
+    WouldDowngrade,
+}
+
+impl ComponentUpdatable {
+    pub(crate) fn from_metadata(from: &ContentMetadata, to: Option<&ContentMetadata>) -> Self {
+        match to {
+            Some(to) => {
+                if from.version == to.version {
+                    ComponentUpdatable::AtLatestVersion
+                } else if from.can_upgrade_to(to) {
+                    ComponentUpdatable::Upgradable
+                } else {
+                    ComponentUpdatable::WouldDowngrade
+                }
+            }
+            None => ComponentUpdatable::NoUpdateAvailable,
+        }
+    }
+}
+
+/// The status of an individual component.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) struct ComponentStatus {
     /// Currently installed version
     pub(crate) installed: ContentMetadata,
@@ -57,7 +85,7 @@ pub(crate) struct ComponentStatus {
     /// Update in the deployed filesystem tree
     pub(crate) update: Option<ContentMetadata>,
     /// Is true if the version in `update` is different from `installed`
-    pub(crate) updatable: bool,
+    pub(crate) updatable: ComponentUpdatable,
 }
 
 /// Representation of bootupd's worldview at a point in time.
@@ -69,4 +97,25 @@ pub(crate) struct ComponentStatus {
 pub(crate) struct Status {
     /// Maps a component name to status
     pub(crate) components: BTreeMap<String, ComponentStatus>,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use chrono::Duration;
+
+    #[test]
+    fn test_meta_compare() {
+        let t = Utc::now();
+        let a = ContentMetadata {
+            timestamp: t,
+            version: "v1".into(),
+        };
+        let b = ContentMetadata {
+            timestamp: t + Duration::seconds(1),
+            version: "v2".into(),
+        };
+        assert!(a.can_upgrade_to(&b));
+        assert!(!b.can_upgrade_to(&a));
+    }
 }

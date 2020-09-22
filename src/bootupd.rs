@@ -18,6 +18,7 @@ use fs2::FileExt;
 use nix::sys::socket as nixsocket;
 use openat_ext::OpenatDirExt;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::io::prelude::*;
 use std::path::Path;
 use structopt::StructOpt;
@@ -138,7 +139,7 @@ pub(crate) fn generate_update_metadata(sysroot_path: &str) -> Result<()> {
         println!(
             "Generated update layout for {}: {}",
             component.name(),
-            format_version(&v)
+            v.version,
         );
     }
 
@@ -186,7 +187,7 @@ fn update(name: &str) -> Result<ComponentUpdateResult> {
     };
     let update = component.query_update()?;
     let update = match update.as_ref() {
-        Some(p) if !p.compare(&inst.meta) => p,
+        Some(p) if inst.meta.can_upgrade_to(&p) => p,
         _ => return Ok(ComponentUpdateResult::AtLatestVersion),
     };
     let mut pending_container = state.pending.take().unwrap_or_default();
@@ -249,15 +250,6 @@ fn get_saved_state(sysroot_path: &str) -> Result<Option<SavedState>> {
     Ok(saved_state)
 }
 
-/// Print a version if available, or fall back to timestamp
-fn format_version(meta: &ContentMetadata) -> String {
-    if let Some(version) = meta.version.as_ref() {
-        version.into()
-    } else {
-        meta.timestamp.format("%Y-%m-%dT%H:%M:%S+00:00").to_string()
-    }
-}
-
 fn status() -> Result<Status> {
     let mut ret: Status = Default::default();
     let state = if let Some(state) = get_saved_state("/")? {
@@ -274,10 +266,7 @@ fn status() -> Result<Status> {
             .map(|p| p.get(name.as_str()))
             .flatten();
         let update = component.query_update()?;
-        let updatable = match update.as_ref() {
-            Some(p) if !p.compare(&ic.meta) => true,
-            _ => false,
-        };
+        let updatable = ComponentUpdatable::from_metadata(&ic.meta, update.as_ref());
         ret.components.insert(
             name.to_string(),
             ComponentStatus {
@@ -357,22 +346,24 @@ fn daemon() -> Result<()> {
 fn print_status(status: &Status) {
     for (name, component) in status.components.iter() {
         println!("Component {}", name);
-        println!("  Installed: {}", format_version(&component.installed));
+        println!("  Installed: {}", component.installed.version);
 
         if let Some(i) = component.interrupted.as_ref() {
             println!(
                 "  WARNING: Previous update to {} was interrupted",
-                format_version(i)
+                i.version
             );
         }
-        if component.updatable {
-            let update = component.update.as_ref().expect("update");
-            println!("  Update: Available: {}", format_version(&update));
-        } else if component.update.is_some() {
-            println!("  Update: At latest version");
-        } else {
-            println!("  Update: No update found");
-        }
+        let msg = match component.updatable {
+            ComponentUpdatable::NoUpdateAvailable => Cow::Borrowed("No update found"),
+            ComponentUpdatable::AtLatestVersion => Cow::Borrowed("At latest version"),
+            ComponentUpdatable::WouldDowngrade => Cow::Borrowed("Ignoring downgrade"),
+            ComponentUpdatable::Upgradable => Cow::Owned(format!(
+                "Available: {}",
+                component.update.as_ref().expect("update").version
+            )),
+        };
+        println!("  Update: {}", msg);
     }
 }
 
@@ -399,9 +390,10 @@ fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
     }
     let mut updated = false;
     for (name, cstatus) in status.components.iter() {
-        if !cstatus.updatable {
-            continue;
-        }
+        match cstatus.updatable {
+            ComponentUpdatable::Upgradable => {}
+            _ => continue,
+        };
         match c.send(&ClientRequest::Update {
             component: name.to_string(),
         })? {
@@ -421,10 +413,10 @@ fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
                 if let Some(i) = interrupted {
                     eprintln!(
                         "warning: Continued from previous interrupted update: {}",
-                        format_version(&i)
+                        i.version,
                     );
                 }
-                println!("Updated {}: {}", name, format_version(&new));
+                println!("Updated {}: {}", name, new.version);
             }
         }
         updated = true;
