@@ -5,7 +5,6 @@
  */
 
 use anyhow::{bail, Context, Result};
-use chrono::prelude::*;
 use openat_ext::OpenatDirExt;
 use openssl::hash::{Hasher, MessageDigest};
 use serde::{Deserialize, Serialize};
@@ -38,7 +37,6 @@ pub(crate) struct FileMetadata {
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct FileTree {
-    pub(crate) timestamp: NaiveDateTime,
     pub(crate) children: BTreeMap<String, FileMetadata>,
 }
 
@@ -122,13 +120,7 @@ impl FileTree {
             children.insert(k, v);
         }
 
-        let meta = dir.metadata(".")?;
-        let stat = meta.stat();
-
-        Ok(Self {
-            timestamp: chrono::NaiveDateTime::from_timestamp(stat.st_mtime, 0),
-            children,
-        })
+        Ok(Self { children })
     }
 
     /// Determine the changes *from* self to the updated tree
