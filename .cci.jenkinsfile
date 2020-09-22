@@ -31,26 +31,32 @@ codestyle: {
 }
 
 // Build FCOS and do a kola basic run
-// stage("FCOS") {
-//   cosaPod(buildroot: true, runAsUser: 0, memory: "3072Mi", cpu: "4") {
-//     stage("Build FCOS") {
-//       checkout scm
-//       unstash 'build'
-//       shwrap("""
-//         mkdir insttree
-//         tar -C insttree -xzvf insttree.tar.gz
-//         rsync -rlv insttree/ /
-//         coreos-assembler init --force https://github.com/coreos/fedora-coreos-config
-//         mkdir -p overrides/rootfs
-//         mv insttree/* overrides/rootfs/
-//         rmdir insttree
-//         coreos-assembler fetch
-//         coreos-assembler build
-//       """)
-//     }
-//     stage("Test") {
-//       fcosKola(cosaDir: "${env.WORKSPACE}")
-//     }
-//   }
-// }
+// FIXME update to main branch once https://github.com/coreos/fedora-coreos-config/pull/595 merges
+stage("FCOS") {
+  cosaPod(buildroot: true, runAsUser: 0, memory: "3072Mi", cpu: "4") {
+    stage("Build FCOS") {
+      checkout scm
+      unstash 'build'
+      // Note that like {rpm-,}ostree we want to install to both / and overrides/rootfs
+      // because bootupd is used both during the `rpm-ostree compose tree` as well as
+      // inside the target operating system.
+      shwrap("""
+        mkdir insttree
+        tar -C insttree -xzvf insttree.tar.gz
+        rsync -rlv insttree/ /
+        # https://github.com/coreos/fedora-coreos-config/pull/595
+        coreos-assembler init --force https://github.com/cgwalters/fedora-coreos-config
+        (cd src/config && git checkout use-bootupd)
+        mkdir -p overrides/rootfs
+        mv insttree/* overrides/rootfs/
+        rmdir insttree
+        coreos-assembler fetch
+        coreos-assembler build
+      """)
+    }
+    stage("Test") {
+      fcosKola(cosaDir: "${env.WORKSPACE}", extraArgs: "ext.*bootupd*")
+    }
+  }
+}
 
