@@ -24,6 +24,8 @@ use structopt::StructOpt;
 
 // #[cfg(any(target_arch = "x86_64"))]
 // mod bios;
+mod cli;
+pub use cli::CliOptions;
 mod component;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod efi;
@@ -82,7 +84,7 @@ enum Opt {
 }
 
 /// A message sent from client to server
-#[derive(Debug, Serialize, Deserialize, StructOpt)]
+#[derive(Debug, Serialize, Deserialize)]
 enum ClientRequest {
     /// Update a component
     Update { component: String },
@@ -335,20 +337,6 @@ fn daemon() -> Result<()> {
     }
 }
 
-pub fn backend_main(args: &[&str]) -> Result<()> {
-    let opt = BackendOpt::from_iter(args.iter());
-    match opt {
-        BackendOpt::Install {
-            src_root,
-            dest_root,
-        } => install(&src_root, &dest_root).context("boot data installation failed")?,
-        BackendOpt::GenerateUpdateMetadata { sysroot } => {
-            generate_update_metadata(&sysroot).context("generating metadata failed")?
-        }
-    };
-    Ok(())
-}
-
 fn print_status(status: &Status) {
     for (name, component) in status.components.iter() {
         println!("Component {}", name);
@@ -413,41 +401,4 @@ fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
         println!("No update available for any component.");
     }
     Ok(())
-}
-
-pub fn frontend_main(args: &[&str]) -> Result<()> {
-    let opt = Opt::from_iter(args.iter());
-    let mut c = ipc::ClientToDaemonConnection::new();
-    c.connect()?;
-    match &opt {
-        Opt::Status(statusopts) => {
-            let r: Status = c.send(&ClientRequest::Status)?;
-            if statusopts.json {
-                let stdout = std::io::stdout();
-                let mut stdout = stdout.lock();
-                serde_json::to_writer_pretty(&mut stdout, &r)?;
-            } else {
-                print_status(&r);
-            }
-        }
-        Opt::Update => {
-            client_run_update(&mut c)?;
-        }
-    }
-    c.shutdown()?;
-    Ok(())
-}
-
-/// Main entrypoint
-pub fn boot_update_main(args: &[String]) -> Result<()> {
-    let mut args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    if let Some(&argv1) = args.get(1) {
-        if argv1 == "backend" {
-            args.remove(1);
-            return backend_main(&args);
-        } else if argv1 == "daemon" {
-            return daemon();
-        }
-    }
-    frontend_main(&args)
 }
