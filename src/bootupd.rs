@@ -145,6 +145,9 @@ pub(crate) fn generate_update_metadata(sysroot_path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Hold a lock on the system root; while ordinarily we run
+/// as a systemd unit which implicitly ensures a "singleton"
+/// instance this is a double check.
 fn acquire_write_lock<P: AsRef<Path>>(sysroot: P) -> Result<std::fs::File> {
     let sysroot = sysroot.as_ref();
     let lockf = std::fs::OpenOptions::new()
@@ -156,6 +159,7 @@ fn acquire_write_lock<P: AsRef<Path>>(sysroot: P) -> Result<std::fs::File> {
     Ok(lockf)
 }
 
+/// Return value from daemon → client for component update
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
 enum ComponentUpdateResult {
@@ -167,6 +171,7 @@ enum ComponentUpdateResult {
     },
 }
 
+/// daemon implementation of component update
 fn update(name: &str) -> Result<ComponentUpdateResult> {
     let sysroot = openat::Dir::open("/")?;
     let _lock = acquire_write_lock("/")?;
@@ -202,6 +207,7 @@ fn update(name: &str) -> Result<ComponentUpdateResult> {
     })
 }
 
+/// Atomically replace the on-disk state with a new version
 fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
     let subdir = sysroot_dir.sub_dir(STATEFILE_DIR)?;
     let f = {
@@ -227,6 +233,7 @@ fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
     Ok(())
 }
 
+/// Load the JSON file containing on-disk state
 fn get_saved_state(sysroot_path: &str) -> Result<Option<SavedState>> {
     let sysroot_dir = openat::Dir::open(sysroot_path)
         .with_context(|| format!("opening sysroot {}", sysroot_path))?;
@@ -242,6 +249,7 @@ fn get_saved_state(sysroot_path: &str) -> Result<Option<SavedState>> {
     Ok(saved_state)
 }
 
+/// Print a version if available, or fall back to timestamp
 fn format_version(meta: &ContentMetadata) -> String {
     if let Some(version) = meta.version.as_ref() {
         version.into()
@@ -368,6 +376,8 @@ fn print_status(status: &Status) {
     }
 }
 
+/// Checks that the user has provided an environment variable to signal
+/// acceptance of our alpha state - use this when performing write operations.
 fn validate_preview_env() -> Result<()> {
     let v = "BOOTUPD_ACCEPT_PREVIEW";
     if std::env::var_os(v).is_none() {
