@@ -174,31 +174,32 @@ fn update(name: &str) -> Result<ComponentUpdateResult> {
         ..Default::default()
     });
     let component = component::new_from_name(name)?;
-    if let Some(inst) = state.installed.get(name).cloned() {
-        let update = component.query_update()?;
-        let update = match update.as_ref() {
-            Some(p) if !p.compare(&inst.meta) => p,
-            _ => return Ok(ComponentUpdateResult::AtLatestVersion),
-        };
-        let mut pending_container = state.pending.take().unwrap_or_default();
-        let interrupted = pending_container.get(component.name()).cloned();
-
-        pending_container.insert(component.name().into(), update.clone());
-        update_state(&sysroot, &state)?;
-        let newinst = component
-            .run_update(&inst)
-            .with_context(|| format!("Failed to update {}", component.name()))?;
-        state.installed.insert(component.name().into(), newinst);
-        pending_container.remove(component.name());
-        update_state(&sysroot, &state)?;
-        Ok(ComponentUpdateResult::Updated {
-            previous: inst.meta,
-            interrupted,
-            new: update.clone(),
-        })
+    let inst = if let Some(inst) = state.installed.get(name) {
+        inst.clone()
     } else {
         anyhow::bail!("Component {} is not installed", name);
-    }
+    };
+    let update = component.query_update()?;
+    let update = match update.as_ref() {
+        Some(p) if !p.compare(&inst.meta) => p,
+        _ => return Ok(ComponentUpdateResult::AtLatestVersion),
+    };
+    let mut pending_container = state.pending.take().unwrap_or_default();
+    let interrupted = pending_container.get(component.name()).cloned();
+
+    pending_container.insert(component.name().into(), update.clone());
+    update_state(&sysroot, &state)?;
+    let newinst = component
+        .run_update(&inst)
+        .with_context(|| format!("Failed to update {}", component.name()))?;
+    state.installed.insert(component.name().into(), newinst);
+    pending_container.remove(component.name());
+    update_state(&sysroot, &state)?;
+    Ok(ComponentUpdateResult::Updated {
+        previous: inst.meta,
+        interrupted,
+        new: update.clone(),
+    })
 }
 
 fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
@@ -251,31 +252,34 @@ fn format_version(meta: &ContentMetadata) -> String {
 
 fn status() -> Result<Status> {
     let mut ret: Status = Default::default();
-    if let Some(state) = get_saved_state("/")? {
-        for (name, ic) in state.installed.iter() {
-            let component = component::new_from_name(&name)?;
-            let component = component.as_ref();
-            let interrupted = state
-                .pending
-                .as_ref()
-                .map(|p| p.get(name.as_str()))
-                .flatten();
-            let update = component.query_update()?;
-            let updatable = match update.as_ref() {
-                Some(p) if !p.compare(&ic.meta) => true,
-                _ => false,
-            };
-            ret.components.insert(
-                name.to_string(),
-                ComponentStatus {
-                    installed: ic.meta.clone(),
-                    interrupted: interrupted.cloned(),
-                    update,
-                    updatable,
-                },
-            );
-        }
+    let state = if let Some(state) = get_saved_state("/")? {
+        state
+    } else {
+        return Ok(ret);
     };
+    for (name, ic) in state.installed.iter() {
+        let component = component::new_from_name(&name)?;
+        let component = component.as_ref();
+        let interrupted = state
+            .pending
+            .as_ref()
+            .map(|p| p.get(name.as_str()))
+            .flatten();
+        let update = component.query_update()?;
+        let updatable = match update.as_ref() {
+            Some(p) if !p.compare(&ic.meta) => true,
+            _ => false,
+        };
+        ret.components.insert(
+            name.to_string(),
+            ComponentStatus {
+                installed: ic.meta.clone(),
+                interrupted: interrupted.cloned(),
+                update,
+                updatable,
+            },
+        );
+    }
     Ok(ret)
 }
 
