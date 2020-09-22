@@ -23,7 +23,7 @@ parallel build: {
   }
 },
 codestyle: {
-  cosaPod {
+  cosaPod(buildroot: true) {
       checkout scm
       shwrap("cargo fmt -- --check")
   }
