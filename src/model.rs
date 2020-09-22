@@ -70,14 +70,3 @@ pub(crate) struct Status {
     /// Maps a component name to status
     pub(crate) components: BTreeMap<String, ComponentStatus>,
 }
-
-// Should be stored in /usr/lib/bootupd/edges.json
-//#[derive(Serialize, Deserialize, Debug)]
-// #[serde(rename_all = "kebab-case")]
-// pub(crate) struct UpgradeEdge {
-//     /// Set to true if we should upgrade from an unknown state
-//     #[serde(default)]
-//     pub(crate) from_unknown: bool,
-//     /// Upgrade from content past this timestamp
-//     pub(crate) from_timestamp: Option<NaiveDateTime>,
-// }
