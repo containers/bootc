@@ -364,7 +364,20 @@ fn print_status(status: &Status) {
     }
 }
 
+fn validate_preview_env() -> Result<()> {
+    let v = "BOOTUPD_ACCEPT_PREVIEW";
+    if std::env::var_os(v).is_none() {
+        Err(anyhow::anyhow!(
+            "bootupd is currently alpha; set {}=1 in environment to continue",
+            v
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
+    validate_preview_env()?;
     let status: Status = c.send(&ClientRequest::Status)?;
     if status.components.is_empty() {
         println!("No components installed.");
