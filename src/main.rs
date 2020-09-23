@@ -2,7 +2,6 @@
 
 use log::LevelFilter;
 use structopt::clap::crate_name;
-use structopt::StructOpt;
 
 /// Binary entrypoint, for both daemon and client logic.
 fn main() {
@@ -13,7 +12,7 @@ fn main() {
 /// CLI logic.
 fn run_cli() -> i32 {
     // Parse command-line options.
-    let cli_opts = bootupd::CliOptions::from_args();
+    let cli_opts = bootupd::MultiCall::from_args();
 
     // Setup logging.
     env_logger::Builder::from_default_env()

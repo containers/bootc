@@ -21,12 +21,11 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::io::prelude::*;
 use std::path::Path;
-use structopt::StructOpt;
 
 // #[cfg(any(target_arch = "x86_64"))]
 // mod bios;
 mod cli;
-pub use cli::CliOptions;
+pub use cli::MultiCall;
 mod component;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod efi;
@@ -44,45 +43,6 @@ mod util;
 pub(crate) const STATEFILE_DIR: &str = "boot";
 pub(crate) const STATEFILE_NAME: &str = "bootupd-state.json";
 pub(crate) const WRITE_LOCK_PATH: &str = "run/bootupd-lock";
-
-#[derive(Debug, Serialize, Deserialize, StructOpt)]
-#[structopt(rename_all = "kebab-case")]
-struct StatusOptions {
-    // Output JSON
-    #[structopt(long)]
-    json: bool,
-}
-
-// Options exposed by `bootupctl backend`
-#[derive(Debug, Serialize, Deserialize, StructOpt)]
-#[structopt(name = "boot-update")]
-#[structopt(rename_all = "kebab-case")]
-enum BackendOpt {
-    /// Install data from available components into a disk image
-    Install {
-        /// Source root
-        #[structopt(long, default_value = "/")]
-        src_root: String,
-        /// Target root
-        dest_root: String,
-    },
-    /// Install data from available components into a filesystem tree
-    GenerateUpdateMetadata {
-        /// Physical root mountpoint
-        sysroot: String,
-    },
-}
-
-// "end user" options, i.e. what people should run on client systems
-#[derive(Debug, Serialize, Deserialize, StructOpt)]
-#[structopt(name = "boot-update")]
-#[structopt(rename_all = "kebab-case")]
-enum Opt {
-    /// Update all components
-    Update,
-    /// Print the current state
-    Status(StatusOptions),
-}
 
 /// A message sent from client to server
 #[derive(Debug, Serialize, Deserialize)]

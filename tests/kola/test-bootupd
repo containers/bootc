@@ -66,7 +66,7 @@ prepare_efi_update
 # echo somenewfile > ${ostefi}/somenew.efi
 rm -v ${ostefi}/shim.efi
 echo bootupd-test-changes >> ${ostefi}/grubx64.efi
-bootupctl backend generate-update-metadata /
+/usr/libexec/bootupd generate-update-metadata /
 ver=$(jq -r .version < ${bootupdir}/EFI.json)
 cat >ver.json << EOF
 { "version": "${ver},test", "timestamp": "$(date -u --iso-8601=seconds)" }

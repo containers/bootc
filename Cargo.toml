@@ -11,7 +11,7 @@ name = "bootupd"
 path = "src/bootupd.rs"
 
 [[bin]]
-name = "bootupctl"
+name = "bootupd"
 path = "src/main.rs"
 
 [dependencies]

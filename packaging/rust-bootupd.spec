@@ -37,6 +37,7 @@ License:        ASL 2.0
 %license LICENSE
 %doc README.md
 %{_bindir}/bootupctl
+%{_libexecdir}/bootupd
 %{_unitdir}/*
 
 %prep

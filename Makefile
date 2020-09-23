@@ -1,5 +1,6 @@
 DESTDIR ?=
 PREFIX ?= /usr
+LIBEXECDIR ?= ${PREFIX}/libexec
 RELEASE ?= 1
 CONTAINER_RUNTIME ?= podman
 IMAGE_PREFIX ?=
@@ -22,6 +23,7 @@ units = $(addprefix systemd/, bootupd.service bootupd.socket)
 .PHONY: all
 all: $(units)
 	cargo build ${CARGO_ARGS}
+	ln -f target/${PROFILE}/bootupd target/${PROFILE}/bootupctl
 
 .PHONY: create-build-container
 create-build-container:
@@ -37,4 +39,6 @@ install-units: $(units)
 
 .PHONY: install
 install: install-units
-	install -D -t ${DESTDIR}$(PREFIX)/bin target/${PROFILE}/bootupctl
+	mkdir -p "${DESTDIR}$(PREFIX)/bin" "${DESTDIR}$(LIBEXECDIR)"
+	install -D -t "${DESTDIR}$(LIBEXECDIR)" target/${PROFILE}/bootupd
+	ln -f ${DESTDIR}$(LIBEXECDIR)/bootupd ${DESTDIR}$(PREFIX)/bin/bootupctl

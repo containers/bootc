@@ -1,97 +1,39 @@
 //! Command-line interface (CLI) logic.
 
-use crate::ipc::ClientToDaemonConnection;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use structopt::StructOpt;
 
-/// Top-level CLI options.
+mod bootupctl;
+mod bootupd;
+
+/// Top-level multicall CLI.
 #[derive(Debug, StructOpt)]
-pub struct CliOptions {
-    /// CLI sub-commands.
-    #[structopt(subcommand)]
-    pub(crate) cmd: CliCommand,
+pub enum MultiCall {
+    Ctl(bootupctl::CtlCommand),
+    D(bootupd::DCommand),
 }
 
-impl CliOptions {
-    /// Run CLI application.
+impl MultiCall {
+    pub fn from_args() -> Self {
+        use std::os::unix::ffi::OsStrExt;
+
+        // This is a multicall binary, dispatched based on the introspected
+        // filename found in argv[0].
+        let exe_name = {
+            let arg0 = std::env::args().nth(0).unwrap_or_default();
+            let exe_path = std::path::PathBuf::from(arg0);
+            exe_path.file_name().unwrap_or_default().to_os_string()
+        };
+        match exe_name.as_bytes() {
+            b"bootupctl" => MultiCall::Ctl(bootupctl::CtlCommand::from_args()),
+            b"bootupd" | _ => MultiCall::D(bootupd::DCommand::from_args()),
+        }
+    }
+
     pub fn run(self) -> Result<()> {
-        match self.cmd {
-            CliCommand::Backend(opts) => run_backend(opts),
-            CliCommand::Daemon => crate::daemon(),
-            CliCommand::Status(opts) => run_status(opts),
-            CliCommand::Update => run_update(),
-            CliCommand::Validate => run_validate(),
+        match self {
+            MultiCall::Ctl(ctl_cmd) => ctl_cmd.run(),
+            MultiCall::D(d_cmd) => d_cmd.run(),
         }
     }
-}
-
-/// CLI sub-commands.
-#[derive(Debug, StructOpt)]
-pub(crate) enum CliCommand {
-    #[structopt(name = "backend")]
-    Backend(crate::BackendOpt),
-    #[structopt(name = "daemon")]
-    Daemon,
-    #[structopt(name = "status")]
-    Status(crate::StatusOptions),
-    #[structopt(name = "update")]
-    Update,
-    #[structopt(name = "validate")]
-    Validate,
-}
-
-/// Runner for `backend` verb.
-fn run_backend(opts: crate::BackendOpt) -> Result<()> {
-    use crate::BackendOpt;
-
-    match opts {
-        BackendOpt::Install {
-            src_root,
-            dest_root,
-        } => crate::install(&src_root, &dest_root).context("boot data installation failed")?,
-        BackendOpt::GenerateUpdateMetadata { sysroot } => {
-            crate::generate_update_metadata(&sysroot).context("generating metadata failed")?
-        }
-    };
-
-    Ok(())
-}
-
-/// Runner for `status` verb.
-fn run_status(opts: crate::StatusOptions) -> Result<()> {
-    let mut client = ClientToDaemonConnection::new();
-    client.connect()?;
-
-    let r: crate::Status = client.send(&crate::ClientRequest::Status)?;
-    if opts.json {
-        let stdout = std::io::stdout();
-        let mut stdout = stdout.lock();
-        serde_json::to_writer_pretty(&mut stdout, &r)?;
-    } else {
-        crate::print_status(&r);
-    }
-
-    client.shutdown()?;
-
-    Ok(())
-}
-
-/// Runner for `update` verb.
-fn run_update() -> Result<()> {
-    let mut client = ClientToDaemonConnection::new();
-    client.connect()?;
-
-    crate::client_run_update(&mut client)?;
-
-    client.shutdown()?;
-    Ok(())
-}
-
-/// Runner for `validate` verb.
-fn run_validate() -> Result<()> {
-    let mut client = ClientToDaemonConnection::new();
-    client.connect()?;
-    crate::client_run_validate(&mut client)?;
-    client.shutdown()?;
-    Ok(())
 }
