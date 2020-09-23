@@ -5,7 +5,7 @@ in an inconsistent and ad-hoc way.  For example, on
 Fedora and Debian, a package manager update will update UEFI
 binaries in `/boot/efi`, but not the BIOS MBR data.
 
-Many transactional update systems like [OSTree](https://github.com/ostreedev/ostree/)
+Transactional/"image" update systems like [OSTree](https://github.com/ostreedev/ostree/)
 and dual-partition systems like the Container Linux update system
 are more consistent: they normally cover kernel/userspace but not anything
 related to bootloaders.
@@ -63,3 +63,22 @@ this project would probably just proxy that if we detect systemd-boot is in use.
 One idea is that bootupd could help support [redundant bootable disks](https://github.com/coreos/fedora-coreos-tracker/issues/581).
 For various reasons it doesn't really work to try to use RAID1 for an entire disk; the ESP must be handled
 specially.  `bootupd` could learn how to synchronize multiple EFI system partitions from a primary.
+
+## More details on rationale and integration
+
+A notable problem today for [rpm-ostree](https://github.com/coreos/rpm-ostree/) based
+systems is that `rpm -q shim-x64` is misleading because it's not actually
+updated in place.
+
+Particularly [this commit][1] makes things clear - the data
+from the RPM goes into `/usr` (part of the OSTree), so it doesn't touch `/boot/efi`.
+But that commit didn't change how the RPM database works (and more generally it
+would be technically complex for rpm-ostree to change how the RPM database works today).
+
+What we ultimately want is that `rpm -q shim-x64` returns "not installed" - because
+it's not managed by RPM or by ostree.  Instead one would purely use `bootupctl` to manage it.
+However, it might still be *built* as an RPM, just not installed that way. The RPM version numbers would be used
+for the bootupd version associated with the payload, and ultimately we'd teach `rpm-ostree compose tree`
+how to separately download bootloaders and pass them to `bootupctl backend`.
+
+[1]: https://github.com/coreos/rpm-ostree/pull/969/commits/dc0e8db5bd92e1f478a0763d1a02b48e57022b59
