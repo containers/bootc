@@ -33,10 +33,6 @@ pub(crate) fn getenv_utf8(n: &str) -> Result<Option<String>> {
     }
 }
 
-pub(crate) fn running_in_test_suite() -> bool {
-    !nix::unistd::getuid().is_root()
-}
-
 pub(crate) fn filenames(dir: &openat::Dir) -> Result<HashSet<String>> {
     let mut ret = HashSet::new();
     for entry in dir.list_dir(".")? {

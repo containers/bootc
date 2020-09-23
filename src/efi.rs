@@ -48,6 +48,10 @@ impl Component for EFI {
         let srcd = openat::Dir::open(&srcdir)?;
         let ft = crate::filetree::FileTree::new_from_dir(&srcd)?;
         let destdir = Path::new(dest_root).join(MOUNT_PATH);
+        {
+            let destd = openat::Dir::open(&destdir)?;
+            validate_esp(&destd)?;
+        }
         let r = std::process::Command::new("cp")
             .args(&["-rp", "--reflink=auto"])
             .arg(&srcdir)
@@ -72,6 +76,7 @@ impl Component for EFI {
         let updatef = filetree::FileTree::new_from_dir(&updated)?;
         let diff = currentf.diff(&updatef)?;
         let destdir = openat::Dir::open(&Path::new("/").join(MOUNT_PATH).join("EFI"))?;
+        validate_esp(&destdir)?;
         filetree::apply_diff(&updated, &destdir, &diff, None)?;
         Ok(InstalledContent {
             meta: updatemeta,
@@ -165,20 +170,11 @@ impl Component for EFI {
     }
 }
 
-#[allow(dead_code)]
-pub(crate) fn validate_esp<P: AsRef<std::path::Path>>(mnt: P) -> Result<()> {
-    if crate::util::running_in_test_suite() {
-        return Ok(());
-    }
-    let mnt = mnt.as_ref();
-    let stat = nix::sys::statfs::statfs(mnt)?;
+fn validate_esp(dir: &openat::Dir) -> Result<()> {
+    let stat = nix::sys::statfs::fstatfs(dir)?;
     let fstype = stat.filesystem_type();
     if fstype != nix::sys::statfs::MSDOS_SUPER_MAGIC {
-        bail!(
-            "Mount {} is not a msdos filesystem, but is {:?}",
-            mnt.display(),
-            fstype
-        );
+        bail!("EFI mount is not a msdos filesystem, but is {:?}", fstype);
     };
     Ok(())
 }
