@@ -26,7 +26,7 @@ pub(crate) trait Component {
 
 pub(crate) fn new_from_name(name: &str) -> Result<Box<dyn Component>> {
     let r: Box<dyn Component> = match name {
-        "EFI" => Box::new(crate::efi::EFI::new()),
+        "EFI" => Box::new(crate::efi::EFI::default()),
         _ => anyhow::bail!("No component {}", name),
     };
     Ok(r)

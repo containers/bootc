@@ -125,7 +125,7 @@ pub(crate) fn get_components() -> Vec<Box<dyn Component>> {
     let mut components: Vec<Box<dyn Component>> = Vec::new();
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    components.push(Box::new(efi::EFI::new()));
+    components.push(Box::new(efi::EFI::default()));
 
     // #[cfg(target_arch = "x86_64")]
     // components.push(Box::new(bios::BIOS::new()));

@@ -10,7 +10,6 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
 
 use chrono::prelude::*;
 
@@ -24,14 +23,8 @@ use crate::util::CommandRunExt;
 /// The path to the ESP mount
 pub(crate) const MOUNT_PATH: &str = "boot/efi";
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default)]
 pub(crate) struct EFI {}
-
-impl EFI {
-    pub(crate) fn new() -> Self {
-        Self {}
-    }
-}
 
 impl Component for EFI {
     fn name(&self) -> &'static str {
