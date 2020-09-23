@@ -365,6 +365,16 @@ fn print_status(status: &Status) {
         };
         println!("  Update: {}", msg);
     }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        let boot_method = if Path::new("/sys/firmware/efi").exists() {
+            "EFI"
+        } else {
+            "BIOS"
+        };
+        println!("Boot method: {}", boot_method);
+    }
 }
 
 /// Checks that the user has provided an environment variable to signal
