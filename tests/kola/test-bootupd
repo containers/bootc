@@ -48,6 +48,9 @@ assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
 assert_file_has_content_literal out.txt 'Update: At latest version'
 ok status
 
+bootupctl validate | tee out.txt
+ok validate
+
 if env LANG=C.UTF-8 runuser -u bin bootupctl status 2>err.txt; then
   fatal "Was able to bootupctl status as non-root"
 fi
@@ -96,6 +99,9 @@ assert_file_has_content out.txt '  Installed: grub2-efi-x64.*,test'
 assert_file_has_content_literal out.txt 'Update: At latest version'
 ok status after update
 
+bootupctl validate | tee out.txt
+ok validate after update
+
 # FIXME see above
 # assert_file_has_content ${bootefidir}/${efisubdir}/somenew.efi 'somenewfile'
 if test -f ${bootefidir}/${efisubdir}/shim.efi; then 
@@ -110,5 +116,13 @@ ok filesystem changes
 bootupctl update | tee out.txt
 assert_file_has_content_literal out.txt 'No update available for any component'
 assert_not_file_has_content_literal out.txt 'Updated EFI'
+
+echo "some additions" >> ${bootefidir}/${efisubdir}/shimx64.efi
+if bootupctl validate 2>err.txt; then
+  fatal "unexpectedly passed validation"
+fi
+assert_file_has_content err.txt "Changed: ${efisubdir}/shimx64.efi"
+test "$(grep -cEe '^Changed:' err.txt)" = "1"
+ok validate detected changes
 
 tap_finish

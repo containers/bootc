@@ -161,6 +161,28 @@ impl Component for EFI {
     fn query_update(&self) -> Result<Option<ContentMetadata>> {
         get_component_update("/", self)
     }
+
+    fn validate(&self, current: &InstalledContent) -> Result<ValidationResult> {
+        let currentf = current
+            .filetree
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No filetree for installed EFI found!"))?;
+        let efidir = openat::Dir::open(&Path::new("/").join(MOUNT_PATH).join("EFI"))?;
+        let diff = currentf.relative_diff_to(&efidir)?;
+        let mut errs = Vec::new();
+        for f in diff.changes.iter() {
+            errs.push(format!("Changed: {}", f));
+        }
+        for f in diff.removals.iter() {
+            errs.push(format!("Removed: {}", f));
+        }
+        assert_eq!(diff.additions.len(), 0);
+        if !errs.is_empty() {
+            Ok(ValidationResult::Errors(errs))
+        } else {
+            Ok(ValidationResult::Valid)
+        }
+    }
 }
 
 fn validate_esp(dir: &openat::Dir) -> Result<()> {

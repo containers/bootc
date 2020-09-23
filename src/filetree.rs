@@ -171,6 +171,39 @@ impl FileTree {
             changes,
         })
     }
+
+    /// Create a diff from a target directory.  This will ignore
+    /// any files or directories that are not part of the original tree.
+    pub(crate) fn relative_diff_to(&self, dir: &openat::Dir) -> Result<FileTreeDiff> {
+        let mut removals = HashSet::new();
+        let mut changes = HashSet::new();
+
+        for (path, info) in self.children.iter() {
+            assert!(!path.starts_with("/"));
+
+            if let Some(meta) = dir.metadata_optional(path)? {
+                match meta.simple_type() {
+                    openat::SimpleType::File => {
+                        let target_info = FileMetadata::new_from_path(dir, path)?;
+                        if info != &target_info {
+                            changes.insert(path.clone());
+                        }
+                    }
+                    _ => {
+                        // If a file became a directory
+                        changes.insert(path.clone());
+                    }
+                }
+            } else {
+                removals.insert(path.clone());
+            }
+        }
+        Ok(FileTreeDiff {
+            additions: HashSet::new(),
+            removals,
+            changes,
+        })
+    }
 }
 
 // Recursively remove all files in the directory that start with our TMP_PREFIX
@@ -405,6 +438,8 @@ mod tests {
         let udiff = ta.updates(&tb)?;
         assert_eq!(udiff.count(), 0);
         test_apply(&pa, &pb).context("testing apply 1")?;
+        let rdiff = ta.relative_diff_to(&b)?;
+        assert_eq!(rdiff.removals.len(), cdiff.removals.len());
 
         b.create_dir("foo", 0o755)?;
         {
@@ -421,6 +456,10 @@ mod tests {
         let diff = run_diff(&a, &b)?;
         assert_eq!(diff.count(), 1);
         assert_eq!(diff.changes.len(), 1);
+        let ta = FileTree::new_from_dir(&a)?;
+        let rdiff = ta.relative_diff_to(&b)?;
+        assert_eq!(rdiff.count(), diff.count());
+        assert_eq!(rdiff.changes.len(), diff.changes.len());
         test_apply(&pa, &pb).context("testing apply 3")?;
         Ok(())
     }

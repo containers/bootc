@@ -89,6 +89,8 @@ enum Opt {
 enum ClientRequest {
     /// Update a component
     Update { component: String },
+    /// Validate a component
+    Validate { component: String },
     /// Print the current state
     Status,
 }
@@ -208,6 +210,20 @@ fn update(name: &str) -> Result<ComponentUpdateResult> {
     })
 }
 
+/// daemon implementation of component validate
+fn validate(name: &str) -> Result<ValidationResult> {
+    let state = get_saved_state("/")?.unwrap_or_else(|| SavedState {
+        ..Default::default()
+    });
+    let component = component::new_from_name(name)?;
+    let inst = if let Some(inst) = state.installed.get(name) {
+        inst.clone()
+    } else {
+        anyhow::bail!("Component {} is not installed", name);
+    };
+    component.validate(&inst)
+}
+
 /// Atomically replace the on-disk state with a new version
 fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
     let subdir = sysroot_dir.sub_dir(STATEFILE_DIR)?;
@@ -296,6 +312,13 @@ fn daemon_process_one(client: &mut ipc::AuthenticatedClient) -> Result<()> {
                 println!("Processing update");
                 bincode::serialize(&match update(component.as_str()) {
                     Ok(v) => ipc::DaemonToClientReply::Success::<ComponentUpdateResult>(v),
+                    Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
+                })?
+            }
+            ClientRequest::Validate { component } => {
+                println!("Processing validate");
+                bincode::serialize(&match validate(component.as_str()) {
+                    Ok(v) => ipc::DaemonToClientReply::Success::<ValidationResult>(v),
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
                 })?
             }
@@ -433,6 +456,34 @@ fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
     }
     if !updated {
         println!("No update available for any component.");
+    }
+    Ok(())
+}
+
+fn client_run_validate(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
+    let status: Status = c.send(&ClientRequest::Status)?;
+    if status.components.is_empty() {
+        println!("No components installed.");
+        return Ok(());
+    }
+    let mut caught_validation_error = false;
+    for (name, _) in status.components.iter() {
+        match c.send(&ClientRequest::Validate {
+            component: name.to_string(),
+        })? {
+            ValidationResult::Valid => {
+                println!("Validated: {}", name);
+            }
+            ValidationResult::Errors(errs) => {
+                for err in errs {
+                    eprintln!("{}", err);
+                }
+                caught_validation_error = true;
+            }
+        }
+    }
+    if caught_validation_error {
+        anyhow::bail!("Caught validation errors");
     }
     Ok(())
 }

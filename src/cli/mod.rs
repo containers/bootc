@@ -20,6 +20,7 @@ impl CliOptions {
             CliCommand::Daemon => crate::daemon(),
             CliCommand::Status(opts) => run_status(opts),
             CliCommand::Update => run_update(),
+            CliCommand::Validate => run_validate(),
         }
     }
 }
@@ -35,6 +36,8 @@ pub(crate) enum CliCommand {
     Status(crate::StatusOptions),
     #[structopt(name = "update")]
     Update,
+    #[structopt(name = "validate")]
+    Validate,
 }
 
 /// Runner for `backend` verb.
@@ -80,6 +83,15 @@ fn run_update() -> Result<()> {
 
     crate::client_run_update(&mut client)?;
 
+    client.shutdown()?;
+    Ok(())
+}
+
+/// Runner for `validate` verb.
+fn run_validate() -> Result<()> {
+    let mut client = ClientToDaemonConnection::new();
+    client.connect()?;
+    crate::client_run_validate(&mut client)?;
     client.shutdown()?;
     Ok(())
 }

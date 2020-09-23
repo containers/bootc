@@ -5,11 +5,19 @@
  */
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 
 use crate::model::*;
+
+#[serde(rename_all = "kebab-case")]
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) enum ValidationResult {
+    Valid,
+    Errors(Vec<String>),
+}
 
 /// A component along with a possible update
 pub(crate) trait Component {
@@ -22,6 +30,8 @@ pub(crate) trait Component {
     fn query_update(&self) -> Result<Option<ContentMetadata>>;
 
     fn run_update(&self, current: &InstalledContent) -> Result<InstalledContent>;
+
+    fn validate(&self, current: &InstalledContent) -> Result<ValidationResult>;
 }
 
 pub(crate) fn new_from_name(name: &str) -> Result<Box<dyn Component>> {
