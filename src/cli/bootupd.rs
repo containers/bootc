@@ -39,13 +39,13 @@ impl DCommand {
     }
 
     /// Runner for `generate-install-metadata` verb.
-    fn run_generate_meta(opts: GenerateOpts) -> Result<()> {
+    pub(crate) fn run_generate_meta(opts: GenerateOpts) -> Result<()> {
         crate::generate_update_metadata(&opts.sysroot).context("generating metadata failed")?;
         Ok(())
     }
 
     /// Runner for `install` verb.
-    fn run_install(opts: InstallOpts) -> Result<()> {
+    pub(crate) fn run_install(opts: InstallOpts) -> Result<()> {
         crate::install(&opts.src_root, &opts.dest_root).context("boot data installation failed")?;
         Ok(())
     }
