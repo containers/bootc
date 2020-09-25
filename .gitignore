@@ -1,4 +1,3 @@
 /target
-Cargo.lock
 fastbuild*.qcow2
 _kola_temp
