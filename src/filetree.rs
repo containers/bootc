@@ -13,9 +13,6 @@ use std::os::linux::fs::MetadataExt;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-// Seems like a rust-analyzer bug?
-#[allow(unused_imports)]
-use std::io::Write;
 
 /// The prefix we apply to our temporary files.
 #[allow(dead_code)] // Used for testing
@@ -342,6 +339,7 @@ pub(crate) fn apply_diff(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     fn run_diff(a: &openat::Dir, b: &openat::Dir) -> Result<FileTreeDiff> {
         let ta = FileTree::new_from_dir(&a)?;
