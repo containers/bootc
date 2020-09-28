@@ -32,7 +32,7 @@ impl DCommand {
     /// Run CLI application.
     pub fn run(self) -> Result<()> {
         match self {
-            DCommand::Daemon => crate::daemon(),
+            DCommand::Daemon => crate::daemon::daemon(),
             DCommand::Install(opts) => Self::run_install(opts),
             DCommand::GenerateUpdateMetadata(opts) => Self::run_generate_meta(opts),
         }
