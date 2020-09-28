@@ -1,39 +1,79 @@
 //! Daemon logic.
 
 use crate::ipc;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use nix::sys::socket as nixsocket;
+use std::os::unix::io::RawFd;
 
-pub fn daemon() -> Result<()> {
+/// Run daemon core-logic loop, endlessly.
+pub fn run_coreloop() -> Result<()> {
+    let srvsock_fd = systemd_activation().context("systemd service activation error")?;
+
+    loop {
+        // Accept an incoming client.
+        let client = match accept_authenticate_client(srvsock_fd) {
+            Ok(auth_client) => auth_client,
+            Err(e) => {
+                log::error!("failed to authenticate client: {}", e);
+                continue;
+            }
+        };
+
+        // Process all requests from this client.
+        if let Err(e) = process_client_requests(client) {
+            log::error!("failed to process request from client: {}", e);
+            continue;
+        }
+    }
+}
+
+/// Perform initialization steps required by systemd service activation.
+///
+/// This ensures that the system is running under systemd, then receives the
+/// socket-FD for main IPC logic, and notifies systemd about ready-state.
+fn systemd_activation() -> Result<RawFd> {
     use libsystemd::daemon::{self, NotifyState};
     use std::os::unix::io::IntoRawFd;
 
     if !daemon::booted() {
-        bail!("Not running systemd")
+        bail!("daemon is not running as a systemd service");
     }
-    let mut fds = libsystemd::activation::receive_descriptors(true)
-        .map_err(|e| anyhow::anyhow!("Failed to receieve systemd descriptors: {}", e))?;
-    let srvsock_fd = if let Some(fd) = fds.pop() {
-        fd
-    } else {
-        bail!("No fd passed from systemd");
+
+    let srvsock_fd = {
+        let mut fds = libsystemd::activation::receive_descriptors(true)
+            .map_err(|e| anyhow::anyhow!("failed to receive file-descriptors: {}", e))?;
+        let srvsock_fd = if let Some(fd) = fds.pop() {
+            fd
+        } else {
+            bail!("no socket-fd received on service activation");
+        };
+        srvsock_fd.into_raw_fd()
     };
-    let srvsock_fd = srvsock_fd.into_raw_fd();
-    let sent = daemon::notify(true, &[NotifyState::Ready]).expect("notify failed");
+
+    let sent = daemon::notify(true, &[NotifyState::Ready])
+        .map_err(|e| anyhow::anyhow!("failed to notify ready-state: {}", e))?;
     if !sent {
-        bail!("Failed to notify systemd");
+        eprintln!("notifications not supported for this service");
     }
-    loop {
-        let client = ipc::UnauthenticatedClient::new(nixsocket::accept4(
-            srvsock_fd,
-            nixsocket::SockFlag::SOCK_CLOEXEC,
-        )?);
-        let mut client = client.authenticate()?;
-        daemon_process_one(&mut client)?;
-    }
+
+    Ok(srvsock_fd)
 }
 
-fn daemon_process_one(client: &mut ipc::AuthenticatedClient) -> Result<()> {
+/// Accept an incoming connection, then authenticate the client.
+fn accept_authenticate_client(srvsock_fd: RawFd) -> Result<ipc::AuthenticatedClient> {
+    let accepted = nixsocket::accept4(srvsock_fd, nixsocket::SockFlag::SOCK_CLOEXEC)?;
+    let client = ipc::UnauthenticatedClient::new(accepted);
+
+    let authed = client.authenticate()?;
+
+    Ok(authed)
+}
+
+/// Process all requests from a given client.
+///
+/// This sequentially processes all requests from a client, until it
+/// disconnects or a connection error is encountered.
+fn process_client_requests(client: ipc::AuthenticatedClient) -> Result<()> {
     use crate::ClientRequest;
 
     let mut buf = [0u8; ipc::MSGSIZE];
@@ -71,7 +111,7 @@ fn daemon_process_one(client: &mut ipc::AuthenticatedClient) -> Result<()> {
         };
         let written = nixsocket::send(client.fd, &r, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
         if written != r.len() {
-            bail!("Wrote {} bytes to client, expected {}", written, r.len());
+            bail!("wrote {} bytes to client, expected {}", written, r.len());
         }
     }
     Ok(())
