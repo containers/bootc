@@ -49,11 +49,17 @@ stage("FCOS") {
         mv insttree/* overrides/rootfs/
         rmdir insttree
         coreos-assembler fetch
-        coreos-assembler build
       """)
     }
-    stage("Test") {
-      fcosKola(cosaDir: "${env.WORKSPACE}", extraArgs: "ext.*bootupd*")
+    // The e2e test does a build, so we just end at fetch above
+    stage("e2e upgrade test") {
+      shwrap("env COSA_DIR=${env.WORKSPACE} ./tests/e2e/e2e.sh")
+    }
+    stage("Kola testing") {
+      // The previous e2e leaves things only having built an ostree update
+      shwrap("cosa build")
+      // bootupd really can't break upgrades for the OS
+      fcosKola(cosaDir: "${env.WORKSPACE}", extraArgs: "ext.*bootupd*", skipUpgrade: true)
     }
   }
 }

@@ -21,6 +21,11 @@ fatal() {
     echo error: $@ 1>&2; exit 1
 }
 
+runv() {
+    set -x
+    "$@"
+}
+
 # Dump ls -al + file contents to stderr, then fatal()
 _fatal_print_file() {
     file="$1"
