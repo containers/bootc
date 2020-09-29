@@ -1,12 +1,37 @@
 use crate::ipc::ClientToDaemonConnection;
 use anyhow::Result;
+use log::LevelFilter;
 use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
 /// `bootupctl` sub-commands.
 #[derive(Debug, StructOpt)]
 #[structopt(name = "bootupctl", about = "Bootupd client application")]
-pub enum CtlCommand {
+pub struct CtlCommand {
+    /// Verbosity level (higher is more verbose).
+    #[structopt(short = "v", parse(from_occurrences), global = true)]
+    verbosity: u8,
+
+    /// CLI sub-command.
+    #[structopt(subcommand)]
+    pub cmd: CtlVerb,
+}
+
+impl CtlCommand {
+    /// Return the log-level set via command-line flags.
+    pub(crate) fn loglevel(&self) -> LevelFilter {
+        match self.verbosity {
+            0 => LevelFilter::Warn,
+            1 => LevelFilter::Info,
+            2 => LevelFilter::Debug,
+            _ => LevelFilter::Trace,
+        }
+    }
+}
+
+/// CLI sub-commands.
+#[derive(Debug, StructOpt)]
+pub enum CtlVerb {
     // FIXME(lucab): drop this after refreshing
     // https://github.com/coreos/fedora-coreos-config/pull/595
     #[structopt(name = "backend", setting = AppSettings::Hidden)]
@@ -37,14 +62,14 @@ pub struct StatusOpts {
 impl CtlCommand {
     /// Run CLI application.
     pub fn run(self) -> Result<()> {
-        match self {
-            CtlCommand::Status(opts) => Self::run_status(opts),
-            CtlCommand::Update => Self::run_update(),
-            CtlCommand::Validate => Self::run_validate(),
-            CtlCommand::Backend(CtlBackend::Generate(opts)) => {
+        match self.cmd {
+            CtlVerb::Status(opts) => Self::run_status(opts),
+            CtlVerb::Update => Self::run_update(),
+            CtlVerb::Validate => Self::run_validate(),
+            CtlVerb::Backend(CtlBackend::Generate(opts)) => {
                 super::bootupd::DCommand::run_generate_meta(opts)
             }
-            CtlCommand::Backend(CtlBackend::Install(opts)) => {
+            CtlVerb::Backend(CtlBackend::Install(opts)) => {
                 super::bootupd::DCommand::run_install(opts)
             }
         }

@@ -4,7 +4,8 @@ Documentation=https://github.com/coreos/bootupd
 
 [Service]
 Type=notify
-ExecStart=/usr/libexec/bootupd daemon
+Environment=BOOTUPD_VERBOSITY="-v"
+ExecStart=/usr/libexec/bootupd daemon $BOOTUPD_VERBOSITY
 # On general principle
 ProtectHome=yes
 # So we can remount /boot writable

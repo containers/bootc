@@ -1,6 +1,5 @@
 //! Bootupd command-line application.
 
-use log::LevelFilter;
 use structopt::clap::crate_name;
 
 /// Binary entrypoint, for both daemon and client logic.
@@ -12,13 +11,14 @@ fn main() {
 /// CLI logic.
 fn run_cli() -> i32 {
     // Parse command-line options.
-    let cli_opts = bootupd::MultiCall::from_args();
+    let args: Vec<_> = std::env::args().collect();
+    let cli_opts = bootupd::MultiCall::from_args(args);
 
     // Setup logging.
     env_logger::Builder::from_default_env()
         .format_timestamp(None)
         .format_module_path(false)
-        .filter(Some(crate_name!()), LevelFilter::Warn)
+        .filter(Some(crate_name!()), cli_opts.loglevel())
         .init();
 
     // Dispatch CLI subcommand.
