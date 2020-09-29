@@ -65,12 +65,15 @@ impl Component for EFI {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No filetree for installed EFI found!"))?;
         let updatemeta = self.query_update()?.expect("update available");
-        let updated = openat::Dir::open(&component_updatedir("/", self))?;
-        let updatef = filetree::FileTree::new_from_dir(&updated)?;
+        let updated =
+            openat::Dir::open(&component_updatedir("/", self)).context("opening update dir")?;
+        let updatef = filetree::FileTree::new_from_dir(&updated).context("reading update dir")?;
         let diff = currentf.diff(&updatef)?;
-        let destdir = openat::Dir::open(&Path::new("/").join(MOUNT_PATH).join("EFI"))?;
+        let destdir = openat::Dir::open(&Path::new("/").join(MOUNT_PATH).join("EFI"))
+            .context("opening EFI dir")?;
         validate_esp(&destdir)?;
-        filetree::apply_diff(&updated, &destdir, &diff, None)?;
+        filetree::apply_diff(&updated, &destdir, &diff, None)
+            .context("applying filesystem changes")?;
         Ok(InstalledContent {
             meta: updatemeta,
             filetree: Some(updatef),
