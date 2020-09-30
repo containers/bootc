@@ -303,7 +303,7 @@ pub(crate) fn apply_diff(
         let path = Path::new(pathstr);
         if let Some(parent) = path.parent() {
             // TODO: care about directory modes?  We don't for FAT.
-            std::fs::create_dir_all(parent)?;
+            destdir.ensure_dir_all(parent, 0o755)?;
         }
         let destp = tmpname_for_path(path);
         copy_file_at(srcdir, destdir, path, destp.as_path())
@@ -339,6 +339,7 @@ pub(crate) fn apply_diff(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::io::Write;
 
     fn run_diff(a: &openat::Dir, b: &openat::Dir) -> Result<FileTreeDiff> {
@@ -459,6 +460,49 @@ mod tests {
         assert_eq!(rdiff.count(), diff.count());
         assert_eq!(rdiff.changes.len(), diff.changes.len());
         test_apply(&pa, &pb).context("testing apply 3")?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_filetree2() -> Result<()> {
+        let tmpd = tempfile::tempdir()?;
+        let tmpdp = tmpd.path();
+        let relp = "EFI/fedora";
+        let a = tmpdp.join("a");
+        let b = tmpdp.join("b");
+        for d in &[&a, &b] {
+            let efidir = d.join(relp);
+            fs::create_dir_all(&efidir)?;
+            let shimdata = "shim data";
+            fs::write(efidir.join("shim.x64"), shimdata)?;
+            let grubdata = "grub data";
+            fs::write(efidir.join("grub.x64"), grubdata)?;
+        }
+        fs::write(b.join(relp).join("grub.x64"), "grub data 2")?;
+        let newsubp = Path::new(relp).join("subdir");
+        fs::create_dir_all(b.join(&newsubp))?;
+        fs::write(b.join(&newsubp).join("newgrub.x64"), "newgrub data")?;
+        fs::remove_file(b.join(&relp).join("shim.x64"))?;
+        {
+            let a = openat::Dir::open(&a)?;
+            let b = openat::Dir::open(&b)?;
+            let ta = FileTree::new_from_dir(&a)?;
+            let tb = FileTree::new_from_dir(&b)?;
+            let diff = ta.diff(&tb)?;
+            assert_eq!(diff.changes.len(), 1);
+            assert_eq!(diff.additions.len(), 1);
+            assert_eq!(diff.count(), 3);
+            super::apply_diff(&b, &a, &diff, None)?;
+        }
+        assert_eq!(
+            String::from_utf8(std::fs::read(a.join(relp).join("grub.x64"))?)?,
+            "grub data 2"
+        );
+        assert_eq!(
+            String::from_utf8(std::fs::read(a.join(&newsubp).join("newgrub.x64"))?)?,
+            "newgrub data"
+        );
+        assert!(!a.join(&relp).join("shim.x64").exists());
         Ok(())
     }
 }
