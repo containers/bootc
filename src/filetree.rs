@@ -15,7 +15,6 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 
 /// The prefix we apply to our temporary files.
-#[allow(dead_code)] // Used for testing
 pub(crate) const TMP_PREFIX: &str = ".btmp.";
 
 use crate::sha512string::SHA512String;
@@ -44,14 +43,13 @@ pub(crate) struct FileTreeDiff {
     pub(crate) changes: HashSet<String>,
 }
 
+#[cfg(test)]
 impl FileTreeDiff {
-    #[allow(dead_code)] // Used for testing
     pub(crate) fn count(&self) -> usize {
         self.additions.len() + self.removals.len() + self.changes.len()
     }
 }
 
-#[allow(dead_code)] // Used for testing
 impl FileMetadata {
     pub(crate) fn new_from_path<P: openat::AsPath>(
         dir: &openat::Dir,
@@ -70,7 +68,6 @@ impl FileMetadata {
     }
 }
 
-#[allow(dead_code)] // Used for testing
 impl FileTree {
     // Internal helper to generate a sub-tree
     fn unsorted_from_dir(dir: &openat::Dir) -> Result<HashMap<String, FileMetadata>> {
@@ -121,7 +118,6 @@ impl FileTree {
     }
 
     /// Determine the changes *from* self to the updated tree
-    #[allow(dead_code)] // Used in tests and kept for completeness
     pub(crate) fn diff(&self, updated: &Self) -> Result<FileTreeDiff> {
         self.diff_impl(updated, true)
     }
@@ -129,13 +125,14 @@ impl FileTree {
     /// Determine any changes only using the files tracked in self as
     /// a reference.  In other words, this will ignore any unknown
     /// files and not count them as additions.
+    #[cfg(test)]
     pub(crate) fn changes(&self, current: &Self) -> Result<FileTreeDiff> {
         self.diff_impl(current, false)
     }
 
     /// The inverse of `changes` - determine if there are any files
     /// changed or added in `current` compared to self.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn updates(&self, current: &Self) -> Result<FileTreeDiff> {
         current.diff_impl(self, false)
     }
@@ -231,14 +228,12 @@ fn cleanup_tmp(dir: &openat::Dir) -> Result<()> {
 }
 
 #[derive(Default, Clone)]
-#[allow(dead_code)] // Used for testing
 pub(crate) struct ApplyUpdateOptions {
     pub(crate) skip_removals: bool,
     pub(crate) skip_sync: bool,
 }
 
 /// A bit like std::fs::copy but operates dirfd-relative
-#[allow(dead_code)] // Used for testing
 fn copy_file_at<SP: AsRef<Path>, DP: AsRef<Path>>(
     srcdir: &openat::Dir,
     destdir: &openat::Dir,
@@ -258,7 +253,6 @@ fn copy_file_at<SP: AsRef<Path>, DP: AsRef<Path>>(
 // to be bound in nix today.  I found https://github.com/XuShaohua/nc
 // but that's a nontrivial dependency with not a lot of code review.
 // Let's just fork off a helper process for now.
-#[allow(dead_code)] // Used for testing
 pub(crate) fn syncfs(d: &openat::Dir) -> Result<()> {
     let d = d.sub_dir(".").expect("subdir");
     let mut c = std::process::Command::new("sync");
@@ -276,7 +270,6 @@ pub(crate) fn syncfs(d: &openat::Dir) -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)] // Used for testing
 fn tmpname_for_path<P: AsRef<Path>>(path: P) -> std::path::PathBuf {
     let path = path.as_ref();
     let mut buf = path.file_name().expect("filename").to_os_string();
@@ -285,7 +278,6 @@ fn tmpname_for_path<P: AsRef<Path>>(path: P) -> std::path::PathBuf {
 }
 
 /// Given two directories, apply a diff generated from srcdir to destdir
-#[allow(dead_code)] // Used for testing
 pub(crate) fn apply_diff(
     srcdir: &openat::Dir,
     destdir: &openat::Dir,
