@@ -53,7 +53,7 @@ fn systemd_activation() -> Result<RawFd> {
     let sent = daemon::notify(true, &[NotifyState::Ready])
         .map_err(|e| anyhow::anyhow!("failed to notify ready-state: {}", e))?;
     if !sent {
-        eprintln!("notifications not supported for this service");
+        log::warn!("failed to notify ready-state: service notifications not supported");
     }
 
     Ok(srvsock_fd)
@@ -81,28 +81,28 @@ fn process_client_requests(client: ipc::AuthenticatedClient) -> Result<()> {
         let n = nixsocket::recv(client.fd, &mut buf, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
         let buf = &buf[0..n];
         if buf.is_empty() {
-            println!("Client disconnected");
+            log::trace!("client disconnected");
             break;
         }
 
         let msg = bincode::deserialize(&buf)?;
         let r = match msg {
             ClientRequest::Update { component } => {
-                println!("Processing update");
+                log::trace!("processing 'update' request");
                 bincode::serialize(&match crate::update(component.as_str()) {
                     Ok(v) => ipc::DaemonToClientReply::Success::<crate::ComponentUpdateResult>(v),
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
                 })?
             }
             ClientRequest::Validate { component } => {
-                println!("Processing validate");
+                log::trace!("processing 'validate' request");
                 bincode::serialize(&match crate::validate(component.as_str()) {
                     Ok(v) => ipc::DaemonToClientReply::Success::<crate::ValidationResult>(v),
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
                 })?
             }
             ClientRequest::Status => {
-                println!("Processing status");
+                log::trace!("processing 'status' request");
                 bincode::serialize(&match crate::status() {
                     Ok(v) => ipc::DaemonToClientReply::Success::<crate::Status>(v),
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
