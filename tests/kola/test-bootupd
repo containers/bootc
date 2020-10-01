@@ -48,6 +48,11 @@ assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
 assert_file_has_content_literal out.txt 'Update: At latest version'
 ok status
 
+# Validate we auto-exited
+sleep 2
+systemctl show -p ActiveState bootupd > out.txt
+assert_file_has_content_literal out.txt 'ActiveState=inactive'
+
 bootupctl validate | tee out.txt
 ok validate
 

@@ -57,7 +57,7 @@ impl DCommand {
     /// Run CLI application.
     pub fn run(self) -> Result<()> {
         match self.cmd {
-            DVerb::Daemon => crate::daemon::run_coreloop(),
+            DVerb::Daemon => crate::daemon::run(),
             DVerb::Install(opts) => Self::run_install(opts),
             DVerb::GenerateUpdateMetadata(opts) => Self::run_generate_meta(opts),
         }

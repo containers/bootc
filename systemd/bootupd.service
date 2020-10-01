@@ -1,6 +1,11 @@
 [Unit]
 Description=bootloader update daemon
 Documentation=https://github.com/coreos/bootupd
+# Because the daemon currently agressively auto-exits
+# and our test suite runs many requests, let's allow
+# a lot of restarts before failing.
+StartLimitIntervalSec=2s
+StartLimitBurst=10
 
 [Service]
 Type=notify

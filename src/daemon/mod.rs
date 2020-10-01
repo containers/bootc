@@ -5,26 +5,34 @@ use anyhow::{bail, Context, Result};
 use nix::sys::socket as nixsocket;
 use std::os::unix::io::RawFd;
 
-/// Run daemon core-logic loop, endlessly.
-pub fn run_coreloop() -> Result<()> {
+/// Accept a single client and then exit; we don't want to
+/// persistently run as a daemon.  The systemd unit is mostly
+/// and implementation detail - it lets us use things like
+/// systemd's built in sandboxing (ProtectHome=yes) etc. and also
+/// ensures that only a single bootupd instance is running at
+/// a time (i.e. don't support concurrent updates).
+pub fn run() -> Result<()> {
     let srvsock_fd = systemd_activation().context("systemd service activation error")?;
 
-    loop {
-        // Accept an incoming client.
-        let client = match accept_authenticate_client(srvsock_fd) {
-            Ok(auth_client) => auth_client,
-            Err(e) => {
-                log::error!("failed to authenticate client: {}", e);
-                continue;
-            }
-        };
-
-        // Process all requests from this client.
-        if let Err(e) = process_client_requests(client) {
-            log::error!("failed to process request from client: {}", e);
-            continue;
+    // Accept an incoming client.
+    let client = match accept_authenticate_client(srvsock_fd) {
+        Ok(auth_client) => auth_client,
+        Err(e) => {
+            log::error!("failed to authenticate client: {}", e);
+            return Ok(());
         }
+    };
+
+    // Process all requests from this client.
+    if let Err(e) = process_client_requests(client) {
+        log::error!("failed to process request from client: {}", e);
     }
+
+    // Sleep for a half second to avoid triggering systemd service
+    // restart limits.
+    std::thread::sleep(std::time::Duration::from_secs_f32(0.5));
+
+    Ok(())
 }
 
 /// Perform initialization steps required by systemd service activation.
