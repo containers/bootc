@@ -35,6 +35,14 @@ _fatal_print_file() {
     fatal "$@"
 }
 
+assert_not_has_file () {
+    fpath=$1
+    shift
+    if test -e "$fpath"; then
+        fatal "Path exists: ${fpath}"
+    fi
+}
+
 assert_file_has_content () {
     fpath=$1
     shift

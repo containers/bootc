@@ -58,12 +58,18 @@ ok validate
 bootupctl status | tee out.txt
 assert_file_has_content_literal out.txt 'Component EFI'
 assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
+assert_not_file_has_content out.txt '  Installed:.*test-bootupd-payload'
 assert_not_file_has_content out.txt '  Installed:.*'"${TARGET_GRUB_PKG}"
 assert_file_has_content out.txt 'Update: Available:.*'"${TARGET_GRUB_PKG}"
+assert_file_has_content out.txt 'Update: Available:.*test-bootupd-payload-1.0'
 ok update avail
 
+assert_not_has_file /boot/efi/EFI/fedora/test-bootupd.efi
+
 bootupctl update | tee out.txt
-assert_file_has_content_literal out.txt 'Updated EFI: '"${TARGET_GRUB_PKG}"
+assert_file_has_content out.txt "Updated EFI: ${TARGET_GRUB_PKG}.*,test-bootupd-payload-1.0"
+
+assert_file_has_content /boot/efi/EFI/fedora/test-bootupd.efi test-payload
 
 tap_finish
 touch /run/testtmp/success

@@ -17,6 +17,16 @@ fi
 bootupd_git=$(cd ${dn} && git rev-parse --show-toplevel)
 test -f ${bootupd_git}/systemd/bootupd.service
 
+testtmp=$(mktemp -d -p /var/tmp bootupd-e2e.XXXXXXX)
+export test_tmpdir=${testtmp}
+
+# This is new content for our update
+test_bootupd_payload_file=/boot/efi/EFI/fedora/test-bootupd.efi
+build_rpm test-bootupd-payload \
+  files ${test_bootupd_payload_file} \
+  install "mkdir -p %{buildroot}/$(dirname ${test_bootupd_payload_file})
+           echo test-payload > %{buildroot}/${test_bootupd_payload_file}"
+
 # Start in cosa dir
 cd ${COSA_DIR}
 test -d builds
@@ -31,6 +41,40 @@ add_override() {
     # in the latest fcos
     (cd ${overrides}/rpm && runv koji download-build --arch=noarch --arch=$(arch) ${override})
 }
+
+create_manifest_fork() {
+    if test ! -f src/config/bootupd-fork; then
+        echo "NOTICE: overriding src/config in ${COSA_DIR}"
+        sleep 2
+        runv rm -rf src/config.bootupd-testing-old
+        runv mv src/config src/config.orig
+        runv git clone src/config.orig src/config
+        touch src/config/bootupd-fork
+        # This will fall over if the upstream manifest gains `packages:`
+        cat >> src/config/manifest.yaml << EOF
+packages:
+  - test-bootupd-payload
+EOF
+        echo "forked src/config"
+    else
+        fatal "already forked manifest"
+    fi
+}
+
+undo_manifest_fork() {
+    test -d src/config.orig
+    assert_file_has_content src/config/manifest.yaml test-bootupd-payload
+    if test -f src/config/bootupd-fork; then
+        runv rm src/config -rf
+    else
+        # Keep this around just in case
+        runv mv src/config{,.bootupd-testing-old}
+    fi
+    runv mv src/config.orig src/config
+    test ! -f src/config/bootupd-fork
+    echo "undo src/config fork OK"
+}
+
 if test -z "${e2e_skip_build:-}"; then
     echo "Building starting image"
     rm -f ${overrides}/rpm/*.rpm
@@ -38,11 +82,14 @@ if test -z "${e2e_skip_build:-}"; then
     (cd ${bootupd_git} && runv make && runv make install DESTDIR=${overrides}/rootfs)
     runv cosa build
     prev_image=$(runv cosa meta --image-path qemu)
+    create_manifest_fork
     rm -f ${overrides}/rpm/*.rpm
     echo "Building update ostree"
     add_override grub2-2.04-23.fc32
+    mv ${test_tmpdir}/yumrepo/packages/$(arch)/*.rpm ${overrides}/rpm/
     # Only build ostree update
     runv cosa build ostree
+    undo_manifest_fork
 fi
 echo "Preparing test"
 grubarch=
@@ -56,7 +103,7 @@ target_grub_pkg=$(rpm -qp --queryformat='%{nevra}\n' ${overrides}/rpm/${target_g
 target_commit=$(cosa meta --get-value ostree-commit)
 echo "Target commit: ${target_commit}"
 # For some reason 9p can't write to tmpfs
-testtmp=$(mktemp -d -p /var/tmp bootupd-e2e.XXXXXXX)
+
 cat >${testtmp}/test.fcct << EOF
 variant: fcos
 version: 1.0.0
@@ -86,7 +133,7 @@ qemuexec_args=(kola qemuexec --propagate-initramfs-failure --qemu-image "${prev_
 if test -n "${e2e_debug:-}"; then
     runv ${qemuexec_args[@]} --devshell
 else
-    runv timeout 5m "${qemuexec_args[@]}" -- -chardev file,id=log,path=console.txt -serial chardev:log
+    runv timeout 5m "${qemuexec_args[@]}" --console-to-file $(pwd)/console.txt
 fi
 if ! test -f ${testtmp}/success; then
     if test -s ${testtmp}/out.txt; then
