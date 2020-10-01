@@ -16,6 +16,12 @@ use std::path::Path;
 
 /// The prefix we apply to our temporary files.
 pub(crate) const TMP_PREFIX: &str = ".btmp.";
+// This module doesn't handle modes right now, because
+// we're only targeting FAT filesystems for UEFI.
+// In FAT there are no unix permission bits, usually
+// they're set by mount options.
+// See also https://github.com/coreos/fedora-coreos-config/commit/8863c2b34095a2ae5eae6fbbd121768a5f592091
+const DEFAULT_FILE_MODE: u32 = 0o700;
 
 use crate::sha512string::SHA512String;
 
@@ -294,8 +300,7 @@ pub(crate) fn apply_diff(
     for pathstr in diff.additions.iter().chain(diff.changes.iter()) {
         let path = Path::new(pathstr);
         if let Some(parent) = path.parent() {
-            // TODO: care about directory modes?  We don't for FAT.
-            destdir.ensure_dir_all(parent, 0o755)?;
+            destdir.ensure_dir_all(parent, DEFAULT_FILE_MODE)?;
         }
         let destp = tmpname_for_path(path);
         copy_file_at(srcdir, destdir, path, destp.as_path())
