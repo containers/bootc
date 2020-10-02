@@ -9,6 +9,7 @@ use openat_ext::OpenatDirExt;
 use openssl::hash::{Hasher, MessageDigest};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Display;
 use std::os::linux::fs::MetadataExt;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::process::CommandExt;
@@ -47,6 +48,18 @@ pub(crate) struct FileTreeDiff {
     pub(crate) additions: HashSet<String>,
     pub(crate) removals: HashSet<String>,
     pub(crate) changes: HashSet<String>,
+}
+
+impl Display for FileTreeDiff {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "additions: {} removals: {} changes: {}",
+            self.additions.len(),
+            self.removals.len(),
+            self.changes.len()
+        )
+    }
 }
 
 #[cfg(test)]

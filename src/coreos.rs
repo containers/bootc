@@ -24,7 +24,6 @@ pub(crate) struct Aleph {
 
 pub(crate) struct AlephWithTimestamp {
     pub(crate) aleph: Aleph,
-    #[allow(dead_code)]
     pub(crate) ts: chrono::DateTime<Utc>,
 }
 

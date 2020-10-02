@@ -47,10 +47,16 @@ cosaPod(buildroot: true, runAsUser: 0, memory: "3072Mi", cpu: "4") {
       mkdir -p overrides/rootfs
       mv insttree/* overrides/rootfs/
       rmdir insttree
-      coreos-assembler fetch
+      cosa fetch
+      cosa build
     """)
   }
-  // The e2e-update test does a build, so we just end at fetch above
+  // The e2e-adopt test will use the ostree commit we just generated above
+  // but a static qemu base image.
+  stage("e2e adopt test") {
+    shwrap("env COSA_DIR=${env.WORKSPACE} ./tests/e2e-adopt/e2e-adopt.sh")
+  }
+  // Now a test that upgrades using bootupd
   stage("e2e upgrade test") {
     shwrap("env COSA_DIR=${env.WORKSPACE} ./tests/e2e-update/e2e-update.sh")
   }

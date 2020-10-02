@@ -37,6 +37,8 @@ pub(crate) struct InstalledContent {
     pub(crate) meta: ContentMetadata,
     /// Human readable version number, like ostree it is not ever parsed, just displayed
     pub(crate) filetree: Option<crate::filetree::FileTree>,
+    /// The version this was originally adopted from
+    pub(crate) adopted_from: Option<ContentMetadata>,
 }
 
 /// Will be serialized into /boot/bootupd-state.json
@@ -89,6 +91,8 @@ pub(crate) struct ComponentStatus {
     pub(crate) update: Option<ContentMetadata>,
     /// Is true if the version in `update` is different from `installed`
     pub(crate) updatable: ComponentUpdatable,
+    /// Originally adopted version
+    pub(crate) adopted_from: Option<ContentMetadata>,
 }
 
 /// Representation of bootupd's worldview at a point in time.
@@ -101,6 +105,8 @@ pub(crate) struct ComponentStatus {
 pub(crate) struct Status {
     /// Maps a component name to status
     pub(crate) components: BTreeMap<String, ComponentStatus>,
+    /// Components that appear to be installed, not via bootupd
+    pub(crate) adoptable: BTreeMap<String, ContentMetadata>,
 }
 
 #[cfg(test)]

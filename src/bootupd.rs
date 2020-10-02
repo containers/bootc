@@ -23,6 +23,8 @@ pub(crate) const WRITE_LOCK_PATH: &str = "run/bootupd-lock";
 pub(crate) enum ClientRequest {
     /// Update a component
     Update { component: String },
+    /// Update a component via adoption
+    AdoptAndUpdate { component: String },
     /// Validate a component
     Validate { component: String },
     /// Print the current state
@@ -148,6 +150,28 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
     })
 }
 
+/// daemon implementation of component adoption
+pub(crate) fn adopt_and_update(name: &str) -> Result<ContentMetadata> {
+    let sysroot = openat::Dir::open("/")?;
+    let _lock = acquire_write_lock("/").context("Failed to acquire write lock")?;
+    let mut state = get_saved_state("/")?.unwrap_or_default();
+    let component = component::new_from_name(name)?;
+    if state.installed.get(name).is_some() {
+        anyhow::bail!("Component {} is already installed", name);
+    };
+    let update = if let Some(update) = component.query_update()? {
+        update
+    } else {
+        anyhow::bail!("Component {} has no available update", name);
+    };
+    let inst = component
+        .adopt_update(&update)
+        .context("Failed adopt and update")?;
+    state.installed.insert(component.name().into(), inst);
+    update_state(&sysroot, &state)?;
+    Ok(update)
+}
+
 /// daemon implementation of component validate
 pub(crate) fn validate(name: &str) -> Result<ValidationResult> {
     let state = get_saved_state("/")?.unwrap_or_default();
@@ -228,6 +252,7 @@ pub(crate) fn status() -> Result<Status> {
                 .flatten();
             let update = component.query_update()?;
             let updatable = ComponentUpdatable::from_metadata(&ic.meta, update.as_ref());
+            let adopted_from = ic.adopted_from.clone();
             ret.components.insert(
                 name.to_string(),
                 ComponentStatus {
@@ -235,6 +260,7 @@ pub(crate) fn status() -> Result<Status> {
                     interrupted: interrupted.cloned(),
                     update,
                     updatable,
+                    adopted_from,
                 },
             );
         }
@@ -242,7 +268,15 @@ pub(crate) fn status() -> Result<Status> {
         log::trace!("No saved state");
     }
 
+    // Process the remaining components not installed
     log::trace!("Remaining known components: {}", known_components.len());
+    for (name, component) in known_components {
+        if let Some(adopt_ver) = component.query_adopt()? {
+            ret.adoptable.insert(name.to_string(), adopt_ver);
+        } else {
+            log::trace!("Not adoptable: {}", name);
+        }
+    }
 
     Ok(ret)
 }
@@ -271,6 +305,13 @@ pub(crate) fn print_status(status: &Status) -> Result<()> {
             )),
         };
         println!("  Update: {}", msg);
+    }
+
+    if status.adoptable.is_empty() {
+        println!("No components are adoptable.");
+    }
+    for (name, version) in status.adoptable.iter() {
+        println!("Adoptable: {}: {}", name, version.version);
     }
 
     if let Some(coreos_aleph) = coreos::get_aleph_version()? {
@@ -346,6 +387,22 @@ pub(crate) fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result
     }
     if !updated {
         println!("No update available for any component.");
+    }
+    Ok(())
+}
+
+pub(crate) fn client_run_adopt_and_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
+    validate_preview_env()?;
+    let status: Status = c.send(&ClientRequest::Status)?;
+    if status.adoptable.is_empty() {
+        println!("No components are adoptable.");
+    } else {
+        for (name, _) in status.adoptable.iter() {
+            let r: ContentMetadata = c.send(&ClientRequest::AdoptAndUpdate {
+                component: name.to_string(),
+            })?;
+            println!("Adopted and updated: {}: {}", name, r.version);
+        }
     }
     Ok(())
 }

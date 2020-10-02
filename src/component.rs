@@ -25,6 +25,14 @@ pub(crate) trait Component {
     /// and should remain stable.
     fn name(&self) -> &'static str;
 
+    /// In an operating system whose initially booted disk image is not
+    /// using bootupd, detect whether it looks like the component exists
+    /// and "synthesize" content metadata from it.
+    fn query_adopt(&self) -> Result<Option<ContentMetadata>>;
+
+    /// Given an adoptable system and an update, perform the update.
+    fn adopt_update(&self, update: &ContentMetadata) -> Result<InstalledContent>;
+
     /// Implementation of `bootupd install` for a given component.  This should
     /// gather data (or run binaries) from the source root, and install them
     /// into the target root.  It is expected that sub-partitions (e.g. the ESP)

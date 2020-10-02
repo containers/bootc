@@ -6,10 +6,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::prelude::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
+use openat_ext::OpenatDirExt;
 
 use chrono::prelude::*;
 
@@ -26,9 +27,71 @@ pub(crate) const MOUNT_PATH: &str = "boot/efi";
 #[derive(Default)]
 pub(crate) struct EFI {}
 
+impl EFI {
+    fn esp_path(&self) -> PathBuf {
+        Path::new(MOUNT_PATH).join("EFI")
+    }
+
+    fn open_esp_optional(&self) -> Result<Option<openat::Dir>> {
+        let sysroot = openat::Dir::open("/")?;
+        let esp = sysroot.sub_dir_optional(&self.esp_path())?;
+        Ok(esp)
+    }
+    fn open_esp(&self) -> Result<openat::Dir> {
+        let sysroot = openat::Dir::open("/")?;
+        let esp = sysroot.sub_dir(&self.esp_path())?;
+        Ok(esp)
+    }
+}
+
 impl Component for EFI {
     fn name(&self) -> &'static str {
         "EFI"
+    }
+
+    fn query_adopt(&self) -> Result<Option<ContentMetadata>> {
+        let esp = self.open_esp_optional()?;
+        if esp.is_none() {
+            log::trace!("No ESP detected");
+            return Ok(None);
+        };
+        // This would be extended with support for other operating systems later
+        let coreos_aleph = if let Some(a) = crate::coreos::get_aleph_version()? {
+            a
+        } else {
+            log::trace!("No CoreOS aleph detected");
+            return Ok(None);
+        };
+        let meta = ContentMetadata {
+            timestamp: coreos_aleph.ts,
+            version: coreos_aleph.aleph.imgid,
+        };
+        log::trace!("EFI adoptable: {:?}", &meta);
+        Ok(Some(meta))
+    }
+
+    /// Given an adoptable system and an update, perform the update.
+    fn adopt_update(&self, updatemeta: &ContentMetadata) -> Result<InstalledContent> {
+        let meta = if let Some(meta) = self.query_adopt()? {
+            meta
+        } else {
+            anyhow::bail!("Failed to find adoptable system");
+        };
+
+        let esp = self.open_esp()?;
+        validate_esp(&esp)?;
+        let updated =
+            openat::Dir::open(&component_updatedir("/", self)).context("opening update dir")?;
+        let updatef = filetree::FileTree::new_from_dir(&updated).context("reading update dir")?;
+        // For adoption, we should only touch files that we know about.
+        let diff = updatef.relative_diff_to(&esp)?;
+        log::trace!("applying adoption diff: {}", &diff);
+        filetree::apply_diff(&updated, &esp, &diff, None).context("applying filesystem changes")?;
+        Ok(InstalledContent {
+            meta: updatemeta.clone(),
+            filetree: Some(updatef),
+            adopted_from: Some(meta),
+        })
     }
 
     fn install(&self, src_root: &str, dest_root: &str) -> Result<InstalledContent> {
@@ -56,6 +119,7 @@ impl Component for EFI {
         Ok(InstalledContent {
             meta,
             filetree: Some(ft),
+            adopted_from: None,
         })
     }
 
@@ -72,11 +136,14 @@ impl Component for EFI {
         let destdir = openat::Dir::open(&Path::new("/").join(MOUNT_PATH).join("EFI"))
             .context("opening EFI dir")?;
         validate_esp(&destdir)?;
+        log::trace!("applying diff: {}", &diff);
         filetree::apply_diff(&updated, &destdir, &diff, None)
             .context("applying filesystem changes")?;
+        let adopted_from = None;
         Ok(InstalledContent {
             meta: updatemeta,
             filetree: Some(updatef),
+            adopted_from: adopted_from,
         })
     }
 

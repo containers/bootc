@@ -104,6 +104,12 @@ fn process_client_requests(client: ipc::AuthenticatedClient) -> Result<()> {
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
                 })?
             }
+            ClientRequest::AdoptAndUpdate { component } => {
+                bincode::serialize(&match bootupd::adopt_and_update(component.as_str()) {
+                    Ok(v) => ipc::DaemonToClientReply::Success::<crate::model::ContentMetadata>(v),
+                    Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
+                })?
+            }
             ClientRequest::Validate { component } => {
                 bincode::serialize(&match bootupd::validate(component.as_str()) {
                     Ok(v) => ipc::DaemonToClientReply::Success::<ValidationResult>(v),

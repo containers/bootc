@@ -42,6 +42,8 @@ pub enum CtlVerb {
     Status(StatusOpts),
     #[structopt(name = "update", about = "Update all components")]
     Update,
+    #[structopt(name = "adopt-and-update", about = "Update all adoptable components")]
+    AdoptAndUpdate,
     #[structopt(name = "validate", about = "Validate system state")]
     Validate,
 }
@@ -67,6 +69,7 @@ impl CtlCommand {
         match self.cmd {
             CtlVerb::Status(opts) => Self::run_status(opts),
             CtlVerb::Update => Self::run_update(),
+            CtlVerb::AdoptAndUpdate => Self::run_adopt_and_update(),
             CtlVerb::Validate => Self::run_validate(),
             CtlVerb::Backend(CtlBackend::Generate(opts)) => {
                 super::bootupd::DCommand::run_generate_meta(opts)
@@ -101,6 +104,17 @@ impl CtlCommand {
         client.connect()?;
 
         bootupd::client_run_update(&mut client)?;
+
+        client.shutdown()?;
+        Ok(())
+    }
+
+    /// Runner for `update` verb.
+    fn run_adopt_and_update() -> Result<()> {
+        let mut client = ClientToDaemonConnection::new();
+        client.connect()?;
+
+        bootupd::client_run_adopt_and_update(&mut client)?;
 
         client.shutdown()?;
         Ok(())

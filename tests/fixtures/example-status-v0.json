@@ -13,5 +13,6 @@
       "updatable": "at-latest-version",
       "adopted-from": null
     }
-  }
+  },
+  "adoptable": {}
 }
