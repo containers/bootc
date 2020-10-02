@@ -46,6 +46,7 @@ bootupctl status > out.txt
 assert_file_has_content_literal out.txt 'Component EFI'
 assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
 assert_file_has_content_literal out.txt 'Update: At latest version'
+assert_file_has_content out.txt 'CoreOS aleph image ID: .*-qemu.'$(arch)'.qcow2'
 ok status
 
 # Validate we auto-exited
