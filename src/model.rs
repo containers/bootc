@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 pub(crate) const BOOTUPD_UPDATES_DIR: &str = "usr/lib/bootupd/updates";
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) struct ContentMetadata {
     /// The timestamp, which is used to determine update availability
     pub(crate) timestamp: DateTime<Utc>,
@@ -30,6 +31,7 @@ impl ContentMetadata {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) struct InstalledContent {
     /// Associated metadata
     pub(crate) meta: ContentMetadata,
@@ -102,6 +104,7 @@ pub(crate) struct Status {
 #[cfg(test)]
 mod test {
     use super::*;
+    use anyhow::Result;
     use chrono::Duration;
 
     #[test]
@@ -117,5 +120,18 @@ mod test {
         };
         assert!(a.can_upgrade_to(&b));
         assert!(!b.can_upgrade_to(&a));
+    }
+
+    /// Validate we're not breaking the serialized format.
+    #[test]
+    fn test_deserialize() -> Result<()> {
+        let data = include_str!("../tests/fixtures/example-state-v0.json");
+        let state: SavedState = serde_json::from_str(data)?;
+        let efi = state.installed.get("EFI").expect("EFI");
+        assert_eq!(
+            efi.meta.version,
+            "grub2-efi-x64-1:2.04-23.fc32.x86_64,shim-x64-15-8.x86_64"
+        );
+        Ok(())
     }
 }

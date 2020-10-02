@@ -1,0 +1,47 @@
+{
+  "installed": {
+    "EFI": {
+      "meta": {
+        "timestamp": "2020-09-15T13:01:21Z",
+        "version": "grub2-efi-x64-1:2.04-23.fc32.x86_64,shim-x64-15-8.x86_64"
+      },
+      "filetree": {
+        "children": {
+          "BOOT/BOOTX64.EFI": {
+            "size": 1210776,
+            "sha512": "sha512:52e08b6e1686b19fea9e8f8d8ca51d22bba252467ceaf6db6ead8dd2dca4a0b0b02e547e50ddf1cdee225b8785f8514f6baa846bdf1ea0bf994e772daf70f2c3"
+          },
+          "BOOT/fbx64.efi": {
+            "size": 357248,
+            "sha512": "sha512:81fed5039bdd2bc53a203a1eaf56c6a6c9a95aa7ac88f037718a342205d83550f409741c8ef86b481f55ea7188ce0d661742548596f92ef97ba2a1695bc4caae"
+          },
+          "fedora/BOOTX64.CSV": {
+            "size": 110,
+            "sha512": "sha512:0c29b8ae73171ef683ba690069c1bae711e130a084a81169af33a83dfbae4e07d909c2482dbe89a96ab26e171f17c53f1de8cb13d558bc1535412ff8accf253f"
+          },
+          "fedora/grubx64.efi": {
+            "size": 2528520,
+            "sha512": "sha512:b35a6317658d07844d6bf0f96c35f2df90342b8b13a329b4429ac892351ff74fc794a97bc3d3e2d79bef4c234b49a8dd5147b71a3376f24bc956130994e9961c"
+          },
+          "fedora/mmx64.efi": {
+            "size": 1159560,
+            "sha512": "sha512:f83ea67756cfcc3ec4eb1c83104c719ba08e66abfadb94b4bd75891e237c448bbec0fdb5bd42826e291ccc3dee559af424900b3d642a7d11c5bc9f117718837a"
+          },
+          "fedora/shim.efi": {
+            "size": 1210776,
+            "sha512": "sha512:52e08b6e1686b19fea9e8f8d8ca51d22bba252467ceaf6db6ead8dd2dca4a0b0b02e547e50ddf1cdee225b8785f8514f6baa846bdf1ea0bf994e772daf70f2c3"
+          },
+          "fedora/shimx64-fedora.efi": {
+            "size": 1204496,
+            "sha512": "sha512:dc3656b90c0d1767365bea462cc94a2a3044899f510bd61a9a7ae1a9ca586e3d6189592b1ba1ee859f45614421297fa2f5353328caa615f51da5aed9ecfbf29c"
+          },
+          "fedora/shimx64.efi": {
+            "size": 1210776,
+            "sha512": "sha512:52e08b6e1686b19fea9e8f8d8ca51d22bba252467ceaf6db6ead8dd2dca4a0b0b02e547e50ddf1cdee225b8785f8514f6baa846bdf1ea0bf994e772daf70f2c3"
+          }
+        }
+      }
+    }
+  },
+  "pending": null
+}
