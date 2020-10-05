@@ -1,4 +1,6 @@
+use crate::bootupd;
 use crate::ipc::ClientToDaemonConnection;
+use crate::model::Status;
 use anyhow::Result;
 use log::LevelFilter;
 use structopt::clap::AppSettings;
@@ -80,13 +82,13 @@ impl CtlCommand {
         let mut client = ClientToDaemonConnection::new();
         client.connect()?;
 
-        let r: crate::Status = client.send(&crate::ClientRequest::Status)?;
+        let r: Status = client.send(&bootupd::ClientRequest::Status)?;
         if opts.json {
             let stdout = std::io::stdout();
             let mut stdout = stdout.lock();
             serde_json::to_writer_pretty(&mut stdout, &r)?;
         } else {
-            crate::print_status(&r);
+            bootupd::print_status(&r);
         }
 
         client.shutdown()?;
@@ -98,7 +100,7 @@ impl CtlCommand {
         let mut client = ClientToDaemonConnection::new();
         client.connect()?;
 
-        crate::client_run_update(&mut client)?;
+        bootupd::client_run_update(&mut client)?;
 
         client.shutdown()?;
         Ok(())
@@ -108,7 +110,7 @@ impl CtlCommand {
     fn run_validate() -> Result<()> {
         let mut client = ClientToDaemonConnection::new();
         client.connect()?;
-        crate::client_run_validate(&mut client)?;
+        bootupd::client_run_validate(&mut client)?;
         client.shutdown()?;
         Ok(())
     }

@@ -1,6 +1,8 @@
 //! Daemon logic.
 
-use crate::ipc;
+use crate::component::ValidationResult;
+use crate::model::Status;
+use crate::{bootupd, ipc};
 use anyhow::{bail, Context, Result};
 use nix::sys::socket as nixsocket;
 use std::os::unix::io::RawFd;
@@ -82,7 +84,7 @@ fn accept_authenticate_client(srvsock_fd: RawFd) -> Result<ipc::AuthenticatedCli
 /// This sequentially processes all requests from a client, until it
 /// disconnects or a connection error is encountered.
 fn process_client_requests(client: ipc::AuthenticatedClient) -> Result<()> {
-    use crate::ClientRequest;
+    use crate::bootupd::ClientRequest;
 
     let mut buf = [0u8; ipc::MSGSIZE];
     loop {
@@ -97,22 +99,22 @@ fn process_client_requests(client: ipc::AuthenticatedClient) -> Result<()> {
         let r = match msg {
             ClientRequest::Update { component } => {
                 log::trace!("processing 'update' request");
-                bincode::serialize(&match crate::update(component.as_str()) {
-                    Ok(v) => ipc::DaemonToClientReply::Success::<crate::ComponentUpdateResult>(v),
+                bincode::serialize(&match bootupd::update(component.as_str()) {
+                    Ok(v) => ipc::DaemonToClientReply::Success::<bootupd::ComponentUpdateResult>(v),
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
                 })?
             }
             ClientRequest::Validate { component } => {
                 log::trace!("processing 'validate' request");
-                bincode::serialize(&match crate::validate(component.as_str()) {
-                    Ok(v) => ipc::DaemonToClientReply::Success::<crate::ValidationResult>(v),
+                bincode::serialize(&match bootupd::validate(component.as_str()) {
+                    Ok(v) => ipc::DaemonToClientReply::Success::<ValidationResult>(v),
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
                 })?
             }
             ClientRequest::Status => {
                 log::trace!("processing 'status' request");
-                bincode::serialize(&match crate::status() {
-                    Ok(v) => ipc::DaemonToClientReply::Success::<crate::Status>(v),
+                bincode::serialize(&match bootupd::status() {
+                    Ok(v) => ipc::DaemonToClientReply::Success::<Status>(v),
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
                 })?
             }

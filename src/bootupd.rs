@@ -1,18 +1,7 @@
-/*!
-**Boot**loader **upd**ater.
-
-This is an early prototype hidden/not-yet-standardized mechanism
-which just updates EFI for now (x86_64/aarch64 only).
-
-But in the future will hopefully gain some independence from
-ostree and also support e.g. updating the MBR etc.
-
-Refs:
- * <https://github.com/coreos/fedora-coreos-tracker/issues/510>
-!*/
-
-#![deny(unused_must_use)]
-
+use crate::component::{Component, ValidationResult};
+use crate::efi;
+use crate::model::{ComponentStatus, ComponentUpdatable, ContentMetadata, SavedState, Status};
+use crate::{component, ipc};
 use anyhow::{bail, Context, Result};
 use fs2::FileExt;
 use openat_ext::OpenatDirExt;
@@ -20,23 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::io::prelude::*;
 use std::path::Path;
-
-// #[cfg(any(target_arch = "x86_64"))]
-// mod bios;
-mod cli;
-pub use cli::MultiCall;
-mod component;
-mod daemon;
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-mod efi;
-mod filetree;
-mod ipc;
-use component::*;
-mod model;
-use model::*;
-mod ostreeutil;
-mod sha512string;
-mod util;
 
 /// Stored in /boot to describe our state; think of it like
 /// a tiny rpm/dpkg database.  It's stored in /boot
@@ -46,7 +18,7 @@ pub(crate) const WRITE_LOCK_PATH: &str = "run/bootupd-lock";
 
 /// A message sent from client to server
 #[derive(Debug, Serialize, Deserialize)]
-enum ClientRequest {
+pub(crate) enum ClientRequest {
     /// Update a component
     Update { component: String },
     /// Validate a component
@@ -125,7 +97,7 @@ fn acquire_write_lock<P: AsRef<Path>>(sysroot: P) -> Result<std::fs::File> {
 /// Return value from daemon → client for component update
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
-enum ComponentUpdateResult {
+pub(crate) enum ComponentUpdateResult {
     AtLatestVersion,
     Updated {
         previous: ContentMetadata,
@@ -135,7 +107,7 @@ enum ComponentUpdateResult {
 }
 
 /// daemon implementation of component update
-fn update(name: &str) -> Result<ComponentUpdateResult> {
+pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
     let sysroot = openat::Dir::open("/")?;
     let _lock = acquire_write_lock("/")?;
     let mut state = get_saved_state("/")?.unwrap_or_else(|| SavedState {
@@ -171,7 +143,7 @@ fn update(name: &str) -> Result<ComponentUpdateResult> {
 }
 
 /// daemon implementation of component validate
-fn validate(name: &str) -> Result<ValidationResult> {
+pub(crate) fn validate(name: &str) -> Result<ValidationResult> {
     let state = get_saved_state("/")?.unwrap_or_else(|| SavedState {
         ..Default::default()
     });
@@ -226,7 +198,7 @@ fn get_saved_state(sysroot_path: &str) -> Result<Option<SavedState>> {
     Ok(saved_state)
 }
 
-fn status() -> Result<Status> {
+pub(crate) fn status() -> Result<Status> {
     let mut ret: Status = Default::default();
     let state = if let Some(state) = get_saved_state("/")? {
         state
@@ -234,7 +206,7 @@ fn status() -> Result<Status> {
         return Ok(ret);
     };
     for (name, ic) in state.installed.iter() {
-        let component = component::new_from_name(&name)?;
+        let component = crate::component::new_from_name(&name)?;
         let component = component.as_ref();
         let interrupted = state
             .pending
@@ -256,7 +228,7 @@ fn status() -> Result<Status> {
     Ok(ret)
 }
 
-fn print_status(status: &Status) {
+pub(crate) fn print_status(status: &Status) {
     for (name, component) in status.components.iter() {
         println!("Component {}", name);
         println!("  Installed: {}", component.installed.version);
@@ -304,7 +276,7 @@ fn validate_preview_env() -> Result<()> {
     }
 }
 
-fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
+pub(crate) fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
     validate_preview_env()?;
     let status: Status = c.send(&ClientRequest::Status)?;
     if status.components.is_empty() {
@@ -350,7 +322,7 @@ fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
     Ok(())
 }
 
-fn client_run_validate(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
+pub(crate) fn client_run_validate(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
     let status: Status = c.send(&ClientRequest::Status)?;
     if status.components.is_empty() {
         println!("No components installed.");

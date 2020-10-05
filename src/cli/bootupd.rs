@@ -1,3 +1,4 @@
+use crate::bootupd;
 use anyhow::{Context, Result};
 use log::LevelFilter;
 use structopt::StructOpt;
@@ -65,13 +66,14 @@ impl DCommand {
 
     /// Runner for `generate-install-metadata` verb.
     pub(crate) fn run_generate_meta(opts: GenerateOpts) -> Result<()> {
-        crate::generate_update_metadata(&opts.sysroot).context("generating metadata failed")?;
+        bootupd::generate_update_metadata(&opts.sysroot).context("generating metadata failed")?;
         Ok(())
     }
 
     /// Runner for `install` verb.
     pub(crate) fn run_install(opts: InstallOpts) -> Result<()> {
-        crate::install(&opts.src_root, &opts.dest_root).context("boot data installation failed")?;
+        bootupd::install(&opts.src_root, &opts.dest_root)
+            .context("boot data installation failed")?;
         Ok(())
     }
 }

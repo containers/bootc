@@ -6,10 +6,6 @@ version = "0.1.1"
 authors = ["Colin Walters <walters@verbum.org>"]
 edition = "2018"
 
-[lib]
-name = "bootupd"
-path = "src/bootupd.rs"
-
 [[bin]]
 name = "bootupd"
 path = "src/main.rs"
