@@ -1,17 +1,6 @@
-# This list is outdated, but it's copied from coreos-assembler
-# Once we figure out a better way to maintain it please ensure
-# that coreos-assembler is fixed first.
+# This list is the CoreOS updates&remoting team
 approvers:
-  - arithx
-  - ashcrow
-  - bgilbert
   - cgwalters
-  - darkmuggle
-  - dustymabe
-  - jlebon
-  - LorbusChris
+  - kelvinfan001
   - lucab
-  - miabbott
-  - mike-nguyen
-  - yuqi-zhddang
-  - zonggen
+  - travier
