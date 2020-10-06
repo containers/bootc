@@ -270,7 +270,7 @@ pub(crate) fn print_status(status: &Status) {
     if let Some(ref os) = status.os {
         match os {
             OperatingSystem::CoreOS { aleph_imgid } => {
-                println!("  CoreOS aleph image ID: {}", aleph_imgid);
+                println!("CoreOS aleph image ID: {}", aleph_imgid);
             }
         }
     }
