@@ -7,6 +7,7 @@
 set -euo pipefail
 
 dn=$(cd $(dirname $0) && pwd)
+testprefix=$(cd ${dn} && git rev-parse --show-prefix)
 . ${dn}/../kola/data/libtest.sh
 . ${dn}/testrpmbuild.sh
 
@@ -122,7 +123,7 @@ systemd:
         Environment=TARGET_GRUB_PKG=${target_grub_pkg}
         Environment=SRCDIR=/run/bootupd-source
         # Run via shell because selinux denies systemd writing to 9p apparently
-        ExecStart=/bin/sh -c '/run/bootupd-source/tests/e2e/e2e-in-vm.sh &>>/run/testtmp/out.txt; test -f /run/rebooting || poweroff -ff'
+        ExecStart=/bin/sh -c '/run/bootupd-source/${testprefix}/e2e-update-in-vm.sh &>>/run/testtmp/out.txt; test -f /run/rebooting || poweroff -ff'
         [Install]
         WantedBy=multi-user.target
 EOF
