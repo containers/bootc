@@ -245,6 +245,9 @@ pub(crate) fn status() -> Result<Status> {
 }
 
 pub(crate) fn print_status(status: &Status) {
+    if status.components.is_empty() {
+        println!("No components installed.");
+    }
     for (name, component) in status.components.iter() {
         println!("Component {}", name);
         println!("  Installed: {}", component.installed.version);
