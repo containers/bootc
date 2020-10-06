@@ -53,7 +53,7 @@ pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
     }
 
     let sysroot = openat::Dir::open(dest_root)?;
-    update_state(&sysroot, &state)?;
+    update_state(&sysroot, &state).context("Failed to update state")?;
 
     Ok(())
 }
@@ -112,7 +112,7 @@ pub(crate) enum ComponentUpdateResult {
 /// daemon implementation of component update
 pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
     let sysroot = openat::Dir::open("/")?;
-    let _lock = acquire_write_lock("/")?;
+    let _lock = acquire_write_lock("/").context("Failed to acquire write lock")?;
     let mut state = get_saved_state("/")?.unwrap_or_else(|| SavedState {
         ..Default::default()
     });
@@ -131,7 +131,7 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
     let interrupted = pending_container.get(component.name()).cloned();
 
     pending_container.insert(component.name().into(), update.clone());
-    update_state(&sysroot, &state)?;
+    update_state(&sysroot, &state).context("Failed to update state")?;
     let newinst = component
         .run_update(&inst)
         .with_context(|| format!("Failed to update {}", component.name()))?;
@@ -163,7 +163,9 @@ pub(crate) fn validate(name: &str) -> Result<ValidationResult> {
 fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
     let subdir = sysroot_dir.sub_dir(STATEFILE_DIR)?;
     let f = {
-        let f = subdir.new_unnamed_file(0o644)?;
+        let f = subdir
+            .new_unnamed_file(0o644)
+            .context("creating temp file")?;
         let mut buff = std::io::BufWriter::new(f);
         serde_json::to_writer(&mut buff, state)?;
         buff.flush()?;
@@ -177,11 +179,17 @@ fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
     };
     let dest_tmp_name = Path::new(&dest_tmp_name);
     if subdir.exists(dest_tmp_name)? {
-        subdir.remove_file(dest_tmp_name)?;
+        subdir
+            .remove_file(dest_tmp_name)
+            .context("Removing temp file")?;
     }
-    subdir.link_file_at(&f, dest_tmp_name)?;
-    f.sync_all()?;
-    subdir.local_rename(dest_tmp_name, STATEFILE_NAME)?;
+    subdir
+        .link_file_at(&f, dest_tmp_name)
+        .context("Linking temp file")?;
+    f.sync_all().context("syncing")?;
+    subdir
+        .local_rename(dest_tmp_name, STATEFILE_NAME)
+        .context("Renaming temp file")?;
     Ok(())
 }
 
