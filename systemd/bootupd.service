@@ -11,7 +11,17 @@ StartLimitBurst=10
 Type=notify
 Environment=BOOTUPD_VERBOSITY="-v"
 ExecStart=/usr/libexec/bootupd daemon $BOOTUPD_VERBOSITY
-# On general principle
+# This way our working directory isn't writable by default.
+WorkingDirectory=/usr
+# Various hardening flags just on general principle.  We need
+# to run as root, but let's avoid accidental damage.
 ProtectHome=yes
+ReadOnlyPaths=/usr
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
 # So we can remount /boot writable
 MountFlags=slave
