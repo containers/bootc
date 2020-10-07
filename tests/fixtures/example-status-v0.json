@@ -13,10 +13,5 @@
       "updatable": "at-latest-version",
       "adopted-from": null
     }
-  },
-  "os": {
-    "core-o-s": {
-      "aleph_imgid": "fedora-coreos-32.20201007.dev.0-qemu.x86_64.qcow2"
-    }
   }
 }

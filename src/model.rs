@@ -91,12 +91,6 @@ pub(crate) struct ComponentStatus {
     pub(crate) updatable: ComponentUpdatable,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum OperatingSystem {
-    CoreOS { aleph_imgid: String },
-}
-
 /// Representation of bootupd's worldview at a point in time.
 /// This is intended to be a stable format that is output by `bootupctl status --json`
 /// and parsed by higher level management tools.  Transitively then
@@ -107,8 +101,6 @@ pub(crate) enum OperatingSystem {
 pub(crate) struct Status {
     /// Maps a component name to status
     pub(crate) components: BTreeMap<String, ComponentStatus>,
-    /// The detected operating system
-    pub(crate) os: Option<OperatingSystem>,
 }
 
 #[cfg(test)]

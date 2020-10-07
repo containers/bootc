@@ -88,7 +88,7 @@ impl CtlCommand {
             let mut stdout = stdout.lock();
             serde_json::to_writer_pretty(&mut stdout, &r)?;
         } else {
-            bootupd::print_status(&r);
+            bootupd::print_status(&r)?;
         }
 
         client.shutdown()?;

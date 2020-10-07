@@ -1,9 +1,7 @@
 use crate::component::{Component, ValidationResult};
 use crate::coreos;
 use crate::efi;
-use crate::model::{
-    ComponentStatus, ComponentUpdatable, ContentMetadata, OperatingSystem, SavedState, Status,
-};
+use crate::model::{ComponentStatus, ComponentUpdatable, ContentMetadata, SavedState, Status};
 use crate::{component, ipc};
 use anyhow::{anyhow, bail, Context, Result};
 use fs2::FileExt;
@@ -247,17 +245,13 @@ pub(crate) fn status() -> Result<Status> {
     } else {
         log::trace!("No saved state");
     }
+
     log::trace!("Remaining known components: {}", known_components.len());
 
-    if let Some(coreos_aleph) = coreos::get_aleph_version()? {
-        ret.os = Some(OperatingSystem::CoreOS {
-            aleph_imgid: coreos_aleph.aleph.imgid,
-        })
-    }
     Ok(ret)
 }
 
-pub(crate) fn print_status(status: &Status) {
+pub(crate) fn print_status(status: &Status) -> Result<()> {
     if status.components.is_empty() {
         println!("No components installed.");
     }
@@ -283,12 +277,8 @@ pub(crate) fn print_status(status: &Status) {
         println!("  Update: {}", msg);
     }
 
-    if let Some(ref os) = status.os {
-        match os {
-            OperatingSystem::CoreOS { aleph_imgid } => {
-                println!("CoreOS aleph image ID: {}", aleph_imgid);
-            }
-        }
+    if let Some(coreos_aleph) = coreos::get_aleph_version()? {
+        println!("CoreOS aleph image ID: {}", coreos_aleph.aleph.imgid);
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -300,6 +290,8 @@ pub(crate) fn print_status(status: &Status) {
         };
         println!("Boot method: {}", boot_method);
     }
+
+    Ok(())
 }
 
 /// Checks that the user has provided an environment variable to signal
