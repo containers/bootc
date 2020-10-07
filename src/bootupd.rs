@@ -5,11 +5,12 @@ use crate::model::{
     ComponentStatus, ComponentUpdatable, ContentMetadata, OperatingSystem, SavedState, Status,
 };
 use crate::{component, ipc};
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use fs2::FileExt;
 use openat_ext::OpenatDirExt;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::io::prelude::*;
 use std::path::Path;
 
@@ -47,7 +48,7 @@ pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
         installed: Default::default(),
         pending: Default::default(),
     };
-    for component in components {
+    for component in components.values() {
         let meta = component.install(source_root, dest_root)?;
         state.installed.insert(component.name().into(), meta);
     }
@@ -58,11 +59,17 @@ pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn get_components() -> Vec<Box<dyn Component>> {
-    let mut components: Vec<Box<dyn Component>> = Vec::new();
+type Components = BTreeMap<&'static str, Box<dyn Component>>;
+
+pub(crate) fn get_components() -> Components {
+    let mut components = BTreeMap::new();
+
+    fn insert_component(components: &mut Components, component: Box<dyn Component>) {
+        components.insert(component.name(), component);
+    }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    components.push(Box::new(efi::EFI::default()));
+    insert_component(&mut components, Box::new(efi::EFI::default()));
 
     // #[cfg(target_arch = "x86_64")]
     // components.push(Box::new(bios::BIOS::new()));
@@ -71,7 +78,7 @@ pub(crate) fn get_components() -> Vec<Box<dyn Component>> {
 }
 
 pub(crate) fn generate_update_metadata(sysroot_path: &str) -> Result<()> {
-    for component in get_components() {
+    for component in get_components().values() {
         let v = component.generate_update_metadata(sysroot_path)?;
         println!(
             "Generated update layout for {}: {}",
@@ -211,31 +218,37 @@ fn get_saved_state(sysroot_path: &str) -> Result<Option<SavedState>> {
 
 pub(crate) fn status() -> Result<Status> {
     let mut ret: Status = Default::default();
-    let state = if let Some(state) = get_saved_state("/")? {
-        state
+    let mut known_components = get_components();
+    let state = get_saved_state("/")?;
+    if let Some(state) = state {
+        for (name, ic) in state.installed.iter() {
+            log::trace!("Gathering status for installed component: {}", name);
+            let component = known_components
+                .remove(name.as_str())
+                .ok_or_else(|| anyhow!("Unknown component installed: {}", name))?;
+            let component = component.as_ref();
+            let interrupted = state
+                .pending
+                .as_ref()
+                .map(|p| p.get(name.as_str()))
+                .flatten();
+            let update = component.query_update()?;
+            let updatable = ComponentUpdatable::from_metadata(&ic.meta, update.as_ref());
+            ret.components.insert(
+                name.to_string(),
+                ComponentStatus {
+                    installed: ic.meta.clone(),
+                    interrupted: interrupted.cloned(),
+                    update,
+                    updatable,
+                },
+            );
+        }
     } else {
-        return Ok(ret);
-    };
-    for (name, ic) in state.installed.iter() {
-        let component = crate::component::new_from_name(&name)?;
-        let component = component.as_ref();
-        let interrupted = state
-            .pending
-            .as_ref()
-            .map(|p| p.get(name.as_str()))
-            .flatten();
-        let update = component.query_update()?;
-        let updatable = ComponentUpdatable::from_metadata(&ic.meta, update.as_ref());
-        ret.components.insert(
-            name.to_string(),
-            ComponentStatus {
-                installed: ic.meta.clone(),
-                interrupted: interrupted.cloned(),
-                update,
-                updatable,
-            },
-        );
+        log::trace!("No saved state");
     }
+    log::trace!("Remaining known components: {}", known_components.len());
+
     if let Some(coreos_aleph) = coreos::get_aleph_version()? {
         ret.os = Some(OperatingSystem::CoreOS {
             aleph_imgid: coreos_aleph.imgid,
