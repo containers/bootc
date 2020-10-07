@@ -32,35 +32,32 @@ codestyle: {
 
 // Build FCOS and do a kola basic run
 // FIXME update to main branch once https://github.com/coreos/fedora-coreos-config/pull/595 merges
-stage("FCOS") {
-  cosaPod(buildroot: true, runAsUser: 0, memory: "3072Mi", cpu: "4") {
-    stage("Build FCOS") {
-      checkout scm
-      unstash 'build'
-      // Note that like {rpm-,}ostree we want to install to both / and overrides/rootfs
-      // because bootupd is used both during the `rpm-ostree compose tree` as well as
-      // inside the target operating system.
-      shwrap("""
-        mkdir insttree
-        tar -C insttree -xzvf insttree.tar.gz
-        rsync -rlv insttree/ /
-        coreos-assembler init --force https://github.com/coreos/fedora-coreos-config
-        mkdir -p overrides/rootfs
-        mv insttree/* overrides/rootfs/
-        rmdir insttree
-        coreos-assembler fetch
-      """)
-    }
-    // The e2e-update test does a build, so we just end at fetch above
-    stage("e2e upgrade test") {
-      shwrap("env COSA_DIR=${env.WORKSPACE} ./tests/e2e-update/e2e-update.sh")
-    }
-    stage("Kola testing") {
-      // The previous e2e leaves things only having built an ostree update
-      shwrap("cosa build")
-      // bootupd really can't break upgrades for the OS
-      fcosKola(cosaDir: "${env.WORKSPACE}", extraArgs: "ext.*bootupd*", skipUpgrade: true)
-    }
+cosaPod(buildroot: true, runAsUser: 0, memory: "3072Mi", cpu: "4") {
+  stage("Build FCOS") {
+    checkout scm
+    unstash 'build'
+    // Note that like {rpm-,}ostree we want to install to both / and overrides/rootfs
+    // because bootupd is used both during the `rpm-ostree compose tree` as well as
+    // inside the target operating system.
+    shwrap("""
+      mkdir insttree
+      tar -C insttree -xzvf insttree.tar.gz
+      rsync -rlv insttree/ /
+      coreos-assembler init --force https://github.com/coreos/fedora-coreos-config
+      mkdir -p overrides/rootfs
+      mv insttree/* overrides/rootfs/
+      rmdir insttree
+      coreos-assembler fetch
+    """)
+  }
+  // The e2e-update test does a build, so we just end at fetch above
+  stage("e2e upgrade test") {
+    shwrap("env COSA_DIR=${env.WORKSPACE} ./tests/e2e-update/e2e-update.sh")
+  }
+  stage("Kola testing") {
+    // The previous e2e leaves things only having built an ostree update
+    shwrap("cosa build")
+    // bootupd really can't break upgrades for the OS
+    fcosKola(cosaDir: "${env.WORKSPACE}", extraArgs: "ext.*bootupd*", skipUpgrade: true)
   }
 }
-
