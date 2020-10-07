@@ -102,6 +102,7 @@ pub(crate) enum OperatingSystem {
 /// everything referenced from here should also be stable.
 #[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Status {
     /// Maps a component name to status
     pub(crate) components: BTreeMap<String, ComponentStatus>,
@@ -130,14 +131,27 @@ mod test {
         assert!(!b.can_upgrade_to(&a));
     }
 
-    /// Validate we're not breaking the serialized format.
+    /// Validate we're not breaking the serialized format of /boot/bootupd-state.json
     #[test]
-    fn test_deserialize() -> Result<()> {
+    fn test_deserialize_state() -> Result<()> {
         let data = include_str!("../tests/fixtures/example-state-v0.json");
         let state: SavedState = serde_json::from_str(data)?;
         let efi = state.installed.get("EFI").expect("EFI");
         assert_eq!(
             efi.meta.version,
+            "grub2-efi-x64-1:2.04-23.fc32.x86_64,shim-x64-15-8.x86_64"
+        );
+        Ok(())
+    }
+
+    /// Validate we're not breaking the serialized format of `bootupctl status --json`
+    #[test]
+    fn test_deserialize_status() -> Result<()> {
+        let data = include_str!("../tests/fixtures/example-status-v0.json");
+        let status: Status = serde_json::from_str(data)?;
+        let efi = status.components.get("EFI").expect("EFI");
+        assert_eq!(
+            efi.installed.version,
             "grub2-efi-x64-1:2.04-23.fc32.x86_64,shim-x64-15-8.x86_64"
         );
         Ok(())

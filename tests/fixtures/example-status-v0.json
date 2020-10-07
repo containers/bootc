@@ -1,0 +1,22 @@
+{
+  "components": {
+    "EFI": {
+      "installed": {
+        "timestamp": "2020-09-15T13:01:21Z",
+        "version": "grub2-efi-x64-1:2.04-23.fc32.x86_64,shim-x64-15-8.x86_64"
+      },
+      "interrupted": null,
+      "update": {
+        "timestamp": "2020-09-15T13:01:21Z",
+        "version": "grub2-efi-x64-1:2.04-23.fc32.x86_64,shim-x64-15-8.x86_64"
+      },
+      "updatable": "at-latest-version",
+      "adopted-from": null
+    }
+  },
+  "os": {
+    "core-o-s": {
+      "aleph_imgid": "fedora-coreos-32.20201007.dev.0-qemu.x86_64.qcow2"
+    }
+  }
+}
