@@ -7,6 +7,7 @@
  */
 
 use anyhow::Result;
+use chrono::prelude::*;
 use openat_ext::OpenatDirExt;
 use serde::{Deserialize, Serialize};
 
@@ -21,15 +22,25 @@ pub(crate) struct Aleph {
     pub(crate) imgid: String,
 }
 
+pub(crate) struct AlephWithTimestamp {
+    pub(crate) aleph: Aleph,
+    #[allow(dead_code)]
+    pub(crate) ts: chrono::DateTime<Utc>,
+}
+
 /// Path to the file, see above
 const ALEPH_PATH: &str = "/sysroot/.coreos-aleph-version.json";
 
-pub(crate) fn get_aleph_version() -> Result<Option<Aleph>> {
+pub(crate) fn get_aleph_version() -> Result<Option<AlephWithTimestamp>> {
     let sysroot = openat::Dir::open("/")?;
     if let Some(statusf) = sysroot.open_file_optional(ALEPH_PATH)? {
+        let meta = statusf.metadata()?;
         let bufr = std::io::BufReader::new(statusf);
         let aleph: Aleph = serde_json::from_reader(bufr)?;
-        Ok(Some(aleph))
+        Ok(Some(AlephWithTimestamp {
+            aleph,
+            ts: meta.created()?.into(),
+        }))
     } else {
         Ok(None)
     }

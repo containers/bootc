@@ -251,7 +251,7 @@ pub(crate) fn status() -> Result<Status> {
 
     if let Some(coreos_aleph) = coreos::get_aleph_version()? {
         ret.os = Some(OperatingSystem::CoreOS {
-            aleph_imgid: coreos_aleph.imgid,
+            aleph_imgid: coreos_aleph.aleph.imgid,
         })
     }
     Ok(ret)
