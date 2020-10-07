@@ -96,28 +96,24 @@ fn process_client_requests(client: ipc::AuthenticatedClient) -> Result<()> {
         }
 
         let msg = bincode::deserialize(&buf)?;
+        log::trace!("processing request: {:?}", &msg);
         let r = match msg {
             ClientRequest::Update { component } => {
-                log::trace!("processing 'update' request");
                 bincode::serialize(&match bootupd::update(component.as_str()) {
                     Ok(v) => ipc::DaemonToClientReply::Success::<bootupd::ComponentUpdateResult>(v),
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
                 })?
             }
             ClientRequest::Validate { component } => {
-                log::trace!("processing 'validate' request");
                 bincode::serialize(&match bootupd::validate(component.as_str()) {
                     Ok(v) => ipc::DaemonToClientReply::Success::<ValidationResult>(v),
                     Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
                 })?
             }
-            ClientRequest::Status => {
-                log::trace!("processing 'status' request");
-                bincode::serialize(&match bootupd::status() {
-                    Ok(v) => ipc::DaemonToClientReply::Success::<Status>(v),
-                    Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
-                })?
-            }
+            ClientRequest::Status => bincode::serialize(&match bootupd::status() {
+                Ok(v) => ipc::DaemonToClientReply::Success::<Status>(v),
+                Err(e) => ipc::DaemonToClientReply::Failure(format!("{:#}", e)),
+            })?,
         };
         let written = nixsocket::send(client.fd, &r, nixsocket::MsgFlags::MSG_CMSG_CLOEXEC)?;
         if written != r.len() {
