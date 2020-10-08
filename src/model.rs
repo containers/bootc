@@ -42,6 +42,7 @@ pub(crate) struct InstalledContent {
 /// Will be serialized into /boot/bootupd-state.json
 #[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SavedState {
     /// Maps a component name to its currently installed version
     pub(crate) installed: BTreeMap<String, InstalledContent>,
