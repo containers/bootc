@@ -331,22 +331,7 @@ pub(crate) fn print_status(status: &Status) -> Result<()> {
     Ok(())
 }
 
-/// Checks that the user has provided an environment variable to signal
-/// acceptance of our alpha state - use this when performing write operations.
-fn validate_preview_env() -> Result<()> {
-    let v = "BOOTUPD_ACCEPT_PREVIEW";
-    if std::env::var_os(v).is_none() {
-        Err(anyhow::anyhow!(
-            "bootupd is currently alpha; set {}=1 in environment to continue",
-            v
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 pub(crate) fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
-    validate_preview_env()?;
     let status: Status = c.send(&ClientRequest::Status)?;
     if status.components.is_empty() {
         println!("No components installed.");
@@ -392,7 +377,6 @@ pub(crate) fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result
 }
 
 pub(crate) fn client_run_adopt_and_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
-    validate_preview_env()?;
     let status: Status = c.send(&ClientRequest::Status)?;
     if status.adoptable.is_empty() {
         println!("No components are adoptable.");

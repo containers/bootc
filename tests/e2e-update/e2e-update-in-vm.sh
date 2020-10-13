@@ -49,8 +49,6 @@ if ! test -n "${TARGET_GRUB_PKG}"; then
 fi
 
 systemctl start bootupd.socket
-# For now
-export BOOTUPD_ACCEPT_PREVIEW=1
 
 bootupctl validate
 ok validate

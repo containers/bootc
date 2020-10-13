@@ -19,9 +19,6 @@ function cleanup () {
   fi
 }
 
-# For now
-export BOOTUPD_ACCEPT_PREVIEW=1
-
 bootefidir=/boot/efi/EFI
 bootupdir=/usr/lib/bootupd/updates
 efiupdir=${bootupdir}/EFI
@@ -90,11 +87,6 @@ ok update avail
 bootupctl status --json > status.json
 jq -r '.components.EFI.installed.version' < status.json > installed.txt
 assert_file_has_content installed.txt '^grub2-efi-x64'
-
-if env -u BOOTUPD_ACCEPT_PREVIEW bootupctl update; then
-  fatal "Ran without BOOTUPD_ACCEPT_PREVIEW"
-fi
-ok required env
 
 bootupctl update | tee out.txt
 assert_file_has_content out.txt 'Updated EFI: grub2-efi-x64.*,test'

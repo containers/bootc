@@ -12,8 +12,6 @@ echo "Starting $0"
 
 enable_bootupd() {
     systemctl start bootupd.socket
-    # For now
-    export BOOTUPD_ACCEPT_PREVIEW=1
 }
 
 current_commit=$(rpm-ostree status --json | jq -r .deployments[0].checksum)
