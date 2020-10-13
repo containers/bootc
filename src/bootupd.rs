@@ -118,9 +118,7 @@ pub(crate) enum ComponentUpdateResult {
 pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
     let sysroot = openat::Dir::open("/")?;
     let _lock = acquire_write_lock("/").context("Failed to acquire write lock")?;
-    let mut state = get_saved_state("/")?.unwrap_or_else(|| SavedState {
-        ..Default::default()
-    });
+    let mut state = get_saved_state("/")?.unwrap_or_default();
     let component = component::new_from_name(name)?;
     let inst = if let Some(inst) = state.installed.get(name) {
         inst.clone()
@@ -152,9 +150,7 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
 
 /// daemon implementation of component validate
 pub(crate) fn validate(name: &str) -> Result<ValidationResult> {
-    let state = get_saved_state("/")?.unwrap_or_else(|| SavedState {
-        ..Default::default()
-    });
+    let state = get_saved_state("/")?.unwrap_or_default();
     let component = component::new_from_name(name)?;
     let inst = if let Some(inst) = state.installed.get(name) {
         inst.clone()
