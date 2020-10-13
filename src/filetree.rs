@@ -179,7 +179,7 @@ impl FileTree {
         let mut changes = HashSet::new();
 
         for (path, info) in self.children.iter() {
-            assert!(!path.starts_with("/"));
+            assert!(!path.starts_with('/'));
 
             if let Some(meta) = dir.metadata_optional(path)? {
                 match meta.simple_type() {

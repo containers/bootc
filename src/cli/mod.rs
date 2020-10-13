@@ -25,6 +25,7 @@ impl MultiCall {
             let exe_path = std::path::PathBuf::from(arg0);
             exe_path.file_name().unwrap_or_default().to_os_string()
         };
+        #[allow(clippy::wildcard_in_or_patterns)]
         match exe_name.as_bytes() {
             b"bootupctl" => MultiCall::Ctl(bootupctl::CtlCommand::from_iter(args)),
             b"bootupd" | _ => MultiCall::D(bootupd::DCommand::from_iter(args)),

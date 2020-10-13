@@ -26,7 +26,7 @@ impl ContentMetadata {
         if self.version == target.version {
             return false;
         }
-        return target.timestamp > self.timestamp;
+        target.timestamp > self.timestamp
     }
 }
 

@@ -155,7 +155,7 @@ impl Component for EFI {
 
         let meta = ContentMetadata {
             timestamp: **largest_timestamp,
-            version: version,
+            version,
         };
         write_update_metadata(sysroot_path, self, &meta)?;
         Ok(meta)
