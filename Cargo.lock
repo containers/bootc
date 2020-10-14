@@ -92,7 +92,7 @@ dependencies = [
  "libc",
  "libsystemd",
  "log",
- "nix",
+ "nix 0.19.0",
  "openat",
  "openat-ext",
  "openssl",
@@ -317,7 +317,7 @@ dependencies = [
  "error-chain",
  "hmac",
  "libc",
- "nix",
+ "nix 0.17.0",
  "serde",
  "sha2",
  "uuid",
@@ -349,6 +349,18 @@ dependencies = [
  "cfg-if",
  "libc",
  "void",
+]
+
+[[package]]
+name = "nix"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85db2feff6bf70ebc3a4793191517d5f0331100a2f10f9bf93b5e5214f32b7b7"
+dependencies = [
+ "bitflags",
+ "cc",
+ "cfg-if",
+ "libc",
 ]
 
 [[package]]
@@ -392,7 +404,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af1be1e54fbd54bae8b4497ddcc30f97ae57f18fa37fa2f35d48db7b0a8f0b59"
 dependencies = [
  "libc",
- "nix",
+ "nix 0.17.0",
  "openat",
 ]
 
