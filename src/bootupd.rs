@@ -3,20 +3,11 @@ use crate::coreos;
 use crate::efi;
 use crate::model::{ComponentStatus, ComponentUpdatable, ContentMetadata, SavedState, Status};
 use crate::{component, ipc};
-use anyhow::{anyhow, bail, Context, Result};
-use fs2::FileExt;
-use openat_ext::OpenatDirExt;
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::io::prelude::*;
 use std::path::Path;
-
-/// Stored in /boot to describe our state; think of it like
-/// a tiny rpm/dpkg database.  It's stored in /boot
-pub(crate) const STATEFILE_DIR: &str = "boot";
-pub(crate) const STATEFILE_NAME: &str = "bootupd-state.json";
-pub(crate) const WRITE_LOCK_PATH: &str = "run/bootupd-lock";
 
 /// A message sent from client to server
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,29 +23,27 @@ pub(crate) enum ClientRequest {
 }
 
 pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
-    let statepath = Path::new(dest_root)
-        .join(STATEFILE_DIR)
-        .join(STATEFILE_NAME);
-    if statepath.exists() {
-        bail!("{:?} already exists, cannot re-install", statepath);
-    }
+    SavedState::ensure_not_present(dest_root)
+        .context("failed to install, invalid re-install attempted")?;
 
     let components = get_components();
     if components.is_empty() {
         println!("No components available for this platform.");
         return Ok(());
     }
-    let mut state = SavedState {
-        installed: Default::default(),
-        pending: Default::default(),
-    };
+
+    let mut state = SavedState::default();
     for component in components.values() {
         let meta = component.install(source_root, dest_root)?;
         state.installed.insert(component.name().into(), meta);
     }
 
-    let sysroot = openat::Dir::open(dest_root)?;
-    update_state(&sysroot, &state).context("Failed to update state")?;
+    let mut state_guard =
+        SavedState::acquire_write_lock(source_root).context("failed to acquire write lock")?;
+    let mut sysroot = openat::Dir::open(dest_root)?;
+    state_guard
+        .update_state(&mut sysroot, &state)
+        .context("failed to update state")?;
 
     Ok(())
 }
@@ -90,20 +79,6 @@ pub(crate) fn generate_update_metadata(sysroot_path: &str) -> Result<()> {
     Ok(())
 }
 
-/// Hold a lock on the system root; while ordinarily we run
-/// as a systemd unit which implicitly ensures a "singleton"
-/// instance this is a double check.
-fn acquire_write_lock<P: AsRef<Path>>(sysroot: P) -> Result<std::fs::File> {
-    let sysroot = sysroot.as_ref();
-    let lockf = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(sysroot.join(WRITE_LOCK_PATH))?;
-    lockf.lock_exclusive()?;
-    Ok(lockf)
-}
-
 /// Return value from daemon → client for component update
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
@@ -118,9 +93,7 @@ pub(crate) enum ComponentUpdateResult {
 
 /// daemon implementation of component update
 pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
-    let sysroot = openat::Dir::open("/")?;
-    let _lock = acquire_write_lock("/").context("Failed to acquire write lock")?;
-    let mut state = get_saved_state("/")?.unwrap_or_default();
+    let mut state = SavedState::load_from_disk("/")?.unwrap_or_default();
     let component = component::new_from_name(name)?;
     let inst = if let Some(inst) = state.installed.get(name) {
         inst.clone()
@@ -132,17 +105,24 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
         Some(p) if inst.meta.can_upgrade_to(&p) => p,
         _ => return Ok(ComponentUpdateResult::AtLatestVersion),
     };
+
+    let mut sysroot = openat::Dir::open("/")?;
     let mut pending_container = state.pending.take().unwrap_or_default();
     let interrupted = pending_container.get(component.name()).cloned();
-
     pending_container.insert(component.name().into(), update.clone());
-    update_state(&sysroot, &state).context("Failed to update state")?;
+    let mut state_guard =
+        SavedState::acquire_write_lock("/").context("Failed to acquire write lock")?;
+    state_guard
+        .update_state(&mut sysroot, &state)
+        .context("Failed to update state")?;
+
     let newinst = component
         .run_update(&inst)
         .with_context(|| format!("Failed to update {}", component.name()))?;
     state.installed.insert(component.name().into(), newinst);
     pending_container.remove(component.name());
-    update_state(&sysroot, &state)?;
+    state_guard.update_state(&mut sysroot, &state)?;
+
     Ok(ComponentUpdateResult::Updated {
         previous: inst.meta,
         interrupted,
@@ -152,9 +132,7 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
 
 /// daemon implementation of component adoption
 pub(crate) fn adopt_and_update(name: &str) -> Result<ContentMetadata> {
-    let sysroot = openat::Dir::open("/")?;
-    let _lock = acquire_write_lock("/").context("Failed to acquire write lock")?;
-    let mut state = get_saved_state("/")?.unwrap_or_default();
+    let mut state = SavedState::load_from_disk("/")?.unwrap_or_default();
     let component = component::new_from_name(name)?;
     if state.installed.get(name).is_some() {
         anyhow::bail!("Component {} is already installed", name);
@@ -168,13 +146,17 @@ pub(crate) fn adopt_and_update(name: &str) -> Result<ContentMetadata> {
         .adopt_update(&update)
         .context("Failed adopt and update")?;
     state.installed.insert(component.name().into(), inst);
-    update_state(&sysroot, &state)?;
+
+    let mut sysroot = openat::Dir::open("/")?;
+    let mut state_guard =
+        SavedState::acquire_write_lock("/").context("Failed to acquire write lock")?;
+    state_guard.update_state(&mut sysroot, &state)?;
     Ok(update)
 }
 
 /// daemon implementation of component validate
 pub(crate) fn validate(name: &str) -> Result<ValidationResult> {
-    let state = get_saved_state("/")?.unwrap_or_default();
+    let state = SavedState::load_from_disk("/")?.unwrap_or_default();
     let component = component::new_from_name(name)?;
     let inst = if let Some(inst) = state.installed.get(name) {
         inst.clone()
@@ -184,60 +166,10 @@ pub(crate) fn validate(name: &str) -> Result<ValidationResult> {
     component.validate(&inst)
 }
 
-/// Atomically replace the on-disk state with a new version
-fn update_state(sysroot_dir: &openat::Dir, state: &SavedState) -> Result<()> {
-    let subdir = sysroot_dir.sub_dir(STATEFILE_DIR)?;
-    let f = {
-        let f = subdir
-            .new_unnamed_file(0o644)
-            .context("creating temp file")?;
-        let mut buff = std::io::BufWriter::new(f);
-        serde_json::to_writer(&mut buff, state)?;
-        buff.flush()?;
-        buff.into_inner()?
-    };
-    let dest_tmp_name = {
-        // expect OK because we just created the filename above from a constant
-        let mut buf = std::ffi::OsString::from(STATEFILE_NAME);
-        buf.push(".tmp");
-        buf
-    };
-    let dest_tmp_name = Path::new(&dest_tmp_name);
-    if subdir.exists(dest_tmp_name)? {
-        subdir
-            .remove_file(dest_tmp_name)
-            .context("Removing temp file")?;
-    }
-    subdir
-        .link_file_at(&f, dest_tmp_name)
-        .context("Linking temp file")?;
-    f.sync_all().context("syncing")?;
-    subdir
-        .local_rename(dest_tmp_name, STATEFILE_NAME)
-        .context("Renaming temp file")?;
-    Ok(())
-}
-
-/// Load the JSON file containing on-disk state
-fn get_saved_state(sysroot_path: &str) -> Result<Option<SavedState>> {
-    let sysroot_dir = openat::Dir::open(sysroot_path)
-        .with_context(|| format!("opening sysroot {}", sysroot_path))?;
-
-    let statefile_path = Path::new(STATEFILE_DIR).join(STATEFILE_NAME);
-    let saved_state = if let Some(statusf) = sysroot_dir.open_file_optional(&statefile_path)? {
-        let bufr = std::io::BufReader::new(statusf);
-        let saved_state: SavedState = serde_json::from_reader(bufr)?;
-        Some(saved_state)
-    } else {
-        None
-    };
-    Ok(saved_state)
-}
-
 pub(crate) fn status() -> Result<Status> {
     let mut ret: Status = Default::default();
     let mut known_components = get_components();
-    let state = get_saved_state("/")?;
+    let state = SavedState::load_from_disk("/")?;
     if let Some(state) = state {
         for (name, ic) in state.installed.iter() {
             log::trace!("Gathering status for installed component: {}", name);

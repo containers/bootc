@@ -13,6 +13,7 @@ Refs:
 
 #![deny(unused_must_use)]
 
+mod backend;
 mod bootupd;
 mod cli;
 mod component;
