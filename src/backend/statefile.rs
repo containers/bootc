@@ -21,16 +21,23 @@ impl SavedState {
     /// While ordinarily the daemon runs as a systemd unit (which implicitly
     /// ensures a single instance) this is a double check against other
     /// execution paths.
-    pub(crate) fn acquire_write_lock(root_path: impl AsRef<Path>) -> Result<StateLockGuard> {
-        let root_path = root_path.as_ref();
-        let lockfile = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(root_path.join(Self::WRITE_LOCK_PATH))?;
+    pub(crate) fn acquire_write_lock(sysroot: openat::Dir) -> Result<StateLockGuard> {
+        let lockfile = sysroot.write_file(Self::WRITE_LOCK_PATH, 0o644)?;
         lockfile.lock_exclusive()?;
-        let guard = StateLockGuard { lockfile };
+        let guard = StateLockGuard {
+            sysroot,
+            lockfile: Some(lockfile),
+        };
         Ok(guard)
+    }
+
+    /// Use this for cases when the target root isn't booted, which is
+    /// offline installs.
+    pub(crate) fn unlocked(sysroot: openat::Dir) -> Result<StateLockGuard> {
+        Ok(StateLockGuard {
+            sysroot,
+            lockfile: None,
+        })
     }
 
     /// Load the JSON file containing on-disk state.
@@ -65,17 +72,14 @@ impl SavedState {
 /// Write-lock guard for statefile, protecting against concurrent state updates.
 #[derive(Debug)]
 pub(crate) struct StateLockGuard {
-    lockfile: File,
+    sysroot: openat::Dir,
+    lockfile: Option<File>,
 }
 
 impl StateLockGuard {
     /// Atomically replace the on-disk state with a new version.
-    pub(crate) fn update_state(
-        &mut self,
-        sysroot: &mut openat::Dir,
-        state: &SavedState,
-    ) -> Result<()> {
-        let subdir = sysroot.sub_dir(SavedState::STATEFILE_DIR)?;
+    pub(crate) fn update_state(&mut self, state: &SavedState) -> Result<()> {
+        let subdir = self.sysroot.sub_dir(SavedState::STATEFILE_DIR)?;
         let f = {
             let f = subdir
                 .new_unnamed_file(0o644)

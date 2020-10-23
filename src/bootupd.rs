@@ -40,11 +40,10 @@ pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
         state.installed.insert(component.name().into(), meta);
     }
 
-    let mut state_guard =
-        SavedState::acquire_write_lock(source_root).context("failed to acquire write lock")?;
-    let mut sysroot = openat::Dir::open(dest_root)?;
+    let sysroot = openat::Dir::open(dest_root)?;
+    let mut state_guard = SavedState::unlocked(sysroot).context("failed to acquire write lock")?;
     state_guard
-        .update_state(&mut sysroot, &state)
+        .update_state(&state)
         .context("failed to update state")?;
 
     Ok(())
@@ -108,14 +107,14 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
         _ => return Ok(ComponentUpdateResult::AtLatestVersion),
     };
 
-    let mut sysroot = openat::Dir::open("/")?;
     let mut pending_container = state.pending.take().unwrap_or_default();
     let interrupted = pending_container.get(component.name()).cloned();
     pending_container.insert(component.name().into(), update.clone());
+    let sysroot = openat::Dir::open("/")?;
     let mut state_guard =
-        SavedState::acquire_write_lock("/").context("Failed to acquire write lock")?;
+        SavedState::acquire_write_lock(sysroot).context("Failed to acquire write lock")?;
     state_guard
-        .update_state(&mut sysroot, &state)
+        .update_state(&state)
         .context("Failed to update state")?;
 
     let newinst = component
@@ -123,7 +122,7 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
         .with_context(|| format!("Failed to update {}", component.name()))?;
     state.installed.insert(component.name().into(), newinst);
     pending_container.remove(component.name());
-    state_guard.update_state(&mut sysroot, &state)?;
+    state_guard.update_state(&state)?;
 
     Ok(ComponentUpdateResult::Updated {
         previous: inst.meta,
@@ -149,10 +148,10 @@ pub(crate) fn adopt_and_update(name: &str) -> Result<ContentMetadata> {
         .context("Failed adopt and update")?;
     state.installed.insert(component.name().into(), inst);
 
-    let mut sysroot = openat::Dir::open("/")?;
+    let sysroot = openat::Dir::open("/")?;
     let mut state_guard =
-        SavedState::acquire_write_lock("/").context("Failed to acquire write lock")?;
-    state_guard.update_state(&mut sysroot, &state)?;
+        SavedState::acquire_write_lock(sysroot).context("Failed to acquire write lock")?;
+    state_guard.update_state(&state)?;
     Ok(update)
 }
 
