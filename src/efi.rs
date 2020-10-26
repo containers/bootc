@@ -101,11 +101,13 @@ impl Component for EFI {
             anyhow::bail!("No update metadata for component {} found", self.name());
         };
         let srcdir = component_updatedir(src_root, self);
-        let srcd = openat::Dir::open(&srcdir)?;
+        let srcd = openat::Dir::open(&srcdir)
+            .with_context(|| format!("opening src dir {}", srcdir.display()))?;
         let ft = crate::filetree::FileTree::new_from_dir(&srcd)?;
         let destdir = Path::new(dest_root).join(MOUNT_PATH);
         {
-            let destd = openat::Dir::open(&destdir)?;
+            let destd = openat::Dir::open(&destdir)
+                .with_context(|| format!("opening dest dir {}", destdir.display()))?;
             validate_esp(&destd)?;
         }
         let r = std::process::Command::new("cp")

@@ -34,7 +34,9 @@ pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
 
     let mut state = SavedState::default();
     for component in components.values() {
-        let meta = component.install(source_root, dest_root)?;
+        let meta = component
+            .install(source_root, dest_root)
+            .with_context(|| format!("installing component {}", component.name()))?;
         state.installed.insert(component.name().into(), meta);
     }
 
