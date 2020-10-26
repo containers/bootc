@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write as IoWrite;
@@ -107,6 +107,7 @@ pub(crate) fn get_component_update(
         return Ok(None);
     }
     let mut f = std::io::BufReader::new(File::open(&metap)?);
-    let u = serde_json::from_reader(&mut f)?;
+    let u =
+        serde_json::from_reader(&mut f).with_context(|| format!("failed to parse {:?}", metap))?;
     Ok(Some(u))
 }
