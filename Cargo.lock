@@ -175,6 +175,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "drop_bomb"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bda8e21c04aca2ae33ffc2fd8c23134f3cac46db123ba97bd9d3f3b8a4a85e1"
+
+[[package]]
 name = "env_logger"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -353,6 +359,18 @@ dependencies = [
 
 [[package]]
 name = "nix"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83450fe6a6142ddd95fb064b746083fc4ef1705fe81f64a64e1d4b39f54a1055"
+dependencies = [
+ "bitflags",
+ "cc",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
+name = "nix"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85db2feff6bf70ebc3a4793191517d5f0331100a2f10f9bf93b5e5214f32b7b7"
@@ -399,13 +417,15 @@ dependencies = [
 
 [[package]]
 name = "openat-ext"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af1be1e54fbd54bae8b4497ddcc30f97ae57f18fa37fa2f35d48db7b0a8f0b59"
+checksum = "ea8f6f2601742142683130af7d1b387f10e1c3d73121f069203d4139bbb27c4c"
 dependencies = [
+ "drop_bomb",
  "libc",
- "nix 0.17.0",
+ "nix 0.18.0",
  "openat",
+ "rand",
 ]
 
 [[package]]

@@ -5,7 +5,6 @@ use anyhow::{bail, Context, Result};
 use fs2::FileExt;
 use openat_ext::OpenatDirExt;
 use std::fs::File;
-use std::io::prelude::*;
 use std::path::Path;
 
 impl SavedState {
@@ -80,33 +79,10 @@ impl StateLockGuard {
     /// Atomically replace the on-disk state with a new version.
     pub(crate) fn update_state(&mut self, state: &SavedState) -> Result<()> {
         let subdir = self.sysroot.sub_dir(SavedState::STATEFILE_DIR)?;
-        let f = {
-            let f = subdir
-                .new_unnamed_file(0o644)
-                .context("creating temp file")?;
-            let mut buff = std::io::BufWriter::new(f);
-            serde_json::to_writer(&mut buff, state)?;
-            buff.flush()?;
-            buff.into_inner()?
-        };
-        let dest_tmp_name = {
-            let mut buf = std::ffi::OsString::from(SavedState::STATEFILE_NAME);
-            buf.push(".tmp");
-            buf
-        };
-        let dest_tmp_name = Path::new(&dest_tmp_name);
-        if subdir.exists(dest_tmp_name)? {
-            subdir
-                .remove_file(dest_tmp_name)
-                .context("Removing temp file")?;
-        }
-        subdir
-            .link_file_at(&f, dest_tmp_name)
-            .context("Linking temp file")?;
-        f.sync_all().context("syncing")?;
-        subdir
-            .local_rename(dest_tmp_name, SavedState::STATEFILE_NAME)
-            .context("Renaming temp file")?;
+        subdir.write_file_with_sync(SavedState::STATEFILE_NAME, 0o644, |w| -> Result<()> {
+            serde_json::to_writer(w, state)?;
+            Ok(())
+        })?;
         Ok(())
     }
 }
