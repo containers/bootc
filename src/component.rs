@@ -5,9 +5,8 @@
  */
 
 use anyhow::{Context, Result};
+use openat_ext::OpenatDirExt;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 
 use crate::model::*;
@@ -68,14 +67,6 @@ pub(crate) fn new_from_name(name: &str) -> Result<Box<dyn Component>> {
     Ok(r)
 }
 
-/// Returns the path to the JSON file containing a component's available update metadata installed
-/// into the booted operating system root.
-pub(crate) fn component_update_metapath(sysroot: &str, component: &dyn Component) -> PathBuf {
-    Path::new(sysroot)
-        .join(BOOTUPD_UPDATES_DIR)
-        .join(format!("{}.json", component.name()))
-}
-
 /// Returns the path to the payload directory for an available update for
 /// a component.
 pub(crate) fn component_updatedir(sysroot: &str, component: &dyn Component) -> PathBuf {
@@ -84,16 +75,24 @@ pub(crate) fn component_updatedir(sysroot: &str, component: &dyn Component) -> P
         .join(component.name())
 }
 
+/// Returns the name of the JSON file containing a component's available update metadata installed
+/// into the booted operating system root.
+fn component_update_data_name(component: &dyn Component) -> PathBuf {
+    Path::new(&format!("{}.json", component.name())).into()
+}
+
 /// Helper method for writing an update file
 pub(crate) fn write_update_metadata(
     sysroot: &str,
     component: &dyn Component,
     meta: &ContentMetadata,
 ) -> Result<()> {
-    let metap = component_update_metapath(sysroot, component);
-    let mut f = std::io::BufWriter::new(std::fs::File::create(&metap)?);
-    serde_json::to_writer(&mut f, &meta)?;
-    f.flush()?;
+    let sysroot = openat::Dir::open(sysroot)?;
+    let dir = sysroot.sub_dir(BOOTUPD_UPDATES_DIR)?;
+    let name = component_update_data_name(component);
+    dir.write_file_with(&name, 0o644, |w| -> Result<_> {
+        Ok(serde_json::to_writer(w, &meta)?)
+    })?;
     Ok(())
 }
 
@@ -102,12 +101,15 @@ pub(crate) fn get_component_update(
     sysroot: &str,
     component: &dyn Component,
 ) -> Result<Option<ContentMetadata>> {
-    let metap = component_update_metapath(sysroot, component);
-    if !metap.exists() {
-        return Ok(None);
+    let sysroot = openat::Dir::open(sysroot)?;
+    let name = component_update_data_name(component);
+    let path = Path::new(BOOTUPD_UPDATES_DIR).join(name);
+    if let Some(f) = sysroot.open_file_optional(&path)? {
+        let mut f = std::io::BufReader::new(f);
+        let u = serde_json::from_reader(&mut f)
+            .with_context(|| format!("failed to parse {:?}", &path))?;
+        Ok(Some(u))
+    } else {
+        Ok(None)
     }
-    let mut f = std::io::BufReader::new(File::open(&metap)?);
-    let u =
-        serde_json::from_reader(&mut f).with_context(|| format!("failed to parse {:?}", metap))?;
-    Ok(Some(u))
 }

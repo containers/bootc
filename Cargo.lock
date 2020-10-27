@@ -417,9 +417,9 @@ dependencies = [
 
 [[package]]
 name = "openat-ext"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea8f6f2601742142683130af7d1b387f10e1c3d73121f069203d4139bbb27c4c"
+checksum = "73e85ee792caf10bf54dc2a844b9f5cbc4a05095360fdeba67ffe687912d2b8b"
 dependencies = [
  "drop_bomb",
  "libc",
