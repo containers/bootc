@@ -5,6 +5,7 @@ use anyhow::{bail, Context, Result};
 use fs2::FileExt;
 use openat_ext::OpenatDirExt;
 use std::fs::File;
+use std::io::prelude::*;
 use std::path::Path;
 
 impl SavedState {
@@ -47,9 +48,24 @@ impl SavedState {
 
         let statefile_path = Path::new(Self::STATEFILE_DIR).join(Self::STATEFILE_NAME);
         let saved_state = if let Some(statusf) = sysroot.open_file_optional(&statefile_path)? {
-            let bufr = std::io::BufReader::new(statusf);
-            let saved_state: SavedState = serde_json::from_reader(bufr)?;
-            Some(saved_state)
+            let mut bufr = std::io::BufReader::new(statusf);
+            let mut s = String::new();
+            bufr.read_to_string(&mut s)?;
+            let state: serde_json::Result<SavedState> = serde_json::from_str(s.as_str());
+            let r = match state {
+                Ok(s) => s,
+                Err(orig_err) => {
+                    let state: serde_json::Result<crate::model_legacy::SavedState01> =
+                        serde_json::from_str(s.as_str());
+                    match state {
+                        Ok(s) => s.upconvert(),
+                        Err(_) => {
+                            return Err(orig_err)?;
+                        }
+                    }
+                }
+            };
+            Some(r)
         } else {
             None
         };

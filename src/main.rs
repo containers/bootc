@@ -24,6 +24,7 @@ mod efi;
 mod filetree;
 mod ipc;
 mod model;
+mod model_legacy;
 mod ostreeutil;
 mod sha512string;
 mod util;
