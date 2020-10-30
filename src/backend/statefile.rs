@@ -60,7 +60,7 @@ impl SavedState {
                     match state {
                         Ok(s) => s.upconvert(),
                         Err(_) => {
-                            return Err(orig_err)?;
+                            return Err(orig_err.into());
                         }
                     }
                 }

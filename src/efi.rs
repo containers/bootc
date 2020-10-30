@@ -145,7 +145,7 @@ impl Component for EFI {
         Ok(InstalledContent {
             meta: updatemeta,
             filetree: Some(updatef),
-            adopted_from: adopted_from,
+            adopted_from,
         })
     }
 
