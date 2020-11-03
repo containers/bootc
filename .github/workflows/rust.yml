@@ -1,5 +1,5 @@
+---
 name: Rust
-
 on:
   push:
     branches: [ master ]
@@ -8,15 +8,91 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Minimum supported Rust version (MSRV)
+  ACTION_MSRV_TOOLCHAIN: 1.43.0
+  # Pinned toolchain for linting
+  ACTION_LINTS_TOOLCHAIN: 1.47.0
 
 jobs:
-  build:
-
+  tests-stable:
+    name: "Tests, stable toolchain"
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v2
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: "stable"
+          default: true
+      - name: cargo build
+        run: cargo build
+      - name: cargo test
+        run: cargo test
+  tests-release-stable:
+    name: "Tests (release), stable toolchain"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: "stable"
+          default: true
+      - name: cargo build (release)
+        run: cargo build --release
+      - name: cargo test (release)
+        run: cargo test --release
+  tests-release-msrv:
+    name: "Tests (release), minimum supported toolchain"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env['ACTION_MSRV_TOOLCHAIN']  }}
+          default: true
+      - name: cargo build (release)
+        run: cargo build --release
+      - name: cargo test (release)
+        run: cargo test --release
+  linting:
+    name: "Lints, pinned toolchain"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env['ACTION_LINTS_TOOLCHAIN']  }}
+          default: true
+          components: rustfmt, clippy
+      - name: cargo clippy (warnings)
+        run: cargo clippy -- -D warnings
+      - name: cargo fmt (check)
+        run: cargo fmt -- --check -l
+  tests-other-channels:
+    name: "Tests, unstable toolchain"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      matrix:
+        channel:
+          - "beta"
+          - "nightly"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.channel }}
+          default: true
+      - name: cargo build
+        run: cargo build
+      - name: cargo test
+        run: cargo test
