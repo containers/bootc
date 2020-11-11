@@ -49,7 +49,7 @@ impl Component for EFI {
         "EFI"
     }
 
-    fn query_adopt(&self) -> Result<Option<ContentMetadata>> {
+    fn query_adopt(&self) -> Result<Option<Adoptable>> {
         let esp = self.open_esp_optional()?;
         if esp.is_none() {
             log::trace!("No ESP detected");
@@ -67,7 +67,10 @@ impl Component for EFI {
             version: coreos_aleph.aleph.imgid,
         };
         log::trace!("EFI adoptable: {:?}", &meta);
-        Ok(Some(meta))
+        Ok(Some(Adoptable {
+            version: meta,
+            confident: true,
+        }))
     }
 
     /// Given an adoptable system and an update, perform the update.
@@ -90,7 +93,7 @@ impl Component for EFI {
         Ok(InstalledContent {
             meta: updatemeta.clone(),
             filetree: Some(updatef),
-            adopted_from: Some(meta),
+            adopted_from: Some(meta.version),
         })
     }
 

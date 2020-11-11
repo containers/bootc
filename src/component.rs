@@ -27,7 +27,7 @@ pub(crate) trait Component {
     /// In an operating system whose initially booted disk image is not
     /// using bootupd, detect whether it looks like the component exists
     /// and "synthesize" content metadata from it.
-    fn query_adopt(&self) -> Result<Option<ContentMetadata>>;
+    fn query_adopt(&self) -> Result<Option<Adoptable>>;
 
     /// Given an adoptable system and an update, perform the update.
     fn adopt_update(&self, update: &ContentMetadata) -> Result<InstalledContent>;

@@ -95,6 +95,16 @@ pub(crate) struct ComponentStatus {
     pub(crate) adopted_from: Option<ContentMetadata>,
 }
 
+/// Information on a component that can be adopted
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct Adoptable {
+    /// A synthetic version
+    pub(crate) version: ContentMetadata,
+    /// True if we are likely to be able to reliably update this system
+    pub(crate) confident: bool,
+}
+
 /// Representation of bootupd's worldview at a point in time.
 /// This is intended to be a stable format that is output by `bootupctl status --json`
 /// and parsed by higher level management tools.  Transitively then
@@ -106,7 +116,7 @@ pub(crate) struct Status {
     /// Maps a component name to status
     pub(crate) components: BTreeMap<String, ComponentStatus>,
     /// Components that appear to be installed, not via bootupd
-    pub(crate) adoptable: BTreeMap<String, ContentMetadata>,
+    pub(crate) adoptable: BTreeMap<String, Adoptable>,
 }
 
 #[cfg(test)]

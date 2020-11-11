@@ -96,7 +96,7 @@ fi
 
 bootupctl status | tee out.txt
 assert_file_has_content_literal out.txt 'No components installed.'
-assert_file_has_content out.txt 'Adoptable: EFI: .*coreos.*-qemu.*'
+assert_file_has_content out.txt 'Detected: EFI: .*coreos.*-qemu.*'
 
 bootupctl validate | tee out.txt
 assert_file_has_content_literal out.txt 'No components installed.'
@@ -105,7 +105,8 @@ assert_not_file_has_content_literal out.txt "Validated"
 assert_not_has_file /boot/bootupd-state.json
 ok validate
 
-bootupctl adopt-and-update | tee out.txt
+# Explicitly testing https://github.com/coreos/bootupd/issues/103
+bootupctl update | tee out.txt
 assert_file_has_content out.txt 'Adopted and updated: EFI: grub2-efi-x64'
 ok adoption
 

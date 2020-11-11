@@ -243,8 +243,13 @@ pub(crate) fn print_status(status: &Status) -> Result<()> {
     if status.adoptable.is_empty() {
         println!("No components are adoptable.");
     }
-    for (name, version) in status.adoptable.iter() {
-        println!("Adoptable: {}: {}", name, version.version);
+    for (name, adopt) in status.adoptable.iter() {
+        let ver = &adopt.version.version;
+        if adopt.confident {
+            println!("Detected: {}: {}", name, ver);
+        } else {
+            println!("Adoptable: {}: {}", name, ver);
+        }
     }
 
     if let Some(coreos_aleph) = coreos::get_aleph_version()? {
@@ -266,7 +271,7 @@ pub(crate) fn print_status(status: &Status) -> Result<()> {
 
 pub(crate) fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
     let status: Status = c.send(&ClientRequest::Status)?;
-    if status.components.is_empty() {
+    if status.components.is_empty() && status.adoptable.is_empty() {
         println!("No components installed.");
         return Ok(());
     }
@@ -302,6 +307,17 @@ pub(crate) fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result
             }
         }
         updated = true;
+    }
+    for (name, adoptable) in status.adoptable.iter() {
+        if adoptable.confident {
+            let r: ContentMetadata = c.send(&ClientRequest::AdoptAndUpdate {
+                component: name.to_string(),
+            })?;
+            println!("Adopted and updated: {}: {}", name, r.version);
+            updated = true;
+        } else {
+            println!("Component {} requires explicit adopt-and-update", name);
+        }
     }
     if !updated {
         println!("No update available for any component.");
