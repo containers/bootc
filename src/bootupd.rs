@@ -214,6 +214,24 @@ pub(crate) fn status() -> Result<Status> {
     Ok(ret)
 }
 
+pub(crate) fn print_status_avail(status: &Status) -> Result<()> {
+    let mut avail = Vec::new();
+    for (name, component) in status.components.iter() {
+        if let ComponentUpdatable::Upgradable = component.updatable {
+            avail.push(name.as_str());
+        }
+    }
+    for (name, adoptable) in status.adoptable.iter() {
+        if adoptable.confident {
+            avail.push(name.as_str());
+        }
+    }
+    if !avail.is_empty() {
+        println!("Updates available: {}", avail.join(" "));
+    }
+    Ok(())
+}
+
 pub(crate) fn print_status(status: &Status) -> Result<()> {
     if status.components.is_empty() {
         println!("No components installed.");

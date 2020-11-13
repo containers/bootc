@@ -60,6 +60,8 @@ assert_not_file_has_content out.txt '  Installed:.*test-bootupd-payload'
 assert_not_file_has_content out.txt '  Installed:.*'"${TARGET_GRUB_PKG}"
 assert_file_has_content out.txt 'Update: Available:.*'"${TARGET_GRUB_PKG}"
 assert_file_has_content out.txt 'Update: Available:.*test-bootupd-payload-1.0'
+bootupctl status --print-if-available > out.txt
+assert_file_has_content_literal 'out.txt' 'Updates available: EFI'
 ok update avail
 
 assert_not_has_file /boot/efi/EFI/fedora/test-bootupd.efi
@@ -68,6 +70,12 @@ bootupctl update | tee out.txt
 assert_file_has_content out.txt "Updated EFI: ${TARGET_GRUB_PKG}.*,test-bootupd-payload-1.0"
 
 assert_file_has_content /boot/efi/EFI/fedora/test-bootupd.efi test-payload
+
+bootupctl status --print-if-available > out.txt
+if test -s out.txt; then
+    fatal "Found available updates: $(cat out.txt)"
+fi
+ok update not avail
 
 tap_finish
 touch /run/testtmp/success

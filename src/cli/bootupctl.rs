@@ -58,6 +58,12 @@ pub enum CtlBackend {
 
 #[derive(Debug, StructOpt)]
 pub struct StatusOpts {
+    // If there are updates available, output `Updates available: ` to standard output;
+    // otherwise output nothing.  Avoid parsing this, just check whether or not
+    // the output is empty.
+    #[structopt(long)]
+    print_if_available: bool,
+
     // Output JSON
     #[structopt(long)]
     json: bool,
@@ -90,6 +96,8 @@ impl CtlCommand {
             let stdout = std::io::stdout();
             let mut stdout = stdout.lock();
             serde_json::to_writer_pretty(&mut stdout, &r)?;
+        } else if opts.print_if_available {
+            bootupd::print_status_avail(&r)?;
         } else {
             bootupd::print_status(&r)?;
         }
