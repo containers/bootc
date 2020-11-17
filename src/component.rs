@@ -30,7 +30,11 @@ pub(crate) trait Component {
     fn query_adopt(&self) -> Result<Option<Adoptable>>;
 
     /// Given an adoptable system and an update, perform the update.
-    fn adopt_update(&self, update: &ContentMetadata) -> Result<InstalledContent>;
+    fn adopt_update(
+        &self,
+        sysroot: &openat::Dir,
+        update: &ContentMetadata,
+    ) -> Result<InstalledContent>;
 
     /// Implementation of `bootupd install` for a given component.  This should
     /// gather data (or run binaries) from the source root, and install them

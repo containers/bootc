@@ -74,7 +74,11 @@ impl Component for EFI {
     }
 
     /// Given an adoptable system and an update, perform the update.
-    fn adopt_update(&self, updatemeta: &ContentMetadata) -> Result<InstalledContent> {
+    fn adopt_update(
+        &self,
+        sysroot: &openat::Dir,
+        updatemeta: &ContentMetadata,
+    ) -> Result<InstalledContent> {
         let meta = if let Some(meta) = self.query_adopt()? {
             meta
         } else {
@@ -83,8 +87,9 @@ impl Component for EFI {
 
         let esp = self.open_esp()?;
         validate_esp(&esp)?;
-        let updated =
-            openat::Dir::open(&component_updatedir("/", self)).context("opening update dir")?;
+        let updated = sysroot
+            .sub_dir(&component_updatedirname(self))
+            .context("opening update dir")?;
         let updatef = filetree::FileTree::new_from_dir(&updated).context("reading update dir")?;
         // For adoption, we should only touch files that we know about.
         let diff = updatef.relative_diff_to(&esp)?;

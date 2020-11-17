@@ -142,14 +142,14 @@ pub(crate) fn adopt_and_update(name: &str) -> Result<ContentMetadata> {
     } else {
         anyhow::bail!("Component {} has no available update", name);
     };
+    let mut state_guard = SavedState::acquire_write_lock(openat::Dir::open("/")?)
+        .context("Failed to acquire write lock")?;
+
     let inst = component
-        .adopt_update(&update)
+        .adopt_update(&state_guard.sysroot, &update)
         .context("Failed adopt and update")?;
     state.installed.insert(component.name().into(), inst);
 
-    let sysroot = openat::Dir::open("/")?;
-    let mut state_guard =
-        SavedState::acquire_write_lock(sysroot).context("Failed to acquire write lock")?;
     state_guard.update_state(&state)?;
     Ok(update)
 }
