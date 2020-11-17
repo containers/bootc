@@ -110,15 +110,14 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
     let mut pending_container = state.pending.take().unwrap_or_default();
     let interrupted = pending_container.get(component.name()).cloned();
     pending_container.insert(component.name().into(), update.clone());
-    let sysroot = openat::Dir::open("/")?;
-    let mut state_guard =
-        SavedState::acquire_write_lock(sysroot).context("Failed to acquire write lock")?;
+    let mut state_guard = SavedState::acquire_write_lock(openat::Dir::open("/")?)
+        .context("Failed to acquire write lock")?;
     state_guard
         .update_state(&state)
         .context("Failed to update state")?;
 
     let newinst = component
-        .run_update(&inst)
+        .run_update(&state_guard.sysroot, &inst)
         .with_context(|| format!("Failed to update {}", component.name()))?;
     state.installed.insert(component.name().into(), newinst);
     pending_container.remove(component.name());

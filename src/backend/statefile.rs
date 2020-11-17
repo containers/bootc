@@ -87,7 +87,7 @@ impl SavedState {
 /// Write-lock guard for statefile, protecting against concurrent state updates.
 #[derive(Debug)]
 pub(crate) struct StateLockGuard {
-    sysroot: openat::Dir,
+    pub(crate) sysroot: openat::Dir,
     lockfile: Option<File>,
 }
 

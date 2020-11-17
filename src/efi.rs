@@ -128,14 +128,19 @@ impl Component for EFI {
         })
     }
 
-    fn run_update(&self, current: &InstalledContent) -> Result<InstalledContent> {
+    fn run_update(
+        &self,
+        sysroot: &openat::Dir,
+        current: &InstalledContent,
+    ) -> Result<InstalledContent> {
         let currentf = current
             .filetree
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No filetree for installed EFI found!"))?;
         let updatemeta = self.query_update()?.expect("update available");
-        let updated =
-            openat::Dir::open(&component_updatedir("/", self)).context("opening update dir")?;
+        let updated = sysroot
+            .sub_dir(&component_updatedirname(self))
+            .context("opening update dir")?;
         let updatef = filetree::FileTree::new_from_dir(&updated).context("reading update dir")?;
         let diff = currentf.diff(&updatef)?;
         let destdir = openat::Dir::open(&Path::new("/").join(MOUNT_PATH).join("EFI"))

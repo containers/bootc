@@ -52,7 +52,11 @@ pub(crate) trait Component {
     fn query_update(&self) -> Result<Option<ContentMetadata>>;
 
     /// Used on the client to run an update.
-    fn run_update(&self, current: &InstalledContent) -> Result<InstalledContent>;
+    fn run_update(
+        &self,
+        sysroot: &openat::Dir,
+        current: &InstalledContent,
+    ) -> Result<InstalledContent>;
 
     /// Used on the client to validate an installed version.
     fn validate(&self, current: &InstalledContent) -> Result<ValidationResult>;
@@ -69,10 +73,14 @@ pub(crate) fn new_from_name(name: &str) -> Result<Box<dyn Component>> {
 
 /// Returns the path to the payload directory for an available update for
 /// a component.
+pub(crate) fn component_updatedirname(component: &dyn Component) -> PathBuf {
+    Path::new(BOOTUPD_UPDATES_DIR).join(component.name())
+}
+
+/// Returns the path to the payload directory for an available update for
+/// a component.
 pub(crate) fn component_updatedir(sysroot: &str, component: &dyn Component) -> PathBuf {
-    Path::new(sysroot)
-        .join(BOOTUPD_UPDATES_DIR)
-        .join(component.name())
+    Path::new(sysroot).join(component_updatedirname(component))
 }
 
 /// Returns the name of the JSON file containing a component's available update metadata installed
