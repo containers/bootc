@@ -101,7 +101,8 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
     } else {
         anyhow::bail!("Component {} is not installed", name);
     };
-    let update = component.query_update()?;
+    let sysroot = openat::Dir::open("/")?;
+    let update = component.query_update(&sysroot)?;
     let update = match update.as_ref() {
         Some(p) if inst.meta.can_upgrade_to(&p) => p,
         _ => return Ok(ComponentUpdateResult::AtLatestVersion),
@@ -110,8 +111,8 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
     let mut pending_container = state.pending.take().unwrap_or_default();
     let interrupted = pending_container.get(component.name()).cloned();
     pending_container.insert(component.name().into(), update.clone());
-    let mut state_guard = SavedState::acquire_write_lock(openat::Dir::open("/")?)
-        .context("Failed to acquire write lock")?;
+    let mut state_guard =
+        SavedState::acquire_write_lock(sysroot).context("Failed to acquire write lock")?;
     state_guard
         .update_state(&state)
         .context("Failed to update state")?;
@@ -132,18 +133,19 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
 
 /// daemon implementation of component adoption
 pub(crate) fn adopt_and_update(name: &str) -> Result<ContentMetadata> {
+    let sysroot = openat::Dir::open("/")?;
     let mut state = SavedState::load_from_disk("/")?.unwrap_or_default();
     let component = component::new_from_name(name)?;
     if state.installed.get(name).is_some() {
         anyhow::bail!("Component {} is already installed", name);
     };
-    let update = if let Some(update) = component.query_update()? {
+    let update = if let Some(update) = component.query_update(&sysroot)? {
         update
     } else {
         anyhow::bail!("Component {} has no available update", name);
     };
-    let mut state_guard = SavedState::acquire_write_lock(openat::Dir::open("/")?)
-        .context("Failed to acquire write lock")?;
+    let mut state_guard =
+        SavedState::acquire_write_lock(sysroot).context("Failed to acquire write lock")?;
 
     let inst = component
         .adopt_update(&state_guard.sysroot, &update)
@@ -169,6 +171,7 @@ pub(crate) fn validate(name: &str) -> Result<ValidationResult> {
 pub(crate) fn status() -> Result<Status> {
     let mut ret: Status = Default::default();
     let mut known_components = get_components();
+    let sysroot = openat::Dir::open("/")?;
     let state = SavedState::load_from_disk("/")?;
     if let Some(state) = state {
         for (name, ic) in state.installed.iter() {
@@ -182,7 +185,7 @@ pub(crate) fn status() -> Result<Status> {
                 .as_ref()
                 .map(|p| p.get(name.as_str()))
                 .flatten();
-            let update = component.query_update()?;
+            let update = component.query_update(&sysroot)?;
             let updatable = ComponentUpdatable::from_metadata(&ic.meta, update.as_ref());
             let adopted_from = ic.adopted_from.clone();
             ret.components.insert(

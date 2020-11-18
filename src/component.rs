@@ -53,7 +53,7 @@ pub(crate) trait Component {
     fn generate_update_metadata(&self, sysroot: &str) -> Result<ContentMetadata>;
 
     /// Used on the client to query for an update cached in the current booted OS.
-    fn query_update(&self) -> Result<Option<ContentMetadata>>;
+    fn query_update(&self, sysroot: &openat::Dir) -> Result<Option<ContentMetadata>>;
 
     /// Used on the client to run an update.
     fn run_update(
@@ -110,10 +110,9 @@ pub(crate) fn write_update_metadata(
 
 /// Given a component, return metadata on the available update (if any)
 pub(crate) fn get_component_update(
-    sysroot: &str,
+    sysroot: &openat::Dir,
     component: &dyn Component,
 ) -> Result<Option<ContentMetadata>> {
-    let sysroot = openat::Dir::open(sysroot)?;
     let name = component_update_data_name(component);
     let path = Path::new(BOOTUPD_UPDATES_DIR).join(name);
     if let Some(f) = sysroot.open_file_optional(&path)? {

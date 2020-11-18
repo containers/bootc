@@ -103,7 +103,8 @@ impl Component for EFI {
     }
 
     fn install(&self, src_root: &str, dest_root: &str) -> Result<InstalledContent> {
-        let meta = if let Some(meta) = get_component_update(src_root, self)? {
+        let src_rootd = openat::Dir::open(src_root)?;
+        let meta = if let Some(meta) = get_component_update(&src_rootd, self)? {
             meta
         } else {
             anyhow::bail!("No update metadata for component {} found", self.name());
@@ -142,7 +143,7 @@ impl Component for EFI {
             .filetree
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No filetree for installed EFI found!"))?;
-        let updatemeta = self.query_update()?.expect("update available");
+        let updatemeta = self.query_update(sysroot)?.expect("update available");
         let updated = sysroot
             .sub_dir(&component_updatedirname(self))
             .context("opening update dir")?;
@@ -243,8 +244,8 @@ impl Component for EFI {
         Ok(meta)
     }
 
-    fn query_update(&self) -> Result<Option<ContentMetadata>> {
-        get_component_update("/", self)
+    fn query_update(&self, sysroot: &openat::Dir) -> Result<Option<ContentMetadata>> {
+        get_component_update(sysroot, self)
     }
 
     fn validate(&self, current: &InstalledContent) -> Result<ValidationResult> {
