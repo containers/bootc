@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::prelude::*;
+use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -102,27 +103,27 @@ impl Component for EFI {
         })
     }
 
-    fn install(&self, src_root: &str, dest_root: &str) -> Result<InstalledContent> {
-        let src_rootd = openat::Dir::open(src_root)?;
-        let meta = if let Some(meta) = get_component_update(&src_rootd, self)? {
+    fn install(&self, src_root: &openat::Dir, dest_root: &str) -> Result<InstalledContent> {
+        let meta = if let Some(meta) = get_component_update(&src_root, self)? {
             meta
         } else {
             anyhow::bail!("No update metadata for component {} found", self.name());
         };
-        let srcdir = component_updatedir(src_root, self);
-        let srcd = openat::Dir::open(&srcdir)
-            .with_context(|| format!("opening src dir {}", srcdir.display()))?;
-        let ft = crate::filetree::FileTree::new_from_dir(&srcd)?;
+        let srcdir_name = component_updatedirname(self);
+        let ft = crate::filetree::FileTree::new_from_dir(&src_root.sub_dir(&srcdir_name)?)?;
         let destdir = Path::new(dest_root).join(MOUNT_PATH);
         {
             let destd = openat::Dir::open(&destdir)
                 .with_context(|| format!("opening dest dir {}", destdir.display()))?;
             validate_esp(&destd)?;
         }
+        // TODO - add some sort of API that allows directly setting the working
+        // directory to a file descriptor.
         let r = std::process::Command::new("cp")
             .args(&["-rp", "--reflink=auto"])
-            .arg(&srcdir)
+            .arg(&srcdir_name)
             .arg(&destdir)
+            .current_dir(format!("/proc/self/fd/{}", src_root.as_raw_fd()))
             .status()?;
         if !r.success() {
             anyhow::bail!("Failed to copy");
