@@ -19,7 +19,9 @@ function cleanup () {
   fi
 }
 
-bootefidir=/boot/efi/EFI
+bootmount=/boot
+bootefimount=${bootmount}/efi
+bootefidir=${bootefimount}/EFI
 bootupdir=/usr/lib/bootupd/updates
 efiupdir=${bootupdir}/EFI
 ostbaseefi=/usr/lib/ostree-boot/efi/EFI
@@ -115,6 +117,9 @@ bootupctl update | tee out.txt
 assert_file_has_content_literal out.txt 'No update available for any component'
 assert_not_file_has_content_literal out.txt 'Updated EFI'
 
+# Ensure /boot and /boot/efi can be written to
+mount -o remount,rw ${bootmount}
+mount -o remount,rw ${bootefimount}
 echo "some additions" >> ${bootefidir}/${efisubdir}/shimx64.efi
 if bootupctl validate 2>err.txt; then
   fatal "unexpectedly passed validation"
