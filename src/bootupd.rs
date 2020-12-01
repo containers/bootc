@@ -2,6 +2,7 @@ use crate::component::{Component, ValidationResult};
 use crate::coreos;
 use crate::efi;
 use crate::model::{ComponentStatus, ComponentUpdatable, ContentMetadata, SavedState, Status};
+use crate::util;
 use crate::{component, ipc};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -93,6 +94,10 @@ pub(crate) enum ComponentUpdateResult {
     },
 }
 
+fn ensure_writable_boot() -> Result<()> {
+    util::ensure_writable_mount("/boot")
+}
+
 /// daemon implementation of component update
 pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
     let mut state = SavedState::load_from_disk("/")?.unwrap_or_default();
@@ -108,6 +113,8 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
         Some(p) if inst.meta.can_upgrade_to(&p) => p,
         _ => return Ok(ComponentUpdateResult::AtLatestVersion),
     };
+
+    ensure_writable_boot()?;
 
     let mut pending_container = state.pending.take().unwrap_or_default();
     let interrupted = pending_container.get(component.name()).cloned();
@@ -140,6 +147,9 @@ pub(crate) fn adopt_and_update(name: &str) -> Result<ContentMetadata> {
     if state.installed.get(name).is_some() {
         anyhow::bail!("Component {} is already installed", name);
     };
+
+    ensure_writable_boot()?;
+
     let update = if let Some(update) = component.query_update(&sysroot)? {
         update
     } else {

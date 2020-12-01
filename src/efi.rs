@@ -94,6 +94,7 @@ impl Component for EFI {
         let updatef = filetree::FileTree::new_from_dir(&updated).context("reading update dir")?;
         // For adoption, we should only touch files that we know about.
         let diff = updatef.relative_diff_to(&esp)?;
+        ensure_writable_efi()?;
         log::trace!("applying adoption diff: {}", &diff);
         filetree::apply_diff(&updated, &esp, &diff, None).context("applying filesystem changes")?;
         Ok(InstalledContent {
@@ -153,6 +154,7 @@ impl Component for EFI {
         let destdir = openat::Dir::open(&Path::new("/").join(MOUNT_PATH).join("EFI"))
             .context("opening EFI dir")?;
         validate_esp(&destdir)?;
+        ensure_writable_efi()?;
         log::trace!("applying diff: {}", &diff);
         filetree::apply_diff(&updated, &destdir, &diff, None)
             .context("applying filesystem changes")?;
@@ -279,4 +281,8 @@ fn validate_esp(dir: &openat::Dir) -> Result<()> {
         bail!("EFI mount is not a msdos filesystem, but is {:?}", fstype);
     };
     Ok(())
+}
+
+fn ensure_writable_efi() -> Result<()> {
+    util::ensure_writable_mount(&Path::new("/").join(MOUNT_PATH))
 }

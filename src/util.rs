@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use anyhow::{bail, Result};
 use openat_ext::OpenatDirExt;
 
+use std::path::Path;
 use std::process::Command;
 
 pub(crate) trait CommandRunExt {
@@ -64,4 +65,21 @@ pub(crate) fn filenames(dir: &openat::Dir) -> Result<HashSet<String>> {
         }
     }
     Ok(ret)
+}
+
+pub(crate) fn ensure_writable_mount<P: AsRef<Path>>(p: P) -> Result<()> {
+    use nix::sys::statvfs;
+    let p = p.as_ref();
+    let stat = statvfs::statvfs(p)?;
+    if !stat.flags().contains(statvfs::FsFlags::ST_RDONLY) {
+        return Ok(());
+    }
+    let status = std::process::Command::new("mount")
+        .args(&["-o", "remount,rw"])
+        .arg(p)
+        .status()?;
+    if !status.success() {
+        anyhow::bail!("Failed to remount {:?} writable", p);
+    }
+    Ok(())
 }
