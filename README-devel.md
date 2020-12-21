@@ -10,10 +10,10 @@ For real e2e testing, use e.g.
 ```
 export COSA_DIR=/path/to/fcos
 cosa build-fast
-kola run -E (pwd) --qemu-image fastbuild-fedora-coreos-bootupd-qemu.qcow2  --qemu-firmware uefi ext.bootupd
+kola run -E $(pwd) --qemu-image fastbuild-fedora-coreos-bootupd-qemu.qcow2  --qemu-firmware uefi ext.bootupd.*
 ```
 
-See also [the coreos-assembler docs](https://github.com/coreos/coreos-assembler/blob/master/README-devel.md#using-overrides).
+See also [the coreos-assembler docs](https://coreos.github.io/coreos-assembler/working/#using-overrides).
 
 ## Building With Containers
 
