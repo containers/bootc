@@ -81,3 +81,11 @@ assert_not_file_has_content_literal () {
     done
 }
 
+# Mount the EFI partition at a temporary location.
+efipart=/dev/disk/by-partlabel/EFI-SYSTEM
+mount_tmp_efi () {
+    tmpmount=$(mktemp -d)
+    mkdir -p ${tmpmount}
+    mount ${efipart} ${tmpmount}
+    echo ${tmpmount}
+}

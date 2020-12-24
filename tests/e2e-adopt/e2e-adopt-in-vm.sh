@@ -80,10 +80,13 @@ if test "$semode" != Enforcing; then
     fatal "SELinux mode is ${semode}"
 fi
 
-source_grub_cfg=$(find /boot/efi/EFI -name grub.cfg)
+# Mount the EFI partition.
+tmpefimount=$(mount_tmp_efi)
+
+source_grub_cfg=$(find ${tmpefimount}/EFI -name grub.cfg)
 test -f "${source_grub_cfg}"
 
-source_grub=$(find /boot/efi/EFI -name grubx64.efi)
+source_grub=$(find ${tmpefimount}/EFI -name grubx64.efi)
 test -f ${source_grub}
 source_grub_sha256=$(sha256sum ${source_grub} | cut -f 1 -d ' ')
 

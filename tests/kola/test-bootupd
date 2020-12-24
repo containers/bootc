@@ -19,9 +19,10 @@ function cleanup () {
   fi
 }
 
+# Mount the EFI partition.
+tmpefimount=$(mount_tmp_efi)
 bootmount=/boot
-bootefimount=${bootmount}/efi
-bootefidir=${bootefimount}/EFI
+tmpefidir=${tmpefimount}/EFI
 bootupdir=/usr/lib/bootupd/updates
 efiupdir=${bootupdir}/EFI
 ostbaseefi=/usr/lib/ostree-boot/efi/EFI
@@ -103,24 +104,21 @@ bootupctl validate | tee out.txt
 ok validate after update
 
 # FIXME see above
-# assert_file_has_content ${bootefidir}/${efisubdir}/somenew.efi 'somenewfile'
-if test -f ${bootefidir}/${efisubdir}/shim.efi; then 
+# assert_file_has_content ${tmpefidir}/${efisubdir}/somenew.efi 'somenewfile'
+if test -f ${tmpefidir}/${efisubdir}/shim.efi; then 
   fatal "failed to remove file"
 fi
-if ! grep -q 'bootupd-test-changes' ${bootefidir}/${efisubdir}/grubx64.efi; then
+if ! grep -q 'bootupd-test-changes' ${tmpefidir}/${efisubdir}/grubx64.efi; then
   fatal "failed to update modified file"
 fi
-cmp ${bootefidir}/${efisubdir}/shimx64.efi ${efiupdir}/${efisubdir}/shimx64.efi
+cmp ${tmpefidir}/${efisubdir}/shimx64.efi ${efiupdir}/${efisubdir}/shimx64.efi
 ok filesystem changes
 
 bootupctl update | tee out.txt
 assert_file_has_content_literal out.txt 'No update available for any component'
 assert_not_file_has_content_literal out.txt 'Updated EFI'
 
-# Ensure /boot and /boot/efi can be written to
-mount -o remount,rw ${bootmount}
-mount -o remount,rw ${bootefimount}
-echo "some additions" >> ${bootefidir}/${efisubdir}/shimx64.efi
+echo "some additions" >> ${tmpefidir}/${efisubdir}/shimx64.efi
 if bootupctl validate 2>err.txt; then
   fatal "unexpectedly passed validation"
 fi
