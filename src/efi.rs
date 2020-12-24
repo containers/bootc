@@ -14,6 +14,7 @@ use anyhow::{bail, Context, Result};
 use openat_ext::OpenatDirExt;
 
 use chrono::prelude::*;
+use lazy_static::lazy_static;
 
 use crate::component::*;
 use crate::filetree;
@@ -22,26 +23,63 @@ use crate::ostreeutil;
 use crate::util;
 use crate::util::CommandRunExt;
 
-/// The path to the ESP mount
-pub(crate) const MOUNT_PATH: &str = "boot/efi";
+/// The ESP partition label
+pub(crate) const ESP_PART_LABEL: &str = "EFI-SYSTEM";
+
+#[macro_use]
+lazy_static! {
+    /// The path to a temporary ESP mount
+    static ref MOUNT_PATH: PathBuf = {
+        // Create new directory in /tmp with randomly generated name at runtime for ESP mount path.
+        tempfile::tempdir_in("/tmp").expect("Failed to create temp dir for EFI mount").into_path()
+    };
+}
 
 #[derive(Default)]
 pub(crate) struct EFI {}
 
 impl EFI {
     fn esp_path(&self) -> PathBuf {
-        Path::new(MOUNT_PATH).join("EFI")
+        Path::new(&*MOUNT_PATH).join("EFI")
+    }
+
+    fn esp_device(&self) -> PathBuf {
+        Path::new("/dev/disk/by-partlabel/").join(ESP_PART_LABEL)
     }
 
     fn open_esp_optional(&self) -> Result<Option<openat::Dir>> {
+        self.ensure_mounted_esp()?;
         let sysroot = openat::Dir::open("/")?;
         let esp = sysroot.sub_dir_optional(&self.esp_path())?;
         Ok(esp)
     }
     fn open_esp(&self) -> Result<openat::Dir> {
+        self.ensure_mounted_esp()?;
         let sysroot = openat::Dir::open("/")?;
         let esp = sysroot.sub_dir(&self.esp_path())?;
         Ok(esp)
+    }
+
+    fn ensure_mounted_esp(&self) -> Result<()> {
+        let mount_point = &Path::new("/").join(&*MOUNT_PATH);
+        let output = std::process::Command::new("mountpoint")
+            .arg(mount_point)
+            .output()?;
+        if !output.status.success() {
+            let esp_device = &self.esp_device();
+            if !esp_device.exists() {
+                log::error!("Single ESP device not found; ESP on multiple independent filesystems currently unsupported");
+                anyhow::bail!("Could not find {:?}", esp_device);
+            }
+            let status = std::process::Command::new("mount")
+                .arg(&self.esp_device())
+                .arg(mount_point)
+                .status()?;
+            if !status.success() {
+                anyhow::bail!("Failed to mount {:?}", esp_device);
+            }
+        };
+        Ok(())
     }
 }
 
@@ -94,7 +132,6 @@ impl Component for EFI {
         let updatef = filetree::FileTree::new_from_dir(&updated).context("reading update dir")?;
         // For adoption, we should only touch files that we know about.
         let diff = updatef.relative_diff_to(&esp)?;
-        ensure_writable_efi()?;
         log::trace!("applying adoption diff: {}", &diff);
         filetree::apply_diff(&updated, &esp, &diff, None).context("applying filesystem changes")?;
         Ok(InstalledContent {
@@ -112,7 +149,8 @@ impl Component for EFI {
         };
         let srcdir_name = component_updatedirname(self);
         let ft = crate::filetree::FileTree::new_from_dir(&src_root.sub_dir(&srcdir_name)?)?;
-        let destdir = Path::new(dest_root).join(MOUNT_PATH);
+        self.ensure_mounted_esp()?;
+        let destdir = Path::new(dest_root).join(&*MOUNT_PATH);
         {
             let destd = openat::Dir::open(&destdir)
                 .with_context(|| format!("opening dest dir {}", destdir.display()))?;
@@ -151,10 +189,9 @@ impl Component for EFI {
             .context("opening update dir")?;
         let updatef = filetree::FileTree::new_from_dir(&updated).context("reading update dir")?;
         let diff = currentf.diff(&updatef)?;
-        let destdir = openat::Dir::open(&Path::new("/").join(MOUNT_PATH).join("EFI"))
-            .context("opening EFI dir")?;
+        self.ensure_mounted_esp()?;
+        let destdir = self.open_esp().context("opening EFI dir")?;
         validate_esp(&destdir)?;
-        ensure_writable_efi()?;
         log::trace!("applying diff: {}", &diff);
         filetree::apply_diff(&updated, &destdir, &diff, None)
             .context("applying filesystem changes")?;
@@ -256,7 +293,8 @@ impl Component for EFI {
             .filetree
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No filetree for installed EFI found!"))?;
-        let efidir = openat::Dir::open(&Path::new("/").join(MOUNT_PATH).join("EFI"))?;
+        self.ensure_mounted_esp()?;
+        let efidir = self.open_esp()?;
         let diff = currentf.relative_diff_to(&efidir)?;
         let mut errs = Vec::new();
         for f in diff.changes.iter() {
@@ -281,8 +319,4 @@ fn validate_esp(dir: &openat::Dir) -> Result<()> {
         bail!("EFI mount is not a msdos filesystem, but is {:?}", fstype);
     };
     Ok(())
-}
-
-fn ensure_writable_efi() -> Result<()> {
-    util::ensure_writable_mount(&Path::new("/").join(MOUNT_PATH))
 }

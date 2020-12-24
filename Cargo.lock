@@ -89,6 +89,7 @@ dependencies = [
  "env_logger",
  "fs2",
  "hex",
+ "lazy_static",
  "libc",
  "libsystemd",
  "log",

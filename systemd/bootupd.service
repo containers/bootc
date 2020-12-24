@@ -19,7 +19,6 @@ ProtectHome=yes
 ReadOnlyPaths=/usr
 PrivateTmp=yes
 PrivateNetwork=yes
-ProtectClock=yes
 ProtectHostname=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
