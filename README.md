@@ -82,3 +82,33 @@ for the bootupd version associated with the payload, and ultimately we'd teach `
 how to separately download bootloaders and pass them to `bootupctl backend`.
 
 [1]: https://github.com/coreos/rpm-ostree/pull/969/commits/dc0e8db5bd92e1f478a0763d1a02b48e57022b59
+
+
+## Questions and answers
+
+- Why is bootupd not part of ostree?
+
+This question is really covered at the top of this file already - hopefully
+you read that already, but this answer will rephrase and try to go in more depth.
+
+A key advertised feature of ostree is that updates are truly transactional.
+There's even a [a test case](https://blog.verbum.org/2020/12/01/committed-to-the-integrity-of-your-root-filesystem/)
+that validates forcibly pulling the power during OS updates.  A simple
+way to look at this is that on an ostree-based system there is no need
+to have a "please don't power off your computer" screen.  This in turn
+helps administrators to confidently enable automatic updates.
+
+Doing that for the bootloader (i.e. bootupd's domain) is an *entirely* separate problem.
+There have been some ideas around how we could make the bootloaders
+use an A/B type scheme (or at least be more resilient), and perhaps in the future bootupd will
+use some of those.
+
+These updates hence carry different levels of risk.  In many cases
+actually it's OK if the bootloader lags behind; we don't need to update
+every time.
+
+But out of conservatism currently today for e.g. Fedora CoreOS, bootupd is disabled
+by default.  On the other hand, if your OS update mechanism isn't transactional,
+then you might as well enable bootupd by default too.
+
+
