@@ -109,6 +109,5 @@ every time.
 
 But out of conservatism currently today for e.g. Fedora CoreOS, bootupd is disabled
 by default.  On the other hand, if your OS update mechanism isn't transactional,
-then you might as well enable bootupd by default too.
-
+then you may want to enable bootupd by default.
 
