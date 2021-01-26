@@ -10,7 +10,6 @@ use openssl::hash::{Hasher, MessageDigest};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Display;
-use std::os::linux::fs::MetadataExt;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -252,22 +251,6 @@ pub(crate) struct ApplyUpdateOptions {
     pub(crate) skip_sync: bool,
 }
 
-/// A bit like std::fs::copy but operates dirfd-relative
-fn copy_file_at<SP: AsRef<Path>, DP: AsRef<Path>>(
-    srcdir: &openat::Dir,
-    destdir: &openat::Dir,
-    srcp: SP,
-    destp: DP,
-) -> Result<()> {
-    use openat_ext::FileExt as OpenatFileExt;
-    let srcp = srcp.as_ref();
-    let srcf = srcdir.open_file(srcp)?;
-    let destf = destdir.write_file(destp.as_ref(), srcf.metadata()?.st_mode())?;
-    srcf.copy_to(&destf)?;
-
-    Ok(())
-}
-
 // syncfs() is a Linux-specific system call, which doesn't seem
 // to be bound in nix today.  I found https://github.com/XuShaohua/nc
 // but that's a nontrivial dependency with not a lot of code review.
@@ -316,7 +299,8 @@ pub(crate) fn apply_diff(
             destdir.ensure_dir_all(parent, DEFAULT_FILE_MODE)?;
         }
         let destp = tmpname_for_path(path);
-        copy_file_at(srcdir, destdir, path, destp.as_path())
+        srcdir
+            .copy_file_at(path, destdir, destp.as_path())
             .with_context(|| format!("writing {}", &pathstr))?;
     }
     // Ensure all of the new files are written persistently to disk
