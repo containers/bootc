@@ -1,0 +1,37 @@
+---
+- - :permit
+  - MIT OR Apache-2.0
+  - :who: 
+    :why: 
+    :versions: []
+    :when: 2021-02-03 19:31:28.263225624 Z
+- - :permit
+  - Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+  - :who: 
+    :why: 
+    :versions: []
+    :when: 2021-02-03 19:31:42.436851761 Z
+- - :permit
+  - MIT
+  - :who: 
+    :why: 
+    :versions: []
+    :when: 2021-02-03 19:31:54.278056841 Z
+- - :permit
+  - Apache 2.0
+  - :who: 
+    :why: 
+    :versions: []
+    :when: 2021-02-03 19:32:08.538863728 Z
+- - :permit
+  - Apache-2.0 OR BSL-1.0
+  - :who: 
+    :why: 
+    :versions: []
+    :when: 2021-02-03 19:32:17.034417362 Z
+- - :permit
+  - New BSD
+  - :who: 
+    :why: 
+    :versions: []
+    :when: 2021-02-03 19:33:02.120977990 Z
