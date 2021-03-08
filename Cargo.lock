@@ -87,6 +87,7 @@ dependencies = [
  "chrono",
  "clap",
  "env_logger",
+ "fn-error-context",
  "fs2",
  "hex",
  "lazy_static",
@@ -214,6 +215,17 @@ name = "fake-simd"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e88a8acf291dafb59c2d96e8f59828f3838bb1a70398823ade51a84de6a6deed"
+
+[[package]]
+name = "fn-error-context"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac0b92c51c8b8183a0c101a7b2ea5fac11d2f1e01057f91e390284c75d76ef44"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "foreign-types"

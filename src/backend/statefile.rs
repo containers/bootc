@@ -2,6 +2,7 @@
 
 use crate::model::SavedState;
 use anyhow::{bail, Context, Result};
+use fn_error_context::context;
 use fs2::FileExt;
 use openat_ext::OpenatDirExt;
 use std::fs::File;
@@ -41,6 +42,7 @@ impl SavedState {
     }
 
     /// Load the JSON file containing on-disk state.
+    #[context("Loading saved state")]
     pub(crate) fn load_from_disk(root_path: impl AsRef<Path>) -> Result<Option<SavedState>> {
         let root_path = root_path.as_ref();
         let sysroot = openat::Dir::open(root_path)

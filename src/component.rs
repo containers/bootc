@@ -5,6 +5,7 @@
  */
 
 use anyhow::{Context, Result};
+use fn_error_context::context;
 use openat_ext::OpenatDirExt;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -109,6 +110,7 @@ pub(crate) fn write_update_metadata(
 }
 
 /// Given a component, return metadata on the available update (if any)
+#[context("Loading update for component {}", component.name())]
 pub(crate) fn get_component_update(
     sysroot: &openat::Dir,
     component: &dyn Component,

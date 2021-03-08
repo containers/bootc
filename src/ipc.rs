@@ -5,6 +5,7 @@
  */
 
 use anyhow::{bail, Context, Result};
+use fn_error_context::context;
 use nix::sys::socket as nixsocket;
 use serde::{Deserialize, Serialize};
 use std::os::unix::io::RawFd;
@@ -37,6 +38,7 @@ impl ClientToDaemonConnection {
         Self { fd: -1 }
     }
 
+    #[context("connecting to {}", BOOTUPD_SOCKET)]
     pub(crate) fn connect(&mut self) -> Result<()> {
         use nix::sys::uio::IoVec;
         self.fd = nixsocket::socket(
@@ -46,8 +48,7 @@ impl ClientToDaemonConnection {
             None,
         )?;
         let addr = nixsocket::SockAddr::new_unix(BOOTUPD_SOCKET)?;
-        nixsocket::connect(self.fd, &addr)
-            .with_context(|| format!("connecting to {}", BOOTUPD_SOCKET))?;
+        nixsocket::connect(self.fd, &addr)?;
         let creds = libc::ucred {
             pid: nix::unistd::getpid().as_raw(),
             uid: nix::unistd::getuid().as_raw(),
