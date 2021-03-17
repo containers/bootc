@@ -8,14 +8,15 @@ In order to ease downstream packaging of Rust binaries, an archive of vendored d
 
 This guide requires:
 
- * a web browser (and network connectivity)
+ * A web browser (and network connectivity)
  * `git`
- * GPG setup and personal key for signing
+ * [GPG setup][GPG setup] and personal key for signing
  * [git-evtag](https://github.com/cgwalters/git-evtag/)
  * `cargo` (suggested: latest stable toolchain from [rustup][rustup])
  * A verified account on crates.io
  * Write access to this GitHub project
  * Upload access to this project on GitHub, crates.io
+ * Membership in the [Fedora CoreOS Crates Owners group](https://github.com/orgs/coreos/teams/fedora-coreos-crates-owners/members)
 
 ## Release checklist
 
@@ -32,13 +33,12 @@ This guide requires:
   `git remote show origin` should not be `github.com/$yourusername/$project` but should
   be under the organization ownership.  The remote `yourname` should be for your fork.
 
-- Push a PR to create the release:
+- open and merge a PR for this release:
   - [ ] `git push --set-upstream origin release`
   - [ ] open a web browser and create a PR for the branch above
   - [ ] make sure the resulting PR contains the commit
   - [ ] in the PR body, write a short changelog with relevant changes since last release
-
-- [ ] get the PR reviewed, approved and merged
+  - [ ] get the PR reviewed, approved and merged
 
 - publish the artifacts (tag and crate):
   - [ ] `git fetch origin && git checkout ${RELEASE_COMMIT}`
@@ -48,7 +48,7 @@ This guide requires:
   - [ ] `cargo publish`
 
 - publish this release on GitHub:
-  - [ ] find the new tag in the [GitHub tag list](https://github.com/coreos/bootupd/tags) and click the triple dots menu, and create a release for it
+  - [ ] find the new tag in the [GitHub tag list](https://github.com/coreos/bootupd/tags), click the triple dots menu, and create a release for it
   - [ ] write a short changelog (i.e. re-use the PR content)
   - [ ] upload `target/${PROJECT}-${RELEASE_VER}-vendor.tar.gz`
   - [ ] record digests of local artifacts:
@@ -63,3 +63,4 @@ This guide requires:
 
 [rustup]: https://rustup.rs/
 [crates-io]: https://crates.io/
+[GPG setup]: https://docs.github.com/en/github/authenticating-to-github/managing-commit-signature-verification
