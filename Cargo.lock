@@ -441,9 +441,9 @@ checksum = "2839e79665f131bdb5782e51f2c6c9599c133c6098982a54c794358bf432529c"
 
 [[package]]
 name = "openat"
-version = "0.1.19"
+version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8eff876e3964841fd6067ecf1d040e0315879c1a1cce2a0f162828e82f04d1ce"
+checksum = "97cdc0668b258e022a16a9c71a77f69b73e8d32b6f20bb3082b623f6396438b8"
 dependencies = [
  "libc",
 ]
