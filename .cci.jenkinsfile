@@ -3,7 +3,7 @@
 stage("Build") {
 parallel build: {
   def n = 5
-  cosaPod(buildroot: true, runAsUser: 0, memory: "2Gi", cpu: "${n}") {
+  buildPod(runAsUser: 0, memory: "2Gi", cpu: "${n}") {
       checkout scm
       stage("Core build") {
         shwrap("""
@@ -23,7 +23,7 @@ parallel build: {
   }
 },
 codestyle: {
-  cosaPod(buildroot: true) {
+  buildPod {
       checkout scm
       shwrap("cargo fmt -- --check")
   }
@@ -32,7 +32,7 @@ codestyle: {
 
 // Build FCOS and do a kola basic run
 // FIXME update to main branch once https://github.com/coreos/fedora-coreos-config/pull/595 merges
-cosaPod(buildroot: true, runAsUser: 0, memory: "3072Mi", cpu: "4") {
+cosaPod(runAsUser: 0, memory: "3072Mi", cpu: "4") {
   stage("Build FCOS") {
     checkout scm
     unstash 'build'
