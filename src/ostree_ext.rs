@@ -8,6 +8,8 @@ use std::ptr;
 
 /// Extension functions which fix incorrectly bound APIs.
 pub trait RepoExt {
+    /// Version of [`ostree::Repo::load_variant_if_exists`] that correctly
+    /// returns an [`Option<T>`].
     fn x_load_variant_if_exists(
         &self,
         objtype: ostree::ObjectType,

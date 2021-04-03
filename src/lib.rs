@@ -4,7 +4,7 @@
 //! and the Rust bindings to it, adding new functionality
 //! written in Rust.  
 
-//#![deny(missing_docs)]
+#![deny(missing_docs)]
 // Good defaults
 #![forbid(unused_must_use)]
 #![deny(unsafe_code)]
@@ -13,6 +13,6 @@
 /// to a string to output to a terminal or logs.
 type Result<T> = anyhow::Result<T>;
 
-mod ostree_ext;
+pub mod ostree_ext;
 pub mod tar;
-pub mod variant_utils;
+mod variant_utils;

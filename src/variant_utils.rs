@@ -1,3 +1,6 @@
+//! Extension APIs for working with GVariant.  Not strictly
+//! related to ostree, but included here for convenience.
+
 use glib::translate::*;
 
 #[allow(unsafe_code)]
