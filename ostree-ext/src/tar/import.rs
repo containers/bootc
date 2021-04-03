@@ -1,7 +1,7 @@
 //! APIs for extracting OSTree commits from container images
 
-use super::Result;
 use crate::variant_utils::variant_new_from_bytes;
+use crate::Result;
 use anyhow::anyhow;
 use camino::Utf8Path;
 use fn_error_context::context;
@@ -21,7 +21,6 @@ const OSTREE_COMMIT_FORMAT: &str = "(a{sv}aya(say)sstayay)";
 const OSTREE_DIRTREE_FORMAT: &str = "(a(say)a(sayay))";
 const OSTREE_DIRMETA_FORMAT: &str = "(uuua(ayay))";
 const OSTREE_XATTRS_FORMAT: &str = "a(ayay)";
-
 
 /// State tracker for the importer.  The main goal is to reject multiple
 /// commit objects, as well as finding metadata/content before the commit.

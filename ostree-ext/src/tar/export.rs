@@ -1,16 +1,13 @@
 //! APIs for creating container images from OSTree commits
 
-use super::Result;
+use crate::Result;
 
-use crate::oci;
-use crate::ostree_ext::*;
-use anyhow::Context;
+use crate::ostree_ext::RepoExt;
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use gio::prelude::*;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{gv, Marker, Structure};
-
 use std::{borrow::Cow, collections::HashSet, path::Path};
 
 // This way the default ostree -> sysroot/ostree symlink works.
@@ -285,11 +282,7 @@ fn impl_export<W: std::io::Write>(
 
 /// Export an ostree commit to an (uncompressed) tar archive stream.
 #[context("Exporting commit")]
-fn export_commit(
-    repo: &ostree::Repo,
-    rev: &str,
-    out: impl std::io::Write,
-) -> Result<()> {
+pub fn export_commit(repo: &ostree::Repo, rev: &str, out: impl std::io::Write) -> Result<()> {
     let commit = repo.resolve_rev(rev, false)?;
     let mut tar = tar::Builder::new(out);
     impl_export(repo, commit.unwrap().as_str(), &mut tar)?;
