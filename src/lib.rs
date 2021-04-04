@@ -13,6 +13,7 @@
 /// to a string to output to a terminal or logs.
 type Result<T> = anyhow::Result<T>;
 
+pub mod diff;
 pub mod ostree_ext;
 pub mod tar;
 mod variant_utils;
