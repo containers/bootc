@@ -5,28 +5,48 @@ use indoc::indoc;
 use sh_inline::bash;
 use std::io::Write;
 
-const EXAMPLEOS_TAR: &[u8] = include_bytes!("fixtures/exampleos.tar.zst");
+const EXAMPLEOS_V0: &[u8] = include_bytes!("fixtures/exampleos.tar.zst");
+const EXAMPLEOS_V1: &[u8] = include_bytes!("fixtures/exampleos-v1.tar.zst");
 const TESTREF: &str = "exampleos/x86_64/stable";
-const CONTENT_CHECKSUM: &str = "0ef7461f9db15e1d8bd8921abf20694225fbaa4462cadf7deed8ea0e43162120";
+const EXAMPLEOS_CONTENT_CHECKSUM: &str =
+    "0ef7461f9db15e1d8bd8921abf20694225fbaa4462cadf7deed8ea0e43162120";
 
 fn generate_test_repo(dir: &Utf8Path) -> Result<Utf8PathBuf> {
     let src_tarpath = &dir.join("exampleos.tar.zst");
-    std::fs::write(src_tarpath, EXAMPLEOS_TAR)?;
+    std::fs::write(src_tarpath, EXAMPLEOS_V0)?;
+
     bash!(
         indoc! {"
-        cd {path}
-        ostree --repo=repo-archive init --mode=archive
-        ostree --repo=repo-archive commit -b {testref} --tree=tar=exampleos.tar.zst
-        ostree --repo=repo-archive show {testref}
+        cd {dir}
+        ostree --repo=repo init --mode=archive
+        ostree --repo=repo commit -b {testref} --tree=tar=exampleos.tar.zst
+        ostree --repo=repo show {testref}
     "},
         testref = TESTREF,
-        path = path.as_str()
+        dir = dir.as_str()
     )?;
     std::fs::remove_file(src_tarpath)?;
     Ok(dir.join("repo"))
 }
 
-#[context("Generating test OCI")]
+fn update_repo(repopath: &Utf8Path) -> Result<()> {
+    let repotmp = &repopath.join("tmp");
+    let srcpath = &repotmp.join("exampleos-v1.tar.zst");
+    std::fs::write(srcpath, EXAMPLEOS_V1)?;
+    let srcpath = srcpath.as_str();
+    let repopath = repopath.as_str();
+    let testref = TESTREF;
+    bash!(
+        "ostree --repo={repopath} commit -b {testref} --tree=tar={srcpath}",
+        testref,
+        repopath,
+        srcpath
+    )?;
+    std::fs::remove_file(srcpath)?;
+    Ok(())
+}
+
+#[context("Generating test tarball")]
 fn generate_test_tarball(dir: &Utf8Path) -> Result<Utf8PathBuf> {
     let cancellable = gio::NONE_CANCELLABLE;
     let repopath = generate_test_repo(dir)?;
@@ -37,9 +57,9 @@ fn generate_test_tarball(dir: &Utf8Path) -> Result<Utf8PathBuf> {
         ostree::commit_get_content_checksum(&commitv)
             .unwrap()
             .as_str(),
-        CONTENT_CHECKSUM
+        EXAMPLEOS_CONTENT_CHECKSUM
     );
-    let destpath = path.join("exampleos-export.tar");
+    let destpath = dir.join("exampleos-export.tar");
     let mut outf = std::io::BufWriter::new(std::fs::File::create(&destpath)?);
     ostree_ext::tar::export_commit(repo, rev.as_str(), &mut outf)?;
     outf.flush()?;
@@ -47,7 +67,7 @@ fn generate_test_tarball(dir: &Utf8Path) -> Result<Utf8PathBuf> {
 }
 
 #[test]
-fn test_e2e() -> Result<()> {
+fn test_tar_import_export() -> Result<()> {
     let cancellable = gio::NONE_CANCELLABLE;
 
     let tempdir = tempfile::tempdir()?;
@@ -65,7 +85,7 @@ fn test_e2e() -> Result<()> {
     let imported_commit: String = ostree_ext::tar::import_tar(&destrepo, src_tar)?;
     let (commitdata, _) = destrepo.load_commit(&imported_commit)?;
     assert_eq!(
-        CONTENT_CHECKSUM,
+        EXAMPLEOS_CONTENT_CHECKSUM,
         ostree::commit_get_content_checksum(&commitdata)
             .unwrap()
             .as_str()
@@ -75,5 +95,34 @@ fn test_e2e() -> Result<()> {
         destrepodir = destrepodir.as_str(),
         imported_commit = imported_commit.as_str()
     )?;
+    Ok(())
+}
+
+#[test]
+fn test_diff() -> Result<()> {
+    let cancellable = gio::NONE_CANCELLABLE;
+    let tempdir = tempfile::tempdir()?;
+    let tempdir = Utf8Path::from_path(tempdir.path()).unwrap();
+    let repopath = &generate_test_repo(tempdir)?;
+    update_repo(repopath)?;
+    let from = &format!("{}^", TESTREF);
+    let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repopath.as_str(), cancellable)?;
+    let subdir: Option<&str> = None;
+    let diff = ostree_ext::diff::diff(repo, from, TESTREF, subdir)?;
+    assert!(diff.subdir.is_none());
+    assert_eq!(diff.added_dirs.len(), 1);
+    assert_eq!(diff.added_dirs.iter().nth(0).unwrap(), "/usr/share");
+    assert_eq!(diff.added_files.len(), 1);
+    assert_eq!(diff.added_files.iter().nth(0).unwrap(), "/usr/bin/newbin");
+    assert_eq!(diff.removed_files.len(), 1);
+    assert_eq!(diff.removed_files.iter().nth(0).unwrap(), "/usr/bin/foo");
+    let diff = ostree_ext::diff::diff(repo, from, TESTREF, Some("/usr"))?;
+    assert_eq!(diff.subdir.as_ref().unwrap(), "/usr");
+    assert_eq!(diff.added_dirs.len(), 1);
+    assert_eq!(diff.added_dirs.iter().nth(0).unwrap(), "/share");
+    assert_eq!(diff.added_files.len(), 1);
+    assert_eq!(diff.added_files.iter().nth(0).unwrap(), "/bin/newbin");
+    assert_eq!(diff.removed_files.len(), 1);
+    assert_eq!(diff.removed_files.iter().nth(0).unwrap(), "/bin/foo");
     Ok(())
 }
