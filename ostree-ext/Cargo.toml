@@ -36,5 +36,5 @@ sh-inline = "0.1.0"
 tempfile = "3.2.0"
 
 [patch.crates-io]
-ostree = { path = '../../../gitlab/fkrull/ostree-rs' }
-ostree-sys = { path = '../../../gitlab/fkrull/ostree-rs/sys' }
+ostree = { git = 'https://gitlab.com/fkrull/ostree-rs', rev = 'fd2b57864938e9b3c0fc0c4496da29a099ad4616' }
+ostree-sys = { git = 'https://gitlab.com/fkrull/ostree-rs', rev = 'fd2b57864938e9b3c0fc0c4496da29a099ad4616' }
