@@ -9,11 +9,8 @@ const EXAMPLEOS_TAR: &[u8] = include_bytes!("fixtures/exampleos.tar.zst");
 const TESTREF: &str = "exampleos/x86_64/stable";
 const CONTENT_CHECKSUM: &str = "0ef7461f9db15e1d8bd8921abf20694225fbaa4462cadf7deed8ea0e43162120";
 
-#[context("Generating test OCI")]
-fn generate_test_tarball(dir: &Utf8Path) -> Result<Utf8PathBuf> {
-    let cancellable = gio::NONE_CANCELLABLE;
-    let path = Utf8Path::new(dir);
-    let src_tarpath = &path.join("exampleos.tar.zst");
+fn generate_test_repo(dir: &Utf8Path) -> Result<Utf8PathBuf> {
+    let src_tarpath = &dir.join("exampleos.tar.zst");
     std::fs::write(src_tarpath, EXAMPLEOS_TAR)?;
     bash!(
         indoc! {"
@@ -26,7 +23,13 @@ fn generate_test_tarball(dir: &Utf8Path) -> Result<Utf8PathBuf> {
         path = path.as_str()
     )?;
     std::fs::remove_file(src_tarpath)?;
-    let repopath = &path.join("repo-archive");
+    Ok(dir.join("repo"))
+}
+
+#[context("Generating test OCI")]
+fn generate_test_tarball(dir: &Utf8Path) -> Result<Utf8PathBuf> {
+    let cancellable = gio::NONE_CANCELLABLE;
+    let repopath = generate_test_repo(dir)?;
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repopath.as_str(), cancellable)?;
     let (_, rev) = repo.read_commit(TESTREF, cancellable)?;
     let (commitv, _) = repo.load_commit(rev.as_str())?;
