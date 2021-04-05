@@ -36,3 +36,12 @@ Think of this like a new ostree repository mode `tar-stream` or so, although rig
 
 A major distinction is the addition of special `.xattr` files; tar variants and support library differ too much for us to rely on this making it through round trips.  And further, to support the webserver-in-container we need e.g. `security.selinux` to not be changed/overwritten by the container runtime.
 
+## module "diff": Compute the difference between two ostree commits
+
+```rust
+    let subdir: Option<&str> = None;
+    let refname = "fedora/coreos/x86_64/stable";
+    let diff = ostree_ext::diff::diff(repo, &format!("{}^", refname), refname, subdir)?;
+```
+
+This is used by `rpm-ostree ex apply-live`.
