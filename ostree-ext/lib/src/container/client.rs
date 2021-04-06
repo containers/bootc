@@ -3,7 +3,7 @@
 use std::io::Write;
 
 use super::Result;
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use fn_error_context::context;
 use oci_distribution::manifest::OciDescriptor;
 
@@ -66,7 +66,7 @@ async fn import_impl(repo: &ostree::Repo, image_ref: &str) -> Result<Import> {
     let copier = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         let req = futures::executor::block_on_stream(req);
         for v in req {
-            let v = v?;
+            let v = v.map_err(anyhow::Error::msg).context("Writing buf")?;
             pipeout.write_all(&v)?;
         }
         Ok(())
@@ -76,8 +76,9 @@ async fn import_impl(repo: &ostree::Repo, image_ref: &str) -> Result<Import> {
         let gz = flate2::read::GzDecoder::new(pipein);
         crate::tar::import_tar(&repo, gz)
     });
-    let ostree_commit = import.await??;
-    copier.await??;
+    let (import_res, copy_res) = tokio::join!(import, copier);
+    copy_res??;
+    let ostree_commit = import_res??;
 
     Ok(Import {
         ostree_commit,
