@@ -1,0 +1,45 @@
+[package]
+authors = ["Colin Walters <walters@verbum.org>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+name = "ostree-ext"
+readme = "README.md"
+repository = "https://github.com/cgwalters/ostree-ext"
+version = "0.1.0"
+
+[dependencies]
+anyhow = "1.0"
+camino = "1.0.4"
+crossbeam = "0.8.0"
+fn-error-context = "0.1.1"
+gio = "0.9.1"
+glib = "0.10.3"
+glib-sys = "0.10.1"
+gvariant = "0.4.0"
+hex = "0.4.3"
+libc = "0.2.92"
+openat = "0.1.20"
+openat-ext = "0.1.13"
+openssl = "0.10.33"
+ostree = { version = "0.10.0", features = ["v2021_1" ]}
+os_pipe = "0.9.2"
+ostree-sys = "0.7.2"
+tar = "0.4.33"
+
+#ostree-container deps
+cjson = "0.1.1"
+flate2 = "1.0.20"
+futures = "0.3.13"
+phf = { version = "0.8.0", features = ["macros"] }
+nix = "0.20.0"
+oci-distribution = "0.6.0"
+tokio = { version = "1", features = ["full"] }
+serde = "1.0.125"
+serde_json = "1.0.64"
+
+[dev-dependencies]
+clap = "2.33.3"
+indoc = "1.0.3"
+sh-inline = "0.1.0"
+tempfile = "3.2.0"
+structopt = "0.3.21"
