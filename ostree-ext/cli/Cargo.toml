@@ -1,0 +1,18 @@
+[package]
+name = "ostree-ext-cli"
+version = "0.1.0"
+authors = ["Colin Walters <walters@verbum.org>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/cgwalters/ostree-container"
+readme = "README.md"
+
+[dependencies]
+anyhow = "1.0"
+ostree-ext = { path = "../lib" }
+clap = "2.33.3"
+structopt = "0.3.21"
+ostree = { version = "0.10.0", features = ["v2021_1"] }
+libc = "0.2.92"
+tokio = { version = "1", features = ["full"] }
+gio = "0.9.1"
