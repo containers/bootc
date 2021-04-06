@@ -22,8 +22,6 @@ const OCI_TYPE_LAYER: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
 
 pub(crate) const DOCKER_TYPE_LAYER: &str = "application/vnd.docker.image.rootfs.diff.tar.gzip";
 
-// FIXME get rid of this after updating to https://github.com/coreos/openat-ext/pull/27
-const TMPBLOB: &str = ".tmpblob";
 /// Path inside an OCI directory to the blobs
 const BLOBDIR: &str = "blobs/sha256";
 
@@ -96,7 +94,6 @@ pub(crate) struct Layer {
 
 /// Create an OCI blob.
 pub(crate) struct BlobWriter<'a> {
-    ocidir: &'a openat::Dir,
     pub(crate) hash: Hasher,
     pub(crate) target: Option<FileWriter<'a>>,
     size: u64,
@@ -204,33 +201,22 @@ impl<'a> OciWriter<'a> {
     }
 }
 
-impl<'a> Drop for BlobWriter<'a> {
-    fn drop(&mut self) {
-        if let Some(t) = self.target.take() {
-            // Defuse
-            let _ = t.abandon();
-        }
-    }
-}
-
 impl<'a> BlobWriter<'a> {
     #[context("Creating blob writer")]
     pub(crate) fn new(ocidir: &'a openat::Dir) -> Result<Self> {
         Ok(Self {
-            ocidir,
             hash: Hasher::new(MessageDigest::sha256())?,
             // FIXME add ability to choose filename after completion
-            target: Some(ocidir.new_file_writer(TMPBLOB, 0o644)?),
+            target: Some(ocidir.new_file_writer(0o644)?),
             size: 0,
         })
     }
 
     #[context("Completing blob")]
     pub(crate) fn complete(mut self) -> Result<Blob> {
-        self.target.take().unwrap().complete()?;
         let sha256 = hex::encode(self.hash.finish()?);
-        self.ocidir
-            .local_rename(TMPBLOB, &format!("{}/{}", BLOBDIR, sha256))?;
+        let target = &format!("{}/{}", BLOBDIR, sha256);
+        self.target.take().unwrap().complete(target)?;
         Ok(Blob {
             sha256,
             size: self.size,
