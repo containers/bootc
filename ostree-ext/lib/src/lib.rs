@@ -13,6 +13,7 @@
 /// to a string to output to a terminal or logs.
 type Result<T> = anyhow::Result<T>;
 
+#[cfg(feature = "container")]
 pub mod container;
 pub mod diff;
 pub mod ostree_ext;
