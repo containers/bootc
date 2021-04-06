@@ -9,7 +9,7 @@ readme = "README.md"
 
 [dependencies]
 anyhow = "1.0"
-ostree-ext = { path = "../lib" }
+ostree-ext = { path = "../lib", features = ["container"] }
 clap = "2.33.3"
 structopt = "0.3.21"
 ostree = { version = "0.10.0", features = ["v2021_1"] }
