@@ -2,7 +2,7 @@
 
 use crate::variant_utils::variant_new_from_bytes;
 use crate::Result;
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use camino::Utf8Path;
 use fn_error_context::context;
 use std::collections::HashMap;
@@ -170,6 +170,12 @@ impl<'a> Importer<'a> {
         xattrs: Option<&glib::Variant>,
     ) -> Result<()> {
         let cancellable = gio::NONE_CANCELLABLE;
+        if self
+            .repo
+            .has_object(ostree::ObjectType::File, checksum, cancellable)?
+        {
+            return Ok(());
+        }
         let (recv, mut send) = os_pipe::pipe()?;
         let size = entry.header().size()?;
         let header_copy = entry.header().clone();
@@ -183,7 +189,7 @@ impl<'a> Importer<'a> {
                 repo_clone.write_content(Some(checksum), &ostream, size, cancellable)?;
                 Ok(())
             });
-            let n = std::io::copy(&mut entry, &mut send)?;
+            let n = std::io::copy(&mut entry, &mut send).context("Copying object content")?;
             drop(send);
             assert_eq!(n, size);
             j.join().unwrap()?;
@@ -196,7 +202,7 @@ impl<'a> Importer<'a> {
 
     /// Given a tar entry that looks like an object (its path is under ostree/repo/objects/),
     /// determine its type and import it.
-    #[context("Importing object {}", path)]
+    #[context("object {}", path)]
     fn import_object<'b, R: std::io::Read>(
         &mut self,
         entry: tar::Entry<'b, R>,
