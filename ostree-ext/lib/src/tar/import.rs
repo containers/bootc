@@ -6,6 +6,7 @@ use anyhow::{anyhow, Context};
 use camino::Utf8Path;
 use fn_error_context::context;
 use std::collections::HashMap;
+use std::io::prelude::*;
 
 /// Arbitrary limit on xattrs to avoid RAM exhaustion attacks. The actual filesystem limits are often much smaller.
 /// See https://en.wikipedia.org/wiki/Extended_file_attributes
@@ -344,9 +345,8 @@ impl<'a> Importer<'a> {
             return Err(anyhow!("Invalid xattr size {}", n));
         }
 
-        let mut contents = Vec::with_capacity(n as usize);
-        let c = std::io::copy(&mut entry, &mut contents)?;
-        assert_eq!(c, n);
+        let mut contents = vec![0u8; n as usize];
+        entry.read_exact(contents.as_mut_slice())?;
         let contents: glib::Bytes = contents.as_slice().into();
         let contents = variant_new_from_bytes(OSTREE_XATTRS_FORMAT, contents, false);
 
