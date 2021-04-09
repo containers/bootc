@@ -7,5 +7,3 @@ lto = "thin"
 
 [patch.crates-io]
 oci-distribution = { git = 'https://github.com/cgwalters/krustlet', branch = 'streaming-client' }
-ostree = { git = 'https://gitlab.com/fkrull/ostree-rs', rev = 'fd2b57864938e9b3c0fc0c4496da29a099ad4616' }
-ostree-sys = { git = 'https://gitlab.com/fkrull/ostree-rs', rev = 'fd2b57864938e9b3c0fc0c4496da29a099ad4616' }

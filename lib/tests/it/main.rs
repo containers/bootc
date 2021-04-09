@@ -70,7 +70,7 @@ fn generate_test_tarball(dir: &Utf8Path) -> Result<Utf8PathBuf> {
 fn test_tar_import_export() -> Result<()> {
     let cancellable = gio::NONE_CANCELLABLE;
 
-    let tempdir = tempfile::tempdir()?;
+    let tempdir = tempfile::tempdir_in("/var/tmp")?;
     let path = Utf8Path::from_path(tempdir.path()).unwrap();
     let srcdir = &path.join("src");
     std::fs::create_dir(srcdir)?;
@@ -80,7 +80,7 @@ fn test_tar_import_export() -> Result<()> {
     std::fs::create_dir(destdir)?;
     let destrepodir = &destdir.join("repo");
     let destrepo = ostree::Repo::new_for_path(destrepodir);
-    destrepo.create(ostree::RepoMode::Archive, cancellable)?;
+    destrepo.create(ostree::RepoMode::BareUser, cancellable)?;
 
     let imported_commit: String = ostree_ext::tar::import_tar(&destrepo, src_tar)?;
     let (commitdata, _) = destrepo.load_commit(&imported_commit)?;
