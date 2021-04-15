@@ -165,11 +165,12 @@ impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
     fn append_dirtree<C: IsA<gio::Cancellable>>(
         &mut self,
         dirpath: &Utf8Path,
-        repo: &ostree::Repo,
         checksum: &str,
         cancellable: Option<&C>,
     ) -> Result<()> {
-        let v = &repo.load_variant(ostree::ObjectType::DirTree, checksum)?;
+        let v = &self
+            .repo
+            .load_variant(ostree::ObjectType::DirTree, checksum)?;
         self.append(ostree::ObjectType::DirTree, checksum, v)?;
         let v = v.get_data_as_bytes();
         let v = v.try_as_aligned()?;
@@ -203,14 +204,16 @@ impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
             {
                 hex::encode_to_slice(meta_csum, &mut hexbuf)?;
                 let meta_csum = std::str::from_utf8(&hexbuf)?;
-                let meta_v = &repo.load_variant(ostree::ObjectType::DirMeta, meta_csum)?;
+                let meta_v = &self
+                    .repo
+                    .load_variant(ostree::ObjectType::DirMeta, meta_csum)?;
                 self.append(ostree::ObjectType::DirMeta, meta_csum, meta_v)?;
             }
             hex::encode_to_slice(contents_csum, &mut hexbuf)?;
             let dirtree_csum = std::str::from_utf8(&hexbuf)?;
             let subpath = &dirpath.join(name);
             let subpath = map_path(subpath);
-            self.append_dirtree(&*subpath, repo, dirtree_csum, cancellable)?;
+            self.append_dirtree(&*subpath, dirtree_csum, cancellable)?;
         }
 
         Ok(())
@@ -276,7 +279,7 @@ fn impl_export<W: std::io::Write>(
     let metadata_v = &repo.load_variant(ostree::ObjectType::DirMeta, metadata_checksum)?;
     writer.append(ostree::ObjectType::DirMeta, metadata_checksum, metadata_v)?;
 
-    writer.append_dirtree(Utf8Path::new("./"), repo, contents, cancellable)?;
+    writer.append_dirtree(Utf8Path::new("./"), contents, cancellable)?;
     Ok(())
 }
 
