@@ -25,7 +25,6 @@ container = [
 [dependencies]
 anyhow = "1.0"
 camino = "1.0.4"
-crossbeam = "0.8.0"
 fn-error-context = "0.1.1"
 gio = "0.9.1"
 glib = "0.10.3"
