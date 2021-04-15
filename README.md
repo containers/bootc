@@ -49,16 +49,13 @@ This is used by `rpm-ostree ex apply-live`.
 ## module "container": Encapsulate ostree commits in OCI/Docker images
 
 
-### Bundle an OSTree repository into a container
+### Bundle an OSTree repository into an OCI container directory
 
 Given an OSTree repository, running *outside* a container:
 
 ```
-$ ostree-container build --repo=/path/to/repo --ref=exampleos/x86_64/stable --oci-dir=/output/exampleos
+$ ostree-ext-cli container export-oci --repo=/path/to/repo exampleos/x86_64/stable /output/exampleos
 ```
-
-`--oci-dir` creates an [OpenContainers image](https://github.com/opencontainers/image-spec/blob/master/spec.md) layout.
-
 You can then e.g.
 
 ```
@@ -66,28 +63,11 @@ $ skopeo copy oci:/output/exampleos containers-storage:localhost/exampleos
 $ podman run --rm -ti --entrypoint bash localhost/exampleos
 ```
 
-Another option is `--push quay.io/exampleos/exampleos:stable` which would push directly to a registry.  This would particularly be intended to be usable inside a fully unprivileged container, just mounting in the secrets necessary to push to the target registry.
+You can also use e.g. `skopeo copy oci:/output/exampleos docker://quay.io/exampleos/exampleos:latest`.
 
-### Take an arbitrary container and convert it to be OSTree ready
+### Future: Running an ostree-container as a webserver
 
-There's nothing conceptually stopping us from having tooling that takes
-an arbitrary container image and just makes it "ostree ready".  Or even
-just dyanamically accepting a container image that has a kernel client side.
-
-This *may* be in scope at some point in the future.
-
-#### ostree-containers and derivation
-
-For an ostree-based OS that is derived from Fedora, 
-`ostree-container build --from=registry.fedoraproject.org/fedora:33` would cause the generated container image to derive from the parent; in particular we de-duplicate content in the ostree commit from the base.
-
-This would work equally well for a Debian+ostree OS to do `--from=docker.io/debian:stable`.
-
-(In fact we may *require* this; TBD)
-
-### Running an ostree-container as a webserver
-
-It also works to run the ostree-container as a webserver, which will expose a webserver that responds to `GET /repo`.
+It also should work to run the ostree-container as a webserver, which will expose a webserver that responds to `GET /repo`.
 
 The effect will be as if it was built from a `Dockerfile` that contains `EXPOSE 8080`; it will work to e.g.
 `kubectl run nginx --image=quay.io/exampleos/exampleos:latest --replicas=1`
@@ -102,7 +82,7 @@ This project will hence provide a CLI tool and a Rust library which speaks the D
 An important aspect of this is that the system will validate the GPG signature of the target OSTree commit, as well as validating the sha256 of the contained objects.
 
 ```
-$ ostree-container pull --repo=/ostree/repo --ref=exampleos/x86_64/stable quay.io/exampleos/exampleos:stable
+$ ostree-ext-cli container import --repo=/ostree/repo quay.io/exampleos/exampleos:stable
 ```
 
 A project like rpm-ostree could hence support:
