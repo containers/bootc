@@ -5,7 +5,11 @@ use crate::Result;
 use anyhow::{anyhow, Context};
 use camino::Utf8Path;
 use fn_error_context::context;
+use gio::prelude::*;
+use glib::Cast;
+use ostree::ContentWriterExt;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::io::prelude::*;
 
 /// Arbitrary limit on xattrs to avoid RAM exhaustion attacks. The actual filesystem limits are often much smaller.
@@ -15,6 +19,9 @@ const MAX_XATTR_SIZE: u32 = 1024 * 1024;
 /// Limit on metadata objects (dirtree/dirmeta); this is copied
 /// from ostree-core.h.  TODO: Bind this in introspection
 const MAX_METADATA_SIZE: u32 = 10 * 1024 * 1024;
+
+/// https://stackoverflow.com/questions/258091/when-should-i-use-mmap-for-file-access
+const SMALL_REGFILE_SIZE: usize = 127 * 1024;
 
 // Variant formats, see ostree-core.h
 // TODO - expose these via introspection
@@ -31,12 +38,23 @@ enum ImportState {
     Importing(String),
 }
 
+#[derive(Debug, Default)]
+struct ImportStats {
+    dirtree: u32,
+    dirmeta: u32,
+    regfile_small: u32,
+    regfile_large: u32,
+    symlinks: u32,
+}
+
 /// Importer machine.
 struct Importer<'a> {
     state: ImportState,
     repo: &'a ostree::Repo,
     xattrs: HashMap<String, glib::Variant>,
     next_xattrs: Option<(String, String)>,
+
+    stats: ImportStats,
 }
 
 impl<'a> Drop for Importer<'a> {
@@ -62,37 +80,11 @@ fn validate_metadata_header(header: &tar::Header, desc: &str) -> Result<usize> {
     Ok(size as usize)
 }
 
-/// Convert a tar header to a gio::FileInfo.  This only maps
-/// attributes that matter to ostree.
-fn header_to_gfileinfo(header: &tar::Header) -> Result<gio::FileInfo> {
-    let i = gio::FileInfo::new();
-    let t = match header.entry_type() {
-        tar::EntryType::Regular => gio::FileType::Regular,
-        tar::EntryType::Symlink => gio::FileType::SymbolicLink,
-        o => return Err(anyhow!("Invalid tar type: {:?}", o)),
-    };
-    i.set_file_type(t);
-    i.set_size(0);
-    let uid = header.uid()? as u32;
-    let gid = header.gid()? as u32;
-    let mode = header.mode()?;
-    i.set_attribute_uint32("unix::uid", uid);
-    i.set_attribute_uint32("unix::gid", gid);
-    i.set_attribute_uint32("unix::mode", mode);
-    if t == gio::FileType::Regular {
-        i.set_size(header.size()? as i64)
-    } else {
-        i.set_attribute_boolean("standard::is-symlink", true);
-        let target = header.link_name()?;
-        let target = target.ok_or_else(|| anyhow!("Invalid symlink"))?;
-        let target = target
-            .as_os_str()
-            .to_str()
-            .ok_or_else(|| anyhow!("Non-utf8 symlink"))?;
-        i.set_symlink_target(target);
-    }
-
-    Ok(i)
+fn header_attrs(header: &tar::Header) -> Result<(u32, u32, u32)> {
+    let uid: u32 = header.uid()?.try_into()?;
+    let gid: u32 = header.gid()?.try_into()?;
+    let mode: u32 = header.mode()?.try_into()?;
+    Ok((uid, gid, mode))
 }
 
 fn format_for_objtype(t: ostree::ObjectType) -> Option<&'static str> {
@@ -159,16 +151,113 @@ impl<'a> Importer<'a> {
         let _ = self
             .repo
             .write_metadata(objtype, Some(checksum), &v, gio::NONE_CANCELLABLE)?;
+        match objtype {
+            ostree::ObjectType::DirMeta => self.stats.dirmeta += 1,
+            ostree::ObjectType::DirTree => self.stats.dirtree += 1,
+            ostree::ObjectType::Commit => {}
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
+
+    /// Import a content object.
+    fn import_large_regfile_object<R: std::io::Read>(
+        &mut self,
+        mut entry: tar::Entry<R>,
+        size: usize,
+        checksum: &str,
+        xattrs: Option<glib::Variant>,
+    ) -> Result<()> {
+        let cancellable = gio::NONE_CANCELLABLE;
+        let (uid, gid, mode) = header_attrs(entry.header())?;
+        let w = self.repo.write_regfile(
+            Some(checksum),
+            uid,
+            gid,
+            libc::S_IFREG | mode,
+            size as u64,
+            xattrs.as_ref(),
+        )?;
+        {
+            let w = w.clone().upcast::<gio::OutputStream>();
+            let mut buf = [0; 8192];
+            loop {
+                let n = entry.read(&mut buf[..]).context("Reading large regfile")?;
+                if n == 0 {
+                    break;
+                }
+                w.write(&buf[0..n], cancellable)
+                    .context("Writing large regfile")?;
+            }
+        }
+        let c = w.finish(cancellable)?;
+        debug_assert_eq!(c, checksum);
+        self.stats.regfile_large += 1;
+        Ok(())
+    }
+
+    /// Import a content object.
+    fn import_small_regfile_object<R: std::io::Read>(
+        &mut self,
+        mut entry: tar::Entry<R>,
+        size: usize,
+        checksum: &str,
+        xattrs: Option<glib::Variant>,
+    ) -> Result<()> {
+        let (uid, gid, mode) = header_attrs(entry.header())?;
+        assert!(size <= SMALL_REGFILE_SIZE);
+        let mut buf = vec![0u8; size];
+        entry.read_exact(&mut buf[..])?;
+        let c = self.repo.write_regfile_inline(
+            Some(checksum),
+            uid,
+            gid,
+            mode,
+            xattrs.as_ref(),
+            &buf,
+            gio::NONE_CANCELLABLE,
+        )?;
+        debug_assert_eq!(c.as_str(), checksum);
+        self.stats.regfile_small += 1;
+        Ok(())
+    }
+
+    /// Import a content object.
+    fn import_symlink_object<R: std::io::Read>(
+        &mut self,
+        entry: tar::Entry<R>,
+        checksum: &str,
+        xattrs: Option<glib::Variant>,
+    ) -> Result<()> {
+        let (uid, gid, _) = header_attrs(entry.header())?;
+        let target = entry
+            .header()
+            .link_name()?
+            .ok_or_else(|| anyhow!("Invalid symlink"))?;
+        let target = target
+            .as_os_str()
+            .to_str()
+            .ok_or_else(|| anyhow!("Non-utf8 symlink"))?;
+        let c = self.repo.write_symlink(
+            Some(checksum),
+            uid,
+            gid,
+            xattrs.as_ref(),
+            target,
+            gio::NONE_CANCELLABLE,
+        )?;
+        debug_assert_eq!(c.as_str(), checksum);
+        self.stats.symlinks += 1;
         Ok(())
     }
 
     /// Import a content object.
     #[context("Processing content object {}", checksum)]
     fn import_content_object<R: std::io::Read>(
-        &self,
-        mut entry: tar::Entry<R>,
+        &mut self,
+        entry: tar::Entry<R>,
         checksum: &str,
-        xattrs: Option<&glib::Variant>,
+        xattrs: Option<glib::Variant>,
     ) -> Result<()> {
         let cancellable = gio::NONE_CANCELLABLE;
         if self
@@ -177,28 +266,18 @@ impl<'a> Importer<'a> {
         {
             return Ok(());
         }
-        let (recv, mut send) = os_pipe::pipe()?;
-        let size = entry.header().size()?;
-        let header_copy = entry.header().clone();
-        let repo_clone = self.repo.clone();
-        crossbeam::thread::scope(move |s| -> Result<()> {
-            let j = s.spawn(move |_| -> Result<()> {
-                let i = header_to_gfileinfo(&header_copy)?;
-                let recv = gio::ReadInputStream::new(recv);
-                let (ostream, size) =
-                    ostree::raw_file_to_content_stream(&recv, &i, xattrs, cancellable)?;
-                repo_clone.write_content(Some(checksum), &ostream, size, cancellable)?;
-                Ok(())
-            });
-            let n = std::io::copy(&mut entry, &mut send).context("Copying object content")?;
-            drop(send);
-            assert_eq!(n, size);
-            j.join().unwrap()?;
-            Ok(())
-        })
-        .unwrap()?;
-
-        Ok(())
+        let size: usize = entry.header().size()?.try_into()?;
+        match entry.header().entry_type() {
+            tar::EntryType::Regular => {
+                if size > SMALL_REGFILE_SIZE {
+                    self.import_large_regfile_object(entry, size, checksum, xattrs)
+                } else {
+                    self.import_small_regfile_object(entry, size, checksum, xattrs)
+                }
+            }
+            tar::EntryType::Symlink => self.import_symlink_object(entry, checksum, xattrs),
+            o => return Err(anyhow!("Invalid tar entry of type {:?}", o)),
+        }
     }
 
     /// Given a tar entry that looks like an object (its path is under ostree/repo/objects/),
@@ -259,7 +338,7 @@ impl<'a> Importer<'a> {
                 .xattrs
                 .get(&xattr_objref)
                 .ok_or_else(|| anyhow!("Failed to find xattr {}", xattr_objref))?;
-            Some(v)
+            Some(v.clone())
         } else {
             None
         };
@@ -382,6 +461,7 @@ pub fn import_tar(repo: &ostree::Repo, src: impl std::io::Read) -> Result<String
         repo,
         xattrs: Default::default(),
         next_xattrs: None,
+        stats: Default::default(),
     };
     repo.prepare_transaction(gio::NONE_CANCELLABLE)?;
     let mut archive = tar::Archive::new(src);
