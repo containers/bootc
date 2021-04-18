@@ -19,6 +19,8 @@ jobs:
     container: quay.io/cgwalters/fcos-buildroot
 
     steps:
+    - name: Install skopeo
+      run: yum -y install skopeo
     - uses: actions/checkout@v2
     - name: Hack in updated ostree
       run: rpm -Uvh https://kojipkgs.fedoraproject.org//packages/ostree/2021.2/2.fc33/x86_64/ostree-{,devel-,libs-}2021.2-2.fc33.x86_64.rpm
