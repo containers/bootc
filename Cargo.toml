@@ -4,6 +4,3 @@ members = ["cli", "lib"]
 [profile.release]
 codegen-units = 1
 lto = "thin"
-
-[patch.crates-io]
-oci-distribution = { git = 'https://github.com/cgwalters/krustlet', branch = 'streaming-client' }

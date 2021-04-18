@@ -8,16 +8,11 @@ use fn_error_context::context;
 use gio::prelude::*;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{gv, Marker, Structure};
-use std::{borrow::Cow, collections::HashSet, path::Path};
+use std::borrow::Cow;
+use std::collections::HashSet;
 
 // This way the default ostree -> sysroot/ostree symlink works.
 const OSTREEDIR: &str = "sysroot/ostree";
-
-/// The location to store the generated image
-pub enum Target<'a> {
-    /// Generate an Open Containers image directory layout
-    OciDir(&'a Path),
-}
 
 /// Convert /usr/etc back to /etc
 fn map_path(p: &Utf8Path) -> std::borrow::Cow<Utf8Path> {
