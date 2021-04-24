@@ -1,5 +1,8 @@
 name: Rust
 
+permissions:
+  actions: read
+
 on:
   push:
     branches: [ main ]
