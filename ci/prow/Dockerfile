@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/coreos/cosa-buildroot:latest as builder
+FROM quay.io/coreos-assembler/fcos-buildroot:testing-devel as builder
 WORKDIR /src
 COPY . .
 RUN make && make install DESTDIR=/cosa/component-install
@@ -6,7 +6,7 @@ RUN make -C tests/kolainst install DESTDIR=/cosa/component-tests
 # Uncomment this to fake a build to test the code below
 # RUN mkdir -p /cosa/component-install/usr/bin && echo foo > /cosa/component-install/usr/bin/foo
 
-FROM registry.ci.openshift.org/coreos/coreos-assembler:latest
+FROM quay.io/coreos-assembler/coreos-assembler:latest
 WORKDIR /srv
 # Install our built binaries as overrides for the target build
 COPY --from=builder /cosa/component-install/ /srv/overrides/rootfs/
