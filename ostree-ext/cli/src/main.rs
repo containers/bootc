@@ -1,6 +1,6 @@
 use anyhow::Result;
+use std::convert::TryInto;
 use structopt::StructOpt;
-use tokio::runtime::Runtime;
 
 #[derive(Debug, StructOpt)]
 struct BuildOpts {
@@ -51,12 +51,18 @@ enum ContainerOpts {
         #[structopt(long)]
         repo: String,
 
-        /// Path to remote image, e.g. quay.io/exampleos/exampleos:latest
+        /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
+        imgref: String,
+    },
+
+    /// Print information about an exported ostree-container image.
+    Info {
+        /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
         imgref: String,
     },
 
     /// Export an ostree commit to an OCI layout
-    ExportOCI {
+    Export {
         /// Path to the repository
         #[structopt(long)]
         repo: String,
@@ -64,8 +70,8 @@ enum ContainerOpts {
         /// The ostree ref or commit to export
         rev: String,
 
-        /// Export to an OCI image layout
-        path: String,
+        /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
+        imgref: String,
     },
 }
 
@@ -99,36 +105,48 @@ fn tar_export(opts: &ExportOpts) -> Result<()> {
     Ok(())
 }
 
-fn container_import(repo: &str, imgref: &str) -> Result<()> {
+async fn container_import(repo: &str, imgref: &str) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
-    let rt = Runtime::new()?;
-    let res =
-        rt.block_on(async move { ostree_ext::container::client::import(repo, imgref).await })?;
+    let imgref = imgref.try_into()?;
+    let res = ostree_ext::container::import(repo, &imgref).await?;
     println!("Imported: {}", res.ostree_commit);
     Ok(())
 }
 
-fn container_export_oci(repo: &str, rev: &str, path: &str) -> Result<()> {
+async fn container_export(repo: &str, rev: &str, imgref: &str) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
-    let target = ostree_ext::container::buildoci::Target::OciDir(std::path::Path::new(path));
-    ostree_ext::container::buildoci::build(repo, rev, target)?;
+    let imgref = imgref.try_into()?;
+    let pushed = ostree_ext::container::export(repo, rev, &imgref).await?;
+    println!("{}", pushed);
     Ok(())
 }
 
-fn run() -> Result<()> {
+async fn container_info(imgref: &str) -> Result<()> {
+    let imgref = imgref.try_into()?;
+    let info = ostree_ext::container::fetch_manifest_info(&imgref).await?;
+    println!("{} @{}", imgref, info.manifest_digest);
+    Ok(())
+}
+
+async fn run() -> Result<()> {
+    env_logger::init();
     let opt = Opt::from_args();
     match opt {
         Opt::Tar(TarOpts::Import(ref opt)) => tar_import(opt),
         Opt::Tar(TarOpts::Export(ref opt)) => tar_export(opt),
-        Opt::Container(ContainerOpts::Import { repo, imgref }) => container_import(&repo, &imgref),
-        Opt::Container(ContainerOpts::ExportOCI { repo, rev, path }) => {
-            container_export_oci(&repo, &rev, &path)
+        Opt::Container(ContainerOpts::Info { imgref }) => container_info(imgref.as_str()).await,
+        Opt::Container(ContainerOpts::Import { repo, imgref }) => {
+            container_import(&repo, &imgref).await
+        }
+        Opt::Container(ContainerOpts::Export { repo, rev, imgref }) => {
+            container_export(&repo, &rev, &imgref).await
         }
     }
 }
 
-fn main() {
-    if let Err(e) = run() {
+#[tokio::main]
+async fn main() {
+    if let Err(e) = run().await {
         eprintln!("error: {:#}", e);
         std::process::exit(1);
     }
