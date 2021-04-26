@@ -30,7 +30,7 @@ fn build_oci(repo: &ostree::Repo, rev: &str, ocidir_path: &Path) -> Result<Image
     let commit = repo.resolve_rev(rev, false)?.unwrap();
     let commit = commit.as_str();
     let (commit_v, _) = repo.load_commit(commit)?;
-    let commit_meta = &variant_utils::variant_tuple_get(&commit_v, 0).unwrap();
+    let commit_meta = &variant_utils::variant_get_child_value(&commit_v, 0).unwrap();
     let commit_meta = glib::VariantDict::new(Some(commit_meta));
 
     if let Some(version) =
