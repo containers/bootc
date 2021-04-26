@@ -38,6 +38,7 @@ enum ImportState {
     Importing(String),
 }
 
+/// Statistics from import.
 #[derive(Debug, Default)]
 struct ImportStats {
     dirtree: u32,

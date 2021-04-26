@@ -9,10 +9,13 @@ readme = "README.md"
 
 [dependencies]
 anyhow = "1.0"
-ostree-ext = { path = "../lib", features = ["container"] }
+ostree-ext = { path = "../lib" }
 clap = "2.33.3"
 structopt = "0.3.21"
 ostree = { version = "0.11.0", features = ["v2021_2"] }
 libc = "0.2.92"
 tokio = { version = "1", features = ["full"] }
 gio = "0.9.1"
+log = "0.4.0"
+env_logger = "0.8.3"
+

@@ -1,30 +1,16 @@
 [package]
 authors = ["Colin Walters <walters@verbum.org>"]
+description = "Extension APIs for OSTree"
 edition = "2018"
 license = "MIT OR Apache-2.0"
 name = "ostree-ext"
 readme = "README.md"
 repository = "https://github.com/ostreedev/ostree-ext"
 version = "0.1.0"
-description = "Extension APIs for OSTree"
-
-
-[features]
-# Enable the container API
-container = [
-    "cjson",
-    "flate2",
-    "futures",
-    "phf",
-    "nix",
-    "oci-distribution",
-    "tokio",
-    "serde",
-    "serde_json",
-]
 
 [dependencies]
 anyhow = "1.0"
+bytes = "1.0.1"
 camino = "1.0.4"
 fn-error-context = "0.1.1"
 gio = "0.9.1"
@@ -36,25 +22,50 @@ libc = "0.2.92"
 openat = "0.1.20"
 openat-ext = "0.2.0"
 openssl = "0.10.33"
-ostree = { version = "0.11.0", features = ["v2021_2" ]}
 os_pipe = "0.9.2"
 ostree-sys = "0.7.2"
 tar = "0.4.33"
+tempfile = "3.2.0"
+tracing = "0.1"
+log = "0.4"
 
-#ostree-container deps
-cjson = { version = "0.1.1", optional = true }
-flate2 = {version = "1.0.20", optional = true }
-futures = { version = "0.3.13", optional = true }
-phf = { version = "0.8.0", features = ["macros"], optional = true }
-nix = { version = "0.20.0", optional = true }
-oci-distribution = { version = "0.6.0", optional = true }
-tokio = { version = "1", features = ["full"], optional = true }
-serde = { version = "1.0.125", optional = true }
-serde_json = { version = "1.0.64", optional = true }
+[dependencies.cjson]
+version = "0.1.1"
+
+[dependencies.flate2]
+version = "1.0.20"
+
+[dependencies.futures]
+version = "0.3.13"
+
+[dependencies.nix]
+version = "0.20.0"
+
+[dependencies.ostree]
+features = ["v2021_2"]
+version = "0.11.0"
+
+[dependencies.phf]
+features = ["macros"]
+version = "0.8.0"
+
+[dependencies.serde]
+features = ["derive"]
+version = "1.0.125"
+
+[dependencies.serde_json]
+version = "1.0.64"
+
+[dependencies.tokio]
+features = ["full"]
+version = "1"
+
+[dependencies.tokio-util]
+features = ["io"]
+version = "0.6"
 
 [dev-dependencies]
 clap = "2.33.3"
 indoc = "1.0.3"
 sh-inline = "0.1.0"
-tempfile = "3.2.0"
 structopt = "0.3.21"

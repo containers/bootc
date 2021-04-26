@@ -49,21 +49,39 @@ This is used by `rpm-ostree ex apply-live`.
 ## module "container": Encapsulate ostree commits in OCI/Docker images
 
 
-### Bundle an OSTree repository into an OCI container directory
-
-Given an OSTree repository, running *outside* a container:
+### Export an OSTree commit into a container image
 
 ```
-$ ostree-ext-cli container export-oci --repo=/path/to/repo exampleos/x86_64/stable /output/exampleos
+$ ostree-ext-cli container export --repo=/path/to/repo exampleos/x86_64/stable docker://quay.io/exampleos/exampleos:stable
 ```
 You can then e.g.
 
 ```
-$ skopeo copy oci:/output/exampleos containers-storage:localhost/exampleos
-$ podman run --rm -ti --entrypoint bash localhost/exampleos
+$ podman run --rm -ti --entrypoint bash quay.io/exampleos/exampleos:stable
 ```
 
-You can also use e.g. `skopeo copy oci:/output/exampleos docker://quay.io/exampleos/exampleos:latest`.
+Running the container directly for e.g. CI testing is one use case.  But more importantly, this container image
+can be pushed to any registry, and used as part of ostree-based operating system release engineering.
+
+### Importing an ostree-container directly
+
+A primary goal of this effort is to make it fully native to an ostree-based operating system to pull a container image directly too.
+
+FUTURE: An important aspect of this is that the system will validate the GPG signature of the target OSTree commit, as well as validating the sha256 of the contained objects.
+
+The CLI offers a method to import the exported commit:
+
+```
+$ ostree-ext-cli container import --repo=/ostree/repo docker://quay.io/exampleos/exampleos:stable
+```
+
+But a project like rpm-ostree could hence support:
+
+```
+$ rpm-ostree rebase quay.io/exampleos/exampleos:stable
+```
+
+(Along with the usual `rpm-ostree upgrade` knowing to pull that container image)
 
 ### Future: Running an ostree-container as a webserver
 
@@ -72,25 +90,6 @@ It also should work to run the ostree-container as a webserver, which will expos
 The effect will be as if it was built from a `Dockerfile` that contains `EXPOSE 8080`; it will work to e.g.
 `kubectl run nginx --image=quay.io/exampleos/exampleos:latest --replicas=1`
 and then also create a service for it.
-
-### Pulling an ostree-container directly
-
-A primary goal of this effort is to make it fully native to an ostree-based operating system to pull a container image directly too.
-
-This project will hence provide a CLI tool and a Rust library which speaks the Docker/OCI protocols enough to directly pull the container image, extracting it into the system `/ostree/repo` repository.
-
-An important aspect of this is that the system will validate the GPG signature of the target OSTree commit, as well as validating the sha256 of the contained objects.
-
-```
-$ ostree-ext-cli container import --repo=/ostree/repo quay.io/exampleos/exampleos:stable
-```
-
-A project like rpm-ostree could hence support:
-
-```
-$ rpm-ostree rebase quay.io/exampleos/exampleos:stable
-```
-(Along with the usual `rpm-ostree upgrade` knowing to pull that container image)
 
 ### Integrating with future container deltas
 
