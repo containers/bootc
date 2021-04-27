@@ -18,4 +18,4 @@ pub mod diff;
 pub mod ostree_ext;
 pub mod tar;
 #[allow(unsafe_code)]
-mod variant_utils;
+pub mod variant_utils;

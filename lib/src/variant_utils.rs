@@ -1,9 +1,12 @@
 //! Extension APIs for working with GVariant.  Not strictly
-//! related to ostree, but included here for convenience.
+//! related to ostree, but included here in the interest of
+//! avoiding another crate for this.  In the future, some of these
+//! may migrate into gtk-rs.
 
 use glib::translate::*;
 
-pub(crate) fn variant_new_from_bytes(ty: &str, bytes: glib::Bytes, trusted: bool) -> glib::Variant {
+/// Create a new GVariant from data.
+pub fn variant_new_from_bytes(ty: &str, bytes: glib::Bytes, trusted: bool) -> glib::Variant {
     unsafe {
         let ty = ty.to_glib_none();
         let ty: *const libc::c_char = ty.0;
@@ -15,15 +18,18 @@ pub(crate) fn variant_new_from_bytes(ty: &str, bytes: glib::Bytes, trusted: bool
     }
 }
 
-pub(crate) fn variant_get_normal_form(v: &glib::Variant) -> glib::Variant {
+/// Get the normal form of a GVariant.
+pub fn variant_get_normal_form(v: &glib::Variant) -> glib::Variant {
     unsafe { from_glib_full(glib_sys::g_variant_get_normal_form(v.to_glib_none().0)) }
 }
 
-pub(crate) fn variant_normal_from_bytes(ty: &str, bytes: glib::Bytes) -> glib::Variant {
+/// Create a normal-form GVariant from raw bytes.
+pub fn variant_normal_from_bytes(ty: &str, bytes: glib::Bytes) -> glib::Variant {
     variant_get_normal_form(&variant_new_from_bytes(ty, bytes, false))
 }
 
-pub(crate) fn variant_tuple_get(v: &glib::Variant, n: usize) -> Option<glib::Variant> {
+/// Extract a child from a variant.
+pub fn variant_get_child_value(v: &glib::Variant, n: usize) -> Option<glib::Variant> {
     let v = v.to_glib_none();
     let l = unsafe { glib_sys::g_variant_n_children(v.0) };
     if n >= l {
