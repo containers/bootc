@@ -28,7 +28,6 @@ ostree-sys = "0.7.2"
 tar = "0.4.33"
 tempfile = "3.2.0"
 tracing = "0.1"
-log = "0.4"
 
 [dependencies.cjson]
 version = "0.1.1"

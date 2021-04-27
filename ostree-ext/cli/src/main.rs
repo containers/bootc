@@ -128,7 +128,8 @@ async fn container_info(imgref: &str) -> Result<()> {
 }
 
 async fn run() -> Result<()> {
-    env_logger::init();
+    tracing_subscriber::fmt::init();
+    tracing::trace!("starting");
     let opt = Opt::from_args();
     match opt {
         Opt::Tar(TarOpts::Import(ref opt)) => tar_import(opt).await,
