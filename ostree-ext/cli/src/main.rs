@@ -85,15 +85,14 @@ enum Opt {
     Container(ContainerOpts),
 }
 
-fn tar_import(opts: &ImportOpts) -> Result<()> {
+async fn tar_import(opts: &ImportOpts) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, opts.repo.as_str(), gio::NONE_CANCELLABLE)?;
     let imported = if let Some(path) = opts.path.as_ref() {
-        let instream = std::io::BufReader::new(std::fs::File::open(path)?);
-        ostree_ext::tar::import_tar(repo, instream)?
+        let instream = tokio::fs::File::open(path).await?;
+        ostree_ext::tar::import_tar(repo, instream).await?
     } else {
-        let stdin = std::io::stdin();
-        let stdin = stdin.lock();
-        ostree_ext::tar::import_tar(repo, stdin)?
+        let stdin = tokio::io::stdin();
+        ostree_ext::tar::import_tar(repo, stdin).await?
     };
     println!("Imported: {}", imported);
     Ok(())
@@ -132,7 +131,7 @@ async fn run() -> Result<()> {
     env_logger::init();
     let opt = Opt::from_args();
     match opt {
-        Opt::Tar(TarOpts::Import(ref opt)) => tar_import(opt),
+        Opt::Tar(TarOpts::Import(ref opt)) => tar_import(opt).await,
         Opt::Tar(TarOpts::Export(ref opt)) => tar_export(opt),
         Opt::Container(ContainerOpts::Info { imgref }) => container_info(imgref.as_str()).await,
         Opt::Container(ContainerOpts::Import { repo, imgref }) => {

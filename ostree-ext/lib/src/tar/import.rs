@@ -5,6 +5,7 @@ use crate::Result;
 use anyhow::{anyhow, Context};
 use camino::Utf8Path;
 use fn_error_context::context;
+use futures::prelude::*;
 use gio::prelude::*;
 use glib::Cast;
 use ostree::ContentWriterExt;
@@ -455,42 +456,53 @@ fn validate_sha256(s: &str) -> Result<()> {
 }
 
 /// Read the contents of a tarball and import the ostree commit inside.  The sha56 of the imported commit will be returned.
-#[context("Importing")]
-pub fn import_tar(repo: &ostree::Repo, src: impl std::io::Read) -> Result<String> {
-    let mut importer = Importer {
-        state: ImportState::Initial,
-        repo,
-        xattrs: Default::default(),
-        next_xattrs: None,
-        stats: Default::default(),
-    };
-    repo.prepare_transaction(gio::NONE_CANCELLABLE)?;
-    let mut archive = tar::Archive::new(src);
-    for entry in archive.entries()? {
-        let entry = entry?;
-        if entry.header().entry_type() == tar::EntryType::Directory {
-            continue;
-        }
-        let path = entry.path()?;
-        let path = &*path;
-        let path =
-            Utf8Path::from_path(path).ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", path))?;
-        let path = if let Ok(p) = path.strip_prefix("sysroot/ostree/repo/") {
-            p
-        } else {
-            continue;
+pub async fn import_tar(
+    repo: &ostree::Repo,
+    src: impl tokio::io::AsyncRead + Send + Unpin + 'static,
+) -> Result<String> {
+    let (pipein, copydriver) = crate::async_util::copy_async_read_to_sync_pipe(src)?;
+    let repo = repo.clone();
+    let import = tokio::task::spawn_blocking(move || {
+        let repo = &repo;
+        let mut importer = Importer {
+            state: ImportState::Initial,
+            repo,
+            xattrs: Default::default(),
+            next_xattrs: None,
+            stats: Default::default(),
         };
+        repo.prepare_transaction(gio::NONE_CANCELLABLE)?;
+        let mut archive = tar::Archive::new(pipein);
+        for entry in archive.entries()? {
+            let entry = entry?;
+            if entry.header().entry_type() == tar::EntryType::Directory {
+                continue;
+            }
+            let path = entry.path()?;
+            let path = &*path;
+            let path = Utf8Path::from_path(path)
+                .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", path))?;
+            let path = if let Ok(p) = path.strip_prefix("sysroot/ostree/repo/") {
+                p
+            } else {
+                continue;
+            };
 
-        if let Ok(p) = path.strip_prefix("objects/") {
-            // Need to clone here, otherwise we borrow from the moved entry
-            let p = &p.to_owned();
-            importer.import_object(entry, p)?;
-        } else if let Ok(_) = path.strip_prefix("xattrs/") {
-            importer.import_xattrs(entry)?;
+            if let Ok(p) = path.strip_prefix("objects/") {
+                // Need to clone here, otherwise we borrow from the moved entry
+                let p = &p.to_owned();
+                importer.import_object(entry, p)?;
+            } else if let Ok(_) = path.strip_prefix("xattrs/") {
+                importer.import_xattrs(entry)?;
+            }
         }
-    }
 
-    importer.commit()
+        importer.commit()
+    })
+    .map_err(anyhow::Error::msg);
+    let (import, _copydriver) = tokio::try_join!(import, copydriver)?;
+    let import = import?;
+    Ok(import)
 }
 
 #[cfg(test)]

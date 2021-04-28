@@ -4,7 +4,6 @@ use super::*;
 use anyhow::anyhow;
 use fn_error_context::context;
 use futures::prelude::*;
-use std::io::prelude::*;
 use std::process::Stdio;
 use tokio::io::AsyncRead;
 
@@ -37,27 +36,6 @@ async fn fetch_manifest(imgref: &ImageReference) -> Result<(oci::Manifest, Strin
     let digest = openssl::hash::hash(openssl::hash::MessageDigest::sha256(), &raw_manifest)?;
     let digest = format!("sha256:{}", hex::encode(digest.as_ref()));
     Ok((serde_json::from_slice(&raw_manifest)?, digest))
-}
-
-/// Bridge from AsyncRead to Read.
-///
-/// This creates a pipe and a "driver" future (which could be spawned or not).
-fn copy_async_read_to_sync_pipe<S: AsyncRead + Unpin + Send + 'static>(
-    s: S,
-) -> Result<(impl Read, impl Future<Output = Result<()>>)> {
-    let (pipein, mut pipeout) = os_pipe::pipe()?;
-
-    let copier = async move {
-        let mut input = tokio_util::io::ReaderStream::new(s).boxed();
-        while let Some(buf) = input.next().await {
-            let buf = buf?;
-            // TODO blocking executor
-            pipeout.write_all(&buf)?;
-        }
-        Ok::<_, anyhow::Error>(())
-    };
-
-    Ok((pipein, copier))
 }
 
 /// Fetch a remote docker/OCI image into a local tarball, extract a specific blob.
@@ -132,17 +110,11 @@ pub async fn import(repo: &ostree::Repo, imgref: &ImageReference) -> Result<Impo
     let layerid = find_layer_blobid(manifest)?;
     tracing::trace!("target blob: {}", layerid);
     let blob = fetch_oci_archive_blob(imgref, layerid.as_str()).await?;
+    let blob = tokio::io::BufReader::new(blob);
     tracing::trace!("reading blob");
-    let (pipein, copydriver) = copy_async_read_to_sync_pipe(blob)?;
-    let repo = repo.clone();
-    let import = tokio::task::spawn_blocking(move || {
-        // FIXME don't hardcode compression, we need to detect it
-        let gz = flate2::read::GzDecoder::new(pipein);
-        crate::tar::import_tar(&repo, gz)
-    })
-    .map_err(anyhow::Error::msg);
-    let (import, _copydriver) = tokio::try_join!(import, copydriver)?;
-    let ostree_commit = import?;
+    // TODO also detect zstd
+    let blob = async_compression::tokio::bufread::GzipDecoder::new(blob);
+    let ostree_commit = crate::tar::import_tar(&repo, blob).await?;
     tracing::trace!("created commit {}", ostree_commit);
     Ok(Import {
         ostree_commit,
