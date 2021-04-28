@@ -107,9 +107,30 @@ fn tar_export(opts: &ExportOpts) -> Result<()> {
 async fn container_import(repo: &str, imgref: &str) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
     let imgref = imgref.try_into()?;
-    let res = ostree_ext::container::import(repo, &imgref).await?;
-    println!("Imported: {}", res.ostree_commit);
-    Ok(())
+    let (tx_progress, rx_progress) = tokio::sync::watch::channel(Default::default());
+    let target = indicatif::ProgressDrawTarget::stdout();
+    let style = indicatif::ProgressStyle::default_bar();
+    let pb = indicatif::ProgressBar::new_spinner();
+    pb.set_draw_target(target);
+    pb.set_style(style.template("{spinner} {prefix} {msg}"));
+    pb.enable_steady_tick(200);
+    pb.set_message("Downloading...");
+    let import = ostree_ext::container::import(repo, &imgref, Some(tx_progress));
+    tokio::pin!(import);
+    tokio::pin!(rx_progress);
+    loop {
+        tokio::select! {
+            _ = rx_progress.changed() => {
+                let n = rx_progress.borrow().processed_bytes;
+                pb.set_message(&format!("Processed: {}", indicatif::HumanBytes(n)));
+            }
+            import = &mut import => {
+                pb.finish();
+                println!("Imported: {}", import?.ostree_commit);
+                return Ok(())
+            }
+        }
+    }
 }
 
 async fn container_export(repo: &str, rev: &str, imgref: &str) -> Result<()> {
