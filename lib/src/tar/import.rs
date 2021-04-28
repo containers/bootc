@@ -12,6 +12,7 @@ use ostree::ContentWriterExt;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::io::prelude::*;
+use tracing::{event, instrument, Level};
 
 /// Arbitrary limit on xattrs to avoid RAM exhaustion attacks. The actual filesystem limits are often much smaller.
 /// See https://en.wikipedia.org/wiki/Extended_file_attributes
@@ -135,6 +136,7 @@ impl<'a> Importer<'a> {
     ) -> Result<()> {
         assert_eq!(self.state, ImportState::Initial);
         self.import_metadata(entry, checksum, ostree::ObjectType::Commit)?;
+        event!(Level::DEBUG, "Imported {}.commit", checksum);
         self.state = ImportState::Importing(checksum.to_string());
         Ok(())
     }
@@ -456,6 +458,7 @@ fn validate_sha256(s: &str) -> Result<()> {
 }
 
 /// Read the contents of a tarball and import the ostree commit inside.  The sha56 of the imported commit will be returned.
+#[instrument(skip(repo, src))]
 pub async fn import_tar(
     repo: &ostree::Repo,
     src: impl tokio::io::AsyncRead + Send + Unpin + 'static,
