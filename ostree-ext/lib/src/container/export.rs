@@ -5,6 +5,7 @@ use crate::{tar as ostree_tar, variant_utils};
 use anyhow::Context;
 use fn_error_context::context;
 use std::path::Path;
+use tracing::{instrument, Level};
 
 /// Write an ostree commit to an OCI blob
 #[context("Writing ostree root to blob")]
@@ -55,6 +56,7 @@ fn build_oci(repo: &ostree::Repo, rev: &str, ocidir_path: &Path) -> Result<Image
 }
 
 /// Helper for `build()` that avoids generics
+#[instrument(skip(repo))]
 async fn build_impl(
     repo: &ostree::Repo,
     ostree_ref: &str,
@@ -69,7 +71,7 @@ async fn build_impl(
         let src = build_oci(repo, ostree_ref, Path::new(tempdest))?;
 
         let mut cmd = skopeo::new_cmd();
-        log::trace!("Copying {} to {}", src, dest);
+        tracing::event!(Level::DEBUG, "Copying {} to {}", src, dest);
         cmd.stdout(std::process::Stdio::null())
             .arg("copy")
             .arg(src.to_string())

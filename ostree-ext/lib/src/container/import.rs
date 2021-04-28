@@ -6,6 +6,7 @@ use fn_error_context::context;
 use futures::prelude::*;
 use std::process::Stdio;
 use tokio::io::AsyncRead;
+use tracing::{event, instrument, Level};
 
 /// Download the manifest for a target image.
 #[context("Fetching manifest")]
@@ -104,14 +105,14 @@ fn find_layer_blobid(manifest: &oci::Manifest) -> Result<String> {
 
 /// Fetch a container image and import its embedded OSTree commit.
 #[context("Importing {}", imgref)]
+#[instrument(skip(repo))]
 pub async fn import(repo: &ostree::Repo, imgref: &ImageReference) -> Result<Import> {
     let (manifest, image_digest) = fetch_manifest(imgref).await?;
     let manifest = &manifest;
     let layerid = find_layer_blobid(manifest)?;
-    tracing::trace!("target blob: {}", layerid);
+    event!(Level::DEBUG, "target blob: {}", layerid);
     let blob = fetch_oci_archive_blob(imgref, layerid.as_str()).await?;
     let blob = tokio::io::BufReader::new(blob);
-    tracing::trace!("reading blob");
     // TODO also detect zstd
     let blob = async_compression::tokio::bufread::GzipDecoder::new(blob);
     let ostree_commit = crate::tar::import_tar(&repo, blob).await?;
