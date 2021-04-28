@@ -68,23 +68,22 @@ fn generate_test_tarball(dir: &Utf8Path) -> Result<Utf8PathBuf> {
     Ok(destpath)
 }
 
-#[test]
-fn test_tar_import_export() -> Result<()> {
+#[tokio::test]
+async fn test_tar_import_export() -> Result<()> {
     let cancellable = gio::NONE_CANCELLABLE;
 
     let tempdir = tempfile::tempdir_in("/var/tmp")?;
     let path = Utf8Path::from_path(tempdir.path()).unwrap();
     let srcdir = &path.join("src");
     std::fs::create_dir(srcdir)?;
-    let src_tar =
-        &mut std::io::BufReader::new(std::fs::File::open(&generate_test_tarball(srcdir)?)?);
+    let src_tar = tokio::fs::File::open(&generate_test_tarball(srcdir)?).await?;
     let destdir = &path.join("dest");
     std::fs::create_dir(destdir)?;
     let destrepodir = &destdir.join("repo");
     let destrepo = ostree::Repo::new_for_path(destrepodir);
     destrepo.create(ostree::RepoMode::BareUser, cancellable)?;
 
-    let imported_commit: String = ostree_ext::tar::import_tar(&destrepo, src_tar)?;
+    let imported_commit: String = ostree_ext::tar::import_tar(&destrepo, src_tar).await?;
     let (commitdata, _) = destrepo.load_commit(&imported_commit)?;
     assert_eq!(
         EXAMPLEOS_CONTENT_CHECKSUM,

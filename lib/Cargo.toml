@@ -10,6 +10,7 @@ version = "0.1.0"
 
 [dependencies]
 anyhow = "1.0"
+async-compression = { version = "0.3.8", features = ["tokio", "gzip"] }
 bytes = "1.0.1"
 camino = "1.0.4"
 fn-error-context = "0.1.1"
