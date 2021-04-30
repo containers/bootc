@@ -1,9 +1,11 @@
 //! APIs for extracting OSTree commits from container images
 
 use super::*;
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
+use camino::Utf8Path;
 use fn_error_context::context;
 use futures::prelude::*;
+use std::io::prelude::*;
 use std::process::Stdio;
 use tokio::io::AsyncRead;
 use tracing::{event, instrument, Level};
@@ -39,31 +41,120 @@ async fn fetch_manifest(imgref: &ImageReference) -> Result<(oci::Manifest, Strin
     Ok((serde_json::from_slice(&raw_manifest)?, digest))
 }
 
-/// Fetch a remote docker/OCI image into a local tarball, extract a specific blob.
-async fn fetch_oci_archive_blob<'s>(
+/// Read the contents of the first <checksum>.tar we find
+pub async fn find_layer_tar(
+    src: impl AsyncRead + Send + Unpin + 'static,
+    blobid: &str,
+) -> Result<(impl AsyncRead, impl Future<Output = Result<()>>)> {
+    let (pipein, input_copydriver) = crate::async_util::copy_async_read_to_sync_pipe(src)?;
+    let (tx_buf, rx_buf) = tokio::sync::mpsc::channel(2);
+    let blob_symlink_target = format!("../{}.tar", blobid);
+    let import = tokio::task::spawn_blocking(move || {
+        let mut archive = tar::Archive::new(pipein);
+        let mut buf = vec![0u8; 8192];
+        for entry in archive.entries()? {
+            let mut entry = entry.context("Reading entry")?;
+            let path = entry.path()?;
+            let path = &*path;
+            let path = Utf8Path::from_path(path)
+                .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", path))?;
+            let t = entry.header().entry_type();
+
+            // We generally expect our layer to be first, but let's just skip anything
+            // unexpected to be robust against changes in skopeo.
+            if path.extension() != Some("tar") {
+                continue;
+            }
+
+            match t {
+                tar::EntryType::Symlink => {
+                    if let Some(name) = path.file_name() {
+                        if name == "layer.tar" {
+                            let target = entry
+                                .link_name()?
+                                .ok_or_else(|| anyhow!("Invalid link {}", path))?;
+                            let target = Utf8Path::from_path(&*target)
+                                .ok_or_else(|| anyhow!("Invalid non-UTF8 path {:?}", target))?;
+                            if target != blob_symlink_target {
+                                return Err(anyhow!(
+                                    "Found unexpected layer link {} -> {}",
+                                    path,
+                                    target
+                                ));
+                            }
+                        }
+                    }
+                }
+                tar::EntryType::Regular => loop {
+                    let n = entry
+                        .read(&mut buf[..])
+                        .context("Reading tar file contents")?;
+                    let done = 0 == n;
+                    let r = Ok::<_, std::io::Error>(bytes::Bytes::copy_from_slice(&buf[0..n]));
+                    let receiver_closed = tx_buf.blocking_send(r).is_err();
+                    if receiver_closed || done {
+                        return Ok::<_, anyhow::Error>(());
+                    }
+                },
+                _ => continue,
+            }
+        }
+        Err(anyhow!("Failed to find layer {}", blob_symlink_target))
+    })
+    .map_err(anyhow::Error::msg);
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx_buf);
+    let reader = tokio_util::io::StreamReader::new(stream);
+    // Is there a better way to do this?
+    let worker = async move {
+        let (import, input_copydriver) = tokio::join!(import, input_copydriver);
+        let _: () = import?.context("Import worker")?;
+        let _: () = input_copydriver.context("Layer input copy driver failed")?;
+        Ok::<_, anyhow::Error>(())
+    };
+    Ok((reader, worker))
+}
+
+/// Fetch a remote docker/OCI image and extract a specific uncompressed layer.
+async fn fetch_layer<'s>(
     imgref: &ImageReference,
     blobid: &str,
-) -> Result<impl AsyncRead> {
+) -> Result<(
+    impl AsyncRead + Unpin + Send,
+    impl Future<Output = Result<()>>,
+)> {
     let mut proc = skopeo::new_cmd();
     proc.stdout(Stdio::null());
-    let tempdir = tempfile::tempdir_in("/var/tmp")?;
-    let target = &tempdir.path().join("d");
-    tracing::trace!("skopeo pull starting to {:?}", target);
+    let tempdir = tempfile::Builder::new()
+        .prefix("ostree-rs-ext")
+        .tempdir_in("/var/tmp")?;
+    let tempdir = Utf8Path::from_path(tempdir.path()).unwrap();
+    let fifo = &tempdir.join("skopeo.pipe");
+    nix::unistd::mkfifo(
+        fifo.as_os_str(),
+        nix::sys::stat::Mode::from_bits(0o600).unwrap(),
+    )?;
+    tracing::trace!("skopeo pull starting to {}", fifo);
     proc.arg("copy")
         .arg(imgref.to_string())
-        .arg(format!("oci://{}", target.to_str().unwrap()));
-    skopeo::spawn(proc)?
-        .wait()
-        .err_into()
-        .and_then(|e| async move {
-            if !e.success() {
-                return Err(anyhow!("skopeo failed: {}", e));
-            }
-            Ok(())
-        })
-        .await?;
-    tracing::trace!("skopeo pull done");
-    Ok(tokio::fs::File::open(target.join("blobs/sha256/").join(blobid)).await?)
+        .arg(format!("docker-archive:{}", fifo));
+    let mut proc = skopeo::spawn(proc)?;
+    let fifo_reader = tokio::fs::File::open(fifo).await?;
+    let waiter = async move {
+        let res = proc.wait().await?;
+        if !res.success() {
+            return Err(anyhow!("skopeo failed: {}", res));
+        }
+        Ok(())
+    }
+    .boxed();
+    let (contents, worker) = find_layer_tar(fifo_reader, blobid).await?;
+    let worker = async move {
+        let (worker, waiter) = tokio::join!(worker, waiter);
+        let _: () = worker.context("Layer worker failed")?;
+        let _: () = waiter?;
+        Ok::<_, anyhow::Error>(())
+    };
+    Ok((contents, worker))
 }
 
 /// The result of an import operation
@@ -111,12 +202,13 @@ pub async fn import(repo: &ostree::Repo, imgref: &ImageReference) -> Result<Impo
     let manifest = &manifest;
     let layerid = find_layer_blobid(manifest)?;
     event!(Level::DEBUG, "target blob: {}", layerid);
-    let blob = fetch_oci_archive_blob(imgref, layerid.as_str()).await?;
+    let (blob, worker) = fetch_layer(imgref, layerid.as_str()).await?;
     let blob = tokio::io::BufReader::new(blob);
-    // TODO also detect zstd
-    let blob = async_compression::tokio::bufread::GzipDecoder::new(blob);
-    let ostree_commit = crate::tar::import_tar(&repo, blob).await?;
-    tracing::trace!("created commit {}", ostree_commit);
+    let import = crate::tar::import_tar(&repo, blob);
+    let (ostree_commit, worker) = tokio::join!(import, worker);
+    let ostree_commit = ostree_commit?;
+    let _: () = worker?;
+    event!(Level::DEBUG, "created commit {}", ostree_commit);
     Ok(Import {
         ostree_commit,
         image_digest,
