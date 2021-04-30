@@ -16,7 +16,11 @@ pub(crate) fn copy_async_read_to_sync_pipe<S: AsyncRead + Unpin + Send + 'static
         while let Some(buf) = input.next().await {
             let buf = buf?;
             // TODO blocking executor
-            pipeout.write_all(&buf)?;
+            // Note broken pipe is OK, just means the caller stopped reading
+            pipeout.write_all(&buf).or_else(|e| match e.kind() {
+                std::io::ErrorKind::BrokenPipe => Ok(()),
+                _ => Err(e),
+            })?;
         }
         Ok::<_, anyhow::Error>(())
     };

@@ -8,6 +8,7 @@ use tokio::process::Command;
 /// Create a Command builder for skopeo.
 pub(crate) fn new_cmd() -> tokio::process::Command {
     let mut cmd = Command::new("skopeo");
+    cmd.stdin(Stdio::null());
     cmd.kill_on_drop(true);
     cmd
 }
