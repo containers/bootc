@@ -144,7 +144,7 @@ async fn test_container_import_export() -> Result<()> {
     let inspect = ostree_ext::container::fetch_manifest_info(&srcoci).await?;
     assert_eq!(inspect.manifest_digest, digest);
 
-    let import = ostree_ext::container::import(destrepo, &srcoci)
+    let import = ostree_ext::container::import(destrepo, &srcoci, None)
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
