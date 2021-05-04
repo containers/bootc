@@ -6,9 +6,59 @@ use camino::Utf8Path;
 use fn_error_context::context;
 use futures::prelude::*;
 use std::io::prelude::*;
+use std::pin::Pin;
 use std::process::Stdio;
 use tokio::io::AsyncRead;
 use tracing::{event, instrument, Level};
+
+/// The result of an import operation
+#[derive(Copy, Clone, Debug, Default)]
+pub struct ImportProgress {
+    /// Number of bytes downloaded (approximate)
+    pub processed_bytes: u64,
+}
+
+type Progress = tokio::sync::watch::Sender<ImportProgress>;
+
+/// A read wrapper that updates the download progress.
+struct ProgressReader {
+    reader: Box<dyn AsyncRead + Unpin + Send + 'static>,
+    progress: Option<Progress>,
+}
+
+impl AsyncRead for ProgressReader {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let pinned = Pin::new(&mut self.reader);
+        let len = buf.filled().len();
+        match pinned.poll_read(cx, buf) {
+            v @ std::task::Poll::Ready(Ok(_)) => {
+                let success = if let Some(progress) = self.progress.as_ref() {
+                    let state = {
+                        let mut state = *progress.borrow();
+                        let newlen = buf.filled().len();
+                        debug_assert!(newlen >= len);
+                        let read = (newlen - len) as u64;
+                        state.processed_bytes += read;
+                        state
+                    };
+                    // Ignore errors, if the caller disconnected from progress that's OK.
+                    progress.send(state).is_ok()
+                } else {
+                    true
+                };
+                if !success {
+                    let _ = self.progress.take();
+                }
+                v
+            }
+            o => o,
+        }
+    }
+}
 
 /// Download the manifest for a target image.
 #[context("Fetching manifest")]
@@ -66,6 +116,8 @@ pub async fn find_layer_tar(
                 continue;
             }
 
+            event!(Level::DEBUG, "Found {}", path);
+
             match t {
                 tar::EntryType::Symlink => {
                     if let Some(name) = path.file_name() {
@@ -118,6 +170,7 @@ pub async fn find_layer_tar(
 async fn fetch_layer<'s>(
     imgref: &ImageReference,
     blobid: &str,
+    progress: Option<tokio::sync::watch::Sender<ImportProgress>>,
 ) -> Result<(
     impl AsyncRead + Unpin + Send,
     impl Future<Output = Result<()>>,
@@ -138,7 +191,10 @@ async fn fetch_layer<'s>(
         .arg(imgref.to_string())
         .arg(format!("docker-archive:{}", fifo));
     let mut proc = skopeo::spawn(proc)?;
-    let fifo_reader = tokio::fs::File::open(fifo).await?;
+    let fifo_reader = ProgressReader {
+        reader: Box::new(tokio::fs::File::open(fifo).await?),
+        progress: progress,
+    };
     let waiter = async move {
         let res = proc.wait().await?;
         if !res.success() {
@@ -196,13 +252,17 @@ fn find_layer_blobid(manifest: &oci::Manifest) -> Result<String> {
 
 /// Fetch a container image and import its embedded OSTree commit.
 #[context("Importing {}", imgref)]
-#[instrument(skip(repo))]
-pub async fn import(repo: &ostree::Repo, imgref: &ImageReference) -> Result<Import> {
+#[instrument(skip(repo, progress))]
+pub async fn import(
+    repo: &ostree::Repo,
+    imgref: &ImageReference,
+    progress: Option<tokio::sync::watch::Sender<ImportProgress>>,
+) -> Result<Import> {
     let (manifest, image_digest) = fetch_manifest(imgref).await?;
     let manifest = &manifest;
     let layerid = find_layer_blobid(manifest)?;
     event!(Level::DEBUG, "target blob: {}", layerid);
-    let (blob, worker) = fetch_layer(imgref, layerid.as_str()).await?;
+    let (blob, worker) = fetch_layer(imgref, layerid.as_str(), progress).await?;
     let blob = tokio::io::BufReader::new(blob);
     let import = crate::tar::import_tar(&repo, blob);
     let (ostree_commit, worker) = tokio::join!(import, worker);
