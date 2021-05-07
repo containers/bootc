@@ -76,6 +76,22 @@ enum ContainerOpts {
 }
 
 #[derive(Debug, StructOpt)]
+struct ImaSignOpts {
+    /// Path to the repository
+    #[structopt(long)]
+    repo: String,
+    /// The ostree ref or commit to use as a base
+    src_rev: String,
+    /// The ostree ref to use for writing the signed commit
+    target_ref: String,
+
+    /// Digest algorithm
+    algorithm: String,
+    /// Path to IMA key
+    key: String,
+}
+
+#[derive(Debug, StructOpt)]
 #[structopt(name = "ostree-ext")]
 #[structopt(rename_all = "kebab-case")]
 enum Opt {
@@ -83,6 +99,7 @@ enum Opt {
     Tar(TarOpts),
     /// Import and export to a container image
     Container(ContainerOpts),
+    ImaSign(ImaSignOpts),
 }
 
 async fn tar_import(opts: &ImportOpts) -> Result<()> {
@@ -127,6 +144,24 @@ async fn container_info(imgref: &str) -> Result<()> {
     Ok(())
 }
 
+fn ima_sign(cmdopts: &ImaSignOpts) -> Result<()> {
+    let repo =
+        &ostree::Repo::open_at(libc::AT_FDCWD, cmdopts.repo.as_str(), gio::NONE_CANCELLABLE)?;
+    let signopts = ostree_ext::ima::ImaOpts {
+        algorithm: cmdopts.algorithm.clone(),
+        key: cmdopts.key.clone(),
+    };
+    let signed_commit = ostree_ext::ima::ima_sign(repo, cmdopts.src_rev.as_str(), &signopts)?;
+    repo.set_ref_immediate(
+        None,
+        cmdopts.target_ref.as_str(),
+        Some(signed_commit.as_str()),
+        gio::NONE_CANCELLABLE,
+    )?;
+    println!("{} => {}", cmdopts.target_ref, signed_commit);
+    Ok(())
+}
+
 async fn run() -> Result<()> {
     tracing_subscriber::fmt::init();
     tracing::trace!("starting");
@@ -141,6 +176,7 @@ async fn run() -> Result<()> {
         Opt::Container(ContainerOpts::Export { repo, rev, imgref }) => {
             container_export(&repo, &rev, &imgref).await
         }
+        Opt::ImaSign(ref opts) => ima_sign(opts),
     }
 }
 
