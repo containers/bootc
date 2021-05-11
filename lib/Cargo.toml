@@ -10,7 +10,6 @@ version = "0.1.0"
 
 [dependencies]
 anyhow = "1.0"
-async-compression = { version = "0.3.8", features = ["tokio", "gzip"] }
 bytes = "1.0.1"
 camino = "1.0.4"
 fn-error-context = "0.1.1"
@@ -23,7 +22,6 @@ libc = "0.2.92"
 openat = "0.1.20"
 openat-ext = "0.2.0"
 openssl = "0.10.33"
-os_pipe = "0.9.2"
 ostree-sys = "0.7.2"
 tar = "0.4.33"
 tempfile = "3.2.0"
