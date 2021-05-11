@@ -96,14 +96,19 @@ pub async fn find_layer_tar(
     src: impl AsyncRead + Send + Unpin + 'static,
     blobid: &str,
 ) -> Result<(impl AsyncRead, impl Future<Output = Result<()>>)> {
-    let (pipein, input_copydriver) = crate::async_util::copy_async_read_to_sync_pipe(src)?;
+    let pipein = crate::async_util::async_read_to_sync(src);
     let (tx_buf, rx_buf) = tokio::sync::mpsc::channel(2);
     let blob_symlink_target = format!("../{}.tar", blobid);
     let import = tokio::task::spawn_blocking(move || {
         let mut archive = tar::Archive::new(pipein);
         let mut buf = vec![0u8; 8192];
+        let mut found = false;
         for entry in archive.entries()? {
             let mut entry = entry.context("Reading entry")?;
+            if found {
+                // Continue to read to the end to avoid broken pipe error from skopeo
+                continue;
+            }
             let path = entry.path()?;
             let path = &*path;
             let path = Utf8Path::from_path(path)
@@ -145,22 +150,25 @@ pub async fn find_layer_tar(
                     let r = Ok::<_, std::io::Error>(bytes::Bytes::copy_from_slice(&buf[0..n]));
                     let receiver_closed = tx_buf.blocking_send(r).is_err();
                     if receiver_closed || done {
-                        return Ok::<_, anyhow::Error>(());
+                        found = true;
+                        break;
                     }
                 },
                 _ => continue,
             }
         }
-        Err(anyhow!("Failed to find layer {}", blob_symlink_target))
+        if found {
+            Ok(())
+        } else {
+            Err(anyhow!("Failed to find layer {}", blob_symlink_target))
+        }
     })
     .map_err(anyhow::Error::msg);
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx_buf);
     let reader = tokio_util::io::StreamReader::new(stream);
-    // Is there a better way to do this?
     let worker = async move {
-        let (import, input_copydriver) = tokio::join!(import, input_copydriver);
-        let _: () = import?.context("Import worker")?;
-        let _: () = input_copydriver.context("Layer input copy driver failed")?;
+        let import = import.await?;
+        let _: () = import.context("Import worker")?;
         Ok::<_, anyhow::Error>(())
     };
     Ok((reader, worker))
@@ -190,15 +198,19 @@ async fn fetch_layer<'s>(
     proc.arg("copy")
         .arg(imgref.to_string())
         .arg(format!("docker-archive:{}", fifo));
-    let mut proc = skopeo::spawn(proc)?;
+    let proc = skopeo::spawn(proc)?;
     let fifo_reader = ProgressReader {
         reader: Box::new(tokio::fs::File::open(fifo).await?),
         progress: progress,
     };
     let waiter = async move {
-        let res = proc.wait().await?;
-        if !res.success() {
-            return Err(anyhow!("skopeo failed: {}", res));
+        let res = proc.wait_with_output().await?;
+        if !res.status.success() {
+            return Err(anyhow!(
+                "skopeo failed: {}\n{}",
+                res.status,
+                String::from_utf8_lossy(&res.stderr)
+            ));
         }
         Ok(())
     }

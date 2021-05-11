@@ -1,29 +1,56 @@
-use anyhow::Result;
-use futures::prelude::*;
 use std::io::prelude::*;
-use tokio::io::AsyncRead;
+use std::pin::Pin;
+use tokio::io::{AsyncRead, AsyncReadExt};
+
+struct ReadBridge {
+    reader: Pin<Box<dyn AsyncRead + Send + Unpin + 'static>>,
+    rt: tokio::runtime::Handle,
+}
+
+impl Read for ReadBridge {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let mut reader = self.reader.as_mut();
+        self.rt.block_on(async { reader.read(buf).await })
+    }
+}
 
 /// Bridge from AsyncRead to Read.
-///
-/// This creates a pipe and a "driver" future (which could be spawned or not).
-pub(crate) fn copy_async_read_to_sync_pipe<S: AsyncRead + Unpin + Send + 'static>(
-    s: S,
-) -> Result<(impl Read, impl Future<Output = Result<()>>)> {
-    let (pipein, mut pipeout) = os_pipe::pipe()?;
+pub(crate) fn async_read_to_sync<S: AsyncRead + Unpin + Send + 'static>(
+    reader: S,
+) -> impl Read + Send + Unpin + 'static {
+    let rt = tokio::runtime::Handle::current();
+    let reader = Box::pin(reader);
+    ReadBridge { reader, rt }
+}
 
-    let copier = async move {
-        let mut input = tokio_util::io::ReaderStream::new(s).boxed();
-        while let Some(buf) = input.next().await {
-            let buf = buf?;
-            // TODO blocking executor
-            // Note broken pipe is OK, just means the caller stopped reading
-            pipeout.write_all(&buf).or_else(|e| match e.kind() {
-                std::io::ErrorKind::BrokenPipe => Ok(()),
-                _ => Err(e),
-            })?;
-        }
-        Ok::<_, anyhow::Error>(())
-    };
+#[cfg(test)]
+mod test {
+    use std::convert::TryInto;
 
-    Ok((pipein, copier))
+    use super::*;
+    use anyhow::Result;
+
+    async fn test_reader_len(
+        r: impl AsyncRead + Unpin + Send + 'static,
+        expected_len: usize,
+    ) -> Result<()> {
+        let mut r = async_read_to_sync(r);
+        let res = tokio::task::spawn_blocking(move || {
+            let mut buf = Vec::new();
+            r.read_to_end(&mut buf)?;
+            Ok::<_, anyhow::Error>(buf)
+        })
+        .await?;
+        assert_eq!(res?.len(), expected_len);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_async_read_to_sync() -> Result<()> {
+        test_reader_len(tokio::io::empty(), 0).await?;
+        let bash = tokio::fs::File::open("/usr/bin/sh").await?;
+        let bash_len = bash.metadata().await?.len();
+        test_reader_len(bash, bash_len.try_into().unwrap()).await?;
+        Ok(())
+    }
 }
