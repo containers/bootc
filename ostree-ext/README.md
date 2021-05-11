@@ -121,11 +121,15 @@ are duplicated on disk.  Of course storage systems like containers/image could l
 
 ## Being able to remove all container images
 
-In Kubernetes, the kubelet will prune the image storage periodically, removing images not backed by containers.  If we store the operating system itself as an image...well, we'd
-need to do something like teach the container storage to have the concept of an image that is "pinned" because it's actually the booted filesystem.  Or create a "fake" container
-representing the running operating system.
+In Kubernetes, the kubelet will prune the image storage periodically, removing images not backed by containers.  If we store the operating system itself as an image...well, we'd need to do something like teach the container storage to have the concept of an image that is "pinned" because it's actually the booted filesystem.  Or create a "fake" container representing the running operating system.
 
-Other projects in this space ended up having an "early docker" distinct from 
+Other projects in this space ended up having an "early docker" distinct from the "main docker" which brings its own large set of challenges.
+
+## SELinux 
+
+OSTree has *first class* support for SELinux.  It was baked into the design from the very start.  Handling SELinux is very tricky because it's a part of the operating system that can influence *everything else*.  And specifically file labels.
+
+In this approach we aren't trying to inject xattrs into the tar stream; they're stored out of band for reliability.
 
 ## Independence of complexity of container storage
 
