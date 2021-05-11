@@ -59,7 +59,7 @@ This guide requires:
 - clean up:
   - [ ] `git push origin :release`
   - [ ] `cargo clean`
-  - [ ] `git checkout master`
+  - [ ] `git checkout main`
 
 [rustup]: https://rustup.rs/
 [crates-io]: https://crates.io/

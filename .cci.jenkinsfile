@@ -1,4 +1,4 @@
-// Documentation: https://github.com/coreos/coreos-ci/blob/master/README-upstream-ci.md
+// Documentation: https://github.com/coreos/coreos-ci/blob/main/README-upstream-ci.md
 
 stage("Build") {
 parallel build: {
