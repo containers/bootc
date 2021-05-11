@@ -463,7 +463,7 @@ pub async fn import_tar(
     repo: &ostree::Repo,
     src: impl tokio::io::AsyncRead + Send + Unpin + 'static,
 ) -> Result<String> {
-    let (pipein, copydriver) = crate::async_util::copy_async_read_to_sync_pipe(src)?;
+    let pipein = crate::async_util::async_read_to_sync(src);
     let repo = repo.clone();
     let import = tokio::task::spawn_blocking(move || {
         let repo = &repo;
@@ -503,8 +503,7 @@ pub async fn import_tar(
         importer.commit()
     })
     .map_err(anyhow::Error::msg);
-    let (import, _copydriver) = tokio::try_join!(import, copydriver)?;
-    let import = import?;
+    let import: String = import.await??;
     Ok(import)
 }
 
