@@ -100,68 +100,7 @@ pub async fn find_layer_tar(
     let (tx_buf, rx_buf) = tokio::sync::mpsc::channel(2);
     let blob_symlink_target = format!("../{}.tar", blobid);
     let import = tokio::task::spawn_blocking(move || {
-        let mut archive = tar::Archive::new(pipein);
-        let mut buf = vec![0u8; 8192];
-        let mut found = false;
-        for entry in archive.entries()? {
-            let mut entry = entry.context("Reading entry")?;
-            if found {
-                // Continue to read to the end to avoid broken pipe error from skopeo
-                continue;
-            }
-            let path = entry.path()?;
-            let path = &*path;
-            let path = Utf8Path::from_path(path)
-                .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", path))?;
-            let t = entry.header().entry_type();
-
-            // We generally expect our layer to be first, but let's just skip anything
-            // unexpected to be robust against changes in skopeo.
-            if path.extension() != Some("tar") {
-                continue;
-            }
-
-            event!(Level::DEBUG, "Found {}", path);
-
-            match t {
-                tar::EntryType::Symlink => {
-                    if let Some(name) = path.file_name() {
-                        if name == "layer.tar" {
-                            let target = entry
-                                .link_name()?
-                                .ok_or_else(|| anyhow!("Invalid link {}", path))?;
-                            let target = Utf8Path::from_path(&*target)
-                                .ok_or_else(|| anyhow!("Invalid non-UTF8 path {:?}", target))?;
-                            if target != blob_symlink_target {
-                                return Err(anyhow!(
-                                    "Found unexpected layer link {} -> {}",
-                                    path,
-                                    target
-                                ));
-                            }
-                        }
-                    }
-                }
-                tar::EntryType::Regular => loop {
-                    let n = entry
-                        .read(&mut buf[..])
-                        .context("Reading tar file contents")?;
-                    let done = 0 == n;
-                    let r = Ok::<_, std::io::Error>(bytes::Bytes::copy_from_slice(&buf[0..n]));
-                    let receiver_closed = tx_buf.blocking_send(r).is_err();
-                    if receiver_closed || done {
-                        found = true;
-                        break;
-                    }
-                },
-                _ => continue,
-            }
-        }
-        if found {
-            Ok(())
-        } else {
-            Err(anyhow!("Failed to find layer {}", blob_symlink_target))
-        }
+        find_layer_tar_sync(pipein, blob_symlink_target, tx_buf)
     })
     .map_err(anyhow::Error::msg);
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx_buf);
@@ -172,6 +111,78 @@ pub async fn find_layer_tar(
         Ok::<_, anyhow::Error>(())
     };
     Ok((reader, worker))
+}
+
+// Helper function invoked to synchronously parse a tar stream, finding
+// the desired layer tarball and writing its contents via a stream of byte chunks
+// to a channel.
+fn find_layer_tar_sync(
+    pipein: impl Read + Send + Unpin,
+    blob_symlink_target: String,
+    tx_buf: tokio::sync::mpsc::Sender<std::io::Result<bytes::Bytes>>,
+) -> Result<()> {
+    let mut archive = tar::Archive::new(pipein);
+    let mut buf = vec![0u8; 8192];
+    let mut found = false;
+    for entry in archive.entries()? {
+        let mut entry = entry.context("Reading entry")?;
+        if found {
+            // Continue to read to the end to avoid broken pipe error from skopeo
+            continue;
+        }
+        let path = entry.path()?;
+        let path = &*path;
+        let path =
+            Utf8Path::from_path(path).ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", path))?;
+        let t = entry.header().entry_type();
+
+        // We generally expect our layer to be first, but let's just skip anything
+        // unexpected to be robust against changes in skopeo.
+        if path.extension() != Some("tar") {
+            continue;
+        }
+
+        event!(Level::DEBUG, "Found {}", path);
+
+        match t {
+            tar::EntryType::Symlink => {
+                if let Some(name) = path.file_name() {
+                    if name == "layer.tar" {
+                        let target = entry
+                            .link_name()?
+                            .ok_or_else(|| anyhow!("Invalid link {}", path))?;
+                        let target = Utf8Path::from_path(&*target)
+                            .ok_or_else(|| anyhow!("Invalid non-UTF8 path {:?}", target))?;
+                        if target != blob_symlink_target {
+                            return Err(anyhow!(
+                                "Found unexpected layer link {} -> {}",
+                                path,
+                                target
+                            ));
+                        }
+                    }
+                }
+            }
+            tar::EntryType::Regular => loop {
+                let n = entry
+                    .read(&mut buf[..])
+                    .context("Reading tar file contents")?;
+                let done = 0 == n;
+                let r = Ok::<_, std::io::Error>(bytes::Bytes::copy_from_slice(&buf[0..n]));
+                let receiver_closed = tx_buf.blocking_send(r).is_err();
+                if receiver_closed || done {
+                    found = true;
+                    break;
+                }
+            },
+            _ => continue,
+        }
+    }
+    if found {
+        Ok(())
+    } else {
+        Err(anyhow!("Failed to find layer {}", blob_symlink_target))
+    }
 }
 
 /// Fetch a remote docker/OCI image and extract a specific uncompressed layer.
