@@ -33,6 +33,8 @@ pub enum Transport {
     OciDir,
     /// A local OCI archive tarball (`oci-archive:`)
     OciArchive,
+    /// Local container storage (`containers-storage:`)
+    ContainerStorage,
 }
 
 /// Combination of a remote image reference and transport.
@@ -79,6 +81,7 @@ impl TryFrom<&str> for Transport {
             "registry" | "docker" => Self::Registry,
             "oci" => Self::OciDir,
             "oci-archive" => Self::OciArchive,
+            "containers-storage" => Self::ContainerStorage,
             o => return Err(anyhow!("Unknown transport '{}'", o)),
         })
     }
@@ -116,6 +119,7 @@ impl std::fmt::Display for Transport {
             Self::Registry => "docker://",
             Self::OciArchive => "oci-archive:",
             Self::OciDir => "oci:",
+            Self::ContainerStorage => "containers-storage:",
         };
         f.write_str(s)
     }
@@ -139,6 +143,10 @@ mod tests {
     use super::*;
 
     const INVALID_IRS: &[&str] = &["", "foo://", "docker:blah", "registry:", "foo:bar"];
+    const VALID_IRS: &[&str] = &[
+        "containers-storage:localhost/someimage",
+        "docker://quay.io/exampleos/blah:sometag",
+    ];
 
     #[test]
     fn test_imagereference() {
@@ -158,6 +166,10 @@ mod tests {
         let digested = with_tag
             .with_digest("sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
         assert_eq!(digested.name, "quay.io/exampleos/blah@sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
+
+        for &v in VALID_IRS {
+            ImageReference::try_from(v).unwrap();
+        }
 
         for &v in INVALID_IRS {
             match ImageReference::try_from(v) {
