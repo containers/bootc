@@ -13,16 +13,22 @@ fn export_ostree_ref_to_blobdir(
     repo: &ostree::Repo,
     rev: &str,
     ocidir: &openat::Dir,
+    compression: Option<flate2::Compression>,
 ) -> Result<oci::Layer> {
     let commit = repo.resolve_rev(rev, false)?.unwrap();
-    let mut w = oci::LayerWriter::new(ocidir)?;
+    let mut w = oci::LayerWriter::new(ocidir, compression)?;
     ostree_tar::export_commit(repo, commit.as_str(), &mut w)?;
     w.complete()
 }
 
 /// Generate an OCI image from a given ostree root
 #[context("Building oci")]
-fn build_oci(repo: &ostree::Repo, rev: &str, ocidir_path: &Path) -> Result<ImageReference> {
+fn build_oci(
+    repo: &ostree::Repo,
+    rev: &str,
+    ocidir_path: &Path,
+    compression: Option<flate2::Compression>,
+) -> Result<ImageReference> {
     // Explicitly error if the target exists
     std::fs::create_dir(ocidir_path).context("Creating OCI dir")?;
     let ocidir = &openat::Dir::open(ocidir_path)?;
@@ -45,7 +51,7 @@ fn build_oci(repo: &ostree::Repo, rev: &str, ocidir_path: &Path) -> Result<Image
     writer.add_config_annotation(OSTREE_COMMIT_LABEL, commit);
     writer.add_manifest_annotation(OSTREE_COMMIT_LABEL, commit);
 
-    let rootfs_blob = export_ostree_ref_to_blobdir(repo, commit, ocidir)?;
+    let rootfs_blob = export_ostree_ref_to_blobdir(repo, commit, ocidir, compression)?;
     writer.set_root_layer(rootfs_blob);
     writer.complete()?;
 
@@ -62,13 +68,19 @@ async fn build_impl(
     ostree_ref: &str,
     dest: &ImageReference,
 ) -> Result<ImageReference> {
+    let compression = if dest.transport == Transport::ContainerStorage {
+        Some(flate2::Compression::none())
+    } else {
+        None
+    };
     if dest.transport == Transport::OciDir {
-        let _copied: ImageReference = build_oci(repo, ostree_ref, Path::new(dest.name.as_str()))?;
+        let _copied: ImageReference =
+            build_oci(repo, ostree_ref, Path::new(dest.name.as_str()), compression)?;
     } else {
         let tempdir = tempfile::tempdir_in("/var/tmp")?;
         let tempdest = tempdir.path().join("d");
         let tempdest = tempdest.to_str().unwrap();
-        let src = build_oci(repo, ostree_ref, Path::new(tempdest))?;
+        let src = build_oci(repo, ostree_ref, Path::new(tempdest), compression)?;
 
         let mut cmd = skopeo::new_cmd();
         tracing::event!(Level::DEBUG, "Copying {} to {}", src, dest);
