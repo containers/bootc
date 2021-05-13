@@ -57,6 +57,9 @@ struct Importer<'a> {
     xattrs: HashMap<String, glib::Variant>,
     next_xattrs: Option<(String, String)>,
 
+    // Reusable buffer for reads.  See also https://github.com/rust-lang/rust/issues/78485
+    buf: Vec<u8>,
+
     stats: ImportStats,
 }
 
@@ -184,13 +187,14 @@ impl<'a> Importer<'a> {
         )?;
         {
             let w = w.clone().upcast::<gio::OutputStream>();
-            let mut buf = [0; 8192];
             loop {
-                let n = entry.read(&mut buf[..]).context("Reading large regfile")?;
+                let n = entry
+                    .read(&mut self.buf[..])
+                    .context("Reading large regfile")?;
                 if n == 0 {
                     break;
                 }
-                w.write(&buf[0..n], cancellable)
+                w.write(&self.buf[0..n], cancellable)
                     .context("Writing large regfile")?;
             }
         }
@@ -470,6 +474,7 @@ pub async fn import_tar(
         let mut importer = Importer {
             state: ImportState::Initial,
             repo,
+            buf: vec![0u8; 16384],
             xattrs: Default::default(),
             next_xattrs: None,
             stats: Default::default(),
