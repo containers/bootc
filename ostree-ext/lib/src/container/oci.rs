@@ -267,12 +267,12 @@ impl<'a> std::io::Write for BlobWriter<'a> {
 }
 
 impl<'a> LayerWriter<'a> {
-    pub(crate) fn new(ocidir: &'a openat::Dir) -> Result<Self> {
+    pub(crate) fn new(ocidir: &'a openat::Dir, c: Option<flate2::Compression>) -> Result<Self> {
         let bw = BlobWriter::new(ocidir)?;
         Ok(Self {
             bw,
             uncompressed_hash: Hasher::new(MessageDigest::sha256())?,
-            compressor: GzEncoder::new(Vec::with_capacity(8192), flate2::Compression::default()),
+            compressor: GzEncoder::new(Vec::with_capacity(8192), c.unwrap_or_default()),
         })
     }
 
