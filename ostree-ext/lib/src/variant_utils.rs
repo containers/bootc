@@ -82,6 +82,28 @@ pub fn new_variant_a_ayay<T: AsRef<[u8]>>(items: &[(T, T)]) -> glib::Variant {
     }
 }
 
+/// Extension trait for `glib::VariantDict`.
+pub trait VariantDictExt {
+    /// Find (and duplicate) a string-valued key in this dictionary.
+    fn lookup_str(&self, k: &str) -> Option<String>;
+    /// Find a `bool`-valued key in this dictionary.
+    fn lookup_bool(&self, k: &str) -> Option<bool>;
+}
+
+impl VariantDictExt for glib::VariantDict {
+    fn lookup_str(&self, k: &str) -> Option<String> {
+        // Unwrap safety: Passing the GVariant type string gives us the right value type
+        self.lookup_value(k, Some(glib::VariantTy::new("s").unwrap()))
+            .map(|v| v.get_str().unwrap().to_string())
+    }
+
+    fn lookup_bool(&self, k: &str) -> Option<bool> {
+        // Unwrap safety: Passing the GVariant type string gives us the right value type
+        self.lookup_value(k, Some(glib::VariantTy::new("b").unwrap()))
+            .map(|v| v.get().unwrap())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,5 +116,12 @@ mod tests {
         let v = variant_new_from_bytes("u", bytes, false);
         let val: u32 = v.get().unwrap();
         assert_eq!(val, 16843009);
+    }
+
+    #[test]
+    fn test_variantdict() {
+        let d = glib::VariantDict::new(None);
+        d.insert("foo", &"bar");
+        assert_eq!(d.lookup_str("foo"), Some("bar".to_string()));
     }
 }
