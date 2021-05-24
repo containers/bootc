@@ -12,58 +12,31 @@ version = "0.1.2"
 anyhow = "1.0"
 bytes = "1.0.1"
 camino = "1.0.4"
+cjson = "0.1.1"
+flate2 = { features = ["zlib"], default_features = false, version = "1.0.20" }
 fn-error-context = "0.1.1"
+futures = "0.3.13"
 gio = "0.9.1"
 glib = "0.10.3"
 glib-sys = "0.10.1"
 gvariant = "0.4.0"
 hex = "0.4.3"
 libc = "0.2.92"
+nix = "0.20.0"
+phf = { features = ["macros"], version = "0.8.0" }
 openat = "0.1.20"
 openat-ext = "0.2.0"
 openssl = "0.10.33"
+ostree = { features = ["v2021_2"], version = "0.11.0" }
 ostree-sys = "0.7.2"
+serde = { features = ["derive"], version = "1.0.125" }
+serde_json = "1.0.64"
 tar = "0.4.33"
 tempfile = "3.2.0"
+tokio = { features = ["full"], version = "1" }
+tokio-util = { features = ["io"], version = "0.6" }
 tracing = "0.1"
 tokio-stream = "0.1.5"
-
-[dependencies.cjson]
-version = "0.1.1"
-
-[dependencies.flate2]
-version = "1.0.20"
-features = ["zlib"]
-default-features = false
-
-[dependencies.futures]
-version = "0.3.13"
-
-[dependencies.nix]
-version = "0.20.0"
-
-[dependencies.ostree]
-features = ["v2021_2"]
-version = "0.11.0"
-
-[dependencies.phf]
-features = ["macros"]
-version = "0.8.0"
-
-[dependencies.serde]
-features = ["derive"]
-version = "1.0.125"
-
-[dependencies.serde_json]
-version = "1.0.64"
-
-[dependencies.tokio]
-features = ["full"]
-version = "1"
-
-[dependencies.tokio-util]
-features = ["io"]
-version = "0.6"
 
 [dev-dependencies]
 clap = "2.33.3"
