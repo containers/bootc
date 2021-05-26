@@ -65,6 +65,10 @@ enum ContainerOpts {
 
         /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
         imgref: String,
+
+        /// Create an ostree ref pointing to the imported commit
+        #[structopt(long)]
+        write_ref: Option<String>,
     },
 
     /// Print information about an exported ostree-container image.
@@ -139,7 +143,7 @@ fn tar_export(opts: &ExportOpts) -> Result<()> {
 }
 
 /// Import a container image with an encapsulated ostree commit.
-async fn container_import(repo: &str, imgref: &str) -> Result<()> {
+async fn container_import(repo: &str, imgref: &str, write_ref: Option<&str>) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
     let imgref = imgref.try_into()?;
     let (tx_progress, rx_progress) = tokio::sync::watch::channel(Default::default());
@@ -153,7 +157,7 @@ async fn container_import(repo: &str, imgref: &str) -> Result<()> {
     let import = crate::container::import(repo, &imgref, Some(tx_progress));
     tokio::pin!(import);
     tokio::pin!(rx_progress);
-    loop {
+    let import = loop {
         tokio::select! {
             _ = rx_progress.changed() => {
                 let n = rx_progress.borrow().processed_bytes;
@@ -161,11 +165,24 @@ async fn container_import(repo: &str, imgref: &str) -> Result<()> {
             }
             import = &mut import => {
                 pb.finish();
-                println!("Imported: {}", import?.ostree_commit);
-                return Ok(())
+                break import?;
             }
         }
+    };
+
+    if let Some(write_ref) = write_ref {
+        repo.set_ref_immediate(
+            None,
+            write_ref,
+            Some(import.ostree_commit.as_str()),
+            gio::NONE_CANCELLABLE,
+        )?;
+        println!("Imported: {} => {}", write_ref, import.ostree_commit.as_str());
+    } else {
+        println!("Imported: {}", import.ostree_commit);
     }
+
+    Ok(())
 }
 
 /// Export a container image with an encapsulated ostree commit.
@@ -216,8 +233,8 @@ where
         Opt::Tar(TarOpts::Import(ref opt)) => tar_import(opt).await,
         Opt::Tar(TarOpts::Export(ref opt)) => tar_export(opt),
         Opt::Container(ContainerOpts::Info { imgref }) => container_info(imgref.as_str()).await,
-        Opt::Container(ContainerOpts::Import { repo, imgref }) => {
-            container_import(&repo, &imgref).await
+        Opt::Container(ContainerOpts::Import { repo, imgref, write_ref }) => {
+            container_import(&repo, &imgref, write_ref.as_deref()).await
         }
         Opt::Container(ContainerOpts::Export { repo, rev, imgref }) => {
             container_export(&repo, &rev, &imgref).await
