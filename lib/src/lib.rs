@@ -14,6 +14,7 @@
 type Result<T> = anyhow::Result<T>;
 
 mod async_util;
+pub mod cli;
 pub mod container;
 pub mod diff;
 pub mod ima;
