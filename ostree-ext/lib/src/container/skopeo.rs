@@ -16,5 +16,5 @@ pub(crate) fn new_cmd() -> tokio::process::Command {
 /// Spawn the child process
 pub(crate) fn spawn(mut cmd: Command) -> Result<tokio::process::Child> {
     let cmd = cmd.stdin(Stdio::null()).stderr(Stdio::piped());
-    Ok(cmd.spawn().context("Failed to exec skopeo")?)
+    cmd.spawn().context("Failed to exec skopeo")
 }
