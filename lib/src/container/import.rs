@@ -212,7 +212,7 @@ async fn fetch_layer<'s>(
     let proc = skopeo::spawn(proc)?;
     let fifo_reader = ProgressReader {
         reader: Box::new(tokio::fs::File::open(fifo).await?),
-        progress: progress,
+        progress,
     };
     let waiter = async move {
         let res = proc.wait_with_output().await?;

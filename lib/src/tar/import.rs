@@ -89,7 +89,7 @@ fn validate_metadata_header(header: &tar::Header, desc: &str) -> Result<usize> {
 fn header_attrs(header: &tar::Header) -> Result<(u32, u32, u32)> {
     let uid: u32 = header.uid()?.try_into()?;
     let gid: u32 = header.gid()?.try_into()?;
-    let mode: u32 = header.mode()?.try_into()?;
+    let mode: u32 = header.mode()?;
     Ok((uid, gid, mode))
 }
 
@@ -404,7 +404,7 @@ impl<'a> Importer<'a> {
     }
 
     /// Process a special /xattrs/ entry (sha256 of xattr values).
-    fn import_xattrs<'b, R: std::io::Read>(&mut self, mut entry: tar::Entry<'b, R>) -> Result<()> {
+    fn import_xattrs<R: std::io::Read>(&mut self, mut entry: tar::Entry<R>) -> Result<()> {
         match &self.state {
             ImportState::Initial => return Err(anyhow!("Found xattr object {} before commit")),
             ImportState::Importing(_) => {}
@@ -500,7 +500,7 @@ pub async fn import_tar(
                 // Need to clone here, otherwise we borrow from the moved entry
                 let p = &p.to_owned();
                 importer.import_object(entry, p)?;
-            } else if let Ok(_) = path.strip_prefix("xattrs/") {
+            } else if path.strip_prefix("xattrs/").is_ok() {
                 importer.import_xattrs(entry)?;
             }
         }

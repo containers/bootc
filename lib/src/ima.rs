@@ -49,7 +49,7 @@ fn xattrs_to_map(v: &glib::Variant) -> BTreeMap<Vec<u8>, Vec<u8>> {
 
 /// Reserialize a map to GVariant of type `a(ayay)`
 fn xattrmap_serialize(map: &BTreeMap<Vec<u8>, Vec<u8>>) -> glib::Variant {
-    let map: Vec<_> = map.into_iter().collect();
+    let map: Vec<_> = map.iter().collect();
     variant_utils::new_variant_a_ayay(&map)
 }
 
@@ -109,7 +109,7 @@ impl<'a> CommitRewriter<'a> {
     ) -> Result<HashMap<Vec<u8>, Vec<u8>>> {
         let mut tempf = tempfile::NamedTempFile::new_in(self.tempdir.path())?;
         // If we're operating on a bare repo, we can clone the file (copy_file_range) directly.
-        if let Some(instream) = instream.clone().downcast::<gio::UnixInputStream>().ok() {
+        if let Ok(instream) = instream.clone().downcast::<gio::UnixInputStream>() {
             // View the fd as a File
             let instream_fd = unsafe { File::from_raw_fd(instream.as_raw_fd()) };
             instream_fd.copy_to(tempf.as_file_mut())?;
@@ -189,8 +189,7 @@ impl<'a> CommitRewriter<'a> {
         let xattrs = {
             let signed = self.ima_sign(&instream, selinux)?;
             xattrs.extend(signed);
-            let r = xattrmap_serialize(&xattrs);
-            r
+            xattrmap_serialize(&xattrs)
         };
         // Now reload the input stream
         let (instream, _, _) = self.repo.load_file(checksum, cancellable)?;
@@ -343,5 +342,5 @@ impl<'a> CommitRewriter<'a> {
 /// such as version, etc.
 pub fn ima_sign(repo: &ostree::Repo, ostree_ref: &str, opts: &ImaOpts) -> Result<String> {
     let writer = &mut CommitRewriter::new(&repo, &opts)?;
-    Ok(writer.map_commit(ostree_ref)?)
+    writer.map_commit(ostree_ref)
 }

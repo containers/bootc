@@ -136,7 +136,7 @@ async fn test_container_import_export() -> Result<()> {
         .await
         .context("exporting")?;
     assert!(srcoci_path.exists());
-    let digest = pushed.name.rsplitn(2, "@").next().unwrap();
+    let digest = pushed.name.rsplitn(2, '@').next().unwrap();
 
     let inspect = skopeo_inspect(&srcoci.to_string())?;
     assert!(inspect.contains(r#""version": "42.0""#));
@@ -164,18 +164,18 @@ fn test_diff() -> Result<()> {
     let diff = ostree_ext::diff::diff(repo, from, TESTREF, subdir)?;
     assert!(diff.subdir.is_none());
     assert_eq!(diff.added_dirs.len(), 1);
-    assert_eq!(diff.added_dirs.iter().nth(0).unwrap(), "/usr/share");
+    assert_eq!(diff.added_dirs.iter().next().unwrap(), "/usr/share");
     assert_eq!(diff.added_files.len(), 1);
-    assert_eq!(diff.added_files.iter().nth(0).unwrap(), "/usr/bin/newbin");
+    assert_eq!(diff.added_files.iter().next().unwrap(), "/usr/bin/newbin");
     assert_eq!(diff.removed_files.len(), 1);
-    assert_eq!(diff.removed_files.iter().nth(0).unwrap(), "/usr/bin/foo");
+    assert_eq!(diff.removed_files.iter().next().unwrap(), "/usr/bin/foo");
     let diff = ostree_ext::diff::diff(repo, from, TESTREF, Some("/usr"))?;
     assert_eq!(diff.subdir.as_ref().unwrap(), "/usr");
     assert_eq!(diff.added_dirs.len(), 1);
-    assert_eq!(diff.added_dirs.iter().nth(0).unwrap(), "/share");
+    assert_eq!(diff.added_dirs.iter().next().unwrap(), "/share");
     assert_eq!(diff.added_files.len(), 1);
-    assert_eq!(diff.added_files.iter().nth(0).unwrap(), "/bin/newbin");
+    assert_eq!(diff.added_files.iter().next().unwrap(), "/bin/newbin");
     assert_eq!(diff.removed_files.len(), 1);
-    assert_eq!(diff.removed_files.iter().nth(0).unwrap(), "/bin/foo");
+    assert_eq!(diff.removed_files.iter().next().unwrap(), "/bin/foo");
     Ok(())
 }
