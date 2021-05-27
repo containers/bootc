@@ -119,6 +119,8 @@ pub(crate) struct OciWriter<'a> {
     config_annotations: HashMap<String, String>,
     manifest_annotations: HashMap<String, String>,
 
+    cmd: Option<Vec<String>>,
+
     root_layer: Option<Layer>,
 }
 
@@ -143,11 +145,16 @@ impl<'a> OciWriter<'a> {
             config_annotations: Default::default(),
             manifest_annotations: Default::default(),
             root_layer: None,
+            cmd: None,
         })
     }
 
     pub(crate) fn set_root_layer(&mut self, layer: Layer) {
         assert!(self.root_layer.replace(layer).is_none())
+    }
+
+    pub(crate) fn set_cmd(&mut self, e: &[&str]) {
+        self.cmd = Some(e.iter().map(|s| s.to_string()).collect());
     }
 
     pub(crate) fn add_manifest_annotation<K: AsRef<str>, V: AsRef<str>>(&mut self, k: K, v: V) {
@@ -171,12 +178,15 @@ impl<'a> OciWriter<'a> {
         let rootfs_blob = self.root_layer.as_ref().unwrap();
         let root_layer_id = format!("sha256:{}", rootfs_blob.uncompressed_sha256);
 
+        let mut ctrconfig = serde_json::Map::new();
+        ctrconfig.insert("Labels".to_string(), serde_json::to_value(&self.config_annotations)?);
+        if let Some(cmd) = self.cmd.as_deref() {
+            ctrconfig.insert("Cmd".to_string(), serde_json::to_value(cmd)?);
+        }
         let config = serde_json::json!({
             "architecture": arch,
             "os": "linux",
-            "config": {
-                "Labels": self.config_annotations,
-            },
+            "config": ctrconfig,
             "rootfs": {
                 "type": "layers",
                 "diff_ids": [ root_layer_id ],

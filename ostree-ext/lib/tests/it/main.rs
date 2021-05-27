@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use indoc::indoc;
-use ostree_ext::container::{ImageReference, Transport};
+use ostree_ext::container::{Config, ImageReference, Transport};
 use sh_inline::bash;
 use std::{io::Write, process::Command};
 
@@ -132,7 +132,16 @@ async fn test_container_import_export() -> Result<()> {
         transport: Transport::OciDir,
         name: srcoci_path.as_str().to_string(),
     };
-    let pushed = ostree_ext::container::export(srcrepo, TESTREF, &srcoci)
+    let config = Config {
+        labels: Some(
+            [("foo", "bar"), ("test", "value")]
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        ),
+        cmd: Some(vec!["/bin/bash".to_string()]),
+    };
+    let pushed = ostree_ext::container::export(srcrepo, TESTREF, &config, &srcoci)
         .await
         .context("exporting")?;
     assert!(srcoci_path.exists());
@@ -140,6 +149,8 @@ async fn test_container_import_export() -> Result<()> {
 
     let inspect = skopeo_inspect(&srcoci.to_string())?;
     assert!(inspect.contains(r#""version": "42.0""#));
+    assert!(inspect.contains(r#""foo": "bar""#));
+    assert!(inspect.contains(r#""test": "value""#));
 
     let inspect = ostree_ext::container::fetch_manifest_info(&srcoci).await?;
     assert_eq!(inspect.manifest_digest, digest);
