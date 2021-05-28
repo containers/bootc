@@ -91,7 +91,7 @@ impl TryFrom<&str> for ImageReference {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self> {
-        let mut parts = value.splitn(2, ":");
+        let mut parts = value.splitn(2, ':');
         let transport_name = parts.next().unwrap();
         let transport: Transport = transport_name.try_into()?;
         let mut name = parts
@@ -172,9 +172,8 @@ mod tests {
         }
 
         for &v in INVALID_IRS {
-            match ImageReference::try_from(v) {
-                Ok(_) => panic!("Should fail to parse: {}", v),
-                Err(_) => {}
+            if ImageReference::try_from(v).is_ok() {
+                panic!("Should fail to parse: {}", v)
             }
         }
         let ir: ImageReference = "oci:somedir".try_into().unwrap();
