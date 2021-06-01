@@ -4,8 +4,18 @@ use super::*;
 use crate::{tar as ostree_tar, variant_utils};
 use anyhow::Context;
 use fn_error_context::context;
+use std::collections::BTreeMap;
 use std::path::Path;
 use tracing::{instrument, Level};
+
+/// Configuration for the generated container.
+#[derive(Debug, Default)]
+pub struct Config {
+    /// Additional labels.
+    pub labels: Option<BTreeMap<String, String>>,
+    /// The equivalent of a `Dockerfile`'s `CMD` instruction.
+    pub cmd: Option<Vec<String>>,
+}
 
 /// Write an ostree commit to an OCI blob
 #[context("Writing ostree root to blob")]
@@ -27,6 +37,7 @@ fn build_oci(
     repo: &ostree::Repo,
     rev: &str,
     ocidir_path: &Path,
+    config: &Config,
     compression: Option<flate2::Compression>,
 ) -> Result<ImageReference> {
     // Explicitly error if the target exists
@@ -51,6 +62,14 @@ fn build_oci(
     writer.add_config_annotation(OSTREE_COMMIT_LABEL, commit);
     writer.add_manifest_annotation(OSTREE_COMMIT_LABEL, commit);
 
+    for (k, v) in config.labels.iter().map(|k| k.iter()).flatten() {
+        writer.add_config_annotation(k, v);
+    }
+    if let Some(cmd) = config.cmd.as_ref() {
+        let cmd: Vec<_> = cmd.iter().map(|s| s.as_str()).collect();
+        writer.set_cmd(&cmd);
+    }
+
     let rootfs_blob = export_ostree_ref_to_blobdir(repo, commit, ocidir, compression)?;
     writer.set_root_layer(rootfs_blob);
     writer.complete()?;
@@ -66,6 +85,7 @@ fn build_oci(
 async fn build_impl(
     repo: &ostree::Repo,
     ostree_ref: &str,
+    config: &Config,
     dest: &ImageReference,
 ) -> Result<ImageReference> {
     let compression = if dest.transport == Transport::ContainerStorage {
@@ -74,13 +94,18 @@ async fn build_impl(
         None
     };
     if dest.transport == Transport::OciDir {
-        let _copied: ImageReference =
-            build_oci(repo, ostree_ref, Path::new(dest.name.as_str()), compression)?;
+        let _copied: ImageReference = build_oci(
+            repo,
+            ostree_ref,
+            Path::new(dest.name.as_str()),
+            config,
+            compression,
+        )?;
     } else {
         let tempdir = tempfile::tempdir_in("/var/tmp")?;
         let tempdest = tempdir.path().join("d");
         let tempdest = tempdest.to_str().unwrap();
-        let src = build_oci(repo, ostree_ref, Path::new(tempdest), compression)?;
+        let src = build_oci(repo, ostree_ref, Path::new(tempdest), config, compression)?;
 
         let mut cmd = skopeo::new_cmd();
         tracing::event!(Level::DEBUG, "Copying {} to {}", src, dest);
@@ -107,7 +132,8 @@ async fn build_impl(
 pub async fn export<S: AsRef<str>>(
     repo: &ostree::Repo,
     ostree_ref: S,
+    config: &Config,
     dest: &ImageReference,
 ) -> Result<ImageReference> {
-    build_impl(repo, ostree_ref.as_ref(), dest).await
+    build_impl(repo, ostree_ref.as_ref(), config, dest).await
 }
