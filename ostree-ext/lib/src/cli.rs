@@ -6,9 +6,12 @@
 //! such as `rpm-ostree` can directly reuse it.
 
 use anyhow::Result;
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::ffi::OsString;
 use structopt::StructOpt;
+
+use crate::container::Config;
 
 #[derive(Debug, StructOpt)]
 struct BuildOpts {
@@ -88,6 +91,14 @@ enum ContainerOpts {
 
         /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
         imgref: String,
+
+        /// Additional labels for the container
+        #[structopt(name="label", long, short)]
+        labels: Vec<String>,
+
+        /// Corresponds to the Dockerfile `CMD` instruction.
+        #[structopt(long)]
+        cmd: Option<Vec<String>>,
     },
 }
 
@@ -177,7 +188,11 @@ async fn container_import(repo: &str, imgref: &str, write_ref: Option<&str>) -> 
             Some(import.ostree_commit.as_str()),
             gio::NONE_CANCELLABLE,
         )?;
-        println!("Imported: {} => {}", write_ref, import.ostree_commit.as_str());
+        println!(
+            "Imported: {} => {}",
+            write_ref,
+            import.ostree_commit.as_str()
+        );
     } else {
         println!("Imported: {}", import.ostree_commit);
     }
@@ -186,10 +201,20 @@ async fn container_import(repo: &str, imgref: &str, write_ref: Option<&str>) -> 
 }
 
 /// Export a container image with an encapsulated ostree commit.
-async fn container_export(repo: &str, rev: &str, imgref: &str) -> Result<()> {
+async fn container_export(
+    repo: &str,
+    rev: &str,
+    imgref: &str,
+    labels: BTreeMap<String, String>,
+    cmd: Option<Vec<String>>,
+) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
+    let config = Config {
+        labels: Some(labels),
+        cmd,
+    };
     let imgref = imgref.try_into()?;
-    let pushed = crate::container::export(repo, rev, &imgref).await?;
+    let pushed = crate::container::export(repo, rev, &config, &imgref).await?;
     println!("{}", pushed);
     Ok(())
 }
@@ -233,11 +258,30 @@ where
         Opt::Tar(TarOpts::Import(ref opt)) => tar_import(opt).await,
         Opt::Tar(TarOpts::Export(ref opt)) => tar_export(opt),
         Opt::Container(ContainerOpts::Info { imgref }) => container_info(imgref.as_str()).await,
-        Opt::Container(ContainerOpts::Import { repo, imgref, write_ref }) => {
-            container_import(&repo, &imgref, write_ref.as_deref()).await
-        }
-        Opt::Container(ContainerOpts::Export { repo, rev, imgref }) => {
-            container_export(&repo, &rev, &imgref).await
+        Opt::Container(ContainerOpts::Import {
+            repo,
+            imgref,
+            write_ref,
+        }) => container_import(&repo, &imgref, write_ref.as_deref()).await,
+        Opt::Container(ContainerOpts::Export {
+            repo,
+            rev,
+            imgref,
+            labels,
+            cmd,
+        }) => {
+            let labels: Result<BTreeMap<_, _>> = labels
+                .into_iter()
+                .map(|l| {
+                    let mut parts = l.splitn(2, '=');
+                    let k = parts.next().unwrap();
+                    let v = parts
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("Missing '=' in label {}", l))?;
+                    Ok((k.to_string(), v.to_string()))
+                })
+                .collect();
+            container_export(&repo, &rev, &imgref, labels?, cmd).await
         }
         Opt::ImaSign(ref opts) => ima_sign(opts),
     }
