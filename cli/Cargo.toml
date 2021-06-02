@@ -1,6 +1,6 @@
 [package]
 name = "ostree-ext-cli"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Colin Walters <walters@verbum.org>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
