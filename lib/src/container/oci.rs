@@ -183,6 +183,7 @@ impl<'a> OciWriter<'a> {
         if let Some(cmd) = self.cmd.as_deref() {
             ctrconfig.insert("Cmd".to_string(), serde_json::to_value(cmd)?);
         }
+        let created_by = concat!("created by ", env!("CARGO_PKG_VERSION"));
         let config = serde_json::json!({
             "architecture": arch,
             "os": "linux",
@@ -193,7 +194,7 @@ impl<'a> OciWriter<'a> {
             },
             "history": [
                 {
-                    "commit": "created by ostree-container",
+                    "commit": created_by,
                 }
             ]
         });
