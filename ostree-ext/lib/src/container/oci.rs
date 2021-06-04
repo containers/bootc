@@ -183,6 +183,7 @@ impl<'a> OciWriter<'a> {
         if let Some(cmd) = self.cmd.as_deref() {
             ctrconfig.insert("Cmd".to_string(), serde_json::to_value(cmd)?);
         }
+        let created_by = concat!("created by ", env!("CARGO_PKG_VERSION"));
         let config = serde_json::json!({
             "architecture": arch,
             "os": "linux",
@@ -193,7 +194,7 @@ impl<'a> OciWriter<'a> {
             },
             "history": [
                 {
-                    "commit": "created by ostree-container",
+                    "commit": created_by,
                 }
             ]
         });
@@ -304,12 +305,35 @@ impl<'a> std::io::Write for LayerWriter<'a> {
     fn write(&mut self, srcbuf: &[u8]) -> std::io::Result<usize> {
         self.compressor.get_mut().clear();
         self.compressor.write_all(srcbuf).unwrap();
+        self.uncompressed_hash.update(srcbuf)?;
         let compressed_buf = self.compressor.get_mut().as_slice();
         self.bw.write_all(&compressed_buf)?;
         Ok(srcbuf.len())
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
+        self.bw.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build() -> Result<()> {
+        let td = tempfile::tempdir()?;
+        let td = &openat::Dir::open(td.path())?;
+        let mut w = OciWriter::new(td)?;
+        let mut layerw = LayerWriter::new(td, None)?;
+        layerw.write_all(b"pretend this is a tarball")?;
+        let root_layer = layerw.complete()?;
+        assert_eq!(
+            root_layer.uncompressed_sha256,
+            "349438e5faf763e8875b43de4d7101540ef4d865190336c2cc549a11f33f8d7c"
+        );
+        w.set_root_layer(root_layer);
+        w.complete()?;
         Ok(())
     }
 }
