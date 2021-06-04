@@ -312,6 +312,6 @@ impl<'a> std::io::Write for LayerWriter<'a> {
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        self.bw.flush()
     }
 }
