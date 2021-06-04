@@ -315,3 +315,25 @@ impl<'a> std::io::Write for LayerWriter<'a> {
         self.bw.flush()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build() -> Result<()> {
+        let td = tempfile::tempdir()?;
+        let td = &openat::Dir::open(td.path())?;
+        let mut w = OciWriter::new(td)?;
+        let mut layerw = LayerWriter::new(td, None)?;
+        layerw.write_all(b"pretend this is a tarball")?;
+        let root_layer = layerw.complete()?;
+        assert_eq!(
+            root_layer.uncompressed_sha256,
+            "349438e5faf763e8875b43de4d7101540ef4d865190336c2cc549a11f33f8d7c"
+        );
+        w.set_root_layer(root_layer);
+        w.complete()?;
+        Ok(())
+    }
+}
