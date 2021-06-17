@@ -22,6 +22,8 @@ jobs:
     - name: Install skopeo
       run: yum -y install skopeo
     - uses: actions/checkout@v2
+    - name: Format
+      run: cargo fmt -- --check -l
     - name: Build
       run: cargo build --verbose
     - name: Run tests
