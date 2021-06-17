@@ -179,7 +179,10 @@ impl<'a> OciWriter<'a> {
         let root_layer_id = format!("sha256:{}", rootfs_blob.uncompressed_sha256);
 
         let mut ctrconfig = serde_json::Map::new();
-        ctrconfig.insert("Labels".to_string(), serde_json::to_value(&self.config_annotations)?);
+        ctrconfig.insert(
+            "Labels".to_string(),
+            serde_json::to_value(&self.config_annotations)?,
+        );
         if let Some(cmd) = self.cmd.as_deref() {
             ctrconfig.insert("Cmd".to_string(), serde_json::to_value(cmd)?);
         }
