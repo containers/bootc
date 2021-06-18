@@ -10,9 +10,14 @@ use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{gv, Marker, Structure};
 use std::borrow::Cow;
 use std::collections::HashSet;
+use std::io::BufReader;
 
 // This way the default ostree -> sysroot/ostree symlink works.
 const OSTREEDIR: &str = "sysroot/ostree";
+
+/// A decently large buffer, as used by e.g. coreutils `cat`.
+/// System calls are expensive.
+const BUF_CAPACITY: usize = 131072;
 
 /// Convert /usr/etc back to /etc
 fn map_path(p: &Utf8Path) -> std::borrow::Cow<Utf8Path> {
@@ -143,7 +148,7 @@ impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
             if let Some(instream) = instream {
                 h.set_entry_type(tar::EntryType::Regular);
                 h.set_size(meta.get_size() as u64);
-                let mut instream = instream.into_read();
+                let mut instream = BufReader::with_capacity(BUF_CAPACITY, instream.into_read());
                 self.out.append_data(&mut h, &path, &mut instream)?;
             } else {
                 h.set_size(0);
