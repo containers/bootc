@@ -93,7 +93,7 @@ enum ContainerOpts {
         imgref: String,
 
         /// Additional labels for the container
-        #[structopt(name="label", long, short)]
+        #[structopt(name = "label", long, short)]
         labels: Vec<String>,
 
         /// Corresponds to the Dockerfile `CMD` instruction.
