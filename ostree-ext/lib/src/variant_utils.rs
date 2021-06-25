@@ -3,9 +3,9 @@
 //! avoiding another crate for this.  In the future, some of these
 //! may migrate into gtk-rs.
 
-use std::mem::size_of;
-
 use glib::translate::*;
+use glib::ToVariant;
+use std::mem::size_of;
 
 /// Create a new GVariant from data.
 pub fn variant_new_from_bytes(ty: &str, bytes: glib::Bytes, trusted: bool) -> glib::Variant {
@@ -82,6 +82,21 @@ pub fn new_variant_a_ayay<T: AsRef<[u8]>>(items: &[(T, T)]) -> glib::Variant {
     }
 }
 
+/// Create a new GVariant of type `as`.  
+pub fn new_variant_as(items: &[&str]) -> glib::Variant {
+    unsafe {
+        let ty = glib::VariantTy::new("as").unwrap();
+        let builder = glib_sys::g_variant_builder_new(ty.as_ptr() as *const _);
+        for &k in items {
+            let k = k.to_variant();
+            glib_sys::g_variant_builder_add_value(builder, k.to_glib_none().0);
+        }
+        let v = glib_sys::g_variant_builder_end(builder);
+        glib_sys::g_variant_ref_sink(v);
+        from_glib_full(v)
+    }
+}
+
 /// Extension trait for `glib::VariantDict`.
 pub trait VariantDictExt {
     /// Find (and duplicate) a string-valued key in this dictionary.
@@ -123,5 +138,20 @@ mod tests {
         let d = glib::VariantDict::new(None);
         d.insert("foo", &"bar");
         assert_eq!(d.lookup_str("foo"), Some("bar".to_string()));
+    }
+
+    #[test]
+    fn test_variant_as() {
+        let _ = new_variant_as(&[]);
+        let v = new_variant_as(&["foo", "bar"]);
+        assert_eq!(
+            variant_get_child_value(&v, 0).unwrap().get_str().unwrap(),
+            "foo"
+        );
+        assert_eq!(
+            variant_get_child_value(&v, 1).unwrap().get_str().unwrap(),
+            "bar"
+        );
+        assert!(variant_get_child_value(&v, 2).is_none());
     }
 }
