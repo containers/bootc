@@ -91,24 +91,37 @@ async fn fetch_manifest(imgref: &ImageReference) -> Result<(oci::Manifest, Strin
     Ok((serde_json::from_slice(&raw_manifest)?, digest))
 }
 
-/// Read the contents of the first <checksum>.tar we find
+/// Read the contents of the first <checksum>.tar we find.
+/// The first return value is an `AsyncRead` of that tar file.
+/// The second return value is a background worker task that will
+/// return back to the caller the provided input stream (converted
+/// to a synchronous reader).  This ensures the caller can take
+/// care of closing the input stream.
 pub async fn find_layer_tar(
     src: impl AsyncRead + Send + Unpin + 'static,
     blobid: &str,
-) -> Result<(impl AsyncRead, impl Future<Output = Result<()>>)> {
+) -> Result<(
+    impl AsyncRead,
+    impl Future<Output = Result<impl Read + Send + Unpin + 'static>>,
+)> {
+    // Convert the async input stream to synchronous, becuase we currently use the
+    // sync tar crate.
     let pipein = crate::async_util::async_read_to_sync(src);
+    // An internal channel of Bytes
     let (tx_buf, rx_buf) = tokio::sync::mpsc::channel(2);
     let blob_symlink_target = format!("../{}.tar", blobid);
     let import = tokio::task::spawn_blocking(move || {
         find_layer_tar_sync(pipein, blob_symlink_target, tx_buf)
     })
     .map_err(anyhow::Error::msg);
+    // Bridge the channel to an AsyncRead
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx_buf);
     let reader = tokio_util::io::StreamReader::new(stream);
+    // This async task owns the internal worker thread, which also owns the provided
+    // input stream which we return to the caller.
     let worker = async move {
-        let import = import.await?;
-        let _: () = import.context("Import worker")?;
-        Ok::<_, anyhow::Error>(())
+        let src_as_sync = import.await?.context("Import worker")?;
+        Ok::<_, anyhow::Error>(src_as_sync)
     };
     Ok((reader, worker))
 }
@@ -120,7 +133,7 @@ fn find_layer_tar_sync(
     pipein: impl Read + Send + Unpin,
     blob_symlink_target: String,
     tx_buf: tokio::sync::mpsc::Sender<std::io::Result<bytes::Bytes>>,
-) -> Result<()> {
+) -> Result<impl Read + Send + Unpin> {
     let mut archive = tar::Archive::new(pipein);
     let mut buf = vec![0u8; 8192];
     let mut found = false;
@@ -179,7 +192,7 @@ fn find_layer_tar_sync(
         }
     }
     if found {
-        Ok(())
+        Ok(archive.into_inner())
     } else {
         Err(anyhow!("Failed to find layer {}", blob_symlink_target))
     }
@@ -229,8 +242,8 @@ async fn fetch_layer<'s>(
     let (contents, worker) = find_layer_tar(fifo_reader, blobid).await?;
     let worker = async move {
         let (worker, waiter) = tokio::join!(worker, waiter);
-        let _: () = worker.context("Layer worker failed")?;
         let _: () = waiter?;
+        let _pipein = worker.context("Layer worker failed")?;
         Ok::<_, anyhow::Error>(())
     };
     Ok((contents, worker))
