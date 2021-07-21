@@ -80,7 +80,6 @@ if test -z "${e2e_skip_build:-}"; then
     echo "Building starting image"
     rm -f ${overrides}/rpm/*.rpm
     add_override grub2-2.04-22.fc32
-    (cd ${bootupd_git} && runv make && runv make install DESTDIR=${overrides}/rootfs)
     runv cosa build
     prev_image=$(runv cosa meta --image-path qemu)
     create_manifest_fork
