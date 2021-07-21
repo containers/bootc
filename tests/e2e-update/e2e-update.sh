@@ -133,7 +133,7 @@ qemuexec_args=(kola qemuexec --propagate-initramfs-failure --qemu-image "${prev_
 if test -n "${e2e_debug:-}"; then
     runv ${qemuexec_args[@]} --devshell
 else
-    runv timeout 5m "${qemuexec_args[@]}" --console-to-file $(pwd)/console.txt
+    runv timeout 5m "${qemuexec_args[@]}" --console-to-file ${COSA_DIR}/tmp/console.txt
 fi
 if ! test -f ${testtmp}/success; then
     if test -s ${testtmp}/out.txt; then
