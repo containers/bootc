@@ -18,7 +18,6 @@ pub mod cli;
 pub mod container;
 pub mod diff;
 pub mod ima;
-pub mod ostree_ext;
 pub mod tar;
 #[allow(unsafe_code)]
 pub mod variant_utils;

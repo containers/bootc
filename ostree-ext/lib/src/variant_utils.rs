@@ -14,7 +14,7 @@ pub fn variant_new_from_bytes(ty: &str, bytes: glib::Bytes, trusted: bool) -> gl
         let ty: *const libc::c_char = ty.0;
         let ty = ty as *const glib_sys::GVariantType;
         let bytes = bytes.to_glib_full();
-        let v = glib_sys::g_variant_new_from_bytes(ty, bytes, trusted.to_glib());
+        let v = glib_sys::g_variant_new_from_bytes(ty, bytes, trusted.into_glib());
         glib_sys::g_variant_ref_sink(v);
         from_glib_full(v)
     }
@@ -109,7 +109,7 @@ impl VariantDictExt for glib::VariantDict {
     fn lookup_str(&self, k: &str) -> Option<String> {
         // Unwrap safety: Passing the GVariant type string gives us the right value type
         self.lookup_value(k, Some(glib::VariantTy::new("s").unwrap()))
-            .map(|v| v.get_str().unwrap().to_string())
+            .map(|v| v.str().unwrap().to_string())
     }
 
     fn lookup_bool(&self, k: &str) -> Option<bool> {
@@ -145,11 +145,11 @@ mod tests {
         let _ = new_variant_as(&[]);
         let v = new_variant_as(&["foo", "bar"]);
         assert_eq!(
-            variant_get_child_value(&v, 0).unwrap().get_str().unwrap(),
+            variant_get_child_value(&v, 0).unwrap().str().unwrap(),
             "foo"
         );
         assert_eq!(
-            variant_get_child_value(&v, 1).unwrap().get_str().unwrap(),
+            variant_get_child_value(&v, 1).unwrap().str().unwrap(),
             "bar"
         );
         assert!(variant_get_child_value(&v, 2).is_none());

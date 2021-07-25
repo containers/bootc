@@ -2,7 +2,6 @@
 
 use crate::Result;
 
-use crate::ostree_ext::RepoExt;
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use gio::prelude::*;
@@ -78,7 +77,7 @@ impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
         h.set_uid(0);
         h.set_gid(0);
         h.set_mode(0o644);
-        let data = v.get_data_as_bytes();
+        let data = v.data_as_bytes();
         let data = data.as_ref();
         h.set_size(data.len() as u64);
         self.out
@@ -90,7 +89,7 @@ impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
         &mut self,
         xattrs: &glib::Variant,
     ) -> Result<Option<(Utf8PathBuf, tar::Header)>> {
-        let xattrs_data = xattrs.get_data_as_bytes();
+        let xattrs_data = xattrs.data_as_bytes();
         let xattrs_data = xattrs_data.as_ref();
         if xattrs_data.is_empty() {
             return Ok(None);
@@ -126,9 +125,9 @@ impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
         let xattrs = xattrs.unwrap();
 
         let mut h = tar::Header::new_gnu();
-        h.set_uid(meta.get_attribute_uint32("unix::uid") as u64);
-        h.set_gid(meta.get_attribute_uint32("unix::gid") as u64);
-        let mode = meta.get_attribute_uint32("unix::mode");
+        h.set_uid(meta.attribute_uint32("unix::uid") as u64);
+        h.set_gid(meta.attribute_uint32("unix::gid") as u64);
+        let mode = meta.attribute_uint32("unix::mode");
         h.set_mode(mode);
         let mut target_header = h.clone();
         target_header.set_size(0);
@@ -147,13 +146,13 @@ impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
 
             if let Some(instream) = instream {
                 h.set_entry_type(tar::EntryType::Regular);
-                h.set_size(meta.get_size() as u64);
+                h.set_size(meta.size() as u64);
                 let mut instream = BufReader::with_capacity(BUF_CAPACITY, instream.into_read());
                 self.out.append_data(&mut h, &path, &mut instream)?;
             } else {
                 h.set_size(0);
                 h.set_entry_type(tar::EntryType::Symlink);
-                h.set_link_name(meta.get_symlink_target().unwrap().as_str())?;
+                h.set_link_name(meta.symlink_target().unwrap().as_str())?;
                 self.out.append_data(&mut h, &path, &mut std::io::empty())?;
             }
         }
@@ -172,7 +171,7 @@ impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
             .repo
             .load_variant(ostree::ObjectType::DirTree, checksum)?;
         self.append(ostree::ObjectType::DirTree, checksum, v)?;
-        let v = v.get_data_as_bytes();
+        let v = v.data_as_bytes();
         let v = v.try_as_aligned()?;
         let v = gv!("(a(say)a(sayay))").cast(v);
         let (files, dirs) = v.to_tuple();
@@ -265,12 +264,12 @@ fn impl_export<W: std::io::Write>(
     writer.append(ostree::ObjectType::Commit, commit_checksum, commit_v)?;
 
     if let Some(commitmeta) =
-        repo.x_load_variant_if_exists(ostree::ObjectType::CommitMeta, commit_checksum)?
+        repo.load_variant_if_exists(ostree::ObjectType::CommitMeta, commit_checksum)?
     {
         writer.append(ostree::ObjectType::CommitMeta, commit_checksum, &commitmeta)?;
     }
 
-    let commit_v = commit_v.get_data_as_bytes();
+    let commit_v = commit_v.data_as_bytes();
     let commit_v = commit_v.try_as_aligned()?;
     let commit = gv!("(a{sv}aya(say)sstayay)").cast(commit_v);
     let commit = commit.to_tuple();
