@@ -1,13 +1,12 @@
 //! APIs for extracting OSTree commits from container images
 
-use crate::variant_utils::variant_new_from_bytes;
 use crate::Result;
 use anyhow::{anyhow, Context};
 use camino::Utf8Path;
 use fn_error_context::context;
 use futures::prelude::*;
 use gio::prelude::*;
-use glib::Cast;
+use glib::{Cast, Variant};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::io::prelude::*;
@@ -29,7 +28,7 @@ const SMALL_REGFILE_SIZE: usize = 127 * 1024;
 const OSTREE_COMMIT_FORMAT: &str = "(a{sv}aya(say)sstayay)";
 const OSTREE_DIRTREE_FORMAT: &str = "(a(say)a(sayay))";
 const OSTREE_DIRMETA_FORMAT: &str = "(uuua(ayay))";
-const OSTREE_XATTRS_FORMAT: &str = "a(ayay)";
+// const OSTREE_XATTRS_FORMAT: &str = "a(ayay)";
 
 /// State tracker for the importer.  The main goal is to reject multiple
 /// commit objects, as well as finding metadata/content before the commit.
@@ -434,7 +433,7 @@ impl<'a> Importer<'a> {
         let mut contents = vec![0u8; n as usize];
         entry.read_exact(contents.as_mut_slice())?;
         let contents: glib::Bytes = contents.as_slice().into();
-        let contents = variant_new_from_bytes(OSTREE_XATTRS_FORMAT, contents, false);
+        let contents = Variant::from_bytes::<&[(&[u8], &[u8])]>(&contents);
 
         self.xattrs.insert(checksum, contents);
         Ok(())
