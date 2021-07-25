@@ -36,7 +36,7 @@ pub struct ImaOpts {
 
 /// Convert a GVariant of type `a(ayay)` to a mutable map
 fn xattrs_to_map(v: &glib::Variant) -> BTreeMap<Vec<u8>, Vec<u8>> {
-    let v = v.get_data_as_bytes();
+    let v = v.data_as_bytes();
     let v = v.try_as_aligned().unwrap();
     let v = gv!("a(ayay)").cast(v);
     let mut map: BTreeMap<Vec<u8>, Vec<u8>> = BTreeMap::new();
@@ -90,7 +90,7 @@ impl<'a> CommitRewriter<'a> {
         Ok(Self {
             repo,
             ima,
-            tempdir: tempfile::tempdir_in(format!("/proc/self/fd/{}/tmp", repo.get_dfd()))?,
+            tempdir: tempfile::tempdir_in(format!("/proc/self/fd/{}/tmp", repo.dfd()))?,
             rewritten_files: Default::default(),
         })
     }
@@ -213,7 +213,7 @@ impl<'a> CommitRewriter<'a> {
         let src = &self
             .repo
             .load_variant(ostree::ObjectType::DirTree, checksum)?;
-        let src = src.get_data_as_bytes();
+        let src = src.data_as_bytes();
         let src = src.try_as_aligned()?;
         let src = gv!("(a(say)a(sayay))").cast(src);
         let (files, dirs) = src.to_tuple();
@@ -310,7 +310,7 @@ impl<'a> CommitRewriter<'a> {
         let (commit_v, _) = self.repo.load_commit(&checksum)?;
         let commit_v = &commit_v;
 
-        let commit_bytes = commit_v.get_data_as_bytes();
+        let commit_bytes = commit_v.data_as_bytes();
         let commit_bytes = commit_bytes.try_as_aligned()?;
         let commit = gv!("(a{sv}aya(say)sstayay)").cast(commit_bytes);
         let commit = commit.to_tuple();

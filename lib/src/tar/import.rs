@@ -8,7 +8,6 @@ use fn_error_context::context;
 use futures::prelude::*;
 use gio::prelude::*;
 use glib::Cast;
-use ostree::ContentWriterExt;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::io::prelude::*;

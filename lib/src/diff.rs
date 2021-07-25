@@ -9,7 +9,6 @@
 use anyhow::{Context, Result};
 use fn_error_context::context;
 use gio::prelude::*;
-use ostree::RepoFileExt;
 use std::collections::BTreeSet;
 use std::fmt;
 
@@ -86,14 +85,14 @@ fn diff_recurse(
     // Iterate over the source (from) directory, and compare with the
     // target (to) directory.  This generates removals and changes.
     while let Some(from_info) = from_iter.next_file(cancellable)? {
-        let from_child = from_iter.get_child(&from_info).expect("file");
-        let name = from_info.get_name().expect("name");
+        let from_child = from_iter.child(&from_info);
+        let name = from_info.name();
         let name = name.to_str().expect("UTF-8 ostree name");
         let path = format!("{}{}", prefix, name);
-        let to_child = to.get_child(&name).expect("child");
+        let to_child = to.child(&name);
         let to_info = query_info_optional(&to_child, queryattrs, queryflags)
             .context("querying optional to")?;
-        let is_dir = matches!(from_info.get_file_type(), gio::FileType::Directory);
+        let is_dir = matches!(from_info.file_type(), gio::FileType::Directory);
         if to_info.is_some() {
             let to_child = to_child.downcast::<ostree::RepoFile>().expect("downcast");
             to_child.ensure_resolved()?;
@@ -114,8 +113,8 @@ fn diff_recurse(
                     diff.changed_dirs.insert(path);
                 }
             } else {
-                let from_checksum = from_child.get_checksum().expect("checksum");
-                let to_checksum = to_child.get_checksum().expect("checksum");
+                let from_checksum = from_child.checksum().expect("checksum");
+                let to_checksum = to_child.checksum().expect("checksum");
                 if from_checksum != to_checksum {
                     diff.changed_files.insert(path);
                 }
@@ -130,16 +129,16 @@ fn diff_recurse(
     // files/directories which were not present in the source.
     let to_iter = to.enumerate_children(queryattrs, queryflags, cancellable)?;
     while let Some(to_info) = to_iter.next_file(cancellable)? {
-        let name = to_info.get_name().expect("name");
+        let name = to_info.name();
         let name = name.to_str().expect("UTF-8 ostree name");
         let path = format!("{}{}", prefix, name);
-        let from_child = from.get_child(name).expect("child");
+        let from_child = from.child(name);
         let from_info = query_info_optional(&from_child, queryattrs, queryflags)
             .context("querying optional from")?;
         if from_info.is_some() {
             continue;
         }
-        let is_dir = matches!(to_info.get_file_type(), gio::FileType::Directory);
+        let is_dir = matches!(to_info.file_type(), gio::FileType::Directory);
         if is_dir {
             diff.added_dirs.insert(path);
         } else {
@@ -163,8 +162,8 @@ pub fn diff<P: AsRef<str>>(
     let (toroot, _) = repo.read_commit(to, gio::NONE_CANCELLABLE)?;
     let (fromroot, toroot) = if let Some(subdir) = subdir {
         (
-            fromroot.resolve_relative_path(subdir).expect("path"),
-            toroot.resolve_relative_path(subdir).expect("path"),
+            fromroot.resolve_relative_path(subdir),
+            toroot.resolve_relative_path(subdir),
         )
     } else {
         (fromroot, toroot)

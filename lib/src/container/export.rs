@@ -54,7 +54,7 @@ fn build_oci(
     if let Some(version) =
         commit_meta.lookup_value("version", Some(glib::VariantTy::new("s").unwrap()))
     {
-        let version = version.get_str().unwrap();
+        let version = version.str().unwrap();
         writer.add_config_annotation("version", version);
         writer.add_manifest_annotation("ostree.version", version);
     }
