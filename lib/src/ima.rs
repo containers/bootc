@@ -2,12 +2,13 @@
 
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use crate::variant_utils;
 use anyhow::{Context, Result};
 use fn_error_context::context;
 use gio::prelude::InputStreamExtManual;
+use glib::prelude::*;
 use glib::translate::*;
 use glib::Cast;
+use glib::Variant;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{gv, Marker, Structure};
 use openat_ext::FileExt;
@@ -36,7 +37,7 @@ pub struct ImaOpts {
 
 /// Convert a GVariant of type `a(ayay)` to a mutable map
 fn xattrs_to_map(v: &glib::Variant) -> BTreeMap<Vec<u8>, Vec<u8>> {
-    let v = v.get_data_as_bytes();
+    let v = v.data_as_bytes();
     let v = v.try_as_aligned().unwrap();
     let v = gv!("a(ayay)").cast(v);
     let mut map: BTreeMap<Vec<u8>, Vec<u8>> = BTreeMap::new();
@@ -47,10 +48,19 @@ fn xattrs_to_map(v: &glib::Variant) -> BTreeMap<Vec<u8>, Vec<u8>> {
     map
 }
 
-/// Reserialize a map to GVariant of type `a(ayay)`
-fn xattrmap_serialize(map: &BTreeMap<Vec<u8>, Vec<u8>>) -> glib::Variant {
-    let map: Vec<_> = map.iter().collect();
-    variant_utils::new_variant_a_ayay(&map)
+/// Create a new GVariant of type a(ayay).  This is used by OSTree's extended attributes.
+fn new_variant_a_ayay<'a, T: 'a + AsRef<[u8]>>(
+    items: impl IntoIterator<Item = (T, T)>,
+) -> glib::Variant {
+    let children: Vec<_> = items
+        .into_iter()
+        .map(|(a, b)| {
+            let a = a.as_ref();
+            let b = b.as_ref();
+            Variant::from_tuple(&[a.to_variant(), b.to_variant()])
+        })
+        .collect();
+    Variant::from_array::<(&[u8], &[u8])>(&children)
 }
 
 struct CommitRewriter<'a> {
@@ -90,7 +100,7 @@ impl<'a> CommitRewriter<'a> {
         Ok(Self {
             repo,
             ima,
-            tempdir: tempfile::tempdir_in(format!("/proc/self/fd/{}/tmp", repo.get_dfd()))?,
+            tempdir: tempfile::tempdir_in(format!("/proc/self/fd/{}/tmp", repo.dfd()))?,
             rewritten_files: Default::default(),
         })
     }
@@ -189,7 +199,7 @@ impl<'a> CommitRewriter<'a> {
         let xattrs = {
             let signed = self.ima_sign(&instream, selinux)?;
             xattrs.extend(signed);
-            xattrmap_serialize(&xattrs)
+            new_variant_a_ayay(&xattrs)
         };
         // Now reload the input stream
         let (instream, _, _) = self.repo.load_file(checksum, cancellable)?;
@@ -213,7 +223,7 @@ impl<'a> CommitRewriter<'a> {
         let src = &self
             .repo
             .load_variant(ostree::ObjectType::DirTree, checksum)?;
-        let src = src.get_data_as_bytes();
+        let src = src.data_as_bytes();
         let src = src.try_as_aligned()?;
         let src = gv!("(a(say)a(sayay))").cast(src);
         let (files, dirs) = src.to_tuple();
@@ -233,7 +243,7 @@ impl<'a> CommitRewriter<'a> {
             unsafe {
                 // Unwrap safety: The name won't have NULs
                 let name = CString::new(name).unwrap();
-                let mapped_checksum_v = variant_utils::new_variant_bytearray(&mapped);
+                let mapped_checksum_v = mapped.to_variant();
                 let name_p = name.as_ptr();
                 glib_sys::g_variant_builder_add(
                     new_files_builder,
@@ -261,8 +271,8 @@ impl<'a> CommitRewriter<'a> {
             unsafe {
                 // Unwrap safety: The name won't have NULs
                 let name = CString::new(name).unwrap();
-                let mapped_checksum_v = variant_utils::new_variant_bytearray(&mapped);
-                let meta_checksum_v = variant_utils::new_variant_bytearray(meta_csum_bytes);
+                let mapped_checksum_v = mapped.to_variant();
+                let meta_checksum_v = meta_csum_bytes.to_variant();
                 glib_sys::g_variant_builder_add(
                     new_dirs_builder,
                     b"(s@ay@ay)\0".as_ptr() as *const _,
@@ -310,7 +320,7 @@ impl<'a> CommitRewriter<'a> {
         let (commit_v, _) = self.repo.load_commit(&checksum)?;
         let commit_v = &commit_v;
 
-        let commit_bytes = commit_v.get_data_as_bytes();
+        let commit_bytes = commit_v.data_as_bytes();
         let commit_bytes = commit_bytes.try_as_aligned()?;
         let commit = gv!("(a{sv}aya(say)sstayay)").cast(commit_bytes);
         let commit = commit.to_tuple();
@@ -321,11 +331,11 @@ impl<'a> CommitRewriter<'a> {
         let n_parts = 8;
         let mut parts = Vec::with_capacity(n_parts);
         for i in 0..n_parts {
-            parts.push(variant_utils::variant_get_child_value(&commit_v, i).unwrap());
+            parts.push(commit_v.child_value(i));
         }
         let new_dt = hex::decode(new_dt)?;
-        parts[6] = variant_utils::new_variant_bytearray(&new_dt);
-        let new_commit = variant_utils::new_variant_tuple(&parts);
+        parts[6] = new_dt.to_variant();
+        let new_commit = Variant::from_tuple(&parts);
 
         let new_commit_checksum = self
             .repo

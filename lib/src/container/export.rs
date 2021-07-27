@@ -1,7 +1,7 @@
 //! APIs for creating container images from OSTree commits
 
 use super::*;
-use crate::{tar as ostree_tar, variant_utils};
+use crate::tar as ostree_tar;
 use anyhow::Context;
 use fn_error_context::context;
 use std::collections::BTreeMap;
@@ -48,13 +48,13 @@ fn build_oci(
     let commit = repo.resolve_rev(rev, false)?.unwrap();
     let commit = commit.as_str();
     let (commit_v, _) = repo.load_commit(commit)?;
-    let commit_meta = &variant_utils::variant_get_child_value(&commit_v, 0).unwrap();
+    let commit_meta = &commit_v.child_value(0);
     let commit_meta = glib::VariantDict::new(Some(commit_meta));
 
     if let Some(version) =
         commit_meta.lookup_value("version", Some(glib::VariantTy::new("s").unwrap()))
     {
-        let version = version.get_str().unwrap();
+        let version = version.str().unwrap();
         writer.add_config_annotation("version", version);
         writer.add_manifest_annotation("ostree.version", version);
     }
