@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 
 use crate::model::*;
 
-#[serde(rename_all = "kebab-case")]
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum ValidationResult {
     Valid,
     Errors(Vec<String>),
