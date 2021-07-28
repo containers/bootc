@@ -4,8 +4,9 @@ Extension APIs for [ostree](https://github.com/ostreedev/ostree/) that are writt
 
 ## module "tar": tar export/import
 
-ostree's support for exporting to a tarball is lossy by default.  This adds a new export
-format that is effectively a new custom repository mode combined with a hardlinked checkout.
+ostree's support for exporting to a tarball is lossy because it doesn't have e.g. commit
+metadata.  This adds a new export format that is effectively a new custom repository mode 
+combined with a hardlinked checkout.
 
 This new export stream can be losslessly imported back into a different repository.
 
