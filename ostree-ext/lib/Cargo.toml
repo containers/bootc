@@ -14,30 +14,30 @@ bytes = "1.0.1"
 camino = "1.0.4"
 cjson = "0.1.1"
 flate2 = { features = ["zlib"], default_features = false, version = "1.0.20" }
-fn-error-context = "0.1.1"
+fn-error-context = "0.2.0"
 futures = "0.3.13"
-indicatif = "0.15.0"
 gio = "0.14"
 glib = "0.14"
 glib-sys = "0.14"
 gvariant = "0.4.0"
 hex = "0.4.3"
+indicatif = "0.16.0"
 libc = "0.2.92"
-nix = "0.20.0"
-phf = { features = ["macros"], version = "0.8.0" }
+nix = "0.22.0"
 openat = "0.1.20"
 openat-ext = "0.2.0"
 openssl = "0.10.33"
 ostree = { features = ["v2021_2"], version = "0.12.0" }
+phf = { features = ["macros"], version = "0.9.0" }
 serde = { features = ["derive"], version = "1.0.125" }
 serde_json = "1.0.64"
 structopt = "0.3.21"
 tar = "0.4.33"
 tempfile = "3.2.0"
 tokio = { features = ["full"], version = "1" }
+tokio-stream = "0.1.5"
 tokio-util = { features = ["io"], version = "0.6" }
 tracing = "0.1"
-tokio-stream = "0.1.5"
 
 [dev-dependencies]
 clap = "2.33.3"
