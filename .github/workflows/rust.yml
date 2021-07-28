@@ -9,9 +9,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   # Minimum supported Rust version (MSRV)
-  ACTION_MSRV_TOOLCHAIN: 1.43.0
+  ACTION_MSRV_TOOLCHAIN: 1.49.0
   # Pinned toolchain for linting
-  ACTION_LINTS_TOOLCHAIN: 1.47.0
+  ACTION_LINTS_TOOLCHAIN: 1.53.0
 
 jobs:
   tests-stable:
