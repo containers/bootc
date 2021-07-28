@@ -172,7 +172,7 @@ async fn container_import(repo: &str, imgref: &str, write_ref: Option<&str>) -> 
         tokio::select! {
             _ = rx_progress.changed() => {
                 let n = rx_progress.borrow().processed_bytes;
-                pb.set_message(&format!("Processed: {}", indicatif::HumanBytes(n)));
+                pb.set_message(format!("Processed: {}", indicatif::HumanBytes(n)));
             }
             import = &mut import => {
                 pb.finish();
