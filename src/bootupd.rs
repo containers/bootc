@@ -61,7 +61,7 @@ pub(crate) fn get_components() -> Components {
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    insert_component(&mut components, Box::new(efi::EFI::default()));
+    insert_component(&mut components, Box::new(efi::Efi::default()));
 
     // #[cfg(target_arch = "x86_64")]
     // components.push(Box::new(bios::BIOS::new()));

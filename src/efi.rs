@@ -36,9 +36,9 @@ lazy_static! {
 }
 
 #[derive(Default)]
-pub(crate) struct EFI {}
+pub(crate) struct Efi {}
 
-impl EFI {
+impl Efi {
     fn esp_path(&self) -> PathBuf {
         Path::new(&*MOUNT_PATH).join("EFI")
     }
@@ -83,7 +83,7 @@ impl EFI {
     }
 }
 
-impl Component for EFI {
+impl Component for Efi {
     fn name(&self) -> &'static str {
         "EFI"
     }
