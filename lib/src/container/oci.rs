@@ -173,7 +173,8 @@ impl<'a> OciWriter<'a> {
     #[context("Writing OCI")]
     pub(crate) fn complete(&mut self) -> Result<()> {
         let utsname = nix::sys::utsname::uname();
-        let arch = MACHINE_TO_OCI[utsname.machine()];
+        let machine = utsname.machine();
+        let arch = MACHINE_TO_OCI.get(machine).unwrap_or(&machine);
 
         let rootfs_blob = self.root_layer.as_ref().unwrap();
         let root_layer_id = format!("sha256:{}", rootfs_blob.uncompressed_sha256);
