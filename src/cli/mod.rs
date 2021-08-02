@@ -58,7 +58,7 @@ mod tests {
             let d_argv = vec!["/usr/bin/bootupd".to_string(), "daemon".to_string()];
             let cli = MultiCall::from_args(d_argv);
             match cli {
-                MultiCall::Ctl(cmd) => panic!(cmd),
+                MultiCall::Ctl(cmd) => panic!("{:?}", cmd),
                 MultiCall::D(_) => {}
             };
         }
@@ -67,7 +67,7 @@ mod tests {
             let cli = MultiCall::from_args(ctl_argv);
             match cli {
                 MultiCall::Ctl(_) => {}
-                MultiCall::D(cmd) => panic!(cmd),
+                MultiCall::D(cmd) => panic!("{:?}", cmd),
             };
         }
         {
@@ -75,7 +75,7 @@ mod tests {
             let cli = MultiCall::from_args(ctl_argv);
             match cli {
                 MultiCall::Ctl(_) => {}
-                MultiCall::D(cmd) => panic!(cmd),
+                MultiCall::D(cmd) => panic!("{:?}", cmd),
             };
         }
     }

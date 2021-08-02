@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 
 use crate::model::*;
 
-#[serde(rename_all = "kebab-case")]
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum ValidationResult {
     Valid,
     Errors(Vec<String>),
@@ -70,7 +70,7 @@ pub(crate) trait Component {
 /// Given a component name, create an implementation.
 pub(crate) fn new_from_name(name: &str) -> Result<Box<dyn Component>> {
     let r: Box<dyn Component> = match name {
-        "EFI" => Box::new(crate::efi::EFI::default()),
+        "EFI" => Box::new(crate::efi::Efi::default()),
         _ => anyhow::bail!("No component {}", name),
     };
     Ok(r)
