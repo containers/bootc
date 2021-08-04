@@ -232,7 +232,7 @@ impl<'a> CommitRewriter<'a> {
         let mut hexbuf = [0u8; 64];
 
         let new_files_builder =
-            unsafe { glib_sys::g_variant_builder_new(b"a(say)\0".as_ptr() as *const _) };
+            unsafe { glib::ffi::g_variant_builder_new(b"a(say)\0".as_ptr() as *const _) };
         for file in files {
             let (name, csum) = file.to_tuple();
             let name = name.to_str();
@@ -245,7 +245,7 @@ impl<'a> CommitRewriter<'a> {
                 let name = CString::new(name).unwrap();
                 let mapped_checksum_v = mapped.to_variant();
                 let name_p = name.as_ptr();
-                glib_sys::g_variant_builder_add(
+                glib::ffi::g_variant_builder_add(
                     new_files_builder,
                     b"(s@ay)\0".as_ptr() as *const _,
                     name_p,
@@ -254,13 +254,13 @@ impl<'a> CommitRewriter<'a> {
             }
         }
         let new_files: glib::Variant = unsafe {
-            let v = glib_sys::g_variant_builder_end(new_files_builder);
-            glib_sys::g_variant_ref_sink(v);
+            let v = glib::ffi::g_variant_builder_end(new_files_builder);
+            glib::ffi::g_variant_ref_sink(v);
             from_glib_full(v)
         };
 
         let new_dirs_builder =
-            unsafe { glib_sys::g_variant_builder_new(b"a(sayay)\0".as_ptr() as *const _) };
+            unsafe { glib::ffi::g_variant_builder_new(b"a(sayay)\0".as_ptr() as *const _) };
         for item in dirs {
             let (name, contents_csum, meta_csum_bytes) = item.to_tuple();
             let name = name.to_str();
@@ -273,7 +273,7 @@ impl<'a> CommitRewriter<'a> {
                 let name = CString::new(name).unwrap();
                 let mapped_checksum_v = mapped.to_variant();
                 let meta_checksum_v = meta_csum_bytes.to_variant();
-                glib_sys::g_variant_builder_add(
+                glib::ffi::g_variant_builder_add(
                     new_dirs_builder,
                     b"(s@ay@ay)\0".as_ptr() as *const _,
                     name.as_ptr(),
@@ -283,19 +283,19 @@ impl<'a> CommitRewriter<'a> {
             }
         }
         let new_dirs: glib::Variant = unsafe {
-            let v = glib_sys::g_variant_builder_end(new_dirs_builder);
-            glib_sys::g_variant_ref_sink(v);
+            let v = glib::ffi::g_variant_builder_end(new_dirs_builder);
+            glib::ffi::g_variant_ref_sink(v);
             from_glib_full(v)
         };
 
         let new_dirtree: glib::Variant = unsafe {
-            let v = glib_sys::g_variant_new(
+            let v = glib::ffi::g_variant_new(
                 b"(@a(say)@a(sayay))\0".as_ptr() as *const _,
                 new_files.to_glib_none().0,
                 new_dirs.to_glib_none().0,
                 std::ptr::null_mut::<libc::c_char>(),
             );
-            glib_sys::g_variant_ref_sink(v);
+            glib::ffi::g_variant_ref_sink(v);
             from_glib_full(v)
         };
 

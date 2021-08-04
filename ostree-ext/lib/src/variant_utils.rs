@@ -7,7 +7,7 @@ use glib::translate::*;
 
 /// Get the normal form of a GVariant.
 pub fn variant_get_normal_form(v: &glib::Variant) -> glib::Variant {
-    unsafe { from_glib_full(glib_sys::g_variant_get_normal_form(v.to_glib_none().0)) }
+    unsafe { from_glib_full(glib::ffi::g_variant_get_normal_form(v.to_glib_none().0)) }
 }
 
 /// Create a new GVariant from data.
@@ -15,10 +15,10 @@ fn variant_new_from_bytes(ty: &str, bytes: glib::Bytes, trusted: bool) -> glib::
     unsafe {
         let ty = ty.to_glib_none();
         let ty: *const libc::c_char = ty.0;
-        let ty = ty as *const glib_sys::GVariantType;
+        let ty = ty as *const glib::ffi::GVariantType;
         let bytes = bytes.to_glib_full();
-        let v = glib_sys::g_variant_new_from_bytes(ty, bytes, trusted.into_glib());
-        glib_sys::g_variant_ref_sink(v);
+        let v = glib::ffi::g_variant_new_from_bytes(ty, bytes, trusted.into_glib());
+        glib::ffi::g_variant_ref_sink(v);
         from_glib_full(v)
     }
 }
