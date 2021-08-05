@@ -3,6 +3,7 @@
 //! avoiding another crate for this.  In the future, some of these
 //! may migrate into gtk-rs.
 
+use gio::glib;
 use glib::translate::*;
 
 /// Get the normal form of a GVariant.
