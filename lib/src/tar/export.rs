@@ -4,6 +4,7 @@ use crate::Result;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
+use gio::glib;
 use gio::prelude::*;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{gv, Marker, Structure};
