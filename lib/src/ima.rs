@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use fn_error_context::context;
 use gio::glib;
 use gio::prelude::*;
-use glib::translate::*;
 use glib::Cast;
 use glib::Variant;
 use gvariant::aligned_bytes::TryAsAligned;
@@ -218,7 +217,6 @@ impl<'a> CommitRewriter<'a> {
     }
 
     /// Write a dirtree object.
-    #[allow(unsafe_code)]
     fn map_dirtree(&mut self, checksum: &str) -> Result<String> {
         let src = &self
             .repo
@@ -231,8 +229,7 @@ impl<'a> CommitRewriter<'a> {
         // A reusable buffer to avoid heap allocating these
         let mut hexbuf = [0u8; 64];
 
-        let new_files_builder =
-            unsafe { glib::ffi::g_variant_builder_new(b"a(say)\0".as_ptr() as *const _) };
+        let mut new_files = Vec::new();
         for file in files {
             let (name, csum) = file.to_tuple();
             let name = name.to_str();
@@ -240,27 +237,10 @@ impl<'a> CommitRewriter<'a> {
             let checksum = std::str::from_utf8(&hexbuf)?;
             let mapped = self.map_file(checksum)?;
             let mapped = hex::decode(&*mapped)?;
-            unsafe {
-                // Unwrap safety: The name won't have NULs
-                let name = CString::new(name).unwrap();
-                let mapped_checksum_v = mapped.to_variant();
-                let name_p = name.as_ptr();
-                glib::ffi::g_variant_builder_add(
-                    new_files_builder,
-                    b"(s@ay)\0".as_ptr() as *const _,
-                    name_p,
-                    mapped_checksum_v.to_glib_none().0,
-                );
-            }
+            new_files.push((name, mapped));
         }
-        let new_files: glib::Variant = unsafe {
-            let v = glib::ffi::g_variant_builder_end(new_files_builder);
-            glib::ffi::g_variant_ref_sink(v);
-            from_glib_full(v)
-        };
 
-        let new_dirs_builder =
-            unsafe { glib::ffi::g_variant_builder_new(b"a(sayay)\0".as_ptr() as *const _) };
+        let mut new_dirs = Vec::new();
         for item in dirs {
             let (name, contents_csum, meta_csum_bytes) = item.to_tuple();
             let name = name.to_str();
@@ -268,36 +248,10 @@ impl<'a> CommitRewriter<'a> {
             let contents_csum = std::str::from_utf8(&hexbuf)?;
             let mapped = self.map_dirtree(&contents_csum)?;
             let mapped = hex::decode(mapped)?;
-            unsafe {
-                // Unwrap safety: The name won't have NULs
-                let name = CString::new(name).unwrap();
-                let mapped_checksum_v = mapped.to_variant();
-                let meta_checksum_v = meta_csum_bytes.to_variant();
-                glib::ffi::g_variant_builder_add(
-                    new_dirs_builder,
-                    b"(s@ay@ay)\0".as_ptr() as *const _,
-                    name.as_ptr(),
-                    mapped_checksum_v.to_glib_none().0,
-                    meta_checksum_v.to_glib_none().0,
-                );
-            }
+            new_dirs.push((name, mapped, meta_csum_bytes));
         }
-        let new_dirs: glib::Variant = unsafe {
-            let v = glib::ffi::g_variant_builder_end(new_dirs_builder);
-            glib::ffi::g_variant_ref_sink(v);
-            from_glib_full(v)
-        };
 
-        let new_dirtree: glib::Variant = unsafe {
-            let v = glib::ffi::g_variant_new(
-                b"(@a(say)@a(sayay))\0".as_ptr() as *const _,
-                new_files.to_glib_none().0,
-                new_dirs.to_glib_none().0,
-                std::ptr::null_mut::<libc::c_char>(),
-            );
-            glib::ffi::g_variant_ref_sink(v);
-            from_glib_full(v)
-        };
+        let new_dirtree = (new_files, new_dirs).to_variant();
 
         let mapped = self
             .repo
