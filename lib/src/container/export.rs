@@ -4,6 +4,7 @@ use super::*;
 use crate::tar as ostree_tar;
 use anyhow::Context;
 use fn_error_context::context;
+use gio::glib;
 use std::collections::BTreeMap;
 use std::path::Path;
 use tracing::{instrument, Level};
