@@ -4,8 +4,8 @@
 
 use anyhow::{Context, Result};
 use fn_error_context::context;
-use gio::prelude::InputStreamExtManual;
-use glib::prelude::*;
+use gio::glib;
+use gio::prelude::*;
 use glib::translate::*;
 use glib::Cast;
 use glib::Variant;
