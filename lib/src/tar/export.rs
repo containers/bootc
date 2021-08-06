@@ -8,6 +8,7 @@ use gio::glib;
 use gio::prelude::*;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{gv, Marker, Structure};
+use ostree::gio;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::io::BufReader;
