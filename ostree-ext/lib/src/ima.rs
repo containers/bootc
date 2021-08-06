@@ -12,6 +12,7 @@ use glib::Variant;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{gv, Marker, Structure};
 use openat_ext::FileExt;
+use ostree::gio;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::CString;
 use std::fs::File;

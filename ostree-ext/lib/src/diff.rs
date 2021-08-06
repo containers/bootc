@@ -9,6 +9,7 @@
 use anyhow::{Context, Result};
 use fn_error_context::context;
 use gio::prelude::*;
+use ostree::gio;
 use std::collections::BTreeSet;
 use std::fmt;
 

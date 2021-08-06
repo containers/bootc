@@ -6,6 +6,7 @@
 //! such as `rpm-ostree` can directly reuse it.
 
 use anyhow::Result;
+use ostree::gio;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::ffi::OsString;
