@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use indoc::indoc;
-use ostree::gio;
 use ostree_ext::container::{Config, ImageReference, Transport};
+use ostree_ext::gio;
 use sh_inline::bash;
 use std::{io::Write, process::Command};
 
