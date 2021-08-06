@@ -8,6 +8,7 @@
 // Good defaults
 #![forbid(unused_must_use)]
 #![deny(unsafe_code)]
+#![cfg_attr(feature = "dox", feature(doc_cfg))]
 
 /// Our generic catchall fatal error, expected to be converted
 /// to a string to output to a terminal or logs.

@@ -41,3 +41,9 @@ clap = "2.33.3"
 indoc = "1.0.3"
 sh-inline = "0.1.0"
 structopt = "0.3.21"
+
+[package.metadata.docs.rs]
+features = ["dox"]
+
+[features]
+dox = ["ostree/dox"]
