@@ -8,6 +8,7 @@ use futures::prelude::*;
 use gio::glib;
 use gio::prelude::*;
 use glib::Variant;
+use ostree::gio;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::io::prelude::*;

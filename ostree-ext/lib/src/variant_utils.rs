@@ -5,6 +5,7 @@
 
 use gio::glib;
 use glib::translate::*;
+use ostree::gio;
 
 /// Get the normal form of a GVariant.
 pub fn variant_get_normal_form(v: &glib::Variant) -> glib::Variant {
