@@ -10,6 +10,13 @@
 #![deny(unsafe_code)]
 #![cfg_attr(feature = "dox", feature(doc_cfg))]
 
+// Re-export our dependencies.  See https://gtk-rs.org/blog/2021/06/22/new-release.html
+// "Dependencies are re-exported".  Users will need e.g. `gio::File`, so this avoids
+// them needing to update matching versions.
+pub use ostree;
+pub use ostree::gio;
+pub use ostree::gio::glib;
+
 /// Our generic catchall fatal error, expected to be converted
 /// to a string to output to a terminal or logs.
 type Result<T> = anyhow::Result<T>;
@@ -22,3 +29,9 @@ pub mod ima;
 pub mod tar;
 #[allow(unsafe_code)]
 pub mod variant_utils;
+
+/// Prelude, intended for glob import.
+pub mod prelude {
+    #[doc(hidden)]
+    pub use ostree::prelude::*;
+}
