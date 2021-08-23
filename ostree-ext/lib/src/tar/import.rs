@@ -25,13 +25,6 @@ const MAX_METADATA_SIZE: u32 = 10 * 1024 * 1024;
 /// https://stackoverflow.com/questions/258091/when-should-i-use-mmap-for-file-access
 const SMALL_REGFILE_SIZE: usize = 127 * 1024;
 
-// Variant formats, see ostree-core.h
-// TODO - expose these via introspection
-const OSTREE_COMMIT_FORMAT: &str = "(a{sv}aya(say)sstayay)";
-const OSTREE_DIRTREE_FORMAT: &str = "(a(say)a(sayay))";
-const OSTREE_DIRMETA_FORMAT: &str = "(uuua(ayay))";
-// const OSTREE_XATTRS_FORMAT: &str = "a(ayay)";
-
 /// State tracker for the importer.  The main goal is to reject multiple
 /// commit objects, as well as finding metadata/content before the commit.
 #[derive(Debug, PartialEq, Eq)]
@@ -93,15 +86,6 @@ fn header_attrs(header: &tar::Header) -> Result<(u32, u32, u32)> {
     Ok((uid, gid, mode))
 }
 
-fn format_for_objtype(t: ostree::ObjectType) -> Option<&'static str> {
-    match t {
-        ostree::ObjectType::DirTree => Some(OSTREE_DIRTREE_FORMAT),
-        ostree::ObjectType::DirMeta => Some(OSTREE_DIRMETA_FORMAT),
-        ostree::ObjectType::Commit => Some(OSTREE_COMMIT_FORMAT),
-        _ => None,
-    }
-}
-
 /// The C function ostree_object_type_from_string aborts on
 /// unknown strings, so we have a safe version here.
 fn objtype_from_string(t: &str) -> Option<ostree::ObjectType> {
@@ -115,9 +99,8 @@ fn objtype_from_string(t: &str) -> Option<ostree::ObjectType> {
 }
 
 /// Given a tar entry, read it all into a GVariant
-fn entry_to_variant<R: std::io::Read>(
+fn entry_to_variant<R: std::io::Read, T: StaticVariantType>(
     mut entry: tar::Entry<R>,
-    vtype: &str,
     desc: &str,
 ) -> Result<glib::Variant> {
     let header = entry.header();
@@ -127,7 +110,8 @@ fn entry_to_variant<R: std::io::Read>(
     let n = std::io::copy(&mut entry, &mut buf)?;
     assert_eq!(n as usize, size);
     let v = glib::Bytes::from_owned(buf);
-    Ok(crate::variant_utils::variant_normal_from_bytes(vtype, v))
+    let v = Variant::from_bytes::<T>(&v);
+    Ok(v.normal_form())
 }
 
 impl<'a> Importer<'a> {
@@ -151,9 +135,18 @@ impl<'a> Importer<'a> {
         checksum: &str,
         objtype: ostree::ObjectType,
     ) -> Result<()> {
-        let vtype =
-            format_for_objtype(objtype).ok_or_else(|| anyhow!("Unhandled objtype {}", objtype))?;
-        let v = entry_to_variant(entry, vtype, checksum)?;
+        let v = match objtype {
+            ostree::ObjectType::DirTree => {
+                entry_to_variant::<_, ostree::TreeVariantType>(entry, checksum)?
+            }
+            ostree::ObjectType::DirMeta => {
+                entry_to_variant::<_, ostree::DirmetaVariantType>(entry, checksum)?
+            }
+            ostree::ObjectType::Commit => {
+                entry_to_variant::<_, ostree::CommitVariantType>(entry, checksum)?
+            }
+            o => return Err(anyhow!("Invalid metadata object type; {:?}", o)),
+        };
         // FIXME insert expected dirtree/dirmeta
         let _ = self
             .repo
