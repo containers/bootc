@@ -27,9 +27,6 @@ pub mod container;
 pub mod diff;
 pub mod ima;
 pub mod tar;
-#[allow(unsafe_code)]
-pub mod variant_utils;
-
 /// Prelude, intended for glob import.
 pub mod prelude {
     #[doc(hidden)]
