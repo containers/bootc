@@ -91,6 +91,7 @@ fn header_attrs(header: &tar::Header) -> Result<(u32, u32, u32)> {
 fn objtype_from_string(t: &str) -> Option<ostree::ObjectType> {
     Some(match t {
         "commit" => ostree::ObjectType::Commit,
+        "commitmeta" => ostree::ObjectType::CommitMeta,
         "dirtree" => ostree::ObjectType::DirTree,
         "dirmeta" => ostree::ObjectType::DirMeta,
         "file" => ostree::ObjectType::File,
@@ -137,25 +138,30 @@ impl<'a> Importer<'a> {
     ) -> Result<()> {
         let v = match objtype {
             ostree::ObjectType::DirTree => {
+                self.stats.dirtree += 1;
                 entry_to_variant::<_, ostree::TreeVariantType>(entry, checksum)?
             }
             ostree::ObjectType::DirMeta => {
+                self.stats.dirmeta += 1;
                 entry_to_variant::<_, ostree::DirmetaVariantType>(entry, checksum)?
             }
             ostree::ObjectType::Commit => {
                 entry_to_variant::<_, ostree::CommitVariantType>(entry, checksum)?
             }
+            ostree::ObjectType::CommitMeta => entry_to_variant::<
+                _,
+                std::collections::HashMap<String, glib::Variant>,
+            >(entry, checksum)?,
             o => return Err(anyhow!("Invalid metadata object type; {:?}", o)),
         };
-        // FIXME insert expected dirtree/dirmeta
-        let _ = self
-            .repo
-            .write_metadata(objtype, Some(checksum), &v, gio::NONE_CANCELLABLE)?;
-        match objtype {
-            ostree::ObjectType::DirMeta => self.stats.dirmeta += 1,
-            ostree::ObjectType::DirTree => self.stats.dirtree += 1,
-            ostree::ObjectType::Commit => {}
-            _ => unreachable!(),
+        if objtype == ostree::ObjectType::CommitMeta {
+            self.repo
+                .write_commit_detached_metadata(checksum, Some(&v), gio::NONE_CANCELLABLE)?;
+        } else {
+            // FIXME validate here https://github.com/ostreedev/ostree-rs-ext/issues/1
+            let _ = self
+                .repo
+                .write_metadata(objtype, Some(checksum), &v, gio::NONE_CANCELLABLE)?;
         }
         Ok(())
     }
