@@ -2,9 +2,10 @@
 //! oriented towards generating images.
 
 use anyhow::{anyhow, Result};
-use containers_image_proxy::OCI_TYPE_LAYER_GZIP;
 use flate2::write::GzEncoder;
 use fn_error_context::context;
+use oci_image::MediaType;
+use oci_spec::image as oci_image;
 use openat_ext::*;
 use openssl::hash::{Hasher, MessageDigest};
 use phf::phf_map;
@@ -19,42 +20,8 @@ static MACHINE_TO_OCI: phf::Map<&str, &str> = phf_map! {
     "aarch64" => "arm64",
 };
 
-// OCI types, see https://github.com/opencontainers/image-spec/blob/master/media-types.md
-pub(crate) const OCI_TYPE_CONFIG_JSON: &str = "application/vnd.oci.image.config.v1+json";
-pub(crate) const OCI_TYPE_MANIFEST_JSON: &str = "application/vnd.oci.image.manifest.v1+json";
-
 /// Path inside an OCI directory to the blobs
 const BLOBDIR: &str = "blobs/sha256";
-
-fn default_schema_version() -> u32 {
-    2
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct IndexPlatform {
-    pub architecture: String,
-    pub os: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct IndexManifest {
-    pub media_type: String,
-    pub digest: String,
-    pub size: u64,
-
-    pub platform: Option<IndexPlatform>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Index {
-    #[serde(default = "default_schema_version")]
-    pub schema_version: u32,
-
-    pub manifests: Vec<IndexManifest>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,9 +34,6 @@ pub(crate) struct ManifestLayer {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Manifest {
-    #[serde(default = "default_schema_version")]
-    pub schema_version: u32,
-
     pub config: ManifestLayer,
     pub layers: Vec<ManifestLayer>,
     pub annotations: Option<HashMap<String, String>>,
@@ -94,6 +58,12 @@ impl Blob {
     pub(crate) fn digest_id(&self) -> String {
         format!("sha256:{}", self.sha256)
     }
+
+    pub(crate) fn descriptor(&self) -> oci_image::DescriptorBuilder {
+        oci_image::DescriptorBuilder::default()
+            .digest(self.digest_id())
+            .size(self.size as i64)
+    }
 }
 
 /// Completed layer metadata
@@ -101,6 +71,12 @@ impl Blob {
 pub(crate) struct Layer {
     pub(crate) blob: Blob,
     pub(crate) uncompressed_sha256: String,
+}
+
+impl Layer {
+    pub(crate) fn descriptor(&self) -> oci_image::DescriptorBuilder {
+        self.blob.descriptor()
+    }
 }
 
 /// Create an OCI blob.
@@ -130,13 +106,15 @@ pub(crate) struct OciWriter<'a> {
 
 /// Write a serializable data (JSON) as an OCI blob
 #[context("Writing json blob")]
-fn write_json_blob<S: serde::Serialize>(ocidir: &openat::Dir, v: &S) -> Result<Blob> {
+fn write_json_blob<S: serde::Serialize>(
+    ocidir: &openat::Dir,
+    v: &S,
+    media_type: oci_image::MediaType,
+) -> Result<oci_image::DescriptorBuilder> {
     let mut w = BlobWriter::new(ocidir)?;
-    {
-        cjson::to_writer(&mut w, v).map_err(|e| anyhow!("{:?}", e))?;
-    }
-
-    w.complete()
+    cjson::to_writer(&mut w, v).map_err(|e| anyhow!("{:?}", e))?;
+    let blob = w.complete()?;
+    Ok(blob.descriptor().media_type(media_type))
 }
 
 impl<'a> OciWriter<'a> {
@@ -179,65 +157,64 @@ impl<'a> OciWriter<'a> {
         let utsname = nix::sys::utsname::uname();
         let machine = utsname.machine();
         let arch = MACHINE_TO_OCI.get(machine).unwrap_or(&machine);
+        let arch = oci_image::Arch::from(*arch);
 
         let rootfs_blob = self.root_layer.as_ref().unwrap();
         let root_layer_id = format!("sha256:{}", rootfs_blob.uncompressed_sha256);
+        let rootfs = oci_image::RootFsBuilder::default()
+            .diff_ids(vec![root_layer_id])
+            .build()
+            .unwrap();
 
-        let mut ctrconfig = serde_json::Map::new();
-        ctrconfig.insert(
-            "Labels".to_string(),
-            serde_json::to_value(&self.config_annotations)?,
-        );
-        if let Some(cmd) = self.cmd.as_deref() {
-            ctrconfig.insert("Cmd".to_string(), serde_json::to_value(cmd)?);
+        let ctrconfig_builder = oci_image::ConfigBuilder::default().labels(self.config_annotations);
+        let ctrconfig = if let Some(cmd) = self.cmd {
+            ctrconfig_builder.cmd(cmd)
+        } else {
+            ctrconfig_builder
         }
-        let created_by = concat!("created by ", env!("CARGO_PKG_VERSION"));
-        let config = serde_json::json!({
-            "architecture": arch,
-            "os": "linux",
-            "config": ctrconfig,
-            "rootfs": {
-                "type": "layers",
-                "diff_ids": [ root_layer_id ],
-            },
-            "history": [
-                {
-                    "commit": created_by,
-                }
-            ]
-        });
-        let config_blob = write_json_blob(self.dir, &config)?;
+        .build()
+        .unwrap();
+        let history = oci_image::HistoryBuilder::default()
+            .created_by(concat!("created by ", env!("CARGO_PKG_VERSION")))
+            .build()
+            .unwrap();
+        let config = oci_image::ImageConfigurationBuilder::default()
+            .architecture(arch.clone())
+            .os(oci_image::Os::Linux)
+            .config(ctrconfig)
+            .rootfs(rootfs)
+            .history(vec![history])
+            .build()
+            .unwrap();
+        let config_blob = write_json_blob(self.dir, &config, MediaType::ImageConfig)?;
 
-        let manifest = Manifest {
-            schema_version: default_schema_version(),
-            config: ManifestLayer {
-                media_type: OCI_TYPE_CONFIG_JSON.to_string(),
-                size: config_blob.size,
-                digest: config_blob.digest_id(),
-            },
-            layers: vec![ManifestLayer {
-                media_type: OCI_TYPE_LAYER_GZIP.to_string(),
-                size: rootfs_blob.blob.size,
-                digest: rootfs_blob.blob.digest_id(),
-            }],
-            annotations: Some(self.manifest_annotations),
-        };
-        let manifest_blob = write_json_blob(self.dir, &manifest)?;
+        let manifest_data = oci_image::ImageManifestBuilder::default()
+            .schema_version(oci_image::SCHEMA_VERSION)
+            .config(config_blob.build().unwrap())
+            .layers(vec![rootfs_blob
+                .descriptor()
+                .media_type(MediaType::ImageLayerGzip)
+                .build()
+                .unwrap()])
+            .annotations(self.manifest_annotations)
+            .build()
+            .unwrap();
+        let manifest = write_json_blob(self.dir, &manifest_data, MediaType::ImageManifest)?
+            .platform(
+                oci_image::PlatformBuilder::default()
+                    .architecture(arch)
+                    .os(oci_spec::image::Os::Linux)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
 
-        let index_data = serde_json::json!({
-            "schemaVersion": default_schema_version(),
-            "manifests": [
-                {
-                    "mediaType": OCI_TYPE_MANIFEST_JSON,
-                    "digest": manifest_blob.digest_id(),
-                    "size": manifest_blob.size,
-                    "platform": {
-                        "architecture": arch,
-                        "os": "linux"
-                    }
-                }
-            ]
-        });
+        let index_data = oci_image::ImageIndexBuilder::default()
+            .schema_version(oci_image::SCHEMA_VERSION)
+            .manifests(vec![manifest])
+            .build()
+            .unwrap();
         self.dir
             .write_file_with("index.json", 0o644, |w| -> Result<()> {
                 cjson::to_writer(w, &index_data).map_err(|e| anyhow::anyhow!("{:?}", e))?;
