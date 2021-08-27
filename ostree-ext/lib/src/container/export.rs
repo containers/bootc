@@ -45,7 +45,7 @@ fn build_oci(
     // Explicitly error if the target exists
     std::fs::create_dir(ocidir_path).context("Creating OCI dir")?;
     let ocidir = &openat::Dir::open(ocidir_path)?;
-    let writer = &mut oci::OciWriter::new(ocidir)?;
+    let mut writer = oci::OciWriter::new(ocidir)?;
 
     let commit = repo.resolve_rev(rev, false)?.unwrap();
     let commit = commit.as_str();
