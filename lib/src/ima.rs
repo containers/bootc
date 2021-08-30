@@ -247,7 +247,7 @@ impl<'a> CommitRewriter<'a> {
             let name = name.to_str();
             hex::encode_to_slice(contents_csum, &mut hexbuf)?;
             let contents_csum = std::str::from_utf8(&hexbuf)?;
-            let mapped = self.map_dirtree(&contents_csum)?;
+            let mapped = self.map_dirtree(contents_csum)?;
             let mapped = hex::decode(mapped)?;
             new_dirs.push((name, mapped, meta_csum_bytes));
         }
@@ -306,6 +306,6 @@ impl<'a> CommitRewriter<'a> {
 /// The generated commit object will inherit all metadata from the existing commit object
 /// such as version, etc.
 pub fn ima_sign(repo: &ostree::Repo, ostree_ref: &str, opts: &ImaOpts) -> Result<String> {
-    let writer = &mut CommitRewriter::new(&repo, &opts)?;
+    let writer = &mut CommitRewriter::new(repo, opts)?;
     writer.map_commit(ostree_ref)
 }

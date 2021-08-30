@@ -349,7 +349,7 @@ impl<'a> Importer<'a> {
         } else {
             None
         };
-        let objtype = objtype_from_string(&objtype)
+        let objtype = objtype_from_string(objtype)
             .ok_or_else(|| anyhow!("Invalid object type {}", objtype))?;
         match (objtype, is_xattrs, &self.state) {
             (ostree::ObjectType::Commit, _, ImportState::Initial) => {
@@ -379,9 +379,9 @@ impl<'a> Importer<'a> {
     /// Handle <checksum>.xattr hardlinks that contain extended attributes for
     /// a content object.
     #[context("Processing xattr ref")]
-    fn import_xattr_ref<'b, R: std::io::Read>(
+    fn import_xattr_ref<R: std::io::Read>(
         &mut self,
-        entry: tar::Entry<'b, R>,
+        entry: tar::Entry<R>,
         target: String,
     ) -> Result<()> {
         assert!(self.next_xattrs.is_none());
