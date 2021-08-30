@@ -22,7 +22,7 @@ fn generate_test_repo(dir: &Utf8Path) -> Result<Utf8PathBuf> {
         indoc! {"
         cd {dir}
         ostree --repo=repo init --mode=archive
-        ostree --repo=repo commit -b {testref} --bootable --add-metadata-string=version=42.0 --tree=tar=exampleos.tar.zst
+        ostree --repo=repo commit -b {testref} --bootable --add-metadata-string=version=42.0 --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst
         ostree --repo=repo show {testref}
     "},
         testref = TESTREF,
@@ -93,7 +93,11 @@ async fn test_tar_import_export() -> Result<()> {
             .as_str()
     );
     bash!(
-        "ostree --repo={destrepodir} ls -R {imported_commit}",
+        r#"
+         ostree --repo={destrepodir} ls -R {imported_commit}
+         val=$(ostree --repo={destrepodir} show --print-detached-metadata-key=my-detached-key {imported_commit})
+         test "${{val}}" = "'my-detached-value'"
+        "#,
         destrepodir = destrepodir.as_str(),
         imported_commit = imported_commit.as_str()
     )?;

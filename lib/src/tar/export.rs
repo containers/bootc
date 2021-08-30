@@ -62,7 +62,7 @@ impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
         v: &glib::Variant,
     ) -> Result<()> {
         let set = match objtype {
-            ostree::ObjectType::Commit => None,
+            ostree::ObjectType::Commit | ostree::ObjectType::CommitMeta => None,
             ostree::ObjectType::DirTree => Some(&mut self.wrote_dirtree),
             ostree::ObjectType::DirMeta => Some(&mut self.wrote_dirmeta),
             o => panic!("Unexpected object type: {:?}", o),
@@ -266,7 +266,7 @@ fn impl_export<W: std::io::Write>(
     writer.append(ostree::ObjectType::Commit, commit_checksum, commit_v)?;
 
     if let Some(commitmeta) =
-        repo.load_variant_if_exists(ostree::ObjectType::CommitMeta, commit_checksum)?
+        crate::ostree_ffi_fixed::read_commit_detached_metadata(repo, commit_checksum, cancellable)?
     {
         writer.append(ostree::ObjectType::CommitMeta, commit_checksum, &commitmeta)?;
     }
