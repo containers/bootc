@@ -311,7 +311,7 @@ impl<'a> std::io::Write for LayerWriter<'a> {
         self.compressor.write_all(srcbuf).unwrap();
         self.uncompressed_hash.update(srcbuf)?;
         let compressed_buf = self.compressor.get_mut().as_slice();
-        self.bw.write_all(&compressed_buf)?;
+        self.bw.write_all(compressed_buf)?;
         Ok(srcbuf.len())
     }
 
