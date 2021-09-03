@@ -53,17 +53,21 @@ cosaPod(runAsUser: 0, memory: "3072Mi", cpu: "4") {
   }
   // The e2e-adopt test will use the ostree commit we just generated above
   // but a static qemu base image.
-  stage("e2e adopt test") {
-    shwrap("env COSA_DIR=${env.WORKSPACE} ./tests/e2e-adopt/e2e-adopt.sh")
-  }
-  // Now a test that upgrades using bootupd
-  stage("e2e upgrade test") {
+  try {
+    stage("e2e adopt test") {
+      shwrap("env COSA_DIR=${env.WORKSPACE} ./tests/e2e-adopt/e2e-adopt.sh")
+    }
+    // Now a test that upgrades using bootupd
+    stage("e2e upgrade test") {
     shwrap("env COSA_DIR=${env.WORKSPACE} ./tests/e2e-update/e2e-update.sh")
-  }
-  stage("Kola testing") {
-    // The previous e2e leaves things only having built an ostree update
-    shwrap("cosa build")
-    // bootupd really can't break upgrades for the OS
-    fcosKola(cosaDir: "${env.WORKSPACE}", extraArgs: "ext.*bootupd*", skipUpgrade: true)
+    }
+    stage("Kola testing") {
+      // The previous e2e leaves things only having built an ostree update
+      shwrap("cosa build")
+      // bootupd really can't break upgrades for the OS
+      fcosKola(cosaDir: "${env.WORKSPACE}", extraArgs: "ext.*bootupd*", skipUpgrade: true)
+    }
+  } finally {
+    archiveArtifacts allowEmptyArchive: true, artifacts: 'tmp/console.txt'
   }
 }

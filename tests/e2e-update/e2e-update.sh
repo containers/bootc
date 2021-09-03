@@ -79,14 +79,13 @@ undo_manifest_fork() {
 if test -z "${e2e_skip_build:-}"; then
     echo "Building starting image"
     rm -f ${overrides}/rpm/*.rpm
-    add_override grub2-2.04-22.fc32
-    (cd ${bootupd_git} && runv make && runv make install DESTDIR=${overrides}/rootfs)
+    add_override grub2-2.06-2.fc34
     runv cosa build
     prev_image=$(runv cosa meta --image-path qemu)
     create_manifest_fork
     rm -f ${overrides}/rpm/*.rpm
     echo "Building update ostree"
-    add_override grub2-2.04-23.fc32
+    add_override grub2-2.06~rc1-3.fc34
     mv ${test_tmpdir}/yumrepo/packages/$(arch)/*.rpm ${overrides}/rpm/
     # Only build ostree update
     runv cosa build ostree
@@ -134,7 +133,7 @@ qemuexec_args=(kola qemuexec --propagate-initramfs-failure --qemu-image "${prev_
 if test -n "${e2e_debug:-}"; then
     runv ${qemuexec_args[@]} --devshell
 else
-    runv timeout 5m "${qemuexec_args[@]}" --console-to-file $(pwd)/console.txt
+    runv timeout 5m "${qemuexec_args[@]}" --console-to-file ${COSA_DIR}/tmp/console.txt
 fi
 if ! test -f ${testtmp}/success; then
     if test -s ${testtmp}/out.txt; then
