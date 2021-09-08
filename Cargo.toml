@@ -35,3 +35,12 @@ tempfile = "^3.2"
 [profile.release]
 # We assume we're being delivered via e.g. RPM which supports split debuginfo
 debug = true
+
+[package.metadata.release]
+disable-publish = true
+disable-push = true
+post-release-commit-message = "cargo: development version bump"
+pre-release-commit-message = "cargo: bootupd release {{version}}"
+sign-commit = true
+sign-tag = true
+tag-message = "bootupd {{version}}"
