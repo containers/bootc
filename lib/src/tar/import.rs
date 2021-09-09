@@ -351,27 +351,26 @@ impl<'a> Importer<'a> {
         };
         let objtype = objtype_from_string(objtype)
             .ok_or_else(|| anyhow!("Invalid object type {}", objtype))?;
-        match (objtype, is_xattrs, &self.state) {
-            (ostree::ObjectType::Commit, _, ImportState::Initial) => {
+        if is_xattrs && objtype != ostree::ObjectType::File {
+            return Err(anyhow!("Found xattrs for non-file object type {}", objtype));
+        }
+        match (objtype, &self.state) {
+            (ostree::ObjectType::Commit, ImportState::Initial) => {
                 self.import_commit(entry, &checksum)
             }
-            (ostree::ObjectType::File, true, ImportState::Importing(_)) => {
-                self.import_xattr_ref(entry, checksum)
-            }
-            (ostree::ObjectType::File, false, ImportState::Importing(_)) => {
-                self.import_content_object(entry, &checksum, xattr_ref)
-            }
-            (objtype, false, ImportState::Importing(_)) => {
-                self.import_metadata(entry, &checksum, objtype)
-            }
-            (o, _, ImportState::Initial) => {
-                return Err(anyhow!("Found content object {} before commit", o))
-            }
-            (ostree::ObjectType::Commit, _, ImportState::Importing(c)) => {
+            (ostree::ObjectType::Commit, ImportState::Importing(c)) => {
                 return Err(anyhow!("Found multiple commit objects; original: {}", c))
             }
-            (objtype, true, _) => {
-                return Err(anyhow!("Found xattrs for non-file object type {}", objtype))
+            (ostree::ObjectType::File, ImportState::Importing(_)) => {
+                if is_xattrs {
+                    self.import_xattr_ref(entry, checksum)
+                } else {
+                    self.import_content_object(entry, &checksum, xattr_ref)
+                }
+            }
+            (objtype, ImportState::Importing(_)) => self.import_metadata(entry, &checksum, objtype),
+            (o, ImportState::Initial) => {
+                return Err(anyhow!("Found content object {} before commit", o))
             }
         }
     }
