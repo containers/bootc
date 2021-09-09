@@ -4,7 +4,9 @@ use fn_error_context::context;
 use indoc::indoc;
 use ostree_ext::container::{Config, ImageReference, Transport};
 use ostree_ext::gio;
+use ostree_ext::prelude::*;
 use sh_inline::bash;
+use std::convert::TryFrom;
 use std::{io::Write, process::Command};
 
 const EXAMPLEOS_V0: &[u8] = include_bytes!("fixtures/exampleos.tar.zst");
@@ -69,20 +71,32 @@ fn generate_test_tarball(dir: &Utf8Path) -> Result<Utf8PathBuf> {
     Ok(destpath)
 }
 
-#[tokio::test]
-async fn test_tar_import_export() -> Result<()> {
-    let cancellable = gio::NONE_CANCELLABLE;
-
+fn test_tar_import_prep() -> Result<(tempfile::TempDir, ostree::Repo)> {
     let tempdir = tempfile::tempdir_in("/var/tmp")?;
     let path = Utf8Path::from_path(tempdir.path()).unwrap();
-    let srcdir = &path.join("src");
-    std::fs::create_dir(srcdir)?;
-    let src_tar = tokio::fs::File::open(&generate_test_tarball(srcdir)?).await?;
     let destdir = &path.join("dest");
     std::fs::create_dir(destdir)?;
     let destrepodir = &destdir.join("repo");
     let destrepo = ostree::Repo::new_for_path(destrepodir);
-    destrepo.create(ostree::RepoMode::BareUser, cancellable)?;
+    destrepo.create(ostree::RepoMode::BareUser, gio::NONE_CANCELLABLE)?;
+    Ok((tempdir, destrepo))
+}
+
+#[tokio::test]
+async fn test_tar_import_empty() -> Result<()> {
+    let (_tempdir, destrepo) = test_tar_import_prep()?;
+    let r = ostree_ext::tar::import_tar(&destrepo, tokio::io::empty()).await;
+    assert!(r.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_tar_import_export() -> Result<()> {
+    let (tempdir, destrepo) = test_tar_import_prep()?;
+    let path = Utf8Path::from_path(tempdir.path()).unwrap();
+    let srcdir = &path.join("src");
+    std::fs::create_dir(srcdir)?;
+    let src_tar = tokio::fs::File::open(&generate_test_tarball(srcdir)?).await?;
 
     let imported_commit: String = ostree_ext::tar::import_tar(&destrepo, src_tar).await?;
     let (commitdata, _) = destrepo.load_commit(&imported_commit)?;
@@ -92,6 +106,8 @@ async fn test_tar_import_export() -> Result<()> {
             .unwrap()
             .as_str()
     );
+    // So awesome.  Look how many ways dealing with filenames can fail!
+    let destrepodir = Utf8PathBuf::try_from(destrepo.path().unwrap().path().unwrap()).unwrap();
     bash!(
         r#"
          ostree --repo={destrepodir} ls -R {imported_commit}
