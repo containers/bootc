@@ -4,7 +4,7 @@ use crate::Result;
 use anyhow::{anyhow, Context};
 use camino::Utf8Path;
 use fn_error_context::context;
-use futures::prelude::*;
+use futures_util::TryFutureExt;
 use gio::glib;
 use gio::prelude::*;
 use glib::Variant;
