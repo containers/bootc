@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 name = "ostree-ext"
 readme = "README.md"
 repository = "https://github.com/ostreedev/ostree-rs-ext"
-version = "0.2.2"
+version = "0.3.0"
 
 [dependencies]
 anyhow = "1.0"
@@ -24,7 +24,7 @@ nix = "0.22.0"
 openat = "0.1.20"
 openat-ext = "0.2.0"
 openssl = "0.10.33"
-ostree = { features = ["v2021_2"], version = "0.12.0" }
+ostree = { features = ["v2021_2"], version = "0.13.0" }
 phf = { features = ["macros"], version = "0.9.0" }
 serde = { features = ["derive"], version = "1.0.125" }
 serde_json = "1.0.64"

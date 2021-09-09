@@ -265,9 +265,7 @@ fn impl_export<W: std::io::Write>(
     let commit_v = &commit_v;
     writer.append(ostree::ObjectType::Commit, commit_checksum, commit_v)?;
 
-    if let Some(commitmeta) =
-        crate::ostree_ffi_fixed::read_commit_detached_metadata(repo, commit_checksum, cancellable)?
-    {
+    if let Some(commitmeta) = repo.read_commit_detached_metadata(commit_checksum, cancellable)? {
         writer.append(ostree::ObjectType::CommitMeta, commit_checksum, &commitmeta)?;
     }
 
