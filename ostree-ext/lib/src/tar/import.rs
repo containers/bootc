@@ -116,6 +116,17 @@ fn entry_to_variant<R: std::io::Read, T: StaticVariantType>(
 }
 
 impl<'a> Importer<'a> {
+    fn new(repo: &'a ostree::Repo) -> Self {
+        Self {
+            state: ImportState::Initial,
+            repo,
+            buf: vec![0u8; 16384],
+            xattrs: Default::default(),
+            next_xattrs: None,
+            stats: Default::default(),
+        }
+    }
+
     /// Import a commit object.  Must be in "initial" state.  This transitions into the "importing" state.
     fn import_commit<R: std::io::Read>(
         &mut self,
@@ -439,6 +450,34 @@ impl<'a> Importer<'a> {
         Ok(())
     }
 
+    fn import(&mut self, archive: &mut tar::Archive<impl Read + Send + Unpin>) -> Result<()> {
+        self.repo.prepare_transaction(gio::NONE_CANCELLABLE)?;
+        for entry in archive.entries()? {
+            let entry = entry?;
+            if entry.header().entry_type() == tar::EntryType::Directory {
+                continue;
+            }
+            let path = entry.path()?;
+            let path = &*path;
+            let path = Utf8Path::from_path(path)
+                .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", path))?;
+            let path = if let Ok(p) = path.strip_prefix("sysroot/ostree/repo/") {
+                p
+            } else {
+                continue;
+            };
+
+            if let Ok(p) = path.strip_prefix("objects/") {
+                // Need to clone here, otherwise we borrow from the moved entry
+                let p = &p.to_owned();
+                self.import_object(entry, p)?;
+            } else if path.strip_prefix("xattrs/").is_ok() {
+                self.import_xattrs(entry)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Consume this importer and return the imported OSTree commit checksum.
     fn commit(mut self) -> Result<String> {
         self.repo.commit_transaction(gio::NONE_CANCELLABLE)?;
@@ -468,41 +507,9 @@ pub async fn import_tar(
     let pipein = crate::async_util::async_read_to_sync(src);
     let repo = repo.clone();
     let import = tokio::task::spawn_blocking(move || {
-        let repo = &repo;
-        let mut importer = Importer {
-            state: ImportState::Initial,
-            repo,
-            buf: vec![0u8; 16384],
-            xattrs: Default::default(),
-            next_xattrs: None,
-            stats: Default::default(),
-        };
-        repo.prepare_transaction(gio::NONE_CANCELLABLE)?;
         let mut archive = tar::Archive::new(pipein);
-        for entry in archive.entries()? {
-            let entry = entry?;
-            if entry.header().entry_type() == tar::EntryType::Directory {
-                continue;
-            }
-            let path = entry.path()?;
-            let path = &*path;
-            let path = Utf8Path::from_path(path)
-                .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", path))?;
-            let path = if let Ok(p) = path.strip_prefix("sysroot/ostree/repo/") {
-                p
-            } else {
-                continue;
-            };
-
-            if let Ok(p) = path.strip_prefix("objects/") {
-                // Need to clone here, otherwise we borrow from the moved entry
-                let p = &p.to_owned();
-                importer.import_object(entry, p)?;
-            } else if path.strip_prefix("xattrs/").is_ok() {
-                importer.import_xattrs(entry)?;
-            }
-        }
-
+        let mut importer = Importer::new(&repo);
+        importer.import(&mut archive)?;
         importer.commit()
     })
     .map_err(anyhow::Error::msg);
