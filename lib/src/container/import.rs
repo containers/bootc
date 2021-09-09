@@ -4,7 +4,7 @@ use super::*;
 use anyhow::{anyhow, Context};
 use camino::Utf8Path;
 use fn_error_context::context;
-use futures::prelude::*;
+use futures_util::{Future, FutureExt, TryFutureExt};
 use std::io::prelude::*;
 use std::pin::Pin;
 use std::process::Stdio;
