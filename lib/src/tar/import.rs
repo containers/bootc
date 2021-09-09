@@ -44,9 +44,9 @@ struct ImportStats {
 }
 
 /// Importer machine.
-struct Importer<'a> {
+struct Importer {
     state: ImportState,
-    repo: &'a ostree::Repo,
+    repo: ostree::Repo,
     xattrs: HashMap<String, glib::Variant>,
     next_xattrs: Option<(String, String)>,
 
@@ -56,7 +56,7 @@ struct Importer<'a> {
     stats: ImportStats,
 }
 
-impl<'a> Drop for Importer<'a> {
+impl Drop for Importer {
     fn drop(&mut self) {
         let _ = self.repo.abort_transaction(gio::NONE_CANCELLABLE);
     }
@@ -115,11 +115,11 @@ fn entry_to_variant<R: std::io::Read, T: StaticVariantType>(
     Ok(v.normal_form())
 }
 
-impl<'a> Importer<'a> {
-    fn new(repo: &'a ostree::Repo) -> Self {
+impl Importer {
+    fn new(repo: &ostree::Repo) -> Self {
         Self {
             state: ImportState::Initial,
-            repo,
+            repo: repo.clone(),
             buf: vec![0u8; 16384],
             xattrs: Default::default(),
             next_xattrs: None,
