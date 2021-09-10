@@ -138,10 +138,10 @@ async fn tar_import(opts: &ImportOpts) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, opts.repo.as_str(), gio::NONE_CANCELLABLE)?;
     let imported = if let Some(path) = opts.path.as_ref() {
         let instream = tokio::fs::File::open(path).await?;
-        crate::tar::import_tar(repo, instream).await?
+        crate::tar::import_tar(repo, instream, None).await?
     } else {
         let stdin = tokio::io::stdin();
-        crate::tar::import_tar(repo, stdin).await?
+        crate::tar::import_tar(repo, stdin, None).await?
     };
     println!("Imported: {}", imported);
     Ok(())

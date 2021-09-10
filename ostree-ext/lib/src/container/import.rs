@@ -300,7 +300,7 @@ pub async fn import(
     event!(Level::DEBUG, "target blob: {}", layerid);
     let (blob, worker) = fetch_layer(imgref, layerid.as_str(), progress).await?;
     let blob = tokio::io::BufReader::new(blob);
-    let import = crate::tar::import_tar(repo, blob);
+    let import = crate::tar::import_tar(repo, blob, None);
     let (ostree_commit, worker) = tokio::join!(import, worker);
     let ostree_commit = ostree_commit?;
     let _: () = worker?;
