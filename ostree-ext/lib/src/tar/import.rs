@@ -174,6 +174,14 @@ impl Importer {
         }
     }
 
+    fn parse_metadata_entry(path: &Utf8Path) -> Result<(String, ostree::ObjectType)> {
+        let (parentname, name, objtype) = parse_object_entry_path(path)?;
+        let checksum = parse_checksum(parentname, name)?;
+        let objtype = objtype_from_string(objtype)
+            .ok_or_else(|| anyhow!("Invalid object type {}", objtype))?;
+        Ok((checksum, objtype))
+    }
+
     /// Import a metadata object.
     fn import_metadata<R: std::io::Read>(
         &mut self,
@@ -478,12 +486,11 @@ impl Importer {
                 commit_ent.header().entry_type()
             ));
         }
-        let (parentname, name, objtype) = parse_object_entry_path(&commit_path)?;
-        let checksum = parse_checksum(parentname, name)?;
-        if objtype != "commit" {
+        let (checksum, objtype) = Self::parse_metadata_entry(&commit_path)?;
+        if objtype != ostree::ObjectType::Commit {
             return Err(anyhow!("Expected commit object, not {:?}", objtype));
         }
-        self.import_metadata(commit_ent, &checksum, ostree::ObjectType::Commit)?;
+        self.import_metadata(commit_ent, &checksum, objtype)?;
         event!(Level::DEBUG, "Imported {}.commit", checksum);
 
         for entry in ents {
@@ -532,6 +539,19 @@ pub async fn import_tar(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_metadata_entry() {
+        let c = "a8/6d80a3e9ff77c2e3144c787b7769b300f91ffd770221aac27bab854960b964";
+        let invalid = format!("{}.blah", c);
+        for &k in &["", "42", c, &invalid] {
+            assert!(Importer::parse_metadata_entry(k.into()).is_err())
+        }
+        let valid = format!("{}.commit", c);
+        let r = Importer::parse_metadata_entry(valid.as_str().into()).unwrap();
+        assert_eq!(r.0, c.replace('/', ""));
+        assert_eq!(r.1, ostree::ObjectType::Commit);
+    }
 
     #[test]
     fn test_validate_sha256() -> Result<()> {
