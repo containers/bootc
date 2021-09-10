@@ -41,6 +41,7 @@ struct ImportStats {
 /// Importer machine.
 struct Importer {
     repo: ostree::Repo,
+    remote: Option<String>,
     xattrs: HashMap<String, glib::Variant>,
     next_xattrs: Option<(String, String)>,
 
@@ -146,9 +147,10 @@ fn parse_checksum(parent: &str, name: &Utf8Path) -> Result<String> {
 }
 
 impl Importer {
-    fn new(repo: &ostree::Repo) -> Self {
+    fn new(repo: &ostree::Repo, remote: Option<String>) -> Self {
         Self {
             repo: repo.clone(),
+            remote,
             buf: vec![0u8; 16384],
             xattrs: Default::default(),
             next_xattrs: None,
@@ -198,24 +200,14 @@ impl Importer {
                 self.stats.dirmeta += 1;
                 entry_to_variant::<_, ostree::DirmetaVariantType>(entry, checksum)?
             }
-            ostree::ObjectType::Commit => {
-                entry_to_variant::<_, ostree::CommitVariantType>(entry, checksum)?
-            }
-            ostree::ObjectType::CommitMeta => entry_to_variant::<
-                _,
-                std::collections::HashMap<String, glib::Variant>,
-            >(entry, checksum)?,
             o => return Err(anyhow!("Invalid metadata object type; {:?}", o)),
         };
-        if objtype == ostree::ObjectType::CommitMeta {
+        // FIXME validate here that this checksum was in the set we expected.
+        // https://github.com/ostreedev/ostree-rs-ext/issues/1
+        let actual =
             self.repo
-                .write_commit_detached_metadata(checksum, Some(&v), gio::NONE_CANCELLABLE)?;
-        } else {
-            // FIXME validate here https://github.com/ostreedev/ostree-rs-ext/issues/1
-            let _ = self
-                .repo
                 .write_metadata(objtype, Some(checksum), &v, gio::NONE_CANCELLABLE)?;
-        }
+        assert_eq!(actual.to_hex(), checksum);
         Ok(())
     }
 
@@ -490,8 +482,88 @@ impl Importer {
         if objtype != ostree::ObjectType::Commit {
             return Err(anyhow!("Expected commit object, not {:?}", objtype));
         }
-        self.import_metadata(commit_ent, &checksum, objtype)?;
-        event!(Level::DEBUG, "Imported {}.commit", checksum);
+        let commit = entry_to_variant::<_, ostree::CommitVariantType>(commit_ent, &checksum)?;
+
+        let (next_ent, nextent_path) = ents
+            .next()
+            .ok_or_else(|| anyhow!("End of stream after commit object"))??;
+        let (next_checksum, next_objtype) = Self::parse_metadata_entry(&nextent_path)?;
+
+        if let Some(remote) = self.remote.as_deref() {
+            if next_checksum != checksum {
+                return Err(anyhow!(
+                    "Expected commitmeta checksum {}, found {}",
+                    checksum,
+                    next_checksum
+                ));
+            }
+            if next_objtype != ostree::ObjectType::CommitMeta {
+                return Err(anyhow!(
+                    "Using remote {} for verification; Expected commitmeta object, not {:?}",
+                    remote,
+                    objtype
+                ));
+            }
+            let commitmeta = entry_to_variant::<_, std::collections::HashMap<String, glib::Variant>>(
+                next_ent,
+                &next_checksum,
+            )?;
+
+            // Now that we have both the commit and detached metadata in memory, verify that
+            // the signatures in the detached metadata correctly sign the commit.
+            self.repo.signature_verify_commit_data(
+                remote,
+                &commit.data_as_bytes(),
+                &commitmeta.data_as_bytes(),
+                ostree::RepoVerifyFlags::empty(),
+            )?;
+
+            // Write the commit object, which also verifies its checksum.
+            let actual_checksum = self.repo.write_metadata(
+                objtype,
+                Some(&checksum),
+                &commit,
+                gio::NONE_CANCELLABLE,
+            )?;
+            assert_eq!(actual_checksum.to_hex(), checksum);
+            event!(Level::DEBUG, "Imported {}.commit", checksum);
+
+            // Finally, write the detached metadata.
+            self.repo.write_commit_detached_metadata(
+                &checksum,
+                Some(&commitmeta),
+                gio::NONE_CANCELLABLE,
+            )?;
+        } else {
+            // We're not doing any validation of the commit, so go ahead and write it.
+            let actual_checksum = self.repo.write_metadata(
+                objtype,
+                Some(&checksum),
+                &commit,
+                gio::NONE_CANCELLABLE,
+            )?;
+            assert_eq!(actual_checksum.to_hex(), checksum);
+            event!(Level::DEBUG, "Imported {}.commit", checksum);
+
+            // Write the next object, whether it's commit metadata or not.
+            let (meta_checksum, meta_objtype) = Self::parse_metadata_entry(&nextent_path)?;
+            match meta_objtype {
+                ostree::ObjectType::CommitMeta => {
+                    let commitmeta = entry_to_variant::<
+                        _,
+                        std::collections::HashMap<String, glib::Variant>,
+                    >(next_ent, &meta_checksum)?;
+                    self.repo.write_commit_detached_metadata(
+                        &checksum,
+                        Some(&commitmeta),
+                        gio::NONE_CANCELLABLE,
+                    )?;
+                }
+                _ => {
+                    self.import_object(next_ent, &nextent_path)?;
+                }
+            }
+        }
 
         for entry in ents {
             let (entry, path) = entry?;
@@ -518,17 +590,26 @@ fn validate_sha256(s: &str) -> Result<()> {
     Ok(())
 }
 
+/// Configuration for tar import.
+#[derive(Debug, Default)]
+pub struct TarImportOptions {
+    /// Name of the remote to use for signature verification.
+    pub remote: Option<String>,
+}
+
 /// Read the contents of a tarball and import the ostree commit inside.  The sha56 of the imported commit will be returned.
 #[instrument(skip(repo, src))]
 pub async fn import_tar(
     repo: &ostree::Repo,
     src: impl tokio::io::AsyncRead + Send + Unpin + 'static,
+    options: Option<TarImportOptions>,
 ) -> Result<String> {
+    let options = options.unwrap_or_default();
     let pipein = crate::async_util::async_read_to_sync(src);
     let repo = repo.clone();
     let import = tokio::task::spawn_blocking(move || {
         let mut archive = tar::Archive::new(pipein);
-        let importer = Importer::new(&repo);
+        let importer = Importer::new(&repo, options.remote);
         importer.import(&mut archive)
     })
     .map_err(anyhow::Error::msg);
