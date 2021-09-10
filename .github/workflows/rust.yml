@@ -21,6 +21,8 @@ jobs:
     steps:
     - name: Install skopeo
       run: yum -y install skopeo
+    - name: Update ostree
+      run: yum -y --enablerepo=updates-testing update ostree-devel
     - uses: actions/checkout@v2
     - name: Format
       run: cargo fmt -- --check -l
