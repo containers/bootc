@@ -3,6 +3,7 @@
 use crate::Result;
 use anyhow::{anyhow, Context};
 use camino::Utf8Path;
+use camino::Utf8PathBuf;
 use fn_error_context::context;
 use futures_util::TryFutureExt;
 use gio::glib;
@@ -25,14 +26,8 @@ const MAX_METADATA_SIZE: u32 = 10 * 1024 * 1024;
 /// https://stackoverflow.com/questions/258091/when-should-i-use-mmap-for-file-access
 const SMALL_REGFILE_SIZE: usize = 127 * 1024;
 
-/// State tracker for the importer.  The main goal is to reject multiple
-/// commit objects, as well as finding metadata/content before the commit.
-#[derive(Debug, PartialEq, Eq)]
-enum ImportState {
-    Initial,
-    Importing(String),
-}
-
+// The prefix for filenames that contain content we actually look at.
+const REPO_PREFIX: &str = "sysroot/ostree/repo/";
 /// Statistics from import.
 #[derive(Debug, Default)]
 struct ImportStats {
@@ -44,9 +39,8 @@ struct ImportStats {
 }
 
 /// Importer machine.
-struct Importer<'a> {
-    state: ImportState,
-    repo: &'a ostree::Repo,
+struct Importer {
+    repo: ostree::Repo,
     xattrs: HashMap<String, glib::Variant>,
     next_xattrs: Option<(String, String)>,
 
@@ -56,7 +50,7 @@ struct Importer<'a> {
     stats: ImportStats,
 }
 
-impl<'a> Drop for Importer<'a> {
+impl Drop for Importer {
     fn drop(&mut self) {
         let _ = self.repo.abort_transaction(gio::NONE_CANCELLABLE);
     }
@@ -115,18 +109,69 @@ fn entry_to_variant<R: std::io::Read, T: StaticVariantType>(
     Ok(v.normal_form())
 }
 
-impl<'a> Importer<'a> {
-    /// Import a commit object.  Must be in "initial" state.  This transitions into the "importing" state.
-    fn import_commit<R: std::io::Read>(
-        &mut self,
-        entry: tar::Entry<R>,
-        checksum: &str,
-    ) -> Result<()> {
-        assert_eq!(self.state, ImportState::Initial);
-        self.import_metadata(entry, checksum, ostree::ObjectType::Commit)?;
-        event!(Level::DEBUG, "Imported {}.commit", checksum);
-        self.state = ImportState::Importing(checksum.to_string());
-        Ok(())
+/// Parse an object path into (parent, rest, objtype).
+/// Normal ostree object paths look like 00/1234.commit.
+/// In the tar format, we may also see 00/1234.file.xattrs.
+fn parse_object_entry_path(path: &Utf8Path) -> Result<(&str, &Utf8Path, &str)> {
+    // The "sharded" commit directory.
+    let parentname = path
+        .parent()
+        .map(|p| p.file_name())
+        .flatten()
+        .ok_or_else(|| anyhow!("Invalid path (no parent) {}", path))?;
+    if parentname.len() != 2 {
+        return Err(anyhow!("Invalid checksum parent {}", parentname));
+    }
+    let name = path
+        .file_name()
+        .map(Utf8Path::new)
+        .ok_or_else(|| anyhow!("Invalid path (dir) {}", path))?;
+    let objtype = name
+        .extension()
+        .ok_or_else(|| anyhow!("Invalid objpath {}", path))?;
+    Ok((parentname, name, objtype))
+}
+
+fn parse_checksum(parent: &str, name: &Utf8Path) -> Result<String> {
+    let checksum_rest = name
+        .file_stem()
+        .ok_or_else(|| anyhow!("Invalid object path part {}", name))?;
+
+    if checksum_rest.len() != 62 {
+        return Err(anyhow!("Invalid checksum part {}", checksum_rest));
+    }
+    let checksum = format!("{}{}", parent, checksum_rest);
+    validate_sha256(&checksum)?;
+    Ok(checksum)
+}
+
+impl Importer {
+    fn new(repo: &ostree::Repo) -> Self {
+        Self {
+            repo: repo.clone(),
+            buf: vec![0u8; 16384],
+            xattrs: Default::default(),
+            next_xattrs: None,
+            stats: Default::default(),
+        }
+    }
+
+    // Given a tar entry, filter it out if it doesn't start with the repository prefix.
+    // It is an error if the filename is invalid UTF-8.  If it is valid UTF-8, return
+    // an owned copy of the path.
+    fn filter_entry<R: std::io::Read>(
+        e: tar::Entry<R>,
+    ) -> Result<Option<(tar::Entry<R>, Utf8PathBuf)>> {
+        let orig_path = e.path()?;
+        let path = Utf8Path::from_path(&*orig_path)
+            .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", orig_path))?;
+        // Ignore the regular non-object file hardlinks we inject
+        if let Ok(path) = path.strip_prefix(REPO_PREFIX) {
+            let path = path.into();
+            Ok(Some((e, path)))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Import a metadata object.
@@ -295,21 +340,8 @@ impl<'a> Importer<'a> {
         entry: tar::Entry<'b, R>,
         path: &Utf8Path,
     ) -> Result<()> {
-        let parentname = path
-            .parent()
-            .map(|p| p.file_name())
-            .flatten()
-            .ok_or_else(|| anyhow!("Invalid path (no parent) {}", path))?;
-        if parentname.len() != 2 {
-            return Err(anyhow!("Invalid checksum parent {}", parentname));
-        }
-        let mut name = path
-            .file_name()
-            .map(Utf8Path::new)
-            .ok_or_else(|| anyhow!("Invalid path (dir) {}", path))?;
-        let mut objtype = name
-            .extension()
-            .ok_or_else(|| anyhow!("Invalid objpath {}", path))?;
+        let (parentname, mut name, mut objtype) = parse_object_entry_path(path)?;
+
         let is_xattrs = objtype == "xattrs";
         let xattrs = self.next_xattrs.take();
         if is_xattrs {
@@ -324,15 +356,7 @@ impl<'a> Importer<'a> {
                 .extension()
                 .ok_or_else(|| anyhow!("Invalid objpath {}", path))?;
         }
-        let checksum_rest = name
-            .file_stem()
-            .ok_or_else(|| anyhow!("Invalid objpath {}", path))?;
-
-        if checksum_rest.len() != 62 {
-            return Err(anyhow!("Invalid checksum rest {}", name));
-        }
-        let checksum = format!("{}{}", parentname, checksum_rest);
-        validate_sha256(&checksum)?;
+        let checksum = parse_checksum(parentname, name)?;
         let xattr_ref = if let Some((xattr_target, xattr_objref)) = xattrs {
             if xattr_target.as_str() != checksum.as_str() {
                 return Err(anyhow!(
@@ -354,24 +378,18 @@ impl<'a> Importer<'a> {
         if is_xattrs && objtype != ostree::ObjectType::File {
             return Err(anyhow!("Found xattrs for non-file object type {}", objtype));
         }
-        match (objtype, &self.state) {
-            (ostree::ObjectType::Commit, ImportState::Initial) => {
-                self.import_commit(entry, &checksum)
+        match objtype {
+            ostree::ObjectType::Commit => {
+                return Err(anyhow!("Found multiple commit objects"));
             }
-            (ostree::ObjectType::Commit, ImportState::Importing(c)) => {
-                return Err(anyhow!("Found multiple commit objects; original: {}", c))
-            }
-            (ostree::ObjectType::File, ImportState::Importing(_)) => {
+            ostree::ObjectType::File => {
                 if is_xattrs {
                     self.import_xattr_ref(entry, checksum)
                 } else {
                     self.import_content_object(entry, &checksum, xattr_ref)
                 }
             }
-            (objtype, ImportState::Importing(_)) => self.import_metadata(entry, &checksum, objtype),
-            (o, ImportState::Initial) => {
-                return Err(anyhow!("Found content object {} before commit", o))
-            }
+            objtype => self.import_metadata(entry, &checksum, objtype),
         }
     }
 
@@ -403,10 +421,6 @@ impl<'a> Importer<'a> {
 
     /// Process a special /xattrs/ entry (sha256 of xattr values).
     fn import_xattrs<R: std::io::Read>(&mut self, mut entry: tar::Entry<R>) -> Result<()> {
-        match &self.state {
-            ImportState::Initial => return Err(anyhow!("Found xattr object {} before commit")),
-            ImportState::Importing(_) => {}
-        }
         let checksum = {
             let path = entry.path()?;
             let name = path
@@ -439,13 +453,51 @@ impl<'a> Importer<'a> {
         Ok(())
     }
 
-    /// Consume this importer and return the imported OSTree commit checksum.
-    fn commit(mut self) -> Result<String> {
-        self.repo.commit_transaction(gio::NONE_CANCELLABLE)?;
-        match std::mem::replace(&mut self.state, ImportState::Initial) {
-            ImportState::Importing(c) => Ok(c),
-            ImportState::Initial => Err(anyhow!("Failed to find a commit object to import")),
+    fn import(mut self, archive: &mut tar::Archive<impl Read + Send + Unpin>) -> Result<String> {
+        self.repo.prepare_transaction(gio::NONE_CANCELLABLE)?;
+
+        // Create an iterator that skips over directories; we just care about the file names.
+        let mut ents = archive.entries()?.filter_map(|e| match e {
+            Ok(e) => {
+                if e.header().entry_type() == tar::EntryType::Directory {
+                    return None;
+                }
+                Self::filter_entry(e).transpose()
+            }
+            Err(e) => Some(Err(anyhow::Error::msg(e))),
+        });
+
+        // Read the commit object.
+        let (commit_ent, commit_path) = ents
+            .next()
+            .ok_or_else(|| anyhow!("Commit object not found"))??;
+
+        if commit_ent.header().entry_type() != tar::EntryType::Regular {
+            return Err(anyhow!(
+                "Expected regular file for commit object, not {:?}",
+                commit_ent.header().entry_type()
+            ));
         }
+        let (parentname, name, objtype) = parse_object_entry_path(&commit_path)?;
+        let checksum = parse_checksum(parentname, name)?;
+        if objtype != "commit" {
+            return Err(anyhow!("Expected commit object, not {:?}", objtype));
+        }
+        self.import_metadata(commit_ent, &checksum, ostree::ObjectType::Commit)?;
+        event!(Level::DEBUG, "Imported {}.commit", checksum);
+
+        for entry in ents {
+            let (entry, path) = entry?;
+
+            if let Ok(p) = path.strip_prefix("objects/") {
+                self.import_object(entry, p)?;
+            } else if path.strip_prefix("xattrs/").is_ok() {
+                self.import_xattrs(entry)?;
+            }
+        }
+        self.repo.commit_transaction(gio::NONE_CANCELLABLE)?;
+
+        Ok(checksum)
     }
 }
 
@@ -468,42 +520,9 @@ pub async fn import_tar(
     let pipein = crate::async_util::async_read_to_sync(src);
     let repo = repo.clone();
     let import = tokio::task::spawn_blocking(move || {
-        let repo = &repo;
-        let mut importer = Importer {
-            state: ImportState::Initial,
-            repo,
-            buf: vec![0u8; 16384],
-            xattrs: Default::default(),
-            next_xattrs: None,
-            stats: Default::default(),
-        };
-        repo.prepare_transaction(gio::NONE_CANCELLABLE)?;
         let mut archive = tar::Archive::new(pipein);
-        for entry in archive.entries()? {
-            let entry = entry?;
-            if entry.header().entry_type() == tar::EntryType::Directory {
-                continue;
-            }
-            let path = entry.path()?;
-            let path = &*path;
-            let path = Utf8Path::from_path(path)
-                .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", path))?;
-            let path = if let Ok(p) = path.strip_prefix("sysroot/ostree/repo/") {
-                p
-            } else {
-                continue;
-            };
-
-            if let Ok(p) = path.strip_prefix("objects/") {
-                // Need to clone here, otherwise we borrow from the moved entry
-                let p = &p.to_owned();
-                importer.import_object(entry, p)?;
-            } else if path.strip_prefix("xattrs/").is_ok() {
-                importer.import_xattrs(entry)?;
-            }
-        }
-
-        importer.commit()
+        let importer = Importer::new(&repo);
+        importer.import(&mut archive)
     })
     .map_err(anyhow::Error::msg);
     let import: String = import.await??;
