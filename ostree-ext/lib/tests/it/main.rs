@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use indoc::indoc;
-use ostree_ext::container::{Config, ImageReference, Transport};
+use ostree_ext::container::{Config, ImageReference, ImportOptions, Transport};
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
 use sh_inline::bash;
@@ -21,7 +21,7 @@ const EXAMPLEOS_CONTENT_CHECKSUM: &str =
 
 fn assert_err_contains<T>(r: Result<T>, s: impl AsRef<str>) {
     let s = s.as_ref();
-    let msg = r.err().unwrap().to_string();
+    let msg = format!("{:#}", r.err().unwrap());
     if !msg.contains(s) {
         panic!(r#"Error message "{}" did not contain "{}""#, msg, s);
     }
@@ -232,13 +232,9 @@ fn skopeo_inspect(imgref: &str) -> Result<String> {
 #[tokio::test]
 async fn test_container_import_export() -> Result<()> {
     let cancellable = gio::NONE_CANCELLABLE;
-
-    let tempdir = tempfile::tempdir_in("/var/tmp")?;
-    let path = Utf8Path::from_path(tempdir.path()).unwrap();
-    let srcdir = &path.join("src");
+    let fixture = Fixture::new()?;
+    let srcdir = &fixture.path.join("src");
     std::fs::create_dir(srcdir)?;
-    let destdir = &path.join("dest");
-    std::fs::create_dir(destdir)?;
     let srcrepopath = &generate_test_repo(srcdir)?;
     let srcrepo = &ostree::Repo::new_for_path(srcrepopath);
     srcrepo.open(cancellable)?;
@@ -246,8 +242,6 @@ async fn test_container_import_export() -> Result<()> {
         .resolve_rev(TESTREF, false)
         .context("Failed to resolve ref")?
         .unwrap();
-    let destrepo = &ostree::Repo::new_for_path(destdir);
-    destrepo.create(ostree::RepoMode::BareUser, cancellable)?;
 
     let srcoci_path = &srcdir.join("oci");
     let srcoci = ImageReference {
@@ -277,10 +271,47 @@ async fn test_container_import_export() -> Result<()> {
     let inspect = ostree_ext::container::fetch_manifest_info(&srcoci).await?;
     assert_eq!(inspect.manifest_digest, digest);
 
-    let import = ostree_ext::container::import(destrepo, &srcoci, None)
+    // No remote matching
+    let opts = ImportOptions {
+        remote: Some("unknownremote".to_string()),
+        ..Default::default()
+    };
+    let r = ostree_ext::container::import(&fixture.destrepo, &srcoci, Some(opts))
+        .await
+        .context("importing");
+    assert_err_contains(r, r#"Remote "unknownremote" not found"#);
+
+    // Test with a signature
+    let opts = glib::VariantDict::new(None);
+    opts.insert("gpg-verify", &true);
+    opts.insert("custom-backend", &"ostree-rs-ext");
+    fixture
+        .destrepo
+        .remote_add("myremote", None, Some(&opts.end()), gio::NONE_CANCELLABLE)?;
+    bash!(
+        "ostree --repo={repo} remote gpg-import --stdin myremote < {p}/gpghome/key1.asc",
+        repo = fixture.destrepo_path.as_str(),
+        p = srcdir.as_str()
+    )?;
+
+    let opts = ImportOptions {
+        remote: Some("myremote".to_string()),
+        ..Default::default()
+    };
+
+    let import = ostree_ext::container::import(&fixture.destrepo, &srcoci, Some(opts))
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
+
+    // Test without signature verification
+    // Create a new repo
+    let fixture = Fixture::new()?;
+    let import = ostree_ext::container::import(&fixture.destrepo, &srcoci, None)
+        .await
+        .context("importing")?;
+    assert_eq!(import.ostree_commit, testrev.as_str());
+
     Ok(())
 }
 
