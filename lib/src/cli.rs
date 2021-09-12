@@ -12,7 +12,7 @@ use std::convert::TryInto;
 use std::ffi::OsString;
 use structopt::StructOpt;
 
-use crate::container::Config;
+use crate::container::{Config, ImportOptions};
 
 #[derive(Debug, StructOpt)]
 struct BuildOpts {
@@ -166,7 +166,11 @@ async fn container_import(repo: &str, imgref: &str, write_ref: Option<&str>) -> 
     pb.set_style(style.template("{spinner} {prefix} {msg}"));
     pb.enable_steady_tick(200);
     pb.set_message("Downloading...");
-    let import = crate::container::import(repo, &imgref, Some(tx_progress));
+    let opts = ImportOptions {
+        progress: Some(tx_progress),
+        ..Default::default()
+    };
+    let import = crate::container::import(repo, &imgref, Some(opts));
     tokio::pin!(import);
     tokio::pin!(rx_progress);
     let import = loop {

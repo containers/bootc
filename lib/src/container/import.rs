@@ -286,21 +286,34 @@ fn find_layer_blobid(manifest: &oci::Manifest) -> Result<String> {
     }
 }
 
+/// Configuration for container fetches.
+#[derive(Debug, Default)]
+pub struct ImportOptions {
+    /// Name of the remote to use for signature verification.
+    pub remote: Option<String>,
+    /// Channel which will receive progress updates
+    pub progress: Option<tokio::sync::watch::Sender<ImportProgress>>,
+}
+
 /// Fetch a container image and import its embedded OSTree commit.
 #[context("Importing {}", imgref)]
-#[instrument(skip(repo, progress))]
+#[instrument(skip(repo, options))]
 pub async fn import(
     repo: &ostree::Repo,
     imgref: &ImageReference,
-    progress: Option<tokio::sync::watch::Sender<ImportProgress>>,
+    options: Option<ImportOptions>,
 ) -> Result<Import> {
+    let options = options.unwrap_or_default();
     let (manifest, image_digest) = fetch_manifest(imgref).await?;
     let manifest = &manifest;
     let layerid = find_layer_blobid(manifest)?;
     event!(Level::DEBUG, "target blob: {}", layerid);
-    let (blob, worker) = fetch_layer(imgref, layerid.as_str(), progress).await?;
+    let (blob, worker) = fetch_layer(imgref, layerid.as_str(), options.progress).await?;
     let blob = tokio::io::BufReader::new(blob);
-    let import = crate::tar::import_tar(repo, blob, None);
+    let taropts = crate::tar::TarImportOptions {
+        remote: options.remote,
+    };
+    let import = crate::tar::import_tar(repo, blob, Some(taropts));
     let (ostree_commit, worker) = tokio::join!(import, worker);
     let ostree_commit = ostree_commit?;
     let _: () = worker?;
