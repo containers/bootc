@@ -12,7 +12,7 @@ use std::convert::TryInto;
 use std::ffi::OsString;
 use structopt::StructOpt;
 
-use crate::container::Config;
+use crate::container::{Config, ImportOptions};
 
 #[derive(Debug, StructOpt)]
 struct BuildOpts {
@@ -138,10 +138,10 @@ async fn tar_import(opts: &ImportOpts) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, opts.repo.as_str(), gio::NONE_CANCELLABLE)?;
     let imported = if let Some(path) = opts.path.as_ref() {
         let instream = tokio::fs::File::open(path).await?;
-        crate::tar::import_tar(repo, instream).await?
+        crate::tar::import_tar(repo, instream, None).await?
     } else {
         let stdin = tokio::io::stdin();
-        crate::tar::import_tar(repo, stdin).await?
+        crate::tar::import_tar(repo, stdin, None).await?
     };
     println!("Imported: {}", imported);
     Ok(())
@@ -166,7 +166,11 @@ async fn container_import(repo: &str, imgref: &str, write_ref: Option<&str>) -> 
     pb.set_style(style.template("{spinner} {prefix} {msg}"));
     pb.enable_steady_tick(200);
     pb.set_message("Downloading...");
-    let import = crate::container::import(repo, &imgref, Some(tx_progress));
+    let opts = ImportOptions {
+        progress: Some(tx_progress),
+        ..Default::default()
+    };
+    let import = crate::container::import(repo, &imgref, Some(opts));
     tokio::pin!(import);
     tokio::pin!(rx_progress);
     let import = loop {

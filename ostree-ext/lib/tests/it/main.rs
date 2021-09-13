@@ -2,32 +2,54 @@ use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use indoc::indoc;
-use ostree_ext::container::{Config, ImageReference, Transport};
-use ostree_ext::gio;
-use ostree_ext::prelude::*;
+use ostree_ext::container::{Config, ImageReference, ImportOptions, Transport};
+use ostree_ext::tar::TarImportOptions;
+use ostree_ext::{gio, glib};
 use sh_inline::bash;
-use std::convert::TryFrom;
+use std::convert::TryInto;
 use std::{io::Write, process::Command};
 
+const OSTREE_GPG_HOME: &[u8] = include_bytes!("fixtures/ostree-gpg-test-home.tar.gz");
+const TEST_GPG_KEYID_1: &str = "7FCA23D8472CDAFA";
+#[allow(dead_code)]
+const TEST_GPG_KEYFPR_1: &str = "5E65DE75AB1C501862D476347FCA23D8472CDAFA";
 const EXAMPLEOS_V0: &[u8] = include_bytes!("fixtures/exampleos.tar.zst");
 const EXAMPLEOS_V1: &[u8] = include_bytes!("fixtures/exampleos-v1.tar.zst");
 const TESTREF: &str = "exampleos/x86_64/stable";
 const EXAMPLEOS_CONTENT_CHECKSUM: &str =
     "0ef7461f9db15e1d8bd8921abf20694225fbaa4462cadf7deed8ea0e43162120";
 
+fn assert_err_contains<T>(r: Result<T>, s: impl AsRef<str>) {
+    let s = s.as_ref();
+    let msg = format!("{:#}", r.err().unwrap());
+    if !msg.contains(s) {
+        panic!(r#"Error message "{}" did not contain "{}""#, msg, s);
+    }
+}
+
 #[context("Generating test repo")]
 fn generate_test_repo(dir: &Utf8Path) -> Result<Utf8PathBuf> {
     let src_tarpath = &dir.join("exampleos.tar.zst");
     std::fs::write(src_tarpath, EXAMPLEOS_V0)?;
 
+    let gpghome = dir.join("gpghome");
+    {
+        let dec = flate2::read::GzDecoder::new(OSTREE_GPG_HOME);
+        let mut a = tar::Archive::new(dec);
+        a.unpack(&gpghome)?;
+    };
+
     bash!(
         indoc! {"
         cd {dir}
         ostree --repo=repo init --mode=archive
-        ostree --repo=repo commit -b {testref} --bootable --add-metadata-string=version=42.0 --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst
+        ostree --repo=repo commit -b {testref} --bootable --add-metadata-string=version=42.0 --gpg-homedir={gpghome} --gpg-sign={keyid} \
+               --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst
         ostree --repo=repo show {testref}
     "},
         testref = TESTREF,
+        gpghome = gpghome.as_str(),
+        keyid = TEST_GPG_KEYID_1,
         dir = dir.as_str()
     )?;
     std::fs::remove_file(src_tarpath)?;
@@ -71,50 +93,129 @@ fn generate_test_tarball(dir: &Utf8Path) -> Result<Utf8PathBuf> {
     Ok(destpath)
 }
 
-fn test_tar_import_prep() -> Result<(tempfile::TempDir, ostree::Repo)> {
-    let tempdir = tempfile::tempdir_in("/var/tmp")?;
-    let path = Utf8Path::from_path(tempdir.path()).unwrap();
-    let destdir = &path.join("dest");
-    std::fs::create_dir(destdir)?;
-    let destrepodir = &destdir.join("repo");
-    let destrepo = ostree::Repo::new_for_path(destrepodir);
-    destrepo.create(ostree::RepoMode::BareUser, gio::NONE_CANCELLABLE)?;
-    Ok((tempdir, destrepo))
+struct Fixture {
+    // Just holds a reference
+    _tempdir: tempfile::TempDir,
+    path: Utf8PathBuf,
+    destrepo: ostree::Repo,
+    destrepo_path: Utf8PathBuf,
+}
+
+impl Fixture {
+    fn new() -> Result<Self> {
+        let _tempdir = tempfile::tempdir_in("/var/tmp")?;
+        let path: &Utf8Path = _tempdir.path().try_into().unwrap();
+        let path = path.to_path_buf();
+        let destdir = &path.join("dest");
+        std::fs::create_dir(destdir)?;
+        let destrepo_path = destdir.join("repo");
+        let destrepo = ostree::Repo::new_for_path(&destrepo_path);
+        destrepo.create(ostree::RepoMode::BareUser, gio::NONE_CANCELLABLE)?;
+        Ok(Self {
+            _tempdir,
+            path,
+            destrepo,
+            destrepo_path,
+        })
+    }
 }
 
 #[tokio::test]
 async fn test_tar_import_empty() -> Result<()> {
-    let (_tempdir, destrepo) = test_tar_import_prep()?;
-    let r = ostree_ext::tar::import_tar(&destrepo, tokio::io::empty()).await;
+    let fixture = Fixture::new()?;
+    let destrepo = ostree::Repo::new_for_path(&fixture.destrepo_path);
+    destrepo.open(gio::NONE_CANCELLABLE)?;
+    let r = ostree_ext::tar::import_tar(&destrepo, tokio::io::empty(), None).await;
     assert!(r.is_err());
     Ok(())
 }
 
 #[tokio::test]
-async fn test_tar_import_export() -> Result<()> {
-    let (tempdir, destrepo) = test_tar_import_prep()?;
-    let path = Utf8Path::from_path(tempdir.path()).unwrap();
-    let srcdir = &path.join("src");
+async fn test_tar_import_signed() -> Result<()> {
+    let fixture = Fixture::new()?;
+    let srcdir = &fixture.path.join("src");
     std::fs::create_dir(srcdir)?;
-    let src_tar = tokio::fs::File::open(&generate_test_tarball(srcdir)?).await?;
 
-    let imported_commit: String = ostree_ext::tar::import_tar(&destrepo, src_tar).await?;
-    let (commitdata, _) = destrepo.load_commit(&imported_commit)?;
+    let test_tar = &generate_test_tarball(srcdir)?;
+
+    // Verify we fail with an unknown remote.
+    let src_tar = tokio::fs::File::open(test_tar).await?;
+    let r = ostree_ext::tar::import_tar(
+        &fixture.destrepo,
+        src_tar,
+        Some(TarImportOptions {
+            remote: Some("nosuchremote".to_string()),
+        }),
+    )
+    .await;
+    assert_err_contains(r, r#"Remote "nosuchremote" not found"#);
+
+    // Test a remote, but without a key
+    let opts = glib::VariantDict::new(None);
+    opts.insert("gpg-verify", &true);
+    opts.insert("custom-backend", &"ostree-rs-ext");
+    fixture
+        .destrepo
+        .remote_add("myremote", None, Some(&opts.end()), gio::NONE_CANCELLABLE)?;
+    let src_tar = tokio::fs::File::open(test_tar).await?;
+    let r = ostree_ext::tar::import_tar(
+        &fixture.destrepo,
+        src_tar,
+        Some(TarImportOptions {
+            remote: Some("myremote".to_string()),
+        }),
+    )
+    .await;
+    assert_err_contains(r, r#"Can't check signature: public key not found"#);
+
+    // And signed correctly
+    bash!(
+        "ostree --repo={repo} remote gpg-import --stdin myremote < {p}/gpghome/key1.asc",
+        repo = fixture.destrepo_path.as_str(),
+        p = srcdir.as_str()
+    )?;
+    let src_tar = tokio::fs::File::open(test_tar).await?;
+    let imported = ostree_ext::tar::import_tar(
+        &fixture.destrepo,
+        src_tar,
+        Some(TarImportOptions {
+            remote: Some("myremote".to_string()),
+        }),
+    )
+    .await?;
+    let (commitdata, _) = fixture.destrepo.load_commit(&imported)?;
     assert_eq!(
         EXAMPLEOS_CONTENT_CHECKSUM,
         ostree::commit_get_content_checksum(&commitdata)
             .unwrap()
             .as_str()
     );
-    // So awesome.  Look how many ways dealing with filenames can fail!
-    let destrepodir = Utf8PathBuf::try_from(destrepo.path().unwrap().path().unwrap()).unwrap();
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_tar_import_export() -> Result<()> {
+    let fixture = Fixture::new()?;
+    let srcdir = &fixture.path.join("src");
+    std::fs::create_dir(srcdir)?;
+    let src_tar = tokio::fs::File::open(&generate_test_tarball(srcdir)?).await?;
+
+    let imported_commit: String =
+        ostree_ext::tar::import_tar(&fixture.destrepo, src_tar, None).await?;
+    let (commitdata, _) = fixture.destrepo.load_commit(&imported_commit)?;
+    assert_eq!(
+        EXAMPLEOS_CONTENT_CHECKSUM,
+        ostree::commit_get_content_checksum(&commitdata)
+            .unwrap()
+            .as_str()
+    );
     bash!(
         r#"
          ostree --repo={destrepodir} ls -R {imported_commit}
          val=$(ostree --repo={destrepodir} show --print-detached-metadata-key=my-detached-key {imported_commit})
          test "${{val}}" = "'my-detached-value'"
         "#,
-        destrepodir = destrepodir.as_str(),
+        destrepodir = fixture.destrepo_path.as_str(),
         imported_commit = imported_commit.as_str()
     )?;
     Ok(())
@@ -131,13 +232,9 @@ fn skopeo_inspect(imgref: &str) -> Result<String> {
 #[tokio::test]
 async fn test_container_import_export() -> Result<()> {
     let cancellable = gio::NONE_CANCELLABLE;
-
-    let tempdir = tempfile::tempdir_in("/var/tmp")?;
-    let path = Utf8Path::from_path(tempdir.path()).unwrap();
-    let srcdir = &path.join("src");
+    let fixture = Fixture::new()?;
+    let srcdir = &fixture.path.join("src");
     std::fs::create_dir(srcdir)?;
-    let destdir = &path.join("dest");
-    std::fs::create_dir(destdir)?;
     let srcrepopath = &generate_test_repo(srcdir)?;
     let srcrepo = &ostree::Repo::new_for_path(srcrepopath);
     srcrepo.open(cancellable)?;
@@ -145,8 +242,6 @@ async fn test_container_import_export() -> Result<()> {
         .resolve_rev(TESTREF, false)
         .context("Failed to resolve ref")?
         .unwrap();
-    let destrepo = &ostree::Repo::new_for_path(destdir);
-    destrepo.create(ostree::RepoMode::BareUser, cancellable)?;
 
     let srcoci_path = &srcdir.join("oci");
     let srcoci = ImageReference {
@@ -176,10 +271,47 @@ async fn test_container_import_export() -> Result<()> {
     let inspect = ostree_ext::container::fetch_manifest_info(&srcoci).await?;
     assert_eq!(inspect.manifest_digest, digest);
 
-    let import = ostree_ext::container::import(destrepo, &srcoci, None)
+    // No remote matching
+    let opts = ImportOptions {
+        remote: Some("unknownremote".to_string()),
+        ..Default::default()
+    };
+    let r = ostree_ext::container::import(&fixture.destrepo, &srcoci, Some(opts))
+        .await
+        .context("importing");
+    assert_err_contains(r, r#"Remote "unknownremote" not found"#);
+
+    // Test with a signature
+    let opts = glib::VariantDict::new(None);
+    opts.insert("gpg-verify", &true);
+    opts.insert("custom-backend", &"ostree-rs-ext");
+    fixture
+        .destrepo
+        .remote_add("myremote", None, Some(&opts.end()), gio::NONE_CANCELLABLE)?;
+    bash!(
+        "ostree --repo={repo} remote gpg-import --stdin myremote < {p}/gpghome/key1.asc",
+        repo = fixture.destrepo_path.as_str(),
+        p = srcdir.as_str()
+    )?;
+
+    let opts = ImportOptions {
+        remote: Some("myremote".to_string()),
+        ..Default::default()
+    };
+
+    let import = ostree_ext::container::import(&fixture.destrepo, &srcoci, Some(opts))
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
+
+    // Test without signature verification
+    // Create a new repo
+    let fixture = Fixture::new()?;
+    let import = ostree_ext::container::import(&fixture.destrepo, &srcoci, None)
+        .await
+        .context("importing")?;
+    assert_eq!(import.ostree_commit, testrev.as_str());
+
     Ok(())
 }
 
