@@ -122,9 +122,13 @@ async fn build_impl(
             return Err(anyhow::anyhow!("skopeo failed: {}\n", stderr));
         }
     }
+    let imgref = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: dest.to_owned(),
+    };
     // FIXME - it's obviously broken to do this push -> inspect cycle because of the possibility
     // of a race condition, but we need to patch skopeo to have the equivalent of `podman push --digestfile`.
-    let info = super::import::fetch_manifest_info(dest).await?;
+    let info = super::import::fetch_manifest_info(&imgref).await?;
     Ok(dest.with_digest(info.manifest_digest.as_str()))
 }
 
