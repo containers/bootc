@@ -62,7 +62,9 @@ impl AsyncRead for ProgressReader {
 
 /// Download the manifest for a target image.
 #[context("Fetching manifest")]
-pub async fn fetch_manifest_info(imgref: &ImageReference) -> Result<OstreeContainerManifestInfo> {
+pub async fn fetch_manifest_info(
+    imgref: &OstreeImageReference,
+) -> Result<OstreeContainerManifestInfo> {
     let (_, manifest_digest) = fetch_manifest(imgref).await?;
     // Sadly this seems to be lost when pushing to e.g. quay.io, which means we can't use it.
     //    let commit = manifest
@@ -76,9 +78,11 @@ pub async fn fetch_manifest_info(imgref: &ImageReference) -> Result<OstreeContai
 
 /// Download the manifest for a target image.
 #[context("Fetching manifest")]
-async fn fetch_manifest(imgref: &ImageReference) -> Result<(oci::Manifest, String)> {
+async fn fetch_manifest(imgref: &OstreeImageReference) -> Result<(oci::Manifest, String)> {
     let mut proc = skopeo::new_cmd();
-    proc.args(&["inspect", "--raw"]).arg(imgref.to_string());
+    let imgref_base = &imgref.imgref;
+    proc.args(&["inspect", "--raw"])
+        .arg(imgref_base.to_string());
     proc.stdout(Stdio::piped());
     let proc = skopeo::spawn(proc)?.wait_with_output().await?;
     if !proc.status.success() {
@@ -200,7 +204,7 @@ fn find_layer_tar_sync(
 
 /// Fetch a remote docker/OCI image and extract a specific uncompressed layer.
 async fn fetch_layer<'s>(
-    imgref: &ImageReference,
+    imgref: &OstreeImageReference,
     blobid: &str,
     progress: Option<tokio::sync::watch::Sender<ImportProgress>>,
 ) -> Result<(
@@ -220,7 +224,7 @@ async fn fetch_layer<'s>(
     )?;
     tracing::trace!("skopeo pull starting to {}", fifo);
     proc.arg("copy")
-        .arg(imgref.to_string())
+        .arg(imgref.imgref.to_string())
         .arg(format!("docker-archive:{}", fifo));
     let proc = skopeo::spawn(proc)?;
     let fifo_reader = ProgressReader {
@@ -289,8 +293,6 @@ fn find_layer_blobid(manifest: &oci::Manifest) -> Result<String> {
 /// Configuration for container fetches.
 #[derive(Debug, Default)]
 pub struct ImportOptions {
-    /// Name of the remote to use for signature verification.
-    pub remote: Option<String>,
     /// Channel which will receive progress updates
     pub progress: Option<tokio::sync::watch::Sender<ImportProgress>>,
 }
@@ -300,9 +302,14 @@ pub struct ImportOptions {
 #[instrument(skip(repo, options))]
 pub async fn import(
     repo: &ostree::Repo,
-    imgref: &ImageReference,
+    imgref: &OstreeImageReference,
     options: Option<ImportOptions>,
 ) -> Result<Import> {
+    if matches!(imgref.sigverify, SignatureSource::ContainerPolicy)
+        && skopeo::container_policy_is_default_insecure()?
+    {
+        return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
+    }
     let options = options.unwrap_or_default();
     let (manifest, image_digest) = fetch_manifest(imgref).await?;
     let manifest = &manifest;
@@ -310,9 +317,11 @@ pub async fn import(
     event!(Level::DEBUG, "target blob: {}", layerid);
     let (blob, worker) = fetch_layer(imgref, layerid.as_str(), options.progress).await?;
     let blob = tokio::io::BufReader::new(blob);
-    let taropts = crate::tar::TarImportOptions {
-        remote: options.remote,
-    };
+    let mut taropts: crate::tar::TarImportOptions = Default::default();
+    match &imgref.sigverify {
+        SignatureSource::OstreeRemote(remote) => taropts.remote = Some(remote.clone()),
+        SignatureSource::ContainerPolicy | SignatureSource::ContainerPolicyAllowInsecure => {}
+    }
     let import = crate::tar::import_tar(repo, blob, Some(taropts));
     let (ostree_commit, worker) = tokio::join!(import, worker);
     let ostree_commit = ostree_commit?;
