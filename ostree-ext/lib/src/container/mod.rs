@@ -9,7 +9,9 @@
 #![deny(unsafe_code)]
 
 use anyhow::anyhow;
+use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
+use std::ops::Deref;
 
 /// The label injected into a container image that contains the ostree commit SHA-256.
 pub const OSTREE_COMMIT_LABEL: &str = "ostree.commit";
@@ -174,26 +176,43 @@ impl TryFrom<&str> for OstreeImageReference {
         let mut parts = value.splitn(2, ':');
         // Safety: Split always returns at least one value.
         let first = parts.next().unwrap();
-        let mut second = parts
+        let second = parts
             .next()
             .ok_or_else(|| anyhow!("Missing ':' in {}", value))?;
-        let sigverify = match first {
-            "ostree-image-signed" => SignatureSource::ContainerPolicy,
-            "ostree-unverified-image" => SignatureSource::ContainerPolicyAllowInsecure,
+        let (sigverify, rest) = match first {
+            "ostree-image-signed" => (SignatureSource::ContainerPolicy, Cow::Borrowed(second)),
+            "ostree-unverified-image" => (
+                SignatureSource::ContainerPolicyAllowInsecure,
+                Cow::Borrowed(second),
+            ),
+            "ostree-remote-registry" => {
+                let mut subparts = second.splitn(2, ':');
+                // Safety: Split always returns at least one value.
+                let remote = subparts.next().unwrap();
+                let rest = subparts
+                    .next()
+                    .ok_or_else(|| anyhow!("Missing second ':' in {}", value))?;
+                (
+                    SignatureSource::OstreeRemote(remote.to_string()),
+                    Cow::Owned(format!("registry:{}", rest)),
+                )
+            }
             "ostree-remote-image" => {
                 let mut subparts = second.splitn(2, ':');
                 // Safety: Split always returns at least one value.
                 let remote = subparts.next().unwrap();
-                second = subparts
-                    .next()
-                    .ok_or_else(|| anyhow!("Missing second ':' in {}", value))?;
-                SignatureSource::OstreeRemote(remote.to_string())
+                let second = Cow::Borrowed(
+                    subparts
+                        .next()
+                        .ok_or_else(|| anyhow!("Missing second ':' in {}", value))?,
+                );
+                (SignatureSource::OstreeRemote(remote.to_string()), second)
             }
             o => {
                 return Err(anyhow!("Invalid signature source: {}", o));
             }
         };
-        let imgref = second.try_into()?;
+        let imgref = rest.deref().try_into()?;
         Ok(Self { sigverify, imgref })
     }
 }
@@ -283,19 +302,25 @@ mod tests {
 
     #[test]
     fn test_ostreeimagereference() {
+        // Test both long form `ostree-remote-image:$myremote:registry` and the
+        // shorthand `ostree-remote-registry:$myremote`.
         let ir_s = "ostree-remote-image:myremote:registry:quay.io/exampleos/blah";
-        let ir: OstreeImageReference = ir_s.try_into().unwrap();
-        assert_eq!(
-            ir.sigverify,
-            SignatureSource::OstreeRemote("myremote".to_string())
-        );
-        assert_eq!(ir.imgref.transport, Transport::Registry);
-        assert_eq!(ir.imgref.name, "quay.io/exampleos/blah");
-        assert_eq!(
-            ir.to_string(),
-            "ostree-remote-image:myremote:docker://quay.io/exampleos/blah"
-        );
+        let ir_registry = "ostree-remote-registry:myremote:quay.io/exampleos/blah";
+        for &ir_s in &[ir_s, ir_registry] {
+            let ir: OstreeImageReference = ir_s.try_into().unwrap();
+            assert_eq!(
+                ir.sigverify,
+                SignatureSource::OstreeRemote("myremote".to_string())
+            );
+            assert_eq!(ir.imgref.transport, Transport::Registry);
+            assert_eq!(ir.imgref.name, "quay.io/exampleos/blah");
+            assert_eq!(
+                ir.to_string(),
+                "ostree-remote-image:myremote:docker://quay.io/exampleos/blah"
+            );
+        }
 
+        let ir: OstreeImageReference = ir_s.try_into().unwrap();
         let digested = ir
             .with_digest("sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
         assert_eq!(digested.imgref.name, "quay.io/exampleos/blah@sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
