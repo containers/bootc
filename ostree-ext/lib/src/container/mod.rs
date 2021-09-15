@@ -42,7 +42,7 @@ pub enum Transport {
 /// Combination of a remote image reference and transport.
 ///
 /// For example,
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageReference {
     /// The storage and transport for the image
     pub transport: Transport,
@@ -64,7 +64,7 @@ pub enum SignatureSource {
 /// Combination of an ostree remote (for signature verification) and an image reference.
 ///
 /// For example, myremote:docker://quay.io/somerepo/someimage.latest
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OstreeImageReference {
     /// The ostree remote name.
     /// This will be used for signature verification.
@@ -322,6 +322,9 @@ mod tests {
         }
 
         let ir: OstreeImageReference = ir_s.try_into().unwrap();
+        // test our Eq implementation
+        assert_eq!(&ir, &OstreeImageReference::try_from(ir_registry).unwrap());
+
         let digested = ir
             .with_digest("sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
         assert_eq!(digested.imgref.name, "quay.io/exampleos/blah@sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
