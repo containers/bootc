@@ -168,7 +168,6 @@ async fn container_import(repo: &str, imgref: &str, write_ref: Option<&str>) -> 
     pb.set_message("Downloading...");
     let opts = ImportOptions {
         progress: Some(tx_progress),
-        ..Default::default()
     };
     let import = crate::container::import(repo, &imgref, Some(opts));
     tokio::pin!(import);
