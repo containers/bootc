@@ -6,6 +6,10 @@ use serde::Deserialize;
 use std::process::Stdio;
 use tokio::process::Command;
 
+// See `man containers-policy.json` and
+// https://github.com/containers/image/blob/main/signature/policy_types.go
+// Ideally we add something like `skopeo pull --disallow-insecure-accept-anything`
+// but for now we parse the policy.
 const POLICY_PATH: &str = "/etc/containers/policy.json";
 const INSECURE_ACCEPT_ANYTHING: &str = "insecureAcceptAnything";
 

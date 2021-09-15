@@ -185,6 +185,7 @@ impl TryFrom<&str> for OstreeImageReference {
                 SignatureSource::ContainerPolicyAllowInsecure,
                 Cow::Borrowed(second),
             ),
+            // This is a shorthand for ostree-remote-image with registry:
             "ostree-remote-registry" => {
                 let mut subparts = second.splitn(2, ':');
                 // Safety: Split always returns at least one value.
