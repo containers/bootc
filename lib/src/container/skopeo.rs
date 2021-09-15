@@ -27,7 +27,7 @@ impl ContainerPolicy {
     fn is_default_insecure(&self) -> bool {
         if let Some(default) = self.default.as_deref() {
             match default.split_first() {
-                Some((v, &[])) => return v.ty == INSECURE_ACCEPT_ANYTHING,
+                Some((v, &[])) => v.ty == INSECURE_ACCEPT_ANYTHING,
                 _ => false,
             }
         } else {
