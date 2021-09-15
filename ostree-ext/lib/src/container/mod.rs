@@ -1,7 +1,29 @@
 //! # APIs bridging OSTree and container images
 //!
-//! This crate contains APIs to bidirectionally map
-//! between OSTree repositories and container images.
+//! This module contains APIs to bidirectionally map between a single OSTree commit and a container image wrapping it.
+//! Because container images are just layers of tarballs, this builds on the [`crate::tar`] module.
+//!
+//! To emphasize this, the current high level model is that this is a one-to-one mapping - an ostree commit
+//! can be exported (wrapped) into a container image, which will have exactly one layer.  Upon import
+//! back into an ostree repository, all container metadata except for its digested checksum will be discarded.
+//!
+//! ## Signatures
+//!
+//! OSTree supports GPG and ed25519 signatures natively, and it's expected by default that
+//! when booting from a fetched container image, one verifies ostree-level signatures.
+//! For ostree, a signing configuration is specified via an ostree remote.  In order to
+//! pair this configuration together, this library defines a "URL-like" string schema:
+//!
+//! `ostree-remote-registry:<remotename>:<containerimage>`
+//!
+//! A concrete instantiation might be e.g.: `ostree-remote-registry:fedora:quay.io/coreos/fedora-coreos:stable`
+//!
+//! To parse and generate these strings, see [`OstreeImageReference`].
+//!
+//! ## Layering
+//!
+//! A key feature of container images is support for layering.  At the moment, support
+//! for this is [planned but not implemented](https://github.com/ostreedev/ostree-rs-ext/issues/12).
 
 //#![deny(missing_docs)]
 // Good defaults
@@ -61,13 +83,11 @@ pub enum SignatureSource {
     ContainerPolicyAllowInsecure,
 }
 
-/// Combination of an ostree remote (for signature verification) and an image reference.
+/// Combination of a signature verification mechanism, and a standard container image reference.
 ///
-/// For example, myremote:docker://quay.io/somerepo/someimage.latest
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OstreeImageReference {
-    /// The ostree remote name.
-    /// This will be used for signature verification.
+    /// The signature verification mechanism.
     pub sigverify: SignatureSource,
     /// The container image reference.
     pub imgref: ImageReference,
