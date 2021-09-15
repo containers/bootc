@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use indoc::indoc;
-use ostree_ext::container::{Config, ImageReference, ImportOptions, Transport};
+use ostree_ext::container::{
+    Config, ImageReference, OstreeImageReference, SignatureSource, Transport,
+};
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
 use sh_inline::bash;
@@ -244,7 +246,7 @@ async fn test_container_import_export() -> Result<()> {
         .unwrap();
 
     let srcoci_path = &srcdir.join("oci");
-    let srcoci = ImageReference {
+    let srcoci_imgref = ImageReference {
         transport: Transport::OciDir,
         name: srcoci_path.as_str().to_string(),
     };
@@ -257,26 +259,31 @@ async fn test_container_import_export() -> Result<()> {
         ),
         cmd: Some(vec!["/bin/bash".to_string()]),
     };
-    let pushed = ostree_ext::container::export(srcrepo, TESTREF, &config, &srcoci)
+    let pushed = ostree_ext::container::export(srcrepo, TESTREF, &config, &srcoci_imgref)
         .await
         .context("exporting")?;
     assert!(srcoci_path.exists());
     let digest = pushed.name.rsplitn(2, '@').next().unwrap();
 
-    let inspect = skopeo_inspect(&srcoci.to_string())?;
+    let inspect = skopeo_inspect(&srcoci_imgref.to_string())?;
     assert!(inspect.contains(r#""version": "42.0""#));
     assert!(inspect.contains(r#""foo": "bar""#));
     assert!(inspect.contains(r#""test": "value""#));
 
-    let inspect = ostree_ext::container::fetch_manifest_info(&srcoci).await?;
+    let srcoci_unverified = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: srcoci_imgref.clone(),
+    };
+
+    let inspect = ostree_ext::container::fetch_manifest_info(&srcoci_unverified).await?;
     assert_eq!(inspect.manifest_digest, digest);
 
     // No remote matching
-    let opts = ImportOptions {
-        remote: Some("unknownremote".to_string()),
-        ..Default::default()
+    let srcoci_unknownremote = OstreeImageReference {
+        sigverify: SignatureSource::OstreeRemote("unknownremote".to_string()),
+        imgref: srcoci_imgref.clone(),
     };
-    let r = ostree_ext::container::import(&fixture.destrepo, &srcoci, Some(opts))
+    let r = ostree_ext::container::import(&fixture.destrepo, &srcoci_unknownremote, None)
         .await
         .context("importing");
     assert_err_contains(r, r#"Remote "unknownremote" not found"#);
@@ -294,12 +301,12 @@ async fn test_container_import_export() -> Result<()> {
         p = srcdir.as_str()
     )?;
 
-    let opts = ImportOptions {
-        remote: Some("myremote".to_string()),
-        ..Default::default()
+    // No remote matching
+    let srcoci_verified = OstreeImageReference {
+        sigverify: SignatureSource::OstreeRemote("myremote".to_string()),
+        imgref: srcoci_imgref.clone(),
     };
-
-    let import = ostree_ext::container::import(&fixture.destrepo, &srcoci, Some(opts))
+    let import = ostree_ext::container::import(&fixture.destrepo, &srcoci_verified, None)
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
@@ -307,7 +314,7 @@ async fn test_container_import_export() -> Result<()> {
     // Test without signature verification
     // Create a new repo
     let fixture = Fixture::new()?;
-    let import = ostree_ext::container::import(&fixture.destrepo, &srcoci, None)
+    let import = ostree_ext::container::import(&fixture.destrepo, &srcoci_unverified, None)
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
