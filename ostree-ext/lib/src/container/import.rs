@@ -66,13 +66,6 @@ pub async fn fetch_manifest_info(
     imgref: &OstreeImageReference,
 ) -> Result<OstreeContainerManifestInfo> {
     let (_, manifest_digest) = fetch_manifest(imgref).await?;
-    // Sadly this seems to be lost when pushing to e.g. quay.io, which means we can't use it.
-    //    let commit = manifest
-    //        .annotations
-    //        .as_ref()
-    //        .map(|a| a.get(OSTREE_COMMIT_LABEL))
-    //        .flatten()
-    //        .ok_or_else(|| anyhow!("Missing annotation {}", OSTREE_COMMIT_LABEL))?;
     Ok(OstreeContainerManifestInfo { manifest_digest })
 }
 
