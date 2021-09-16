@@ -123,7 +123,7 @@ pub async fn find_layer_tar(
     Ok((reader, worker))
 }
 
-// Helper function invoked to synchronously parse a tar stream, finding
+// Helper function invoked to synchronously parse a `docker-archive:` formatted tar stream, finding
 // the desired layer tarball and writing its contents via a stream of byte chunks
 // to a channel.
 fn find_layer_tar_sync(
