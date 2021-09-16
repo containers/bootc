@@ -1,5 +1,33 @@
 //! APIs for extracting OSTree commits from container images
 
+// # Implementation
+//
+// This code currently forks off `/usr/bin/skopeo` as a subprocess, and uses
+// it to fetch the container content and convert it into a `docker-archive:`
+// formatted tarball stream, which is written to a FIFO and parsed by
+// this code.
+//
+// The rationale for this is that `/usr/bin/skopeo` is a frontend for
+// the Go library https://github.com/containers/image/ which supports
+// key things we want for production use like:
+//
+// - Image mirroring and remapping; effectively `man containers-registries.conf`
+//   For example, we need to support an administrator mirroring an ostree-container
+//   into a disconnected registry, without changing all the pull specs.
+// - Signing
+//
+// # Import phases
+//
+// First, we support explicitly fetching just the manifest: https://github.com/opencontainers/image-spec/blob/main/manifest.md
+// This will give us information about the layers it contains, and crucially the digest (sha256) of
+// the manifest is how higher level software can detect changes.
+//
+// Once we have the manifest, we expect it to point to a single `application/vnd.oci.image.layer.v1.tar+gzip` layer,
+// which is exactly what is exported by the [`crate::tar::export`] process.
+//
+// What we get from skopeo is a `docker-archive:` tarball, which then will contain this *inner* tarball
+// layer that we extract and pass to the [`crate::tar::import`] code.
+
 use super::*;
 use anyhow::{anyhow, Context};
 use camino::Utf8Path;
