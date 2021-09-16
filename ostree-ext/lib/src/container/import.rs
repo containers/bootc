@@ -141,20 +141,15 @@ fn find_layer_tar_sync(
             continue;
         }
         let path = entry.path()?;
-        let path = &*path;
-        let path =
-            Utf8Path::from_path(path).ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", path))?;
-        let t = entry.header().entry_type();
-
+        let path: &Utf8Path = path.deref().try_into()?;
         // We generally expect our layer to be first, but let's just skip anything
         // unexpected to be robust against changes in skopeo.
         if path.extension() != Some("tar") {
             continue;
         }
-
         event!(Level::DEBUG, "Found {}", path);
 
-        match t {
+        match entry.header().entry_type() {
             tar::EntryType::Symlink => {
                 if let Some(name) = path.file_name() {
                     if name == "layer.tar" {
