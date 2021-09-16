@@ -379,9 +379,7 @@ impl Importer {
             return Err(anyhow!("Found xattrs for non-file object type {}", objtype));
         }
         match objtype {
-            ostree::ObjectType::Commit => {
-                return Err(anyhow!("Found multiple commit objects"));
-            }
+            ostree::ObjectType::Commit => Err(anyhow!("Found multiple commit objects")),
             ostree::ObjectType::File => {
                 if is_xattrs {
                     self.import_xattr_ref(entry, checksum)
