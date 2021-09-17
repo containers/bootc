@@ -13,6 +13,34 @@ use tokio::process::Command;
 const POLICY_PATH: &str = "/etc/containers/policy.json";
 const INSECURE_ACCEPT_ANYTHING: &str = "insecureAcceptAnything";
 
+bitflags::bitflags! {
+    pub(crate) struct SkopeoFeatures: u32 {
+        const COPY_DIGESTFILE = 0b00000001;
+    }
+}
+
+lazy_static::lazy_static! {
+    static ref SKOPEO_FEATURES: Result<SkopeoFeatures> = {
+        let mut features = SkopeoFeatures::empty();
+        let c = std::process::Command::new("skopeo")
+            .args(&["copy", "--help"])
+            .stderr(std::process::Stdio::piped())
+            .output()?;
+        let stdout = String::from_utf8_lossy(&c.stderr);
+        if stdout.contains("--digestfile") {
+            features.insert(SkopeoFeatures::COPY_DIGESTFILE);
+        }
+        Ok(features)
+    };
+}
+
+pub(crate) fn skopeo_has_features(wanted: SkopeoFeatures) -> Result<bool> {
+    match &*SKOPEO_FEATURES {
+        Ok(found) => Ok(found.intersects(wanted)),
+        Err(e) => Err(anyhow::Error::msg(e)),
+    }
+}
+
 #[derive(Deserialize)]
 struct PolicyEntry {
     #[serde(rename = "type")]

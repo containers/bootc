@@ -95,7 +95,7 @@ async fn build_impl(
     } else {
         None
     };
-    if dest.transport == Transport::OciDir {
+    let digest = if dest.transport == Transport::OciDir {
         let _copied: ImageReference = build_oci(
             repo,
             ostree_ref,
@@ -103,33 +103,49 @@ async fn build_impl(
             config,
             compression,
         )?;
+        None
     } else {
         let tempdir = tempfile::tempdir_in("/var/tmp")?;
         let tempdest = tempdir.path().join("d");
         let tempdest = tempdest.to_str().unwrap();
+        let digestfile = if skopeo::skopeo_has_features(skopeo::SkopeoFeatures::COPY_DIGESTFILE)? {
+            Some(tempdir.path().join("digestfile"))
+        } else {
+            None
+        };
+
         let src = build_oci(repo, ostree_ref, Path::new(tempdest), config, compression)?;
 
         let mut cmd = skopeo::new_cmd();
         tracing::event!(Level::DEBUG, "Copying {} to {}", src, dest);
-        cmd.stdout(std::process::Stdio::null())
-            .arg("copy")
-            .arg(src.to_string())
-            .arg(dest.to_string());
+        cmd.stdout(std::process::Stdio::null()).arg("copy");
+        if let Some(ref digestfile) = digestfile {
+            cmd.arg("--digestfile");
+            cmd.arg(digestfile);
+        }
+        cmd.args(&[src.to_string(), dest.to_string()]);
         let proc = super::skopeo::spawn(cmd)?;
         let output = proc.wait_with_output().await?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(anyhow::anyhow!("skopeo failed: {}\n", stderr));
         }
-    }
-    let imgref = OstreeImageReference {
-        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
-        imgref: dest.to_owned(),
+        digestfile
+            .map(|p| -> Result<String> { Ok(std::fs::read_to_string(p)?.trim().to_string()) })
+            .transpose()?
     };
-    // FIXME - it's obviously broken to do this push -> inspect cycle because of the possibility
-    // of a race condition, but we need to patch skopeo to have the equivalent of `podman push --digestfile`.
-    let (_, digest) = super::import::fetch_manifest(&imgref).await?;
-    Ok(digest)
+    if let Some(digest) = digest {
+        Ok(digest)
+    } else {
+        // If `skopeo copy` doesn't have `--digestfile` yet, then fall back
+        // to running an inspect cycle.
+        let imgref = OstreeImageReference {
+            sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+            imgref: dest.to_owned(),
+        };
+        let (_, digest) = super::import::fetch_manifest(&imgref).await?;
+        Ok(digest)
+    }
 }
 
 /// Given an OSTree repository and ref, generate a container image.
