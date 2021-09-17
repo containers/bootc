@@ -88,18 +88,9 @@ impl AsyncRead for ProgressReader {
     }
 }
 
-/// Download the manifest for a target image.
+/// Download the manifest for a target image and its sha256 digest.
 #[context("Fetching manifest")]
-pub async fn fetch_manifest_info(
-    imgref: &OstreeImageReference,
-) -> Result<OstreeContainerManifestInfo> {
-    let (_, manifest_digest) = fetch_manifest(imgref).await?;
-    Ok(OstreeContainerManifestInfo { manifest_digest })
-}
-
-/// Download the manifest for a target image.
-#[context("Fetching manifest")]
-async fn fetch_manifest(imgref: &OstreeImageReference) -> Result<(oci::Manifest, String)> {
+pub async fn fetch_manifest(imgref: &OstreeImageReference) -> Result<(Vec<u8>, String)> {
     let mut proc = skopeo::new_cmd();
     let imgref_base = &imgref.imgref;
     proc.args(&["inspect", "--raw"])
@@ -113,7 +104,7 @@ async fn fetch_manifest(imgref: &OstreeImageReference) -> Result<(oci::Manifest,
     let raw_manifest = proc.stdout;
     let digest = openssl::hash::hash(openssl::hash::MessageDigest::sha256(), &raw_manifest)?;
     let digest = format!("sha256:{}", hex::encode(digest.as_ref()));
-    Ok((serde_json::from_slice(&raw_manifest)?, digest))
+    Ok((raw_manifest, digest))
 }
 
 /// Read the contents of the first <checksum>.tar we find.
@@ -328,8 +319,8 @@ pub async fn import(
     }
     let options = options.unwrap_or_default();
     let (manifest, image_digest) = fetch_manifest(imgref).await?;
-    let manifest = &manifest;
-    let layerid = find_layer_blobid(manifest)?;
+    let manifest: oci::Manifest = serde_json::from_slice(&manifest)?;
+    let layerid = find_layer_blobid(&manifest)?;
     event!(Level::DEBUG, "target blob: {}", layerid);
     let (blob, worker) = fetch_layer(imgref, layerid.as_str(), options.progress).await?;
     let blob = tokio::io::BufReader::new(blob);
