@@ -208,6 +208,10 @@ pub async fn write_tar(
             c.arg("--selinux-policy");
             c.arg(sepolicy.path());
         }
+        c.arg(&format!(
+            "--add-metadata-string=ostree.importer.version={}",
+            env!("CARGO_PKG_VERSION")
+        ));
         c.args(&[
             "--no-bindings",
             "--tar-autocreate-parents",
