@@ -312,14 +312,30 @@ pub async fn import(
     imgref: &OstreeImageReference,
     options: Option<ImportOptions>,
 ) -> Result<Import> {
+    let (manifest, image_digest) = fetch_manifest(imgref).await?;
+    let ostree_commit = import_from_manifest(repo, imgref, &manifest, options).await?;
+    Ok(Import {
+        ostree_commit,
+        image_digest,
+    })
+}
+
+/// Fetch a container image using an in-memory manifest and import its embedded OSTree commit.
+#[context("Importing {}", imgref)]
+#[instrument(skip(repo, options, manifest_bytes))]
+pub async fn import_from_manifest(
+    repo: &ostree::Repo,
+    imgref: &OstreeImageReference,
+    manifest_bytes: &[u8],
+    options: Option<ImportOptions>,
+) -> Result<String> {
     if matches!(imgref.sigverify, SignatureSource::ContainerPolicy)
         && skopeo::container_policy_is_default_insecure()?
     {
         return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
     }
     let options = options.unwrap_or_default();
-    let (manifest, image_digest) = fetch_manifest(imgref).await?;
-    let manifest: oci::Manifest = serde_json::from_slice(&manifest)?;
+    let manifest: oci::Manifest = serde_json::from_slice(manifest_bytes)?;
     let layerid = find_layer_blobid(&manifest)?;
     event!(Level::DEBUG, "target blob: {}", layerid);
     let (blob, worker) = fetch_layer(imgref, layerid.as_str(), options.progress).await?;
@@ -336,8 +352,5 @@ pub async fn import(
     let _: () = worker?;
     let ostree_commit = ostree_commit?;
     event!(Level::DEBUG, "created commit {}", ostree_commit);
-    Ok(Import {
-        ostree_commit,
-        image_digest,
-    })
+    Ok(ostree_commit)
 }
