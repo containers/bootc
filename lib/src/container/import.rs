@@ -340,8 +340,10 @@ pub async fn import(
     }
     let import = crate::tar::import_tar(repo, blob, Some(taropts));
     let (ostree_commit, worker) = tokio::join!(import, worker);
-    let ostree_commit = ostree_commit?;
+    // Let any errors from skopeo take precedence, because a failure to parse/find the layer tarball
+    // is likely due to an underlying error from that.
     let _: () = worker?;
+    let ostree_commit = ostree_commit?;
     event!(Level::DEBUG, "created commit {}", ostree_commit);
     Ok(Import {
         ostree_commit,
