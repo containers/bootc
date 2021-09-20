@@ -21,6 +21,9 @@ const TESTREF: &str = "exampleos/x86_64/stable";
 const EXAMPLEOS_CONTENT_CHECKSUM: &str =
     "0ef7461f9db15e1d8bd8921abf20694225fbaa4462cadf7deed8ea0e43162120";
 
+/// Image that contains a base exported layer, then a `podman build` of an added file on top.
+const EXAMPLEOS_DERIVED_OCI: &[u8] = include_bytes!("fixtures/exampleos-derive.ociarchive");
+
 fn assert_err_contains<T>(r: Result<T>, s: impl AsRef<str>) {
     let s = s.as_ref();
     let msg = format!("{:#}", r.err().unwrap());
@@ -319,6 +322,24 @@ async fn test_container_import_export() -> Result<()> {
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
 
+    Ok(())
+}
+
+/// We should currently reject an image with multiple layers.
+#[tokio::test]
+async fn test_container_import_derive() -> Result<()> {
+    let fixture = Fixture::new()?;
+    let exampleos_path = &fixture.path.join("exampleos.ociarchive");
+    std::fs::write(exampleos_path, EXAMPLEOS_DERIVED_OCI)?;
+    let exampleos_ref = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: ImageReference {
+            transport: Transport::OciArchive,
+            name: exampleos_path.to_string(),
+        },
+    };
+    let r = ostree_ext::container::import(&fixture.destrepo, &exampleos_ref, None).await;
+    assert_err_contains(r, "Expected 1 layer, found 2");
     Ok(())
 }
 
