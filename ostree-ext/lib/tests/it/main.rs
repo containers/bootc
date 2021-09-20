@@ -137,9 +137,7 @@ impl Fixture {
 #[tokio::test]
 async fn test_tar_import_empty() -> Result<()> {
     let fixture = Fixture::new()?;
-    let destrepo = ostree::Repo::new_for_path(&fixture.destrepo_path);
-    destrepo.open(gio::NONE_CANCELLABLE)?;
-    let r = ostree_ext::tar::import_tar(&destrepo, tokio::io::empty(), None).await;
+    let r = ostree_ext::tar::import_tar(&fixture.destrepo, tokio::io::empty(), None).await;
     assert_err_contains(r, "Commit object not found");
     Ok(())
 }
