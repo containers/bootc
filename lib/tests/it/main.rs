@@ -131,7 +131,7 @@ async fn test_tar_import_empty() -> Result<()> {
     let destrepo = ostree::Repo::new_for_path(&fixture.destrepo_path);
     destrepo.open(gio::NONE_CANCELLABLE)?;
     let r = ostree_ext::tar::import_tar(&destrepo, tokio::io::empty(), None).await;
-    assert!(r.is_err());
+    assert_err_contains(r, "Commit object not found");
     Ok(())
 }
 
