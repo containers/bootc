@@ -262,11 +262,10 @@ async fn test_container_import_export() -> Result<()> {
         ),
         cmd: Some(vec!["/bin/bash".to_string()]),
     };
-    let pushed = ostree_ext::container::export(srcrepo, TESTREF, &config, &srcoci_imgref)
+    let digest = ostree_ext::container::export(srcrepo, TESTREF, &config, &srcoci_imgref)
         .await
         .context("exporting")?;
     assert!(srcoci_path.exists());
-    let digest = pushed.name.rsplitn(2, '@').next().unwrap();
 
     let inspect = skopeo_inspect(&srcoci_imgref.to_string())?;
     assert!(inspect.contains(r#""version": "42.0""#));

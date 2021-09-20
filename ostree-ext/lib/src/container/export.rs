@@ -89,7 +89,7 @@ async fn build_impl(
     ostree_ref: &str,
     config: &Config,
     dest: &ImageReference,
-) -> Result<ImageReference> {
+) -> Result<String> {
     let compression = if dest.transport == Transport::ContainerStorage {
         Some(flate2::Compression::none())
     } else {
@@ -129,7 +129,7 @@ async fn build_impl(
     // FIXME - it's obviously broken to do this push -> inspect cycle because of the possibility
     // of a race condition, but we need to patch skopeo to have the equivalent of `podman push --digestfile`.
     let info = super::import::fetch_manifest_info(&imgref).await?;
-    Ok(dest.with_digest(info.manifest_digest.as_str()))
+    Ok(info.manifest_digest)
 }
 
 /// Given an OSTree repository and ref, generate a container image.
@@ -140,6 +140,6 @@ pub async fn export<S: AsRef<str>>(
     ostree_ref: S,
     config: &Config,
     dest: &ImageReference,
-) -> Result<ImageReference> {
+) -> Result<String> {
     build_impl(repo, ostree_ref.as_ref(), config, dest).await
 }
