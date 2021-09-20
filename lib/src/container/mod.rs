@@ -93,48 +93,6 @@ pub struct OstreeImageReference {
     pub imgref: ImageReference,
 }
 
-impl ImageReference {
-    /// Create a new `ImageReference` that refers to a specific digest.
-    ///
-    /// ```rust
-    /// use std::convert::TryInto;
-    /// let r: ostree_ext::container::ImageReference = "docker://quay.io/exampleos/exampleos:latest".try_into().unwrap();
-    /// let n = r.with_digest("sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
-    /// assert_eq!(n.name, "quay.io/exampleos/exampleos@sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
-    /// ```
-    pub fn with_digest(&self, digest: &str) -> Self {
-        let name = self.name.as_str();
-        let name = if let Some(idx) = name.rfind('@') {
-            name.split_at(idx).0
-        } else if let Some(idx) = name.rfind(':') {
-            name.split_at(idx).0
-        } else {
-            name
-        };
-        Self {
-            transport: self.transport,
-            name: format!("{}@{}", name, digest),
-        }
-    }
-}
-
-impl OstreeImageReference {
-    /// Create a new `OstreeImageReference` that refers to a specific digest.
-    ///
-    /// ```rust
-    /// use std::convert::TryInto;
-    /// let r: ostree_ext::container::OstreeImageReference = "ostree-remote-image:myremote:docker://quay.io/exampleos/exampleos:latest".try_into().unwrap();
-    /// let n = r.with_digest("sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
-    /// assert_eq!(n.imgref.name, "quay.io/exampleos/exampleos@sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
-    /// ```
-    pub fn with_digest(&self, digest: &str) -> Self {
-        Self {
-            sigverify: self.sigverify.clone(),
-            imgref: self.imgref.with_digest(digest),
-        }
-    }
-}
-
 impl TryFrom<&str> for Transport {
     type Error = anyhow::Error;
 
@@ -295,18 +253,6 @@ mod tests {
         assert_eq!(ir.name, "quay.io/exampleos/blah");
         assert_eq!(ir.to_string(), "docker://quay.io/exampleos/blah");
 
-        let digested = ir
-            .with_digest("sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
-        assert_eq!(digested.name, "quay.io/exampleos/blah@sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
-        assert_eq!(digested.with_digest("sha256:52f562806109f5746be31ccf21f5569fd2ce8c32deb0d14987b440ed39e34e20").name, "quay.io/exampleos/blah@sha256:52f562806109f5746be31ccf21f5569fd2ce8c32deb0d14987b440ed39e34e20");
-
-        let with_tag: ImageReference = "registry:quay.io/exampleos/blah:sometag"
-            .try_into()
-            .unwrap();
-        let digested = with_tag
-            .with_digest("sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
-        assert_eq!(digested.name, "quay.io/exampleos/blah@sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
-
         for &v in VALID_IRS {
             ImageReference::try_from(v).unwrap();
         }
@@ -344,11 +290,6 @@ mod tests {
         let ir: OstreeImageReference = ir_s.try_into().unwrap();
         // test our Eq implementation
         assert_eq!(&ir, &OstreeImageReference::try_from(ir_registry).unwrap());
-
-        let digested = ir
-            .with_digest("sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
-        assert_eq!(digested.imgref.name, "quay.io/exampleos/blah@sha256:41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3");
-        assert_eq!(digested.with_digest("sha256:52f562806109f5746be31ccf21f5569fd2ce8c32deb0d14987b440ed39e34e20").imgref.name, "quay.io/exampleos/blah@sha256:52f562806109f5746be31ccf21f5569fd2ce8c32deb0d14987b440ed39e34e20");
 
         let ir_s = "ostree-image-signed:docker://quay.io/exampleos/blah";
         let ir: OstreeImageReference = ir_s.try_into().unwrap();
