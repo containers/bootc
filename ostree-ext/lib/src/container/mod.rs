@@ -42,12 +42,6 @@ pub const OSTREE_COMMIT_LABEL: &str = "ostree.commit";
 /// to a string to output to a terminal or logs.
 type Result<T> = anyhow::Result<T>;
 
-/// Information about the image manifest.
-pub struct OstreeContainerManifestInfo {
-    /// The manifest digest (`sha256:<value>`)
-    pub manifest_digest: String,
-}
-
 /// A backend/transport for OCI/Docker images.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Transport {
