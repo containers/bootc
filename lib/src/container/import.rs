@@ -120,7 +120,10 @@ pub async fn find_layer_tar(
     let pipein = crate::async_util::async_read_to_sync(src);
     // An internal channel of Bytes
     let (tx_buf, rx_buf) = tokio::sync::mpsc::channel(2);
-    let blob_symlink_target = format!("../{}.tar", blobid);
+    let blob_sha256 = blobid
+        .strip_prefix("sha256:")
+        .ok_or_else(|| anyhow!("Expected sha256: in digest: {}", blobid))?;
+    let blob_symlink_target = format!("../{}.tar", blob_sha256);
     let worker = tokio::task::spawn_blocking(move || {
         let mut pipein = pipein;
         let r =
@@ -265,31 +268,18 @@ pub struct Import {
     pub image_digest: String,
 }
 
-fn find_layer_blobid(manifest: &oci::Manifest) -> Result<String> {
-    let layers: Vec<_> = manifest
-        .layers
-        .iter()
-        .filter(|&layer| {
-            matches!(
-                layer.media_type.as_str(),
-                super::oci::DOCKER_TYPE_LAYER | oci::OCI_TYPE_LAYER
-            )
-        })
-        .collect();
-
+fn require_one_layer_blob(manifest: &oci::Manifest) -> Result<&str> {
+    let layers = manifest.find_layer_blobids()?;
     let n = layers.len();
     if let Some(layer) = layers.into_iter().next() {
         if n > 1 {
             Err(anyhow!("Expected 1 layer, found {}", n))
         } else {
-            let digest = layer.digest.as_str();
-            let hash = digest
-                .strip_prefix("sha256:")
-                .ok_or_else(|| anyhow!("Expected sha256: in digest: {}", digest))?;
-            Ok(hash.into())
+            Ok(layer)
         }
     } else {
-        Err(anyhow!("No layers found (orig: {})", manifest.layers.len()))
+        // Validated by find_layer_blobids()
+        unreachable!()
     }
 }
 
@@ -332,9 +322,9 @@ pub async fn import_from_manifest(
     }
     let options = options.unwrap_or_default();
     let manifest: oci::Manifest = serde_json::from_slice(manifest_bytes)?;
-    let layerid = find_layer_blobid(&manifest)?;
+    let layerid = require_one_layer_blob(&manifest)?;
     event!(Level::DEBUG, "target blob: {}", layerid);
-    let (blob, worker) = fetch_layer(imgref, layerid.as_str(), options.progress).await?;
+    let (blob, worker) = fetch_layer(imgref, layerid, options.progress).await?;
     let blob = tokio::io::BufReader::new(blob);
     let mut taropts: crate::tar::TarImportOptions = Default::default();
     match &imgref.sigverify {
