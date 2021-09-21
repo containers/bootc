@@ -19,11 +19,9 @@ jobs:
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
 
     steps:
-    - name: Install skopeo
-      run: yum -y install skopeo
-    - name: Update ostree
-      run: yum -y --enablerepo=updates-testing update ostree-devel
     - uses: actions/checkout@v2
+    - name: Install deps
+      run: ./ci/installdeps.sh
     - name: Format
       run: cargo fmt -- --check -l
     - name: Build

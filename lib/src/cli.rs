@@ -73,6 +73,10 @@ enum ContainerOpts {
         /// Create an ostree ref pointing to the imported commit
         #[structopt(long)]
         write_ref: Option<String>,
+
+        /// Don't display progress
+        #[structopt(long)]
+        quiet: bool,
     },
 
     /// Print information about an exported ostree-container image.
@@ -155,17 +159,27 @@ fn tar_export(opts: &ExportOpts) -> Result<()> {
 }
 
 /// Import a container image with an encapsulated ostree commit.
-async fn container_import(repo: &str, imgref: &str, write_ref: Option<&str>) -> Result<()> {
+async fn container_import(
+    repo: &str,
+    imgref: &str,
+    write_ref: Option<&str>,
+    quiet: bool,
+) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
     let imgref = imgref.try_into()?;
     let (tx_progress, rx_progress) = tokio::sync::watch::channel(Default::default());
     let target = indicatif::ProgressDrawTarget::stdout();
     let style = indicatif::ProgressStyle::default_bar();
-    let pb = indicatif::ProgressBar::new_spinner();
-    pb.set_draw_target(target);
-    pb.set_style(style.template("{spinner} {prefix} {msg}"));
-    pb.enable_steady_tick(200);
-    pb.set_message("Downloading...");
+    let pb = if !quiet {
+        let pb = indicatif::ProgressBar::new_spinner();
+        pb.set_draw_target(target);
+        pb.set_style(style.template("{spinner} {prefix} {msg}"));
+        pb.enable_steady_tick(200);
+        pb.set_message("Downloading...");
+        Some(pb)
+    } else {
+        None
+    };
     let opts = ImportOptions {
         progress: Some(tx_progress),
     };
@@ -176,10 +190,14 @@ async fn container_import(repo: &str, imgref: &str, write_ref: Option<&str>) -> 
         tokio::select! {
             _ = rx_progress.changed() => {
                 let n = rx_progress.borrow().processed_bytes;
-                pb.set_message(format!("Processed: {}", indicatif::HumanBytes(n)));
+                if let Some(pb) = pb.as_ref() {
+                    pb.set_message(format!("Processed: {}", indicatif::HumanBytes(n)));
+                }
             }
             import = &mut import => {
-                pb.finish();
+                if let Some(pb) = pb.as_ref() {
+                    pb.finish();
+                }
                 break import?;
             }
         }
@@ -266,7 +284,8 @@ where
             repo,
             imgref,
             write_ref,
-        }) => container_import(&repo, &imgref, write_ref.as_deref()).await,
+            quiet,
+        }) => container_import(&repo, &imgref, write_ref.as_deref(), quiet).await,
         Opt::Container(ContainerOpts::Export {
             repo,
             rev,
