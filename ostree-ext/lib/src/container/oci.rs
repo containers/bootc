@@ -79,6 +79,31 @@ pub(crate) struct Manifest {
     pub annotations: Option<BTreeMap<String, String>>,
 }
 
+impl Manifest {
+    /// Return all layer (non-metadata) blobs.
+    /// It is an error if there are no layers present.
+    pub(crate) fn find_layer_blobids(&self) -> Result<Vec<&str>> {
+        let layers: Vec<_> = self
+            .layers
+            .iter()
+            .filter_map(|layer| {
+                if matches!(
+                    layer.media_type.as_str(),
+                    DOCKER_TYPE_LAYER | OCI_TYPE_LAYER
+                ) {
+                    Some(layer.digest.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if layers.is_empty() {
+            return Err(anyhow!("No layers found"));
+        }
+        Ok(layers)
+    }
+}
+
 /// Completed blob metadata
 #[derive(Debug)]
 pub(crate) struct Blob {
@@ -323,6 +348,48 @@ impl<'a> std::io::Write for LayerWriter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MANIFEST_DERIVE: &str = r#"{
+        "schemaVersion": 2,
+        "config": {
+          "mediaType": "application/vnd.oci.image.config.v1+json",
+          "digest": "sha256:54977ab597b345c2238ba28fe18aad751e5c59dc38b9393f6f349255f0daa7fc",
+          "size": 754
+        },
+        "layers": [
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:ee02768e65e6fb2bb7058282338896282910f3560de3e0d6cd9b1d5985e8360d",
+            "size": 5462
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:d203cef7e598fa167cb9e8b703f9f20f746397eca49b51491da158d64968b429",
+            "size": 214
+          }
+        ],
+        "annotations": {
+          "ostree.commit": "3cb6170b6945065c2475bc16d7bebcc84f96b4c677811a6751e479b89f8c3770",
+          "ostree.version": "42.0"
+        }
+      }
+    "#;
+
+    #[test]
+    fn manifest() -> Result<()> {
+        let m: Manifest = serde_json::from_str(MANIFEST_DERIVE)?;
+        let mut blobids = m.find_layer_blobids()?.into_iter();
+        assert_eq!(
+            blobids.next().unwrap(),
+            "sha256:ee02768e65e6fb2bb7058282338896282910f3560de3e0d6cd9b1d5985e8360d"
+        );
+        assert_eq!(
+            blobids.next().unwrap(),
+            "sha256:d203cef7e598fa167cb9e8b703f9f20f746397eca49b51491da158d64968b429"
+        );
+        assert!(blobids.next().is_none());
+        Ok(())
+    }
 
     #[test]
     fn test_build() -> Result<()> {
