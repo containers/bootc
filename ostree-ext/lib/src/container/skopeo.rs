@@ -1,7 +1,6 @@
 //! Fork skopeo as a subprocess
 
-use super::Result;
-use anyhow::Context;
+use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::process::Stdio;
 use tokio::process::Command;
