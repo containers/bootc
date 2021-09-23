@@ -49,7 +49,7 @@ fn xattrs_to_map(v: &glib::Variant) -> BTreeMap<Vec<u8>, Vec<u8>> {
 }
 
 /// Create a new GVariant of type a(ayay).  This is used by OSTree's extended attributes.
-fn new_variant_a_ayay<'a, T: 'a + AsRef<[u8]>>(
+pub(crate) fn new_variant_a_ayay<'a, T: 'a + AsRef<[u8]>>(
     items: impl IntoIterator<Item = (T, T)>,
 ) -> glib::Variant {
     let children: Vec<_> = items

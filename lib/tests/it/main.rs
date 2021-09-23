@@ -250,6 +250,20 @@ async fn test_tar_import_export() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_tar_write() -> Result<()> {
+    let fixture = Fixture::new()?;
+    let r = ostree_ext::tar::write_tar(&fixture.destrepo, EXAMPLEOS_V0, "exampleos", None).await?;
+    let (commitdata, _) = fixture.destrepo.load_commit(&r)?;
+    assert_eq!(
+        EXAMPLEOS_CONTENT_CHECKSUM,
+        ostree::commit_get_content_checksum(&commitdata)
+            .unwrap()
+            .as_str()
+    );
+    Ok(())
+}
+
 fn skopeo_inspect(imgref: &str) -> Result<String> {
     let out = Command::new("skopeo")
         .args(&["inspect", imgref])
