@@ -20,6 +20,7 @@ const EXAMPLEOS_V1: &[u8] = include_bytes!("fixtures/exampleos-v1.tar.zst");
 const TESTREF: &str = "exampleos/x86_64/stable";
 const EXAMPLEOS_CONTENT_CHECKSUM: &str =
     "0ef7461f9db15e1d8bd8921abf20694225fbaa4462cadf7deed8ea0e43162120";
+const TEST_REGISTRY_DEFAULT: &str = "localhost:5000";
 
 /// Image that contains a base exported layer, then a `podman build` of an added file on top.
 const EXAMPLEOS_DERIVED_OCI: &[u8] = include_bytes!("fixtures/exampleos-derive.ociarchive");
@@ -30,6 +31,15 @@ fn assert_err_contains<T>(r: Result<T>, s: impl AsRef<str>) {
     if !msg.contains(s) {
         panic!(r#"Error message "{}" did not contain "{}""#, msg, s);
     }
+}
+
+lazy_static::lazy_static! {
+    static ref TEST_REGISTRY: String = {
+        match std::env::var_os("TEST_REGISTRY") {
+            Some(t) => t.to_str().unwrap().to_owned(),
+            None => TEST_REGISTRY_DEFAULT.to_string()
+        }
+    };
 }
 
 #[context("Generating test repo")]
@@ -372,6 +382,47 @@ async fn test_container_import_derive() -> Result<()> {
     };
     let r = ostree_ext::container::import(&fixture.destrepo, &exampleos_ref, None).await;
     assert_err_contains(r, "Expected 1 layer, found 2");
+    Ok(())
+}
+
+#[ignore]
+#[tokio::test]
+// Verify that we can push and pull to a registry, not just oci-archive:.
+// This requires a registry set up externally right now.  One can run a HTTP registry via e.g.
+// `podman run --rm -ti -p 5000:5000 --name registry docker.io/library/registry:2`
+// but that doesn't speak HTTPS and adding that is complex.
+// A simple option is setting up e.g. quay.io/$myuser/exampleos and then do:
+// Then you can run this test via `env TEST_REGISTRY=quay.io/$myuser cargo test -- --ignored`.
+async fn test_container_import_export_registry() -> Result<()> {
+    let tr = &*TEST_REGISTRY;
+    let fixture = Fixture::new()?;
+    let testrev = fixture
+        .srcrepo
+        .resolve_rev(TESTREF, false)
+        .context("Failed to resolve ref")?
+        .unwrap();
+    let src_imgref = ImageReference {
+        transport: Transport::Registry,
+        name: format!("{}/exampleos", tr),
+    };
+    let config = Config {
+        cmd: Some(vec!["/bin/bash".to_string()]),
+        ..Default::default()
+    };
+    let digest = ostree_ext::container::export(&fixture.srcrepo, TESTREF, &config, &src_imgref)
+        .await
+        .context("exporting to registry")?;
+    let mut digested_imgref = src_imgref.clone();
+    digested_imgref.name = format!("{}@{}", src_imgref.name, digest);
+
+    let import_ref = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: digested_imgref,
+    };
+    let import = ostree_ext::container::import(&fixture.destrepo, &import_ref, None)
+        .await
+        .context("importing")?;
+    assert_eq!(import.ostree_commit, testrev.as_str());
     Ok(())
 }
 
