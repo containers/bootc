@@ -1,5 +1,6 @@
 //! Run container-image-proxy as a subprocess.
-//! This allows fetching a container image manifest and layers in a streaming fashioni.
+//! This allows fetching a container image manifest and layers in a streaming fashion.
+//! More information: https://github.com/cgwalters/container-image-proxy
 
 use super::{ImageReference, Result};
 use crate::cmdext::CommandRedirectionExt;
@@ -25,6 +26,7 @@ pub(crate) struct ImageProxy {
 }
 
 impl ImageProxy {
+    /// Create an image proxy that fetches the target image.
     pub(crate) async fn new(imgref: &ImageReference) -> Result<Self> {
         // Communicate over an anonymous socketpair(2)
         let (mysock, childsock) = tokio::net::UnixStream::pair()?;
@@ -72,6 +74,8 @@ impl ImageProxy {
         })
     }
 
+    /// Fetch the manifest.
+    /// https://github.com/opencontainers/image-spec/blob/main/manifest.md
     pub(crate) async fn fetch_manifest(&mut self) -> Result<(String, Vec<u8>)> {
         let req = Request::builder()
             .header("Host", "localhost")
@@ -98,6 +102,10 @@ impl ImageProxy {
         Ok((digest, ret))
     }
 
+    /// Fetch a blob identified by e.g. `sha256:<digest>`.
+    /// https://github.com/opencontainers/image-spec/blob/main/descriptor.md
+    /// Note that right now the proxy does verification of the digest:
+    /// https://github.com/cgwalters/container-image-proxy/issues/1#issuecomment-926712009
     pub(crate) async fn fetch_blob(
         &mut self,
         digest: &str,
@@ -122,6 +130,7 @@ impl ImageProxy {
         Ok(body)
     }
 
+    /// Close the HTTP connection and wait for the child process to exit successfully.
     pub(crate) async fn finalize(mut self) -> Result<()> {
         // For now discard any errors from the connection
         drop(self.request_sender);
