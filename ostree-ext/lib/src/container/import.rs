@@ -31,7 +31,6 @@
 use super::*;
 use anyhow::{anyhow, Context};
 use fn_error_context::context;
-use std::pin::Pin;
 use tokio::io::AsyncRead;
 use tracing::{event, instrument, Level};
 
@@ -45,22 +44,25 @@ pub struct ImportProgress {
 type Progress = tokio::sync::watch::Sender<ImportProgress>;
 
 /// A read wrapper that updates the download progress.
-struct ProgressReader {
-    reader: Box<dyn AsyncRead + Unpin + Send + 'static>,
+#[pin_project::pin_project]
+struct ProgressReader<T> {
+    #[pin]
+    reader: T,
+    #[pin]
     progress: Option<Progress>,
 }
 
-impl AsyncRead for ProgressReader {
+impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
     fn poll_read(
-        mut self: std::pin::Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        let pinned = Pin::new(&mut self.reader);
+        let this = self.project();
         let len = buf.filled().len();
-        match pinned.poll_read(cx, buf) {
+        match this.reader.poll_read(cx, buf) {
             v @ std::task::Poll::Ready(Ok(_)) => {
-                let success = if let Some(progress) = self.progress.as_ref() {
+                if let Some(progress) = this.progress.as_ref().get_ref() {
                     let state = {
                         let mut state = *progress.borrow();
                         let newlen = buf.filled().len();
@@ -70,12 +72,7 @@ impl AsyncRead for ProgressReader {
                         state
                     };
                     // Ignore errors, if the caller disconnected from progress that's OK.
-                    progress.send(state).is_ok()
-                } else {
-                    true
-                };
-                if !success {
-                    let _ = self.progress.take();
+                    let _ = progress.send(state);
                 }
                 v
             }
