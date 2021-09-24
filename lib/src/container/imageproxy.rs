@@ -2,7 +2,7 @@
 //! This allows fetching a container image manifest and layers in a streaming fashion.
 //! More information: https://github.com/cgwalters/container-image-proxy
 
-use super::{ImageReference, Result};
+use super::{oci, ImageReference, Result};
 use crate::cmdext::CommandRedirectionExt;
 use anyhow::Context;
 use futures_util::{Future, FutureExt, TryFutureExt, TryStreamExt};
@@ -128,6 +128,15 @@ impl ImageProxy {
             return Err(anyhow::anyhow!("error from proxy: {}: {}", status, s));
         }
         Ok(body)
+    }
+
+    /// A wrapper for [`fetch_blob`] which fetches a layer and decompresses it.
+    pub(crate) async fn fetch_layer_decompress(
+        &mut self,
+        layer: &oci::ManifestLayer,
+    ) -> Result<Box<dyn AsyncBufRead + Send + Unpin>> {
+        let blob = self.fetch_blob(layer.digest.as_str()).await?;
+        Ok(layer.new_async_decompressor(blob)?)
     }
 
     /// Close the HTTP connection and wait for the child process to exit successfully.

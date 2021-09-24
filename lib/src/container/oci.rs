@@ -12,6 +12,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     io::prelude::*,
 };
+use tokio::io::AsyncBufRead;
 
 /// Map the value from `uname -m` to the Go architecture.
 /// TODO find a more canonical home for this.
@@ -23,10 +24,10 @@ static MACHINE_TO_OCI: phf::Map<&str, &str> = phf_map! {
 // OCI types, see https://github.com/opencontainers/image-spec/blob/master/media-types.md
 pub(crate) const OCI_TYPE_CONFIG_JSON: &str = "application/vnd.oci.image.config.v1+json";
 pub(crate) const OCI_TYPE_MANIFEST_JSON: &str = "application/vnd.oci.image.manifest.v1+json";
-pub(crate) const OCI_TYPE_LAYER: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
-#[allow(dead_code)]
-pub(crate) const IMAGE_LAYER_GZIP_MEDIA_TYPE: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
-pub(crate) const DOCKER_TYPE_LAYER: &str = "application/vnd.docker.image.rootfs.diff.tar.gzip";
+pub(crate) const OCI_TYPE_LAYER_GZIP: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
+pub(crate) const OCI_TYPE_LAYER_TAR: &str = "application/vnd.oci.image.layer.v1.tar";
+// FIXME - use containers/image to fully convert the manifest to OCI
+const DOCKER_TYPE_LAYER_TARGZ: &str = "application/vnd.docker.image.rootfs.diff.tar.gzip";
 
 /// Path inside an OCI directory to the blobs
 const BLOBDIR: &str = "blobs/sha256";
@@ -69,6 +70,22 @@ pub(crate) struct ManifestLayer {
     pub size: u64,
 }
 
+impl ManifestLayer {
+    /// Create a decompressor for this layer, given a stream of input.
+    pub fn new_async_decompressor(
+        &self,
+        src: impl AsyncBufRead + Send + Unpin + 'static,
+    ) -> Result<Box<dyn AsyncBufRead + Send + Unpin + 'static>> {
+        match self.media_type.as_str() {
+            OCI_TYPE_LAYER_GZIP | DOCKER_TYPE_LAYER_TARGZ => Ok(Box::new(
+                tokio::io::BufReader::new(async_compression::tokio::bufread::GzipDecoder::new(src)),
+            )),
+            OCI_TYPE_LAYER_TAR => Ok(Box::new(src)),
+            o => Err(anyhow::anyhow!("Unhandled layer type: {}", o)),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Manifest {
@@ -77,31 +94,6 @@ pub(crate) struct Manifest {
 
     pub layers: Vec<ManifestLayer>,
     pub annotations: Option<BTreeMap<String, String>>,
-}
-
-impl Manifest {
-    /// Return all layer (non-metadata) blobs.
-    /// It is an error if there are no layers present.
-    pub(crate) fn find_layer_blobids(&self) -> Result<Vec<&str>> {
-        let layers: Vec<_> = self
-            .layers
-            .iter()
-            .filter_map(|layer| {
-                if matches!(
-                    layer.media_type.as_str(),
-                    DOCKER_TYPE_LAYER | OCI_TYPE_LAYER
-                ) {
-                    Some(layer.digest.as_str())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        if layers.is_empty() {
-            return Err(anyhow!("No layers found"));
-        }
-        Ok(layers)
-    }
 }
 
 /// Completed blob metadata
@@ -237,7 +229,7 @@ impl<'a> OciWriter<'a> {
                 "digest": config_blob.digest_id(),
             },
             "layers": [
-                { "mediaType": OCI_TYPE_LAYER,
+                { "mediaType": OCI_TYPE_LAYER_GZIP,
                   "size": rootfs_blob.blob.size,
                   "digest":  rootfs_blob.blob.digest_id(),
                 }
@@ -378,16 +370,10 @@ mod tests {
     #[test]
     fn manifest() -> Result<()> {
         let m: Manifest = serde_json::from_str(MANIFEST_DERIVE)?;
-        let mut blobids = m.find_layer_blobids()?.into_iter();
         assert_eq!(
-            blobids.next().unwrap(),
+            m.layers[0].digest.as_str(),
             "sha256:ee02768e65e6fb2bb7058282338896282910f3560de3e0d6cd9b1d5985e8360d"
         );
-        assert_eq!(
-            blobids.next().unwrap(),
-            "sha256:d203cef7e598fa167cb9e8b703f9f20f746397eca49b51491da158d64968b429"
-        );
-        assert!(blobids.next().is_none());
         Ok(())
     }
 
