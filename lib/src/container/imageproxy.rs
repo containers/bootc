@@ -44,7 +44,7 @@ impl ImageProxy {
         }
         let mut c = tokio::process::Command::from(c);
         c.kill_on_drop(true);
-        let mut proc = c.spawn()?;
+        let mut proc = c.spawn().context("Failed to spawn container-image-proxy")?;
         // We've passed over the fd, close it.
         drop(childsock);
 
