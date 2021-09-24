@@ -2,25 +2,28 @@ use std::io::prelude::*;
 use std::pin::Pin;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-struct ReadBridge {
-    reader: Pin<Box<dyn AsyncRead + Send + Unpin + 'static>>,
+/// A [`std::io::Read`] implementation backed by an asynchronous source.
+pub(crate) struct ReadBridge<T> {
+    reader: Pin<Box<T>>,
     rt: tokio::runtime::Handle,
 }
 
-impl Read for ReadBridge {
+impl<T: AsyncRead> Read for ReadBridge<T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let mut reader = self.reader.as_mut();
+        let reader = &mut self.reader;
         self.rt.block_on(async { reader.read(buf).await })
     }
 }
 
-/// Bridge from AsyncRead to Read.
-pub(crate) fn async_read_to_sync<S: AsyncRead + Unpin + Send + 'static>(
-    reader: S,
-) -> impl Read + Send + Unpin + 'static {
-    let rt = tokio::runtime::Handle::current();
-    let reader = Box::pin(reader);
-    ReadBridge { reader, rt }
+impl<T: AsyncRead> ReadBridge<T> {
+    /// Create a [`std::io::Read`] implementation backed by an asynchronous source.
+    ///
+    /// This is useful with e.g. [`tokio::task::spawn_blocking`].
+    pub(crate) fn new(reader: T) -> Self {
+        let reader = Box::pin(reader);
+        let rt = tokio::runtime::Handle::current();
+        ReadBridge { reader, rt }
+    }
 }
 
 #[cfg(test)]
@@ -34,7 +37,7 @@ mod test {
         r: impl AsyncRead + Unpin + Send + 'static,
         expected_len: usize,
     ) -> Result<()> {
-        let mut r = async_read_to_sync(r);
+        let mut r = ReadBridge::new(r);
         let res = tokio::task::spawn_blocking(move || {
             let mut buf = Vec::new();
             r.read_to_end(&mut buf)?;
