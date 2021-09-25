@@ -54,6 +54,7 @@ pub async fn write_tar(
         c.args(&[
             "--no-bindings",
             "--tar-autocreate-parents",
+            r#"--tar-pathname-filter=^etc(.*),usr/etc\1"#,
             "--tree=tar=/proc/self/fd/0",
             "--branch",
             refname,
