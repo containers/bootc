@@ -264,6 +264,9 @@ async fn test_tar_import_export() -> Result<()> {
 async fn test_tar_write() -> Result<()> {
     let fixture = Fixture::new()?;
     let r = ostree_ext::tar::write_tar(&fixture.destrepo, EXAMPLEOS_V0, "exampleos", None).await?;
+    // Here, we're importing a raw tarball into an ostree commit; this is a subtly different
+    // path than what we do above for the flow of "unpack tarball + ostree commit + export tar".
+    // But, they should be content-identical.
     let (commitdata, _) = fixture.destrepo.load_commit(&r)?;
     assert_eq!(
         EXAMPLEOS_CONTENT_CHECKSUM,
@@ -271,6 +274,26 @@ async fn test_tar_write() -> Result<()> {
             .unwrap()
             .as_str()
     );
+
+    // Test translating /etc to /usr/etc
+    let tmpetc = fixture.path.join("tmproot/etc");
+    let tmproot = tmpetc.parent().unwrap();
+    let tmptar = fixture.path.join("testlayer.tar");
+    std::fs::create_dir_all(&tmpetc)?;
+    std::fs::write(tmpetc.join("someconfig.conf"), b"")?;
+    bash!(
+        "tar cf {tmptar} -C {tmproot} .",
+        tmptar = tmptar.as_str(),
+        tmproot = tmproot.as_str()
+    )?;
+    let src = tokio::fs::File::open(&tmptar).await?;
+    let layer_commit = ostree_ext::tar::write_tar(&fixture.destrepo, src, "layer", None).await?;
+    bash!(
+        "ostree --repo={repo} ls {layer_commit} /usr/etc/someconfig.conf >/dev/null",
+        repo = fixture.destrepo_path.as_str(),
+        layer_commit = layer_commit.as_str()
+    )?;
+
     Ok(())
 }
 
