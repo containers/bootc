@@ -98,14 +98,13 @@ pub struct Import {
     pub image_digest: String,
 }
 
-fn require_one_layer_blob(manifest: &oci::Manifest) -> Result<&str> {
-    let layers = manifest.find_layer_blobids()?;
-    let n = layers.len();
-    if let Some(layer) = layers.into_iter().next() {
+fn require_one_layer_blob(manifest: &oci::Manifest) -> Result<&oci::ManifestLayer> {
+    let n = manifest.layers.len();
+    if let Some(layer) = manifest.layers.iter().next() {
         if n > 1 {
             Err(anyhow!("Expected 1 layer, found {}", n))
         } else {
-            Ok(layer)
+            Ok(&layer)
         }
     } else {
         // Validated by find_layer_blobids()
@@ -152,13 +151,12 @@ pub async fn import_from_manifest(
     }
     let options = options.unwrap_or_default();
     let manifest: oci::Manifest = serde_json::from_slice(manifest_bytes)?;
-    let layerid = require_one_layer_blob(&manifest)?;
-    event!(Level::DEBUG, "target blob: {}", layerid);
+    let layer = require_one_layer_blob(&manifest)?;
+    event!(Level::DEBUG, "target blob: {}", layer.digest.as_str());
     let mut proxy = imageproxy::ImageProxy::new(&imgref.imgref).await?;
-    let blob = proxy.fetch_blob(layerid).await?;
-    let blob = async_compression::tokio::bufread::GzipDecoder::new(blob);
+    let blob = proxy.fetch_layer_decompress(layer).await?;
     let blob = ProgressReader {
-        reader: Box::new(blob),
+        reader: blob,
         progress: options.progress,
     };
     let mut taropts: crate::tar::TarImportOptions = Default::default();
@@ -168,7 +166,7 @@ pub async fn import_from_manifest(
     }
     let ostree_commit = crate::tar::import_tar(repo, blob, Some(taropts))
         .await
-        .with_context(|| format!("Parsing blob {}", layerid))?;
+        .with_context(|| format!("Parsing blob {}", layer.digest))?;
     // FIXME write ostree commit after proxy finalization
     proxy.finalize().await?;
     event!(Level::DEBUG, "created commit {}", ostree_commit);
