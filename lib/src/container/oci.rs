@@ -36,14 +36,14 @@ fn default_schema_version() -> u32 {
     2
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct IndexPlatform {
     pub architecture: String,
     pub os: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct IndexManifest {
     pub media_type: String,
@@ -53,7 +53,7 @@ pub(crate) struct IndexManifest {
     pub platform: Option<IndexPlatform>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Index {
     #[serde(default = "default_schema_version")]
@@ -62,7 +62,7 @@ pub(crate) struct Index {
     pub manifests: Vec<IndexManifest>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ManifestLayer {
     pub media_type: String,
@@ -86,7 +86,7 @@ impl ManifestLayer {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Manifest {
     #[serde(default = "default_schema_version")]
