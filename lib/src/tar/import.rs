@@ -1,5 +1,6 @@
 //! APIs for extracting OSTree commits from container images
 
+use crate::async_util::ReadBridge;
 use crate::Result;
 use anyhow::{anyhow, Context};
 use camino::Utf8Path;
@@ -603,10 +604,10 @@ pub async fn import_tar(
     options: Option<TarImportOptions>,
 ) -> Result<String> {
     let options = options.unwrap_or_default();
-    let pipein = crate::async_util::async_read_to_sync(src);
+    let src = ReadBridge::new(src);
     let repo = repo.clone();
     let import = tokio::task::spawn_blocking(move || {
-        let mut archive = tar::Archive::new(pipein);
+        let mut archive = tar::Archive::new(src);
         let importer = Importer::new(&repo, options.remote);
         importer.import(&mut archive)
     })
