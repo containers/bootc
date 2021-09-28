@@ -2,11 +2,11 @@
 //!
 //! # External depenendency on container-image-proxy
 //!
-//! This code requires https://github.com/cgwalters/container-image-proxy
+//! This code requires <https://github.com/cgwalters/container-image-proxy>
 //! installed as a binary in $PATH.
 //!
 //! The rationale for this is that while there exist Rust crates to speak
-//! the Docker distribution API, the Go library https://github.com/containers/image/
+//! the Docker distribution API, the Go library <https://github.com/containers/image/>
 //! supports key things we want for production use like:
 //!
 //! - Image mirroring and remapping; effectively `man containers-registries.conf`
