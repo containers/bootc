@@ -9,8 +9,11 @@
 
 use crate::cmdext::CommandRedirectionExt;
 use crate::Result;
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
+use ostree::gio;
+use ostree::prelude::FileExt;
 use std::os::unix::prelude::AsRawFd;
+use std::path::Path;
 use tokio::io::AsyncReadExt;
 use tracing::instrument;
 
@@ -24,6 +27,31 @@ pub struct WriteTarOptions<'a> {
     pub selinux: bool,
 }
 
+struct TempSePolicy {
+    tempdir: tempfile::TempDir,
+}
+
+// Copy of logic from https://github.com/ostreedev/ostree/pull/2447
+// to avoid waiting for backport + releases
+fn sepolicy_from_base(repo: &ostree::Repo, base: &str) -> Result<TempSePolicy> {
+    let cancellable = gio::NONE_CANCELLABLE;
+    let policypath = "usr/etc/selinux";
+    let tempdir = tempfile::tempdir()?;
+    let (root, _) = repo.read_commit(base, cancellable)?;
+    let policyroot = root.resolve_relative_path(policypath);
+    if policyroot.query_exists(cancellable) {
+        let policydest = tempdir.path().join(policypath);
+        std::fs::create_dir_all(policydest.parent().unwrap())?;
+        let opts = ostree::RepoCheckoutAtOptions {
+            mode: ostree::RepoCheckoutMode::User,
+            subpath: Some(Path::new(policypath).to_owned()),
+            ..Default::default()
+        };
+        repo.checkout_at(Some(&opts), ostree::AT_FDCWD, policydest, base, cancellable)?;
+    }
+    Ok(TempSePolicy { tempdir: tempdir })
+}
+
 /// Write the contents of a tarball as an ostree commit.
 #[allow(unsafe_code)] // For raw fd bits
 #[instrument(skip(repo, src))]
@@ -35,6 +63,15 @@ pub async fn write_tar(
 ) -> Result<String> {
     use std::process::Stdio;
     let options = options.unwrap_or_default();
+    let sepolicy = if options.selinux {
+        if let Some(base) = options.base {
+            Some(sepolicy_from_base(repo, base).context("tar: Preparing sepolicy")?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let mut c = std::process::Command::new("ostree");
     let repofd = repo.dfd_as_file()?;
     {
@@ -45,11 +82,9 @@ pub async fn write_tar(
             .args(&["commit"]);
         c.take_fd_n(repofd.as_raw_fd(), 3);
         c.arg("--repo=/proc/self/fd/3");
-        if let Some(base) = options.base {
-            if options.selinux {
-                c.arg("--selinux-policy-from-base");
-            }
-            c.arg(&format!("--tree=ref={}", base));
+        if let Some(sepolicy) = sepolicy.as_ref() {
+            c.arg("--selinux-policy");
+            c.arg(sepolicy.tempdir.path());
         }
         c.args(&[
             "--no-bindings",
@@ -86,6 +121,8 @@ pub async fn write_tar(
 
     let (_, (child_stdout, child_stderr)) = tokio::try_join!(input_copier, output_copier)?;
     let status = r.wait().await?;
+    // Ensure this lasted until the process exited
+    drop(sepolicy);
     if !status.success() {
         return Err(anyhow!(
             "Failed to commit tar: {:?}: {}",
