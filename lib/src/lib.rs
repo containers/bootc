@@ -26,6 +26,7 @@ pub mod cli;
 pub mod container;
 pub mod diff;
 pub mod ima;
+pub mod refescape;
 pub mod tar;
 pub mod tokio_util;
 
