@@ -27,6 +27,7 @@ pub mod container;
 pub mod diff;
 pub mod ima;
 pub mod tar;
+pub mod tokio_util;
 
 mod cmdext;
 
