@@ -219,8 +219,8 @@ impl Importer {
         size: usize,
         checksum: &str,
         xattrs: Option<glib::Variant>,
+        cancellable: Option<&gio::Cancellable>,
     ) -> Result<()> {
-        let cancellable = gio::NONE_CANCELLABLE;
         let (uid, gid, mode) = header_attrs(entry.header())?;
         let w = self.repo.write_regfile(
             Some(checksum),
@@ -256,6 +256,7 @@ impl Importer {
         size: usize,
         checksum: &str,
         xattrs: Option<glib::Variant>,
+        cancellable: Option<&gio::Cancellable>,
     ) -> Result<()> {
         let (uid, gid, mode) = header_attrs(entry.header())?;
         assert!(size <= SMALL_REGFILE_SIZE);
@@ -268,7 +269,7 @@ impl Importer {
             mode,
             xattrs.as_ref(),
             &buf,
-            gio::NONE_CANCELLABLE,
+            cancellable,
         )?;
         debug_assert_eq!(c.as_str(), checksum);
         self.stats.regfile_small += 1;
@@ -311,8 +312,8 @@ impl Importer {
         entry: tar::Entry<R>,
         checksum: &str,
         xattrs: Option<glib::Variant>,
+        cancellable: Option<&gio::Cancellable>,
     ) -> Result<()> {
-        let cancellable = gio::NONE_CANCELLABLE;
         if self
             .repo
             .has_object(ostree::ObjectType::File, checksum, cancellable)?
@@ -323,9 +324,9 @@ impl Importer {
         match entry.header().entry_type() {
             tar::EntryType::Regular => {
                 if size > SMALL_REGFILE_SIZE {
-                    self.import_large_regfile_object(entry, size, checksum, xattrs)
+                    self.import_large_regfile_object(entry, size, checksum, xattrs, cancellable)
                 } else {
-                    self.import_small_regfile_object(entry, size, checksum, xattrs)
+                    self.import_small_regfile_object(entry, size, checksum, xattrs, cancellable)
                 }
             }
             tar::EntryType::Symlink => self.import_symlink_object(entry, checksum, xattrs),
@@ -340,6 +341,7 @@ impl Importer {
         &mut self,
         entry: tar::Entry<'b, R>,
         path: &Utf8Path,
+        cancellable: Option<&gio::Cancellable>,
     ) -> Result<()> {
         let (parentname, mut name, mut objtype) = parse_object_entry_path(path)?;
 
@@ -385,7 +387,7 @@ impl Importer {
                 if is_xattrs {
                     self.import_xattr_ref(entry, checksum)
                 } else {
-                    self.import_content_object(entry, &checksum, xattr_ref)
+                    self.import_content_object(entry, &checksum, xattr_ref, cancellable)
                 }
             }
             objtype => self.import_metadata(entry, &checksum, objtype),
@@ -452,8 +454,12 @@ impl Importer {
         Ok(())
     }
 
-    fn import(mut self, archive: &mut tar::Archive<impl Read + Send + Unpin>) -> Result<String> {
-        self.repo.prepare_transaction(gio::NONE_CANCELLABLE)?;
+    fn import(
+        mut self,
+        archive: &mut tar::Archive<impl Read + Send + Unpin>,
+        cancellable: Option<&gio::Cancellable>,
+    ) -> Result<String> {
+        self.repo.prepare_transaction(cancellable)?;
 
         // Create an iterator that skips over directories; we just care about the file names.
         let mut ents = archive.entries()?.filter_map(|e| match e {
@@ -518,29 +524,20 @@ impl Importer {
             )?;
 
             // Write the commit object, which also verifies its checksum.
-            let actual_checksum = self.repo.write_metadata(
-                objtype,
-                Some(&checksum),
-                &commit,
-                gio::NONE_CANCELLABLE,
-            )?;
+            let actual_checksum =
+                self.repo
+                    .write_metadata(objtype, Some(&checksum), &commit, cancellable)?;
             assert_eq!(actual_checksum.to_hex(), checksum);
             event!(Level::DEBUG, "Imported {}.commit", checksum);
 
             // Finally, write the detached metadata.
-            self.repo.write_commit_detached_metadata(
-                &checksum,
-                Some(&commitmeta),
-                gio::NONE_CANCELLABLE,
-            )?;
+            self.repo
+                .write_commit_detached_metadata(&checksum, Some(&commitmeta), cancellable)?;
         } else {
             // We're not doing any validation of the commit, so go ahead and write it.
-            let actual_checksum = self.repo.write_metadata(
-                objtype,
-                Some(&checksum),
-                &commit,
-                gio::NONE_CANCELLABLE,
-            )?;
+            let actual_checksum =
+                self.repo
+                    .write_metadata(objtype, Some(&checksum), &commit, cancellable)?;
             assert_eq!(actual_checksum.to_hex(), checksum);
             event!(Level::DEBUG, "Imported {}.commit", checksum);
 
@@ -559,7 +556,7 @@ impl Importer {
                     )?;
                 }
                 _ => {
-                    self.import_object(next_ent, &nextent_path)?;
+                    self.import_object(next_ent, &nextent_path, cancellable)?;
                 }
             }
         }
@@ -568,12 +565,12 @@ impl Importer {
             let (entry, path) = entry?;
 
             if let Ok(p) = path.strip_prefix("objects/") {
-                self.import_object(entry, p)?;
+                self.import_object(entry, p, cancellable)?;
             } else if path.strip_prefix("xattrs/").is_ok() {
                 self.import_xattrs(entry)?;
             }
         }
-        self.repo.commit_transaction(gio::NONE_CANCELLABLE)?;
+        self.repo.commit_transaction(cancellable)?;
 
         Ok(checksum)
     }
@@ -606,10 +603,10 @@ pub async fn import_tar(
     let options = options.unwrap_or_default();
     let src = ReadBridge::new(src);
     let repo = repo.clone();
-    let import = tokio::task::spawn_blocking(move || {
+    let import = crate::tokio_util::spawn_blocking_cancellable(move |cancellable| {
         let mut archive = tar::Archive::new(src);
         let importer = Importer::new(&repo, options.remote);
-        importer.import(&mut archive)
+        importer.import(&mut archive, Some(cancellable))
     })
     .map_err(anyhow::Error::msg);
     let import: String = import.await??;

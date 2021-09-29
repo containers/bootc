@@ -2,10 +2,11 @@
 
 use anyhow::Result;
 use futures_util::Future;
+use ostree::gio;
 use ostree::prelude::CancellableExt;
 
 /// Call a faillible future, while monitoring `cancellable` and return an error if cancelled.
-pub async fn run_with_cancellable<F, R>(f: F, cancellable: &ostree::gio::Cancellable) -> Result<R>
+pub async fn run_with_cancellable<F, R>(f: F, cancellable: &gio::Cancellable) -> Result<R>
 where
     F: Future<Output = Result<R>>,
 {
@@ -22,6 +23,31 @@ where
     }
 }
 
+struct CancelOnDrop(gio::Cancellable);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+/// Wrapper for [`tokio::task::spawn_blocking`] which provides a [`gio::Cancellable`] that will be triggered on drop.
+///
+/// This function should be used in a Rust/tokio native `async fn`, but that want to invoke
+/// GLib style blocking APIs that use `GCancellable`.  The cancellable will be triggered when this
+/// future is dropped, which helps bound thread usage.
+///
+/// This is in a sense the inverse of [`run_with_cancellable`].
+pub fn spawn_blocking_cancellable<F, R>(f: F) -> tokio::task::JoinHandle<R>
+where
+    F: FnOnce(&gio::Cancellable) -> R + Send + 'static,
+    R: Send + 'static,
+{
+    tokio::task::spawn_blocking(move || {
+        let dropper = CancelOnDrop(gio::Cancellable::new());
+        f(&dropper.0)
+    })
+}
 #[cfg(test)]
 mod tests {
     use super::*;
