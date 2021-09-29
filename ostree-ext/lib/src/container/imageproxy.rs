@@ -1,6 +1,6 @@
 //! Run container-image-proxy as a subprocess.
 //! This allows fetching a container image manifest and layers in a streaming fashion.
-//! More information: https://github.com/cgwalters/container-image-proxy
+//! More information: <https://github.com/cgwalters/container-image-proxy>
 
 use super::{oci, ImageReference, Result};
 use crate::cmdext::CommandRedirectionExt;
