@@ -459,7 +459,9 @@ impl Importer {
         archive: &mut tar::Archive<impl Read + Send + Unpin>,
         cancellable: Option<&gio::Cancellable>,
     ) -> Result<String> {
-        self.repo.prepare_transaction(cancellable)?;
+        // Unfortunately our use of `&mut self` here clashes with borrowing the repo
+        let txn_repo = self.repo.clone();
+        let txn = txn_repo.auto_transaction(cancellable)?;
 
         // Create an iterator that skips over directories; we just care about the file names.
         let mut ents = archive.entries()?.filter_map(|e| match e {
@@ -570,7 +572,7 @@ impl Importer {
                 self.import_xattrs(entry)?;
             }
         }
-        self.repo.commit_transaction(cancellable)?;
+        txn.commit(cancellable)?;
 
         Ok(checksum)
     }
