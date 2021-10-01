@@ -49,11 +49,27 @@ This is used by `rpm-ostree ex apply-live`.
 
 ## module "container": Encapsulate ostree commits in OCI/Docker images
 
+This module contains APIs to bidirectionally map between a single OSTree commit and a container image wrapping it.
+Because container images are just layers of tarballs, this builds on the [`crate::tar`] module.
+To emphasize this, the current high level model is that this is a one-to-one mapping - an ostree commit
+can be exported (wrapped) into a container image, which will have exactly one layer.  Upon import
+back into an ostree repository, all container metadata except for its digested checksum will be discarded.
+#### Signatures
+OSTree supports GPG and ed25519 signatures natively, and it's expected by default that
+when booting from a fetched container image, one verifies ostree-level signatures.
+For ostree, a signing configuration is specified via an ostree remote.  In order to
+pair this configuration together, this library defines a "URL-like" string schema:
+`ostree-remote-registry:<remotename>:<containerimage>`
+A concrete instantiation might be e.g.: `ostree-remote-registry:fedora:quay.io/coreos/fedora-coreos:stable`
+To parse and generate these strings, see [`OstreeImageReference`].
+#### Layering
 
-### Export an OSTree commit into a container image
+A key feature of container images is support for layering.  At the moment, support
+for this is [planned but not implemented](https://github.com/ostreedev/ostree-rs-ext/issues/12).
+### Encapsulate an OSTree commit inside a container image
 
 ```
-$ ostree-ext-cli container export --repo=/path/to/repo exampleos/x86_64/stable docker://quay.io/exampleos/exampleos:stable
+$ ostree-ext-cli container encapsulate --repo=/path/to/repo exampleos/x86_64/stable docker://quay.io/exampleos/exampleos:stable
 ```
 You can then e.g.
 
@@ -64,22 +80,25 @@ $ podman run --rm -ti --entrypoint bash quay.io/exampleos/exampleos:stable
 Running the container directly for e.g. CI testing is one use case.  But more importantly, this container image
 can be pushed to any registry, and used as part of ostree-based operating system release engineering.
 
-### Importing an ostree-container directly
+### Unencapsulate an ostree-container directly
 
 A primary goal of this effort is to make it fully native to an ostree-based operating system to pull a container image directly too.
 
-FUTURE: An important aspect of this is that the system will validate the GPG signature of the target OSTree commit, as well as validating the sha256 of the contained objects.
+The CLI offers a method to "unencapsulate" - fetch a container image in a streaming fashion and
+import the embedded OSTree commit.  Here, you must use a prefix scheme which defines signature verification.
 
-The CLI offers a method to import the exported commit:
+- `ostree-remote-image:$remote:$imagereference`: This declares that the OSTree commit embedded in the image reference should be verified using the ostree remote config `$remote`.
+- `ostree-image-signed:$imagereference`: Fetch via the containers/image stack, but require *some* signature verification (not via ostree).
+- `ostree-unverified-image:$imagereference`: Don't do any signature verification
 
 ```
-$ ostree-ext-cli container import --repo=/ostree/repo docker://quay.io/exampleos/exampleos:stable
+$ ostree-ext-cli container unencapsulate --repo=/ostree/repo ostree-remote-image:someremote:docker://quay.io/exampleos/exampleos:stable
 ```
 
 But a project like rpm-ostree could hence support:
 
 ```
-$ rpm-ostree rebase quay.io/exampleos/exampleos:stable
+$ rpm-ostree rebase ostree-remote-image:someremote:quay.io/exampleos/exampleos:stable
 ```
 
 (Along with the usual `rpm-ostree upgrade` knowing to pull that container image)
