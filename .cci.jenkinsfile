@@ -65,7 +65,7 @@ cosaPod(runAsUser: 0, memory: "3072Mi", cpu: "4") {
       // The previous e2e leaves things only having built an ostree update
       shwrap("cosa build")
       // bootupd really can't break upgrades for the OS
-      fcosKola(cosaDir: "${env.WORKSPACE}", extraArgs: "ext.*bootupd*", skipUpgrade: true)
+      fcosKola(cosaDir: "${env.WORKSPACE}", extraArgs: "ext.*bootupd*", skipUpgrade: true, skipBasicScenarios: true)
     }
   } finally {
     archiveArtifacts allowEmptyArchive: true, artifacts: 'tmp/console.txt'
