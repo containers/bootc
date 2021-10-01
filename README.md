@@ -88,9 +88,6 @@ how to separately download bootloaders and pass them to `bootupctl backend`.
 
 - Why is bootupd not part of ostree?
 
-This question is really covered at the top of this file already - hopefully
-you read that already, but this answer will rephrase and try to go in more depth.
-
 A key advertised feature of ostree is that updates are truly transactional.
 There's even a [a test case](https://blog.verbum.org/2020/12/01/committed-to-the-integrity-of-your-root-filesystem/)
 that validates forcibly pulling the power during OS updates.  A simple
