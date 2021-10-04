@@ -61,8 +61,9 @@ enum TarOpts {
 /// Options for container import/export.
 #[derive(Debug, StructOpt)]
 enum ContainerOpts {
+    #[structopt(alias = "import")]
     /// Import an ostree commit embedded in a remote container image
-    Import {
+    Unencapsulate {
         /// Path to the repository
         #[structopt(long)]
         repo: String,
@@ -85,8 +86,9 @@ enum ContainerOpts {
         imgref: String,
     },
 
-    /// Export an ostree commit to an OCI layout
-    Export {
+    ///  Wrap an ostree commit into a container
+    #[structopt(alias = "export")]
+    Encapsulate {
         /// Path to the repository
         #[structopt(long)]
         repo: String,
@@ -280,13 +282,13 @@ where
         Opt::Tar(TarOpts::Import(ref opt)) => tar_import(opt).await,
         Opt::Tar(TarOpts::Export(ref opt)) => tar_export(opt),
         Opt::Container(ContainerOpts::Info { imgref }) => container_info(imgref.as_str()).await,
-        Opt::Container(ContainerOpts::Import {
+        Opt::Container(ContainerOpts::Unencapsulate {
             repo,
             imgref,
             write_ref,
             quiet,
         }) => container_import(&repo, &imgref, write_ref.as_deref(), quiet).await,
-        Opt::Container(ContainerOpts::Export {
+        Opt::Container(ContainerOpts::Encapsulate {
             repo,
             rev,
             imgref,
