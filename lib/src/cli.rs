@@ -281,33 +281,35 @@ where
     match opt {
         Opt::Tar(TarOpts::Import(ref opt)) => tar_import(opt).await,
         Opt::Tar(TarOpts::Export(ref opt)) => tar_export(opt),
-        Opt::Container(ContainerOpts::Info { imgref }) => container_info(imgref.as_str()).await,
-        Opt::Container(ContainerOpts::Unencapsulate {
-            repo,
-            imgref,
-            write_ref,
-            quiet,
-        }) => container_import(&repo, &imgref, write_ref.as_deref(), quiet).await,
-        Opt::Container(ContainerOpts::Encapsulate {
-            repo,
-            rev,
-            imgref,
-            labels,
-            cmd,
-        }) => {
-            let labels: Result<BTreeMap<_, _>> = labels
-                .into_iter()
-                .map(|l| {
-                    let mut parts = l.splitn(2, '=');
-                    let k = parts.next().unwrap();
-                    let v = parts
-                        .next()
-                        .ok_or_else(|| anyhow::anyhow!("Missing '=' in label {}", l))?;
-                    Ok((k.to_string(), v.to_string()))
-                })
-                .collect();
-            container_export(&repo, &rev, &imgref, labels?, cmd).await
-        }
+        Opt::Container(o) => match o {
+            ContainerOpts::Info { imgref } => container_info(imgref.as_str()).await,
+            ContainerOpts::Unencapsulate {
+                repo,
+                imgref,
+                write_ref,
+                quiet,
+            } => container_import(&repo, &imgref, write_ref.as_deref(), quiet).await,
+            ContainerOpts::Encapsulate {
+                repo,
+                rev,
+                imgref,
+                labels,
+                cmd,
+            } => {
+                let labels: Result<BTreeMap<_, _>> = labels
+                    .into_iter()
+                    .map(|l| {
+                        let mut parts = l.splitn(2, '=');
+                        let k = parts.next().unwrap();
+                        let v = parts
+                            .next()
+                            .ok_or_else(|| anyhow::anyhow!("Missing '=' in label {}", l))?;
+                        Ok((k.to_string(), v.to_string()))
+                    })
+                    .collect();
+                container_export(&repo, &rev, &imgref, labels?, cmd).await
+            }
+        },
         Opt::ImaSign(ref opts) => ima_sign(opts),
     }
 }
