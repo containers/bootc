@@ -1,6 +1,6 @@
 use std::io::prelude::*;
 use std::pin::Pin;
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// A [`std::io::Read`] implementation backed by an asynchronous source.
 pub(crate) struct ReadBridge<T> {
@@ -23,6 +23,35 @@ impl<T: AsyncRead> ReadBridge<T> {
         let reader = Box::pin(reader);
         let rt = tokio::runtime::Handle::current();
         ReadBridge { reader, rt }
+    }
+}
+
+/// A [`std::io::Write`] implementation backed by an asynchronous source.
+pub(crate) struct WriteBridge<T> {
+    w: Pin<Box<T>>,
+    rt: tokio::runtime::Handle,
+}
+
+impl<T: AsyncWrite> Write for WriteBridge<T> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let w = &mut self.w;
+        self.rt.block_on(async { w.write(buf).await })
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let w = &mut self.w;
+        self.rt.block_on(async { w.flush().await })
+    }
+}
+
+impl<T: AsyncWrite> WriteBridge<T> {
+    /// Create a [`std::io::Write`] implementation backed by an asynchronous source.
+    ///
+    /// This is useful with e.g. [`tokio::task::spawn_blocking`].
+    pub(crate) fn new(reader: T) -> Self {
+        let w = Box::pin(reader);
+        let rt = tokio::runtime::Handle::current();
+        WriteBridge { w, rt }
     }
 }
 
