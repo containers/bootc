@@ -58,7 +58,7 @@ fn generate_test_repo(dir: &Utf8Path) -> Result<Utf8PathBuf> {
         indoc! {"
         cd {dir}
         ostree --repo=repo init --mode=archive
-        ostree --repo=repo commit -b {testref} --bootable --add-metadata-string=version=42.0 --gpg-homedir={gpghome} --gpg-sign={keyid} \
+        ostree --repo=repo commit -b {testref} --bootable --no-bindings --add-metadata-string=version=42.0 --gpg-homedir={gpghome} --gpg-sign={keyid} \
                --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst
         ostree --repo=repo show {testref}
     "},
@@ -79,7 +79,7 @@ fn update_repo(repopath: &Utf8Path) -> Result<()> {
     let repopath = repopath.as_str();
     let testref = TESTREF;
     bash!(
-        "ostree --repo={repopath} commit -b {testref} --tree=tar={srcpath}",
+        "ostree --repo={repopath} commit -b {testref} --no-bindings --tree=tar={srcpath}",
         testref,
         repopath,
         srcpath
