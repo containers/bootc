@@ -92,8 +92,17 @@ pub(crate) struct Manifest {
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
 
+    pub config: ManifestLayer,
     pub layers: Vec<ManifestLayer>,
     pub annotations: Option<BTreeMap<String, String>>,
+}
+
+impl Manifest {
+    /// Return the digest of the configuration layer.
+    /// https://github.com/opencontainers/image-spec/blob/main/config.md
+    pub(crate) fn imageid(&self) -> &str {
+        self.config.digest.as_str()
+    }
 }
 
 /// Completed blob metadata
