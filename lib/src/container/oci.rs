@@ -8,10 +8,8 @@ use openat_ext::*;
 use openssl::hash::{Hasher, MessageDigest};
 use phf::phf_map;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{BTreeMap, HashMap},
-    io::prelude::*,
-};
+use std::collections::HashMap;
+use std::io::prelude::*;
 use tokio::io::AsyncBufRead;
 
 /// Map the value from `uname -m` to the Go architecture.
@@ -92,8 +90,17 @@ pub(crate) struct Manifest {
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
 
+    pub config: ManifestLayer,
     pub layers: Vec<ManifestLayer>,
-    pub annotations: Option<BTreeMap<String, String>>,
+    pub annotations: Option<HashMap<String, String>>,
+}
+
+impl Manifest {
+    /// Return the digest of the configuration layer.
+    /// https://github.com/opencontainers/image-spec/blob/main/config.md
+    pub(crate) fn imageid(&self) -> &str {
+        self.config.digest.as_str()
+    }
 }
 
 /// Completed blob metadata
@@ -221,22 +228,21 @@ impl<'a> OciWriter<'a> {
         });
         let config_blob = write_json_blob(self.dir, &config)?;
 
-        let manifest_data = serde_json::json!({
-            "schemaVersion": default_schema_version(),
-            "config": {
-                "mediaType": OCI_TYPE_CONFIG_JSON,
-                "size": config_blob.size,
-                "digest": config_blob.digest_id(),
+        let manifest = Manifest {
+            schema_version: default_schema_version(),
+            config: ManifestLayer {
+                media_type: OCI_TYPE_CONFIG_JSON.to_string(),
+                size: config_blob.size,
+                digest: config_blob.digest_id(),
             },
-            "layers": [
-                { "mediaType": OCI_TYPE_LAYER_GZIP,
-                  "size": rootfs_blob.blob.size,
-                  "digest":  rootfs_blob.blob.digest_id(),
-                }
-            ],
-            "annotations": self.manifest_annotations,
-        });
-        let manifest_blob = write_json_blob(self.dir, &manifest_data)?;
+            layers: vec![ManifestLayer {
+                media_type: OCI_TYPE_LAYER_GZIP.to_string(),
+                size: rootfs_blob.blob.size,
+                digest: rootfs_blob.blob.digest_id(),
+            }],
+            annotations: Some(self.manifest_annotations.drain().collect()),
+        };
+        let manifest_blob = write_json_blob(self.dir, &manifest)?;
 
         let index_data = serde_json::json!({
             "schemaVersion": default_schema_version(),
