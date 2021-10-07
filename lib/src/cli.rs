@@ -8,11 +8,12 @@
 use anyhow::Result;
 use ostree::gio;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::ffi::OsString;
 use structopt::StructOpt;
 
-use crate::container::{Config, ImportOptions};
+use crate::container::store::{LayeredImageImporter, PrepareResult};
+use crate::container::{Config, ImportOptions, OstreeImageReference};
 
 #[derive(Debug, StructOpt)]
 struct BuildOpts {
@@ -106,6 +107,63 @@ enum ContainerOpts {
         /// Corresponds to the Dockerfile `CMD` instruction.
         #[structopt(long)]
         cmd: Option<Vec<String>>,
+    },
+
+    /// Commands for working with (possibly layered, non-encapsulated) container images.
+    Image(ContainerImageOpts),
+}
+
+/// Options for import/export to tar archives.
+#[derive(Debug, StructOpt)]
+enum ContainerImageOpts {
+    /// List container images
+    List {
+        /// Path to the repository
+        #[structopt(long)]
+        repo: String,
+    },
+
+    /// Pull (or update) a container image.
+    Pull {
+        /// Path to the repository
+        #[structopt(long)]
+        repo: String,
+
+        /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
+        imgref: String,
+    },
+
+    /// Copy a pulled container image from one repo to another.
+    Copy {
+        /// Path to the source repository
+        #[structopt(long)]
+        src_repo: String,
+
+        /// Path to the destination repository
+        #[structopt(long)]
+        dest_repo: String,
+
+        /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
+        imgref: String,
+    },
+
+    /// Perform initial deployment for a container image
+    Deploy {
+        /// Path to the system root
+        #[structopt(long)]
+        sysroot: String,
+
+        /// Name for the state directory, also known as "osname".
+        #[structopt(long)]
+        stateroot: String,
+
+        /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
+        #[structopt(long)]
+        imgref: String,
+
+        #[structopt(long)]
+        /// Add a kernel argument
+        karg: Option<Vec<String>>,
     },
 }
 
@@ -251,6 +309,52 @@ async fn container_info(imgref: &str) -> Result<()> {
     Ok(())
 }
 
+/// Write a layered container image into an OSTree commit.
+async fn container_store(repo: &str, imgref: &str) -> Result<()> {
+    let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
+    let imgref = imgref.try_into()?;
+    let mut imp = LayeredImageImporter::new(&repo, &imgref).await?;
+    let prep = match imp.prepare().await? {
+        PrepareResult::AlreadyPresent(c) => {
+            println!("No changes in {} => {}", imgref, c);
+            return Ok(());
+        }
+        PrepareResult::Ready(r) => r,
+    };
+    if prep.base_layer.commit.is_none() {
+        let size = crate::glib::format_size(prep.base_layer.size());
+        println!(
+            "Downloading base layer: {} ({})",
+            prep.base_layer.digest(),
+            size
+        );
+    } else {
+        println!("Using base: {}", prep.base_layer.digest());
+    }
+    for layer in prep.layers.iter() {
+        if layer.commit.is_some() {
+            println!("Using layer: {}", layer.digest());
+        } else {
+            let size = crate::glib::format_size(layer.size());
+            println!("Downloading layer: {} ({})", layer.digest(), size);
+        }
+    }
+    let import = imp.import(prep).await?;
+    if !import.layer_filtered_content.is_empty() {
+        for (layerid, filtered) in import.layer_filtered_content {
+            eprintln!("Unsupported paths filtered from {}:", layerid);
+            for (prefix, count) in filtered {
+                eprintln!("  {}: {}", prefix, count);
+            }
+        }
+    }
+    println!(
+        "Wrote: {} => {} => {}",
+        imgref, import.ostree_ref, import.commit
+    );
+    Ok(())
+}
+
 /// Add IMA signatures to an ostree commit, generating a new commit.
 fn ima_sign(cmdopts: &ImaSignOpts) -> Result<()> {
     let repo =
@@ -309,6 +413,48 @@ where
                     .collect();
                 container_export(&repo, &rev, &imgref, labels?, cmd).await
             }
+            ContainerOpts::Image(opts) => match opts {
+                ContainerImageOpts::List { repo } => {
+                    let repo =
+                        &ostree::Repo::open_at(libc::AT_FDCWD, &repo, gio::NONE_CANCELLABLE)?;
+                    for image in crate::container::store::list_images(&repo)? {
+                        println!("{}", image);
+                    }
+                    Ok(())
+                }
+                ContainerImageOpts::Pull { repo, imgref } => container_store(&repo, &imgref).await,
+                ContainerImageOpts::Copy {
+                    src_repo,
+                    dest_repo,
+                    imgref,
+                } => {
+                    let src_repo =
+                        &ostree::Repo::open_at(libc::AT_FDCWD, &src_repo, gio::NONE_CANCELLABLE)?;
+                    let dest_repo =
+                        &ostree::Repo::open_at(libc::AT_FDCWD, &dest_repo, gio::NONE_CANCELLABLE)?;
+                    let imgref = OstreeImageReference::try_from(imgref.as_str())?;
+                    crate::container::store::copy(src_repo, dest_repo, &imgref).await
+                }
+                ContainerImageOpts::Deploy {
+                    sysroot,
+                    stateroot,
+                    imgref,
+                    karg,
+                } => {
+                    let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
+                    let imgref = OstreeImageReference::try_from(imgref.as_str())?;
+                    let kargs = karg.as_deref();
+                    let kargs = kargs.map(|v| {
+                        let r: Vec<_> = v.iter().map(|s| s.as_str()).collect();
+                        r
+                    });
+                    let options = crate::container::deploy::DeployOpts {
+                        kargs: kargs.as_deref(),
+                    };
+                    crate::container::deploy::deploy(sysroot, &stateroot, &imgref, Some(options))
+                        .await
+                }
+            },
         },
         Opt::ImaSign(ref opts) => ima_sign(opts),
     }

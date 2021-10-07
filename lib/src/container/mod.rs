@@ -223,6 +223,7 @@ impl std::fmt::Display for OstreeImageReference {
     }
 }
 
+pub mod deploy;
 mod export;
 pub use export::*;
 mod import;
@@ -230,6 +231,7 @@ pub use import::*;
 mod imageproxy;
 mod oci;
 mod skopeo;
+pub mod store;
 
 #[cfg(test)]
 mod tests {
