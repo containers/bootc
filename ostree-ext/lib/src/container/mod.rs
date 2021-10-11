@@ -228,7 +228,6 @@ mod export;
 pub use export::*;
 mod import;
 pub use import::*;
-mod imageproxy;
 mod oci;
 mod skopeo;
 pub mod store;

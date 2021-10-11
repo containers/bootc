@@ -30,8 +30,11 @@
 
 use super::*;
 use anyhow::{anyhow, Context};
+use containers_image_proxy::{ImageProxy, OpenedImage};
+use containers_image_proxy::{OCI_TYPE_LAYER_GZIP, OCI_TYPE_LAYER_TAR};
 use fn_error_context::context;
-use tokio::io::AsyncRead;
+use futures_util::Future;
+use tokio::io::{AsyncBufRead, AsyncRead};
 use tracing::{event, instrument, Level};
 
 /// The result of an import operation
@@ -84,8 +87,10 @@ impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
 /// Download the manifest for a target image and its sha256 digest.
 #[context("Fetching manifest")]
 pub async fn fetch_manifest(imgref: &OstreeImageReference) -> Result<(Vec<u8>, String)> {
-    let mut proxy = imageproxy::ImageProxy::new(&imgref.imgref).await?;
-    let (digest, raw_manifest) = proxy.fetch_manifest().await?;
+    let proxy = ImageProxy::new().await?;
+    let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
+    let (digest, raw_manifest) = proxy.fetch_manifest(oi).await?;
+    proxy.close_image(oi).await?;
     Ok((raw_manifest, digest))
 }
 
@@ -135,6 +140,36 @@ pub async fn import(
     })
 }
 
+/// Create a decompressor for this MIME type, given a stream of input.
+fn new_async_decompressor<'a>(
+    media_type: &str,
+    src: impl AsyncBufRead + Send + Unpin + 'a,
+) -> Result<Box<dyn AsyncBufRead + Send + Unpin + 'a>> {
+    match media_type {
+        OCI_TYPE_LAYER_GZIP => Ok(Box::new(tokio::io::BufReader::new(
+            async_compression::tokio::bufread::GzipDecoder::new(src),
+        ))),
+        OCI_TYPE_LAYER_TAR => Ok(Box::new(src)),
+        o => Err(anyhow::anyhow!("Unhandled layer type: {}", o)),
+    }
+}
+
+/// A wrapper for [`get_blob`] which fetches a layer and decompresses it.
+pub(crate) async fn fetch_layer_decompress<'a>(
+    proxy: &'a ImageProxy,
+    img: &OpenedImage,
+    layer: &oci::ManifestLayer,
+) -> Result<(
+    Box<dyn AsyncBufRead + Send + Unpin>,
+    impl Future<Output = Result<()>> + 'a,
+)> {
+    let (blob, driver) = proxy
+        .get_blob(img, layer.digest.as_str(), layer.size)
+        .await?;
+    let blob = new_async_decompressor(&layer.media_type, blob)?;
+    Ok((blob, driver))
+}
+
 /// Fetch a container image using an in-memory manifest and import its embedded OSTree commit.
 #[context("Importing {}", imgref)]
 #[instrument(skip(repo, options, manifest_bytes))]
@@ -152,9 +187,15 @@ pub async fn import_from_manifest(
     let options = options.unwrap_or_default();
     let manifest: oci::Manifest = serde_json::from_slice(manifest_bytes)?;
     let layer = require_one_layer_blob(&manifest)?;
-    event!(Level::DEBUG, "target blob: {}", layer.digest.as_str());
-    let mut proxy = imageproxy::ImageProxy::new(&imgref.imgref).await?;
-    let blob = proxy.fetch_layer_decompress(layer).await?;
+    event!(
+        Level::DEBUG,
+        "target blob digest:{} size: {}",
+        layer.digest.as_str(),
+        layer.size
+    );
+    let proxy = ImageProxy::new().await?;
+    let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
+    let (blob, driver) = fetch_layer_decompress(&proxy, oi, layer).await?;
     let blob = ProgressReader {
         reader: blob,
         progress: options.progress,
@@ -164,9 +205,10 @@ pub async fn import_from_manifest(
         SignatureSource::OstreeRemote(remote) => taropts.remote = Some(remote.clone()),
         SignatureSource::ContainerPolicy | SignatureSource::ContainerPolicyAllowInsecure => {}
     }
-    let ostree_commit = crate::tar::import_tar(repo, blob, Some(taropts))
-        .await
-        .with_context(|| format!("Parsing blob {}", layer.digest))?;
+    let import = crate::tar::import_tar(repo, blob, Some(taropts));
+    let (import, driver) = tokio::join!(import, driver);
+    driver?;
+    let ostree_commit = import.with_context(|| format!("Parsing blob {}", layer.digest))?;
     // FIXME write ostree commit after proxy finalization
     proxy.finalize().await?;
     event!(Level::DEBUG, "created commit {}", ostree_commit);

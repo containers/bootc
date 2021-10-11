@@ -10,6 +10,7 @@ version = "0.4.0-alpha.0"
 
 [dependencies]
 anyhow = "1.0"
+containers-image-proxy = { version = "0.1", git = "https://github.com/cgwalters/containers-image-proxy-rs" }
 async-compression = { version = "0.3", features = ["gzip", "tokio"] }
 bytes = "1.0.1"
 bitflags = "1"
@@ -20,7 +21,6 @@ fn-error-context = "0.2.0"
 futures-util = "0.3.13"
 gvariant = "0.4.0"
 hex = "0.4.3"
-hyper = { version = "0.14", features = ["full"] }
 indicatif = "0.16.0"
 lazy_static = "1.4.0"
 libc = "0.2.92"
