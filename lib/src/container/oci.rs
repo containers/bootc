@@ -2,6 +2,7 @@
 //! oriented towards generating images.
 
 use anyhow::{anyhow, Result};
+use containers_image_proxy::OCI_TYPE_LAYER_GZIP;
 use flate2::write::GzEncoder;
 use fn_error_context::context;
 use openat_ext::*;
@@ -10,7 +11,6 @@ use phf::phf_map;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::prelude::*;
-use tokio::io::AsyncBufRead;
 
 /// Map the value from `uname -m` to the Go architecture.
 /// TODO find a more canonical home for this.
@@ -22,10 +22,6 @@ static MACHINE_TO_OCI: phf::Map<&str, &str> = phf_map! {
 // OCI types, see https://github.com/opencontainers/image-spec/blob/master/media-types.md
 pub(crate) const OCI_TYPE_CONFIG_JSON: &str = "application/vnd.oci.image.config.v1+json";
 pub(crate) const OCI_TYPE_MANIFEST_JSON: &str = "application/vnd.oci.image.manifest.v1+json";
-pub(crate) const OCI_TYPE_LAYER_GZIP: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
-pub(crate) const OCI_TYPE_LAYER_TAR: &str = "application/vnd.oci.image.layer.v1.tar";
-// FIXME - use containers/image to fully convert the manifest to OCI
-const DOCKER_TYPE_LAYER_TARGZ: &str = "application/vnd.docker.image.rootfs.diff.tar.gzip";
 
 /// Path inside an OCI directory to the blobs
 const BLOBDIR: &str = "blobs/sha256";
@@ -66,22 +62,6 @@ pub(crate) struct ManifestLayer {
     pub media_type: String,
     pub digest: String,
     pub size: u64,
-}
-
-impl ManifestLayer {
-    /// Create a decompressor for this layer, given a stream of input.
-    pub fn new_async_decompressor(
-        &self,
-        src: impl AsyncBufRead + Send + Unpin + 'static,
-    ) -> Result<Box<dyn AsyncBufRead + Send + Unpin + 'static>> {
-        match self.media_type.as_str() {
-            OCI_TYPE_LAYER_GZIP | DOCKER_TYPE_LAYER_TARGZ => Ok(Box::new(
-                tokio::io::BufReader::new(async_compression::tokio::bufread::GzipDecoder::new(src)),
-            )),
-            OCI_TYPE_LAYER_TAR => Ok(Box::new(src)),
-            o => Err(anyhow::anyhow!("Unhandled layer type: {}", o)),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

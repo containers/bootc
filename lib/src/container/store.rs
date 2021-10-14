@@ -5,11 +5,11 @@
 //! This code supports ingesting arbitrary layered container images from an ostree-exported
 //! base.  See [`super::import`] for more information on encaspulation of images.
 
-use super::imageproxy::ImageProxy;
 use super::oci::ManifestLayer;
 use super::*;
 use crate::refescape;
 use anyhow::{anyhow, Context};
+use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
 use ostree::prelude::{Cast, ToVariant};
 use ostree::{gio, glib};
@@ -45,6 +45,7 @@ pub struct LayeredImageImporter {
     repo: ostree::Repo,
     proxy: ImageProxy,
     imgref: OstreeImageReference,
+    proxy_img: OpenedImage,
     ostree_ref: String,
 }
 
@@ -135,12 +136,14 @@ fn manifest_from_commit(commit: &glib::Variant) -> Result<oci::Manifest> {
 impl LayeredImageImporter {
     /// Create a new importer.
     pub async fn new(repo: &ostree::Repo, imgref: &OstreeImageReference) -> Result<Self> {
-        let proxy = ImageProxy::new(&imgref.imgref).await?;
+        let proxy = ImageProxy::new().await?;
+        let proxy_img = proxy.open_image(&imgref.imgref.to_string()).await?;
         let repo = repo.clone();
         let ostree_ref = ref_for_image(&imgref.imgref)?;
         Ok(LayeredImageImporter {
             repo,
             proxy,
+            proxy_img,
             ostree_ref,
             imgref: imgref.clone(),
         })
@@ -161,7 +164,7 @@ impl LayeredImageImporter {
             _ => {}
         }
 
-        let (manifest_digest, manifest_bytes) = self.proxy.fetch_manifest().await?;
+        let (manifest_digest, manifest_bytes) = self.proxy.fetch_manifest(&self.proxy_img).await?;
         let manifest: oci::Manifest = serde_json::from_slice(&manifest_bytes)?;
         let new_imageid = manifest.imageid();
 
@@ -214,17 +217,23 @@ impl LayeredImageImporter {
     }
 
     /// Import a layered container image
-    pub async fn import(mut self, import: PreparedImport) -> Result<CompletedImport> {
+    pub async fn import(self, import: PreparedImport) -> Result<CompletedImport> {
+        let proxy = self.proxy;
         // First download the base image (if necessary) - we need the SELinux policy
         // there to label all following layers.
         let base_layer = import.base_layer;
         let base_commit = if let Some(c) = base_layer.commit {
             c
         } else {
-            let blob = self.proxy.fetch_layer_decompress(&base_layer.layer).await?;
-            let commit = crate::tar::import_tar(&self.repo, blob, None)
-                .await
-                .with_context(|| format!("Parsing blob {}", &base_layer.digest()))?;
+            let base_layer_ref = &base_layer.layer;
+            let (blob, driver) =
+                super::import::fetch_layer_decompress(&proxy, &self.proxy_img, &base_layer.layer)
+                    .await?;
+            let importer = crate::tar::import_tar(&self.repo, blob, None);
+            let (commit, driver) = tokio::join!(importer, driver);
+            driver?;
+            let commit =
+                commit.with_context(|| format!("Parsing blob {}", &base_layer_ref.digest))?;
             // TODO support ref writing in tar import
             self.repo.set_ref_immediate(
                 None,
@@ -241,17 +250,20 @@ impl LayeredImageImporter {
             if let Some(c) = layer.commit {
                 layer_commits.push(c.to_string());
             } else {
-                let blob = self.proxy.fetch_layer_decompress(&layer.layer).await?;
+                let (blob, driver) =
+                    super::import::fetch_layer_decompress(&proxy, &self.proxy_img, &layer.layer)
+                        .await?;
                 // An important aspect of this is that we SELinux label the derived layers using
                 // the base policy.
                 let opts = crate::tar::WriteTarOptions {
                     base: Some(base_commit.clone()),
                     selinux: true,
                 };
-                let r =
-                    crate::tar::write_tar(&self.repo, blob, layer.ostree_ref.as_str(), Some(opts))
-                        .await
-                        .with_context(|| format!("Parsing layer blob {}", layer.digest()))?;
+                let w =
+                    crate::tar::write_tar(&self.repo, blob, layer.ostree_ref.as_str(), Some(opts));
+                let (r, driver) = tokio::join!(w, driver);
+                let r = r.with_context(|| format!("Parsing layer blob {}", layer.digest()))?;
+                driver?;
                 layer_commits.push(r.commit);
                 if !r.filtered.is_empty() {
                     layer_filtered_content.insert(layer.digest().to_string(), r.filtered);
@@ -260,7 +272,7 @@ impl LayeredImageImporter {
         }
 
         // We're done with the proxy, make sure it didn't have any errors.
-        self.proxy.finalize().await?;
+        proxy.finalize().await?;
 
         let serialized_manifest = serde_json::to_string(&import.manifest)?;
         let mut metadata = HashMap::new();
