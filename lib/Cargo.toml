@@ -10,7 +10,7 @@ version = "0.4.0-alpha.0"
 
 [dependencies]
 anyhow = "1.0"
-containers-image-proxy = { version = "0.1", git = "https://github.com/cgwalters/containers-image-proxy-rs" }
+containers-image-proxy = "0.1"
 async-compression = { version = "0.3", features = ["gzip", "tokio"] }
 bytes = "1.0.1"
 bitflags = "1"
