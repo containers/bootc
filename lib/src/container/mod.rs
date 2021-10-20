@@ -157,6 +157,11 @@ impl TryFrom<&str> for OstreeImageReference {
                 SignatureSource::ContainerPolicyAllowInsecure,
                 Cow::Borrowed(second),
             ),
+            // Shorthand for ostree-unverified-image:registry:
+            "ostree-unverified-registry" => (
+                SignatureSource::ContainerPolicyAllowInsecure,
+                Cow::Owned(format!("registry:{}", second)),
+            ),
             // This is a shorthand for ostree-remote-image with registry:
             "ostree-remote-registry" => {
                 let mut subparts = second.splitn(2, ':');
@@ -306,5 +311,9 @@ mod tests {
             ir.to_string(),
             "ostree-unverified-image:docker://quay.io/exampleos/blah"
         );
+        let ir_shorthand =
+            OstreeImageReference::try_from("ostree-unverified-registry:quay.io/exampleos/blah")
+                .unwrap();
+        assert_eq!(&ir_shorthand, &ir);
     }
 }
