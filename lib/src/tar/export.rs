@@ -1,13 +1,13 @@
 //! APIs for creating container images from OSTree commits
 
-use crate::Result;
-
+use crate::objgv::*;
+use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use gio::glib;
 use gio::prelude::*;
 use gvariant::aligned_bytes::TryAsAligned;
-use gvariant::{gv, Marker, Structure};
+use gvariant::{Marker, Structure};
 use ostree::gio;
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -175,7 +175,7 @@ impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
         self.append(ostree::ObjectType::DirTree, checksum, v)?;
         let v = v.data_as_bytes();
         let v = v.try_as_aligned()?;
-        let v = gv!("(a(say)a(sayay))").cast(v);
+        let v = gv_dirtree!().cast(v);
         let (files, dirs) = v.to_tuple();
 
         if let Some(c) = cancellable {
@@ -271,7 +271,7 @@ fn impl_export<W: std::io::Write>(
 
     let commit_v = commit_v.data_as_bytes();
     let commit_v = commit_v.try_as_aligned()?;
-    let commit = gv!("(a{sv}aya(say)sstayay)").cast(commit_v);
+    let commit = gv_commit!().cast(commit_v);
     let commit = commit.to_tuple();
     let contents = &hex::encode(commit.6);
     let metadata_checksum = &hex::encode(commit.7);

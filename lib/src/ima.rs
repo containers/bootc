@@ -2,6 +2,7 @@
 
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use crate::objgv::*;
 use anyhow::{Context, Result};
 use fn_error_context::context;
 use gio::glib;
@@ -224,7 +225,7 @@ impl<'a> CommitRewriter<'a> {
             .load_variant(ostree::ObjectType::DirTree, checksum)?;
         let src = src.data_as_bytes();
         let src = src.try_as_aligned()?;
-        let src = gv!("(a(say)a(sayay))").cast(src);
+        let src = gv_dirtree!().cast(src);
         let (files, dirs) = src.to_tuple();
 
         // A reusable buffer to avoid heap allocating these
@@ -277,7 +278,7 @@ impl<'a> CommitRewriter<'a> {
 
         let commit_bytes = commit_v.data_as_bytes();
         let commit_bytes = commit_bytes.try_as_aligned()?;
-        let commit = gv!("(a{sv}aya(say)sstayay)").cast(commit_bytes);
+        let commit = gv_commit!().cast(commit_bytes);
         let commit = commit.to_tuple();
         let contents = &hex::encode(commit.6);
 
