@@ -28,7 +28,7 @@ fn map_path(p: &Utf8Path) -> std::borrow::Cow<Utf8Path> {
     }
 }
 
-struct OstreeMetadataWriter<'a, W: std::io::Write> {
+struct OstreeTarWriter<'a, W: std::io::Write> {
     repo: &'a ostree::Repo,
     out: &'a mut tar::Builder<W>,
     wrote_dirtree: HashSet<String>,
@@ -54,7 +54,7 @@ fn xattrs_path(checksum: &str) -> Utf8PathBuf {
     format!("{}/repo/xattrs/{}", OSTREEDIR, checksum).into()
 }
 
-impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
+impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     fn new(repo: &'a ostree::Repo, out: &'a mut tar::Builder<W>) -> Self {
         Self {
             repo,
@@ -264,7 +264,7 @@ fn impl_export<W: std::io::Write>(
         out.append_data(&mut h, &path, &mut std::io::empty())?;
     }
 
-    let writer = &mut OstreeMetadataWriter::new(repo, out);
+    let writer = &mut OstreeTarWriter::new(repo, out);
     let (commit_v, _) = repo.load_commit(commit_checksum)?;
     let commit_v = &commit_v;
     writer.append(ostree::ObjectType::Commit, commit_checksum, commit_v)?;
