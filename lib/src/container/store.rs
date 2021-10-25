@@ -54,7 +54,7 @@ pub enum PrepareResult {
     /// The image reference is already present; the contained string is the OSTree commit.
     AlreadyPresent(String),
     /// The image needs to be downloaded
-    Ready(PreparedImport),
+    Ready(Box<PreparedImport>),
 }
 
 /// A container image layer with associated downloaded-or-not state.
@@ -213,11 +213,11 @@ impl LayeredImageImporter {
             base_layer,
             layers,
         };
-        Ok(PrepareResult::Ready(imp))
+        Ok(PrepareResult::Ready(Box::new(imp)))
     }
 
     /// Import a layered container image
-    pub async fn import(self, import: PreparedImport) -> Result<CompletedImport> {
+    pub async fn import(self, import: Box<PreparedImport>) -> Result<CompletedImport> {
         let proxy = self.proxy;
         // First download the base image (if necessary) - we need the SELinux policy
         // there to label all following layers.
