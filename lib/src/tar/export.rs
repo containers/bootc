@@ -55,6 +55,17 @@ fn xattrs_path(checksum: &str) -> Utf8PathBuf {
 }
 
 impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
+    fn new(repo: &'a ostree::Repo, out: &'a mut tar::Builder<W>) -> Self {
+        Self {
+            repo,
+            out,
+            wrote_dirmeta: HashSet::new(),
+            wrote_dirtree: HashSet::new(),
+            wrote_content: HashSet::new(),
+            wrote_xattrs: HashSet::new(),
+        }
+    }
+
     fn append(
         &mut self,
         objtype: ostree::ObjectType,
@@ -253,14 +264,7 @@ fn impl_export<W: std::io::Write>(
         out.append_data(&mut h, &path, &mut std::io::empty())?;
     }
 
-    let writer = &mut OstreeMetadataWriter {
-        repo,
-        out,
-        wrote_dirmeta: HashSet::new(),
-        wrote_dirtree: HashSet::new(),
-        wrote_content: HashSet::new(),
-        wrote_xattrs: HashSet::new(),
-    };
+    let writer = &mut OstreeMetadataWriter::new(repo, out);
     let (commit_v, _) = repo.load_commit(commit_checksum)?;
     let commit_v = &commit_v;
     writer.append(ostree::ObjectType::Commit, commit_checksum, commit_v)?;
