@@ -66,6 +66,30 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         }
     }
 
+    /// Write the initial directory structure.
+    fn prelude(&mut self) -> Result<()> {
+        // Object subdirectories
+        for d in 0..0xFF {
+            let mut h = tar::Header::new_gnu();
+            h.set_entry_type(tar::EntryType::Directory);
+            h.set_uid(0);
+            h.set_gid(0);
+            h.set_mode(0o755);
+            h.set_size(0);
+            let path = format!("{}/repo/objects/{:#04x}", OSTREEDIR, d);
+            self.out.append_data(&mut h, &path, &mut std::io::empty())?;
+        }
+
+        // The special `repo/xattrs` directory used only in our tar serialization.
+        let mut h = tar::Header::new_gnu();
+        h.set_entry_type(tar::EntryType::Directory);
+        h.set_mode(0o755);
+        h.set_size(0);
+        let path = format!("{}/repo/xattrs", OSTREEDIR);
+        self.out.append_data(&mut h, &path, &mut std::io::empty())?;
+        Ok(())
+    }
+
     fn append(
         &mut self,
         objtype: ostree::ObjectType,
@@ -242,29 +266,10 @@ fn impl_export<W: std::io::Write>(
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
     let cancellable = gio::NONE_CANCELLABLE;
-    // Pre create the object directories
-    for d in 0..0xFF {
-        let mut h = tar::Header::new_gnu();
-        h.set_entry_type(tar::EntryType::Directory);
-        h.set_uid(0);
-        h.set_gid(0);
-        h.set_mode(0o755);
-        h.set_size(0);
-        let path = format!("{}/repo/objects/{:#04x}", OSTREEDIR, d);
-        out.append_data(&mut h, &path, &mut std::io::empty())?;
-    }
-
-    // Write out the xattrs directory
-    {
-        let mut h = tar::Header::new_gnu();
-        h.set_entry_type(tar::EntryType::Directory);
-        h.set_mode(0o755);
-        h.set_size(0);
-        let path = format!("{}/repo/xattrs", OSTREEDIR);
-        out.append_data(&mut h, &path, &mut std::io::empty())?;
-    }
 
     let writer = &mut OstreeTarWriter::new(repo, out);
+    writer.prelude()?;
+
     let (commit_v, _) = repo.load_commit(commit_checksum)?;
     let commit_v = &commit_v;
     writer.append(ostree::ObjectType::Commit, commit_checksum, commit_v)?;
