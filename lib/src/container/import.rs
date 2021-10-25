@@ -105,11 +105,11 @@ pub struct Import {
 
 fn require_one_layer_blob(manifest: &oci::Manifest) -> Result<&oci::ManifestLayer> {
     let n = manifest.layers.len();
-    if let Some(layer) = manifest.layers.iter().next() {
+    if let Some(layer) = manifest.layers.get(0) {
         if n > 1 {
             Err(anyhow!("Expected 1 layer, found {}", n))
         } else {
-            Ok(&layer)
+            Ok(layer)
         }
     } else {
         // Validated by find_layer_blobids()

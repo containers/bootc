@@ -313,7 +313,7 @@ async fn container_info(imgref: &str) -> Result<()> {
 async fn container_store(repo: &str, imgref: &str) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
     let imgref = imgref.try_into()?;
-    let mut imp = LayeredImageImporter::new(&repo, &imgref).await?;
+    let mut imp = LayeredImageImporter::new(repo, &imgref).await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
             println!("No changes in {} => {}", imgref, c);
@@ -417,7 +417,7 @@ where
                 ContainerImageOpts::List { repo } => {
                     let repo =
                         &ostree::Repo::open_at(libc::AT_FDCWD, &repo, gio::NONE_CANCELLABLE)?;
-                    for image in crate::container::store::list_images(&repo)? {
+                    for image in crate::container::store::list_images(repo)? {
                         println!("{}", image);
                     }
                     Ok(())
