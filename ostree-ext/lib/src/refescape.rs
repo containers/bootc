@@ -138,7 +138,7 @@ pub fn unprefix_unescape_ref(prefix: &str, ostree_ref: &str) -> Result<String> {
                 prefix
             )
         })?;
-    Ok(unescape_for_ref(rest)?)
+    unescape_for_ref(rest)
 }
 
 #[cfg(test)]

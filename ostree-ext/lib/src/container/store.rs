@@ -297,7 +297,7 @@ impl LayeredImageImporter {
                 let base_contents_obj = base_commit_tree.tree_get_contents_checksum().unwrap();
                 let base_metadata_obj = base_commit_tree.tree_get_metadata_checksum().unwrap();
                 let mt = ostree::MutableTree::from_checksum(
-                    &repo,
+                    repo,
                     &base_contents_obj,
                     &base_metadata_obj,
                 );
@@ -339,11 +339,9 @@ pub fn list_images(repo: &ostree::Repo) -> Result<Vec<String>> {
         ostree::RepoListRefsExtFlags::empty(),
         cancellable,
     )?;
-    let r: Result<Vec<_>> = refs
-        .keys()
+    refs.keys()
         .map(|imgname| refescape::unprefix_unescape_ref(IMAGE_PREFIX, imgname))
-        .collect();
-    Ok(r?)
+        .collect()
 }
 
 /// Copy a downloaded image from one repository to another.
@@ -360,7 +358,7 @@ pub async fn copy(
     let layer_refs = manifest
         .layers
         .iter()
-        .map(|layer| ref_for_layer(&layer))
+        .map(|layer| ref_for_layer(layer))
         .chain(std::iter::once(Ok(ostree_ref)));
     for ostree_ref in layer_refs {
         let ostree_ref = ostree_ref?;
@@ -377,7 +375,7 @@ pub async fn copy(
             opts.insert("refs", &&refs[..]);
             opts.insert("flags", &(flags.bits() as i32));
             let options = opts.to_variant();
-            dest_repo.pull_with_options(&srcfd, &options, None, cancellable)?;
+            dest_repo.pull_with_options(srcfd, &options, None, cancellable)?;
             Ok(())
         })
         .await??;

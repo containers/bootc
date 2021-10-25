@@ -71,7 +71,7 @@ enum NormalizedPathResult<'a> {
     Normal(Utf8PathBuf),
 }
 
-fn normalize_validate_path<'a>(path: &'a Utf8Path) -> Result<NormalizedPathResult<'a>> {
+fn normalize_validate_path(path: &Utf8Path) -> Result<NormalizedPathResult<'_>> {
     // This converts e.g. `foo//bar/./baz` into `foo/bar/baz`.
     let mut components = path
         .components()
