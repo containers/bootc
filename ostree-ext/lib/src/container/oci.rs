@@ -9,7 +9,6 @@ use oci_spec::image as oci_image;
 use openat_ext::*;
 use openssl::hash::{Hasher, MessageDigest};
 use phf::phf_map;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::prelude::*;
 
@@ -22,30 +21,6 @@ static MACHINE_TO_OCI: phf::Map<&str, &str> = phf_map! {
 
 /// Path inside an OCI directory to the blobs
 const BLOBDIR: &str = "blobs/sha256";
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ManifestLayer {
-    pub media_type: String,
-    pub digest: String,
-    pub size: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Manifest {
-    pub config: ManifestLayer,
-    pub layers: Vec<ManifestLayer>,
-    pub annotations: Option<HashMap<String, String>>,
-}
-
-impl Manifest {
-    /// Return the digest of the configuration layer.
-    /// https://github.com/opencontainers/image-spec/blob/main/config.md
-    pub(crate) fn imageid(&self) -> &str {
-        self.config.digest.as_str()
-    }
-}
 
 /// Completed blob metadata
 #[derive(Debug)]
@@ -336,9 +311,9 @@ mod tests {
 
     #[test]
     fn manifest() -> Result<()> {
-        let m: Manifest = serde_json::from_str(MANIFEST_DERIVE)?;
+        let m: oci_image::ImageManifest = serde_json::from_str(MANIFEST_DERIVE)?;
         assert_eq!(
-            m.layers[0].digest.as_str(),
+            m.layers()[0].digest().as_str(),
             "sha256:ee02768e65e6fb2bb7058282338896282910f3560de3e0d6cd9b1d5985e8360d"
         );
         Ok(())
