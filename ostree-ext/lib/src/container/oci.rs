@@ -175,7 +175,7 @@ impl<'a> OciWriter<'a> {
     }
 
     #[context("Writing OCI")]
-    pub(crate) fn complete(&mut self) -> Result<()> {
+    pub(crate) fn complete(self) -> Result<()> {
         let utsname = nix::sys::utsname::uname();
         let machine = utsname.machine();
         let arch = MACHINE_TO_OCI.get(machine).unwrap_or(&machine);
@@ -220,7 +220,7 @@ impl<'a> OciWriter<'a> {
                 size: rootfs_blob.blob.size,
                 digest: rootfs_blob.blob.digest_id(),
             }],
-            annotations: Some(self.manifest_annotations.drain().collect()),
+            annotations: Some(self.manifest_annotations),
         };
         let manifest_blob = write_json_blob(self.dir, &manifest)?;
 
