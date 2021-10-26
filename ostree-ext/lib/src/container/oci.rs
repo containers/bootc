@@ -175,7 +175,11 @@ impl<'a> OciWriter<'a> {
         .build()
         .unwrap();
         let history = oci_image::HistoryBuilder::default()
-            .created_by(concat!("created by ", env!("CARGO_PKG_VERSION")))
+            .created_by(format!(
+                "created by {} {}",
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION")
+            ))
             .build()
             .unwrap();
         let config = oci_image::ImageConfigurationBuilder::default()
