@@ -28,9 +28,10 @@ fn map_path(p: &Utf8Path) -> std::borrow::Cow<Utf8Path> {
     }
 }
 
-struct OstreeMetadataWriter<'a, W: std::io::Write> {
+struct OstreeTarWriter<'a, W: std::io::Write> {
     repo: &'a ostree::Repo,
     out: &'a mut tar::Builder<W>,
+    wrote_initdirs: bool,
     wrote_dirtree: HashSet<String>,
     wrote_dirmeta: HashSet<String>,
     wrote_content: HashSet<String>,
@@ -54,7 +55,80 @@ fn xattrs_path(checksum: &str) -> Utf8PathBuf {
     format!("{}/repo/xattrs/{}", OSTREEDIR, checksum).into()
 }
 
-impl<'a, W: std::io::Write> OstreeMetadataWriter<'a, W> {
+impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
+    fn new(repo: &'a ostree::Repo, out: &'a mut tar::Builder<W>) -> Self {
+        Self {
+            repo,
+            out,
+            wrote_initdirs: false,
+            wrote_dirmeta: HashSet::new(),
+            wrote_dirtree: HashSet::new(),
+            wrote_content: HashSet::new(),
+            wrote_xattrs: HashSet::new(),
+        }
+    }
+
+    /// Write the initial directory structure.
+    fn write_initial_directories(&mut self) -> Result<()> {
+        if self.wrote_initdirs {
+            return Ok(());
+        }
+        self.wrote_initdirs = true;
+        // Object subdirectories
+        for d in 0..0xFF {
+            let mut h = tar::Header::new_gnu();
+            h.set_entry_type(tar::EntryType::Directory);
+            h.set_uid(0);
+            h.set_gid(0);
+            h.set_mode(0o755);
+            h.set_size(0);
+            let path = format!("{}/repo/objects/{:#04x}", OSTREEDIR, d);
+            self.out.append_data(&mut h, &path, &mut std::io::empty())?;
+        }
+
+        // The special `repo/xattrs` directory used only in our tar serialization.
+        let mut h = tar::Header::new_gnu();
+        h.set_entry_type(tar::EntryType::Directory);
+        h.set_uid(0);
+        h.set_gid(0);
+        h.set_mode(0o755);
+        h.set_size(0);
+        let path = format!("{}/repo/xattrs", OSTREEDIR);
+        self.out.append_data(&mut h, &path, &mut std::io::empty())?;
+        Ok(())
+    }
+
+    /// Recursively serialize a commit object to the target tar stream.
+    fn write_commit(&mut self, checksum: &str) -> Result<()> {
+        let cancellable = gio::NONE_CANCELLABLE;
+
+        self.write_initial_directories()?;
+
+        let (commit_v, _) = self.repo.load_commit(checksum)?;
+        let commit_v = &commit_v;
+        self.append(ostree::ObjectType::Commit, checksum, commit_v)?;
+
+        if let Some(commitmeta) = self
+            .repo
+            .read_commit_detached_metadata(checksum, cancellable)?
+        {
+            self.append(ostree::ObjectType::CommitMeta, checksum, &commitmeta)?;
+        }
+
+        let commit_v = commit_v.data_as_bytes();
+        let commit_v = commit_v.try_as_aligned()?;
+        let commit = gv_commit!().cast(commit_v);
+        let commit = commit.to_tuple();
+        let contents = &hex::encode(commit.6);
+        let metadata_checksum = &hex::encode(commit.7);
+        let metadata_v = self
+            .repo
+            .load_variant(ostree::ObjectType::DirMeta, metadata_checksum)?;
+        self.append(ostree::ObjectType::DirMeta, metadata_checksum, &metadata_v)?;
+        self.append_dirtree(Utf8Path::new("./"), contents, cancellable)?;
+        Ok(())
+    }
+
     fn append(
         &mut self,
         objtype: ostree::ObjectType,
@@ -230,55 +304,8 @@ fn impl_export<W: std::io::Write>(
     commit_checksum: &str,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
-    let cancellable = gio::NONE_CANCELLABLE;
-    // Pre create the object directories
-    for d in 0..0xFF {
-        let mut h = tar::Header::new_gnu();
-        h.set_entry_type(tar::EntryType::Directory);
-        h.set_uid(0);
-        h.set_gid(0);
-        h.set_mode(0o755);
-        h.set_size(0);
-        let path = format!("{}/repo/objects/{:#04x}", OSTREEDIR, d);
-        out.append_data(&mut h, &path, &mut std::io::empty())?;
-    }
-
-    // Write out the xattrs directory
-    {
-        let mut h = tar::Header::new_gnu();
-        h.set_entry_type(tar::EntryType::Directory);
-        h.set_mode(0o755);
-        h.set_size(0);
-        let path = format!("{}/repo/xattrs", OSTREEDIR);
-        out.append_data(&mut h, &path, &mut std::io::empty())?;
-    }
-
-    let writer = &mut OstreeMetadataWriter {
-        repo,
-        out,
-        wrote_dirmeta: HashSet::new(),
-        wrote_dirtree: HashSet::new(),
-        wrote_content: HashSet::new(),
-        wrote_xattrs: HashSet::new(),
-    };
-    let (commit_v, _) = repo.load_commit(commit_checksum)?;
-    let commit_v = &commit_v;
-    writer.append(ostree::ObjectType::Commit, commit_checksum, commit_v)?;
-
-    if let Some(commitmeta) = repo.read_commit_detached_metadata(commit_checksum, cancellable)? {
-        writer.append(ostree::ObjectType::CommitMeta, commit_checksum, &commitmeta)?;
-    }
-
-    let commit_v = commit_v.data_as_bytes();
-    let commit_v = commit_v.try_as_aligned()?;
-    let commit = gv_commit!().cast(commit_v);
-    let commit = commit.to_tuple();
-    let contents = &hex::encode(commit.6);
-    let metadata_checksum = &hex::encode(commit.7);
-    let metadata_v = &repo.load_variant(ostree::ObjectType::DirMeta, metadata_checksum)?;
-    writer.append(ostree::ObjectType::DirMeta, metadata_checksum, metadata_v)?;
-
-    writer.append_dirtree(Utf8Path::new("./"), contents, cancellable)?;
+    let writer = &mut OstreeTarWriter::new(repo, out);
+    writer.write_commit(commit_checksum)?;
     Ok(())
 }
 
