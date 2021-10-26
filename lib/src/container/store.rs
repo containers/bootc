@@ -5,12 +5,12 @@
 //! This code supports ingesting arbitrary layered container images from an ostree-exported
 //! base.  See [`super::import`] for more information on encaspulation of images.
 
-use super::oci::ManifestLayer;
 use super::*;
 use crate::refescape;
 use anyhow::{anyhow, Context};
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
+use oci_spec::image as oci_image;
 use ostree::prelude::{Cast, ToVariant};
 use ostree::{gio, glib};
 use std::collections::{BTreeMap, HashMap};
@@ -31,8 +31,8 @@ fn ref_for_blob_digest(d: &str) -> Result<String> {
 }
 
 /// Convert e.g. sha256:12345... into `/ostree/container/blob/sha256_2B12345...`.
-fn ref_for_layer(l: &oci::ManifestLayer) -> Result<String> {
-    ref_for_blob_digest(l.digest.as_str())
+fn ref_for_layer(l: &oci_image::Descriptor) -> Result<String> {
+    ref_for_blob_digest(l.digest().as_str())
 }
 
 /// Convert e.g. sha256:12345... into `/ostree/container/blob/sha256_2B12345...`.
@@ -60,7 +60,7 @@ pub enum PrepareResult {
 /// A container image layer with associated downloaded-or-not state.
 #[derive(Debug)]
 pub struct ManifestLayerState {
-    layer: oci::ManifestLayer,
+    layer: oci_image::Descriptor,
     /// The ostree ref name for this layer.
     pub ostree_ref: String,
     /// The ostree commit that caches this layer, if present.
@@ -70,12 +70,12 @@ pub struct ManifestLayerState {
 impl ManifestLayerState {
     /// The cryptographic checksum.
     pub fn digest(&self) -> &str {
-        self.layer.digest.as_str()
+        self.layer.digest().as_str()
     }
 
     /// The (possibly compressed) size.
     pub fn size(&self) -> u64 {
-        self.layer.size
+        self.layer.size() as u64
     }
 }
 
@@ -92,8 +92,8 @@ pub struct PreparedImport {
     pub base_layer: ManifestLayerState,
     /// Any further layers.
     pub layers: Vec<ManifestLayerState>,
-    /// TODO: serialize this into the commit object
-    manifest: oci::Manifest,
+    /// The deserialized manifest.
+    manifest: oci_image::ImageManifest,
 }
 
 /// A successful import of a container image.
@@ -109,7 +109,7 @@ pub struct CompletedImport {
 }
 
 // Given a manifest, compute its ostree ref name and cached ostree commit
-fn query_layer(repo: &ostree::Repo, layer: ManifestLayer) -> Result<ManifestLayerState> {
+fn query_layer(repo: &ostree::Repo, layer: oci_image::Descriptor) -> Result<ManifestLayerState> {
     let ostree_ref = ref_for_layer(&layer)?;
     let commit = repo.resolve_rev(&ostree_ref, true)?.map(|s| s.to_string());
     Ok(ManifestLayerState {
@@ -119,15 +119,14 @@ fn query_layer(repo: &ostree::Repo, layer: ManifestLayer) -> Result<ManifestLaye
     })
 }
 
-fn manifest_from_commitmeta(commit_meta: &glib::VariantDict) -> Result<oci::Manifest> {
+fn manifest_from_commitmeta(commit_meta: &glib::VariantDict) -> Result<oci_image::ImageManifest> {
     let manifest_bytes: String = commit_meta
         .lookup::<String>(META_MANIFEST)?
         .ok_or_else(|| anyhow!("Failed to find {} metadata key", META_MANIFEST))?;
-    let manifest: oci::Manifest = serde_json::from_str(&manifest_bytes)?;
-    Ok(manifest)
+    Ok(serde_json::from_str(&manifest_bytes)?)
 }
 
-fn manifest_from_commit(commit: &glib::Variant) -> Result<oci::Manifest> {
+fn manifest_from_commit(commit: &glib::Variant) -> Result<oci_image::ImageManifest> {
     let commit_meta = &commit.child_value(0);
     let commit_meta = &ostree::glib::VariantDict::new(Some(commit_meta));
     manifest_from_commitmeta(commit_meta)
@@ -165,8 +164,8 @@ impl LayeredImageImporter {
         }
 
         let (manifest_digest, manifest_bytes) = self.proxy.fetch_manifest(&self.proxy_img).await?;
-        let manifest: oci::Manifest = serde_json::from_slice(&manifest_bytes)?;
-        let new_imageid = manifest.imageid();
+        let manifest: oci_image::ImageManifest = serde_json::from_slice(&manifest_bytes)?;
+        let new_imageid = manifest.config().digest().as_str();
 
         // Query for previous stored state
         let (previous_manifest_digest, previous_imageid) =
@@ -184,18 +183,16 @@ impl LayeredImageImporter {
                 }
                 // Failing that, if they have the same imageID, we're also done.
                 let previous_manifest = manifest_from_commitmeta(&commit_meta)?;
-                if previous_manifest.imageid() == new_imageid {
+                let previous_imageid = previous_manifest.config().digest().as_str();
+                if previous_imageid == new_imageid {
                     return Ok(PrepareResult::AlreadyPresent(merge_commit.to_string()));
                 }
-                (
-                    Some(previous_digest),
-                    Some(previous_manifest.imageid().to_string()),
-                )
+                (Some(previous_digest), Some(previous_imageid.to_string()))
             } else {
                 (None, None)
             };
 
-        let mut layers = manifest.layers.iter().cloned();
+        let mut layers = manifest.layers().iter().cloned();
         // We require a base layer.
         let base_layer = layers.next().ok_or_else(|| anyhow!("No layers found"))?;
         let base_layer = query_layer(&self.repo, base_layer)?;
@@ -233,7 +230,7 @@ impl LayeredImageImporter {
             let (commit, driver) = tokio::join!(importer, driver);
             driver?;
             let commit =
-                commit.with_context(|| format!("Parsing blob {}", &base_layer_ref.digest))?;
+                commit.with_context(|| format!("Parsing blob {}", base_layer_ref.digest()))?;
             // TODO support ref writing in tar import
             self.repo.set_ref_immediate(
                 None,
@@ -353,10 +350,10 @@ pub async fn copy(
     let ostree_ref = ref_for_image(&imgref.imgref)?;
     let rev = src_repo.resolve_rev(&ostree_ref, false)?.unwrap();
     let (commit_obj, _) = src_repo.load_commit(rev.as_str())?;
-    let manifest: oci::Manifest = manifest_from_commit(&commit_obj)?;
+    let manifest = manifest_from_commit(&commit_obj)?;
     // Create a task to copy each layer, plus the final ref
     let layer_refs = manifest
-        .layers
+        .layers()
         .iter()
         .map(|layer| ref_for_layer(layer))
         .chain(std::iter::once(Ok(ostree_ref)));

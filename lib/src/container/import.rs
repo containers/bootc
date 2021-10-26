@@ -31,9 +31,9 @@
 use super::*;
 use anyhow::{anyhow, Context};
 use containers_image_proxy::{ImageProxy, OpenedImage};
-use containers_image_proxy::{OCI_TYPE_LAYER_GZIP, OCI_TYPE_LAYER_TAR};
 use fn_error_context::context;
 use futures_util::Future;
+use oci_spec::image as oci_image;
 use tokio::io::{AsyncBufRead, AsyncRead};
 use tracing::{event, instrument, Level};
 
@@ -103,9 +103,9 @@ pub struct Import {
     pub image_digest: String,
 }
 
-fn require_one_layer_blob(manifest: &oci::Manifest) -> Result<&oci::ManifestLayer> {
-    let n = manifest.layers.len();
-    if let Some(layer) = manifest.layers.get(0) {
+fn require_one_layer_blob(manifest: &oci_image::ImageManifest) -> Result<&oci_image::Descriptor> {
+    let n = manifest.layers().len();
+    if let Some(layer) = manifest.layers().get(0) {
         if n > 1 {
             Err(anyhow!("Expected 1 layer, found {}", n))
         } else {
@@ -142,14 +142,14 @@ pub async fn import(
 
 /// Create a decompressor for this MIME type, given a stream of input.
 fn new_async_decompressor<'a>(
-    media_type: &str,
+    media_type: &oci_image::MediaType,
     src: impl AsyncBufRead + Send + Unpin + 'a,
 ) -> Result<Box<dyn AsyncBufRead + Send + Unpin + 'a>> {
     match media_type {
-        OCI_TYPE_LAYER_GZIP => Ok(Box::new(tokio::io::BufReader::new(
+        oci_image::MediaType::ImageLayerGzip => Ok(Box::new(tokio::io::BufReader::new(
             async_compression::tokio::bufread::GzipDecoder::new(src),
         ))),
-        OCI_TYPE_LAYER_TAR => Ok(Box::new(src)),
+        oci_image::MediaType::ImageLayer => Ok(Box::new(src)),
         o => Err(anyhow::anyhow!("Unhandled layer type: {}", o)),
     }
 }
@@ -158,15 +158,15 @@ fn new_async_decompressor<'a>(
 pub(crate) async fn fetch_layer_decompress<'a>(
     proxy: &'a ImageProxy,
     img: &OpenedImage,
-    layer: &oci::ManifestLayer,
+    layer: &oci_image::Descriptor,
 ) -> Result<(
     Box<dyn AsyncBufRead + Send + Unpin>,
     impl Future<Output = Result<()>> + 'a,
 )> {
     let (blob, driver) = proxy
-        .get_blob(img, layer.digest.as_str(), layer.size)
+        .get_blob(img, layer.digest().as_str(), layer.size() as u64)
         .await?;
-    let blob = new_async_decompressor(&layer.media_type, blob)?;
+    let blob = new_async_decompressor(layer.media_type(), blob)?;
     Ok((blob, driver))
 }
 
@@ -185,13 +185,13 @@ pub async fn import_from_manifest(
         return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
     }
     let options = options.unwrap_or_default();
-    let manifest: oci::Manifest = serde_json::from_slice(manifest_bytes)?;
+    let manifest: oci_image::ImageManifest = serde_json::from_slice(manifest_bytes)?;
     let layer = require_one_layer_blob(&manifest)?;
     event!(
         Level::DEBUG,
         "target blob digest:{} size: {}",
-        layer.digest.as_str(),
-        layer.size
+        layer.digest().as_str(),
+        layer.size()
     );
     let proxy = ImageProxy::new().await?;
     let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
@@ -208,7 +208,7 @@ pub async fn import_from_manifest(
     let import = crate::tar::import_tar(repo, blob, Some(taropts));
     let (import, driver) = tokio::join!(import, driver);
     driver?;
-    let ostree_commit = import.with_context(|| format!("Parsing blob {}", layer.digest))?;
+    let ostree_commit = import.with_context(|| format!("Parsing blob {}", layer.digest()))?;
     // FIXME write ostree commit after proxy finalization
     proxy.finalize().await?;
     event!(Level::DEBUG, "created commit {}", ostree_commit);
