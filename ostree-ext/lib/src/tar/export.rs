@@ -31,7 +31,7 @@ fn map_path(p: &Utf8Path) -> std::borrow::Cow<Utf8Path> {
 struct OstreeTarWriter<'a, W: std::io::Write> {
     repo: &'a ostree::Repo,
     out: &'a mut tar::Builder<W>,
-    wrote_prelude: bool,
+    wrote_initdirs: bool,
     wrote_dirtree: HashSet<String>,
     wrote_dirmeta: HashSet<String>,
     wrote_content: HashSet<String>,
@@ -60,7 +60,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         Self {
             repo,
             out,
-            wrote_prelude: false,
+            wrote_initdirs: false,
             wrote_dirmeta: HashSet::new(),
             wrote_dirtree: HashSet::new(),
             wrote_content: HashSet::new(),
@@ -69,11 +69,11 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     }
 
     /// Write the initial directory structure.
-    fn prelude(&mut self) -> Result<()> {
-        if self.wrote_prelude {
+    fn write_initial_directories(&mut self) -> Result<()> {
+        if self.wrote_initdirs {
             return Ok(());
         }
-        self.wrote_prelude = true;
+        self.wrote_initdirs = true;
         // Object subdirectories
         for d in 0..0xFF {
             let mut h = tar::Header::new_gnu();
@@ -89,6 +89,8 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         // The special `repo/xattrs` directory used only in our tar serialization.
         let mut h = tar::Header::new_gnu();
         h.set_entry_type(tar::EntryType::Directory);
+        h.set_uid(0);
+        h.set_gid(0);
         h.set_mode(0o755);
         h.set_size(0);
         let path = format!("{}/repo/xattrs", OSTREEDIR);
@@ -100,7 +102,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     fn write_commit(&mut self, checksum: &str) -> Result<()> {
         let cancellable = gio::NONE_CANCELLABLE;
 
-        self.prelude()?;
+        self.write_initial_directories()?;
 
         let (commit_v, _) = self.repo.load_commit(checksum)?;
         let commit_v = &commit_v;
