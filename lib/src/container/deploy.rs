@@ -6,7 +6,7 @@ use anyhow::Result;
 use ostree::glib;
 
 /// The key in the OSTree origin which holds a serialized [`super::OstreeImageReference`].
-pub const ORIGIN_CONTAINER: &str = "container";
+pub const ORIGIN_CONTAINER: &str = "container-image-reference";
 
 async fn pull_idempotent(repo: &ostree::Repo, imgref: &OstreeImageReference) -> Result<String> {
     let mut imp = super::store::LayeredImageImporter::new(repo, imgref).await?;
@@ -37,7 +37,7 @@ pub async fn deploy<'opts>(
     let repo = &sysroot.repo().unwrap();
     let commit = &pull_idempotent(repo, imgref).await?;
     let origin = glib::KeyFile::new();
-    origin.set_string("ostree", ORIGIN_CONTAINER, &imgref.to_string());
+    origin.set_string("origin", ORIGIN_CONTAINER, &imgref.to_string());
     let deployment = &sysroot.deploy_tree(
         Some(stateroot),
         commit,
