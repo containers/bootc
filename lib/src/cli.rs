@@ -442,6 +442,7 @@ where
                     karg,
                 } => {
                     let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
+                    sysroot.load(gio::NONE_CANCELLABLE)?;
                     let imgref = OstreeImageReference::try_from(imgref.as_str())?;
                     let kargs = karg.as_deref();
                     let kargs = kargs.map(|v| {
