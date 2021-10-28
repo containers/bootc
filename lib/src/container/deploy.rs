@@ -21,6 +21,15 @@ async fn pull_idempotent(repo: &ostree::Repo, imgref: &OstreeImageReference) -> 
 pub struct DeployOpts<'a> {
     /// Kernel arguments to use.
     pub kargs: Option<&'a [&'a str]>,
+    /// Target image reference, as distinct from the source.
+    ///
+    /// In many cases, one may want a workflow where a system is provisioned from
+    /// an image with a specific digest (e.g. `quay.io/example/os@sha256:...) for
+    /// reproducibilty.  However, one would want `ostree admin upgrade` to fetch
+    /// `quay.io/example/os:latest`.
+    ///
+    /// To implement this, use this option for the latter `:latest` tag.
+    pub target_imgref: Option<&'a OstreeImageReference>,
 }
 
 /// Write a container image to an OSTree deployment.
@@ -37,7 +46,8 @@ pub async fn deploy<'opts>(
     let repo = &sysroot.repo().unwrap();
     let commit = &pull_idempotent(repo, imgref).await?;
     let origin = glib::KeyFile::new();
-    origin.set_string("origin", ORIGIN_CONTAINER, &imgref.to_string());
+    let target_imgref = options.target_imgref.unwrap_or(imgref);
+    origin.set_string("origin", ORIGIN_CONTAINER, &target_imgref.to_string());
     let deployment = &sysroot.deploy_tree(
         Some(stateroot),
         commit,
