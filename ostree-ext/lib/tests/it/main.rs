@@ -432,6 +432,7 @@ async fn test_container_write_derive() -> Result<()> {
         PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         PrepareResult::Ready(r) => r,
     };
+    let expected_digest = prep.manifest_digest.clone();
     assert!(prep.base_layer.commit.is_none());
     for layer in prep.layers.iter() {
         assert!(layer.commit.is_none());
@@ -441,6 +442,11 @@ async fn test_container_write_derive() -> Result<()> {
     let images = ostree_ext::container::store::list_images(&fixture.destrepo)?;
     assert_eq!(images.len(), 1);
     assert_eq!(images[0], exampleos_ref.imgref.to_string());
+
+    let imported_commit = &fixture.destrepo.load_commit(import.commit.as_str())?.0;
+    let digest = ostree_ext::container::store::manifest_digest_from_commit(imported_commit)?;
+    assert!(digest.starts_with("sha256:"));
+    assert_eq!(digest, expected_digest);
 
     // Parse the commit and verify we pulled the derived content.
     bash!(
