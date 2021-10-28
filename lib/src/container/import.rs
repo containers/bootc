@@ -86,12 +86,14 @@ impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
 
 /// Download the manifest for a target image and its sha256 digest.
 #[context("Fetching manifest")]
-pub async fn fetch_manifest(imgref: &OstreeImageReference) -> Result<(Vec<u8>, String)> {
+pub async fn fetch_manifest(
+    imgref: &OstreeImageReference,
+) -> Result<(oci_spec::image::ImageManifest, String)> {
     let proxy = ImageProxy::new().await?;
     let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
     let (digest, raw_manifest) = proxy.fetch_manifest(oi).await?;
     proxy.close_image(oi).await?;
-    Ok((raw_manifest, digest))
+    Ok((serde_json::from_slice(&raw_manifest)?, digest))
 }
 
 /// The result of an import operation
@@ -172,11 +174,11 @@ pub(crate) async fn fetch_layer_decompress<'a>(
 
 /// Fetch a container image using an in-memory manifest and import its embedded OSTree commit.
 #[context("Importing {}", imgref)]
-#[instrument(skip(repo, options, manifest_bytes))]
+#[instrument(skip(repo, options, manifest))]
 pub async fn import_from_manifest(
     repo: &ostree::Repo,
     imgref: &OstreeImageReference,
-    manifest_bytes: &[u8],
+    manifest: &oci_spec::image::ImageManifest,
     options: Option<ImportOptions>,
 ) -> Result<String> {
     if matches!(imgref.sigverify, SignatureSource::ContainerPolicy)
@@ -185,7 +187,6 @@ pub async fn import_from_manifest(
         return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
     }
     let options = options.unwrap_or_default();
-    let manifest: oci_image::ImageManifest = serde_json::from_slice(manifest_bytes)?;
     let layer = require_one_layer_blob(&manifest)?;
     event!(
         Level::DEBUG,
