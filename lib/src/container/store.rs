@@ -119,17 +119,28 @@ fn query_layer(repo: &ostree::Repo, layer: oci_image::Descriptor) -> Result<Mani
     })
 }
 
-fn manifest_from_commitmeta(commit_meta: &glib::VariantDict) -> Result<oci_image::ImageManifest> {
+fn manifest_data_from_commitmeta(
+    commit_meta: &glib::VariantDict,
+) -> Result<(oci_image::ImageManifest, String)> {
+    let digest = commit_meta
+        .lookup(META_MANIFEST_DIGEST)?
+        .ok_or_else(|| anyhow!("Missing {} metadata on merge commit", META_MANIFEST_DIGEST))?;
     let manifest_bytes: String = commit_meta
         .lookup::<String>(META_MANIFEST)?
         .ok_or_else(|| anyhow!("Failed to find {} metadata key", META_MANIFEST))?;
-    Ok(serde_json::from_str(&manifest_bytes)?)
+    let r = serde_json::from_str(&manifest_bytes)?;
+    Ok((r, digest))
 }
 
-fn manifest_from_commit(commit: &glib::Variant) -> Result<oci_image::ImageManifest> {
+/// Return the original digest of the manifest stored in the commit metadata.
+/// This will be a string of the form e.g. `sha256:<digest>`.
+///
+/// This can be used to uniquely identify the image.  For example, it can be used
+/// in a "digested pull spec" like `quay.io/someuser/exampleos@sha256:...`.
+pub fn manifest_digest_from_commit(commit: &glib::Variant) -> Result<String> {
     let commit_meta = &commit.child_value(0);
-    let commit_meta = &ostree::glib::VariantDict::new(Some(commit_meta));
-    manifest_from_commitmeta(commit_meta)
+    let commit_meta = &glib::VariantDict::new(Some(commit_meta));
+    Ok(manifest_data_from_commitmeta(commit_meta)?.1)
 }
 
 impl LayeredImageImporter {
@@ -168,29 +179,26 @@ impl LayeredImageImporter {
         let new_imageid = manifest.config().digest().as_str();
 
         // Query for previous stored state
-        let (previous_manifest_digest, previous_imageid) =
-            if let Some(merge_commit) = self.repo.resolve_rev(&self.ostree_ref, true)? {
-                let (merge_commit_obj, _) = self.repo.load_commit(merge_commit.as_str())?;
-                let commit_meta = &merge_commit_obj.child_value(0);
-                let commit_meta = ostree::glib::VariantDict::new(Some(commit_meta));
-                let previous_digest: String =
-                    commit_meta.lookup(META_MANIFEST_DIGEST)?.ok_or_else(|| {
-                        anyhow!("Missing {} metadata on merge commit", META_MANIFEST_DIGEST)
-                    })?;
-                // If the manifest digests match, we're done.
-                if previous_digest == manifest_digest {
-                    return Ok(PrepareResult::AlreadyPresent(merge_commit.to_string()));
-                }
-                // Failing that, if they have the same imageID, we're also done.
-                let previous_manifest = manifest_from_commitmeta(&commit_meta)?;
-                let previous_imageid = previous_manifest.config().digest().as_str();
-                if previous_imageid == new_imageid {
-                    return Ok(PrepareResult::AlreadyPresent(merge_commit.to_string()));
-                }
-                (Some(previous_digest), Some(previous_imageid.to_string()))
-            } else {
-                (None, None)
-            };
+        let (previous_manifest_digest, previous_imageid) = if let Some(merge_commit) =
+            self.repo.resolve_rev(&self.ostree_ref, true)?
+        {
+            let merge_commit_obj = &self.repo.load_commit(merge_commit.as_str())?.0;
+            let commit_meta = &merge_commit_obj.child_value(0);
+            let commit_meta = &ostree::glib::VariantDict::new(Some(commit_meta));
+            let (previous_manifest, previous_digest) = manifest_data_from_commitmeta(commit_meta)?;
+            // If the manifest digests match, we're done.
+            if previous_digest == manifest_digest {
+                return Ok(PrepareResult::AlreadyPresent(merge_commit.to_string()));
+            }
+            // Failing that, if they have the same imageID, we're also done.
+            let previous_imageid = previous_manifest.config().digest().as_str();
+            if previous_imageid == new_imageid {
+                return Ok(PrepareResult::AlreadyPresent(merge_commit.to_string()));
+            }
+            (Some(previous_digest), Some(previous_imageid.to_string()))
+        } else {
+            (None, None)
+        };
 
         let mut layers = manifest.layers().iter().cloned();
         // We require a base layer.
@@ -350,7 +358,8 @@ pub async fn copy(
     let ostree_ref = ref_for_image(&imgref.imgref)?;
     let rev = src_repo.resolve_rev(&ostree_ref, false)?.unwrap();
     let (commit_obj, _) = src_repo.load_commit(rev.as_str())?;
-    let manifest = manifest_from_commit(&commit_obj)?;
+    let commit_meta = &glib::VariantDict::new(Some(&commit_obj.child_value(0)));
+    let (manifest, _) = manifest_data_from_commitmeta(commit_meta)?;
     // Create a task to copy each layer, plus the final ref
     let layer_refs = manifest
         .layers()
