@@ -38,7 +38,6 @@ structopt = "0.3.21"
 tar = "0.4.33"
 tempfile = "3.2.0"
 tokio = { features = ["full"], version = "1" }
-tokio-stream = "0.1.5"
 tokio-util = { features = ["io"], version = "0.6" }
 tracing = "0.1"
 
