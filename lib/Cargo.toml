@@ -44,11 +44,9 @@ tokio-util = { features = ["io"], version = "0.6" }
 tracing = "0.1"
 
 [dev-dependencies]
-clap = "2.33.3"
 indoc = "1.0.3"
 quickcheck = "1"
 sh-inline = "0.1.0"
-structopt = "0.3.21"
 
 [package.metadata.docs.rs]
 features = ["dox"]
