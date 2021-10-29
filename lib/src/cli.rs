@@ -157,9 +157,16 @@ enum ContainerImageOpts {
         #[structopt(long)]
         stateroot: String,
 
-        /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
+        /// Source image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos@sha256:abcd...
         #[structopt(long)]
         imgref: String,
+
+        /// Target image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
+        ///
+        /// If specified, `--imgref` will be used as a source, but this reference will be emitted into the origin
+        /// so that later OS updates pull from it.
+        #[structopt(long)]
+        target_imgref: Option<String>,
 
         #[structopt(long)]
         /// Add a kernel argument
@@ -439,11 +446,15 @@ where
                     sysroot,
                     stateroot,
                     imgref,
+                    target_imgref,
                     karg,
                 } => {
                     let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
                     sysroot.load(gio::NONE_CANCELLABLE)?;
                     let imgref = OstreeImageReference::try_from(imgref.as_str())?;
+                    let target_imgref = target_imgref
+                        .map(|s| OstreeImageReference::try_from(s.as_str()))
+                        .transpose()?;
                     let kargs = karg.as_deref();
                     let kargs = kargs.map(|v| {
                         let r: Vec<_> = v.iter().map(|s| s.as_str()).collect();
@@ -451,6 +462,7 @@ where
                     });
                     let options = crate::container::deploy::DeployOpts {
                         kargs: kargs.as_deref(),
+                        target_imgref: target_imgref.as_ref(),
                     };
                     crate::container::deploy::deploy(sysroot, &stateroot, &imgref, Some(options))
                         .await
