@@ -292,14 +292,14 @@ checksum = "869d572136620d55835903746bcb5cdc54cb2851fd0aeec53220b4bb65ef3013"
 
 [[package]]
 name = "libsystemd"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3860855cc74484f60fa02d1397892c4fe80d929d5a28caef690570665616743"
+checksum = "3f269b3e3d7d2ce8e248164f21ec55623e4a65be1c147b8b37fb1e73c81f449a"
 dependencies = [
  "hmac",
  "libc",
  "log",
- "nix 0.22.0",
+ "nix 0.23.0",
  "serde",
  "sha2",
  "thiserror",
