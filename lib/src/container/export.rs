@@ -73,7 +73,7 @@ fn build_oci(
     }
 
     let rootfs_blob = export_ostree_ref_to_blobdir(repo, commit, ocidir, compression)?;
-    writer.set_root_layer(rootfs_blob);
+    writer.push_layer(rootfs_blob);
     writer.complete()?;
 
     Ok(ImageReference {
