@@ -62,7 +62,7 @@ pub(crate) struct BlobWriter<'a> {
 }
 
 /// Create an OCI layer (also a blob).
-pub(crate) struct LayerWriter<'a> {
+pub(crate) struct RawLayerWriter<'a> {
     bw: BlobWriter<'a>,
     uncompressed_hash: Hasher,
     compressor: GzEncoder<Vec<u8>>,
@@ -106,6 +106,32 @@ impl<'a> OciWriter<'a> {
         })
     }
 
+    /// Create a writer for a new blob (expected to be a tar stream)
+    pub(crate) fn create_raw_layer(
+        &self,
+        c: Option<flate2::Compression>,
+    ) -> Result<RawLayerWriter> {
+        RawLayerWriter::new(&self.dir, c)
+    }
+
+    #[allow(dead_code)]
+    /// Create a tar output stream, backed by a blob
+    pub(crate) fn create_layer(
+        &self,
+        c: Option<flate2::Compression>,
+    ) -> Result<tar::Builder<RawLayerWriter>> {
+        Ok(tar::Builder::new(self.create_raw_layer(c)?))
+    }
+
+    #[allow(dead_code)]
+    /// Finish all I/O for a layer writer, and add it to the layers in the image.
+    pub(crate) fn finish_and_push_layer(&mut self, w: RawLayerWriter) -> Result<()> {
+        let w = w.complete()?;
+        self.push_layer(w);
+        Ok(())
+    }
+
+    /// Add a layer to the top of the image stack.  The firsh pushed layer becomes the root.
     pub(crate) fn push_layer(&mut self, layer: Layer) {
         self.layers.push(layer)
     }
@@ -254,7 +280,7 @@ impl<'a> std::io::Write for BlobWriter<'a> {
     }
 }
 
-impl<'a> LayerWriter<'a> {
+impl<'a> RawLayerWriter<'a> {
     pub(crate) fn new(ocidir: &'a openat::Dir, c: Option<flate2::Compression>) -> Result<Self> {
         let bw = BlobWriter::new(ocidir)?;
         Ok(Self {
@@ -278,7 +304,7 @@ impl<'a> LayerWriter<'a> {
     }
 }
 
-impl<'a> std::io::Write for LayerWriter<'a> {
+impl<'a> std::io::Write for RawLayerWriter<'a> {
     fn write(&mut self, srcbuf: &[u8]) -> std::io::Result<usize> {
         self.compressor.get_mut().clear();
         self.compressor.write_all(srcbuf).unwrap();
@@ -338,7 +364,7 @@ mod tests {
         let td = tempfile::tempdir()?;
         let td = &openat::Dir::open(td.path())?;
         let mut w = OciWriter::new(td)?;
-        let mut layerw = LayerWriter::new(td, None)?;
+        let mut layerw = w.create_raw_layer(None)?;
         layerw.write_all(b"pretend this is a tarball")?;
         let root_layer = layerw.complete()?;
         assert_eq!(
