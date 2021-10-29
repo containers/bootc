@@ -8,12 +8,20 @@
 use anyhow::Result;
 use ostree::gio;
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::ffi::OsString;
 use structopt::StructOpt;
 
 use crate::container::store::{LayeredImageImporter, PrepareResult};
-use crate::container::{Config, ImportOptions, OstreeImageReference};
+use crate::container::{Config, ImageReference, ImportOptions, OstreeImageReference};
+
+fn parse_imgref(s: &str) -> Result<OstreeImageReference> {
+    OstreeImageReference::try_from(s)
+}
+
+fn parse_base_imgref(s: &str) -> Result<ImageReference> {
+    ImageReference::try_from(s)
+}
 
 #[derive(Debug, StructOpt)]
 struct BuildOpts {
@@ -70,7 +78,8 @@ enum ContainerOpts {
         repo: String,
 
         /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
-        imgref: String,
+        #[structopt(parse(try_from_str = parse_imgref))]
+        imgref: OstreeImageReference,
 
         /// Create an ostree ref pointing to the imported commit
         #[structopt(long)]
@@ -84,7 +93,8 @@ enum ContainerOpts {
     /// Print information about an exported ostree-container image.
     Info {
         /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
-        imgref: String,
+        #[structopt(parse(try_from_str = parse_imgref))]
+        imgref: OstreeImageReference,
     },
 
     ///  Wrap an ostree commit into a container
@@ -98,7 +108,8 @@ enum ContainerOpts {
         rev: String,
 
         /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
-        imgref: String,
+        #[structopt(parse(try_from_str = parse_base_imgref))]
+        imgref: ImageReference,
 
         /// Additional labels for the container
         #[structopt(name = "label", long, short)]
@@ -130,7 +141,8 @@ enum ContainerImageOpts {
         repo: String,
 
         /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
-        imgref: String,
+        #[structopt(parse(try_from_str = parse_imgref))]
+        imgref: OstreeImageReference,
     },
 
     /// Copy a pulled container image from one repo to another.
@@ -144,7 +156,8 @@ enum ContainerImageOpts {
         dest_repo: String,
 
         /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
-        imgref: String,
+        #[structopt(parse(try_from_str = parse_imgref))]
+        imgref: OstreeImageReference,
     },
 
     /// Perform initial deployment for a container image
@@ -159,14 +172,16 @@ enum ContainerImageOpts {
 
         /// Source image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos@sha256:abcd...
         #[structopt(long)]
-        imgref: String,
+        #[structopt(parse(try_from_str = parse_imgref))]
+        imgref: OstreeImageReference,
 
         /// Target image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
         ///
         /// If specified, `--imgref` will be used as a source, but this reference will be emitted into the origin
         /// so that later OS updates pull from it.
         #[structopt(long)]
-        target_imgref: Option<String>,
+        #[structopt(parse(try_from_str = parse_imgref))]
+        target_imgref: Option<OstreeImageReference>,
 
         #[structopt(long)]
         /// Add a kernel argument
@@ -228,12 +243,11 @@ fn tar_export(opts: &ExportOpts) -> Result<()> {
 /// Import a container image with an encapsulated ostree commit.
 async fn container_import(
     repo: &str,
-    imgref: &str,
+    imgref: &OstreeImageReference,
     write_ref: Option<&str>,
     quiet: bool,
 ) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
-    let imgref = imgref.try_into()?;
     let (tx_progress, rx_progress) = tokio::sync::watch::channel(Default::default());
     let target = indicatif::ProgressDrawTarget::stdout();
     let style = indicatif::ProgressStyle::default_bar();
@@ -293,7 +307,7 @@ async fn container_import(
 async fn container_export(
     repo: &str,
     rev: &str,
-    imgref: &str,
+    imgref: &ImageReference,
     labels: BTreeMap<String, String>,
     cmd: Option<Vec<String>>,
 ) -> Result<()> {
@@ -302,24 +316,21 @@ async fn container_export(
         labels: Some(labels),
         cmd,
     };
-    let imgref = imgref.try_into()?;
     let pushed = crate::container::export(repo, rev, &config, &imgref).await?;
     println!("{}", pushed);
     Ok(())
 }
 
 /// Load metadata for a container image with an encapsulated ostree commit.
-async fn container_info(imgref: &str) -> Result<()> {
-    let imgref = imgref.try_into()?;
+async fn container_info(imgref: &OstreeImageReference) -> Result<()> {
     let (_, digest) = crate::container::fetch_manifest(&imgref).await?;
     println!("{} digest: {}", imgref, digest);
     Ok(())
 }
 
 /// Write a layered container image into an OSTree commit.
-async fn container_store(repo: &str, imgref: &str) -> Result<()> {
+async fn container_store(repo: &str, imgref: &OstreeImageReference) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
-    let imgref = imgref.try_into()?;
     let mut imp = LayeredImageImporter::new(repo, &imgref).await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
@@ -393,7 +404,7 @@ where
         Opt::Tar(TarOpts::Import(ref opt)) => tar_import(opt).await,
         Opt::Tar(TarOpts::Export(ref opt)) => tar_export(opt),
         Opt::Container(o) => match o {
-            ContainerOpts::Info { imgref } => container_info(imgref.as_str()).await,
+            ContainerOpts::Info { imgref } => container_info(&imgref).await,
             ContainerOpts::Unencapsulate {
                 repo,
                 imgref,
@@ -439,7 +450,6 @@ where
                         &ostree::Repo::open_at(libc::AT_FDCWD, &src_repo, gio::NONE_CANCELLABLE)?;
                     let dest_repo =
                         &ostree::Repo::open_at(libc::AT_FDCWD, &dest_repo, gio::NONE_CANCELLABLE)?;
-                    let imgref = OstreeImageReference::try_from(imgref.as_str())?;
                     crate::container::store::copy(src_repo, dest_repo, &imgref).await
                 }
                 ContainerImageOpts::Deploy {
@@ -451,10 +461,6 @@ where
                 } => {
                     let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
                     sysroot.load(gio::NONE_CANCELLABLE)?;
-                    let imgref = OstreeImageReference::try_from(imgref.as_str())?;
-                    let target_imgref = target_imgref
-                        .map(|s| OstreeImageReference::try_from(s.as_str()))
-                        .transpose()?;
                     let kargs = karg.as_deref();
                     let kargs = kargs.map(|v| {
                         let r: Vec<_> = v.iter().map(|s| s.as_str()).collect();
