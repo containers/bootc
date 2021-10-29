@@ -1,4 +1,7 @@
-//! APIs for extracting OSTree commits from container images
+//! APIs for "unencapsulating" OSTree commits from container images
+//!
+//! This code only operates on container images that were created via
+//! [`encapsulate`].
 //!
 //! # External depenendency on container-image-proxy
 //!
@@ -17,7 +20,7 @@
 //! Additionally, the proxy "upconverts" manifests into OCI, so we don't need to care
 //! about parsing the Docker manifest format (as used by most registries still).
 //!
-//!
+//! [`encapsulate`]: [`super::encapsulate()`]
 
 // # Implementation
 //
@@ -39,12 +42,12 @@ use tracing::{event, instrument, Level};
 
 /// The result of an import operation
 #[derive(Copy, Clone, Debug, Default)]
-pub struct ImportProgress {
+pub struct UnencapsulationProgress {
     /// Number of bytes downloaded (approximate)
     pub processed_bytes: u64,
 }
 
-type Progress = tokio::sync::watch::Sender<ImportProgress>;
+type Progress = tokio::sync::watch::Sender<UnencapsulationProgress>;
 
 /// A read wrapper that updates the download progress.
 #[pin_project::pin_project]
@@ -121,21 +124,21 @@ fn require_one_layer_blob(manifest: &oci_image::ImageManifest) -> Result<&oci_im
 
 /// Configuration for container fetches.
 #[derive(Debug, Default)]
-pub struct ImportOptions {
+pub struct UnencapsulateOptions {
     /// Channel which will receive progress updates
-    pub progress: Option<tokio::sync::watch::Sender<ImportProgress>>,
+    pub progress: Option<tokio::sync::watch::Sender<UnencapsulationProgress>>,
 }
 
 /// Fetch a container image and import its embedded OSTree commit.
 #[context("Importing {}", imgref)]
 #[instrument(skip(repo, options))]
-pub async fn import(
+pub async fn unencapsulate(
     repo: &ostree::Repo,
     imgref: &OstreeImageReference,
-    options: Option<ImportOptions>,
+    options: Option<UnencapsulateOptions>,
 ) -> Result<Import> {
     let (manifest, image_digest) = fetch_manifest(imgref).await?;
-    let ostree_commit = import_from_manifest(repo, imgref, &manifest, options).await?;
+    let ostree_commit = unencapsulate_from_manifest(repo, imgref, &manifest, options).await?;
     Ok(Import {
         ostree_commit,
         image_digest,
@@ -175,11 +178,11 @@ pub(crate) async fn fetch_layer_decompress<'a>(
 /// Fetch a container image using an in-memory manifest and import its embedded OSTree commit.
 #[context("Importing {}", imgref)]
 #[instrument(skip(repo, options, manifest))]
-pub async fn import_from_manifest(
+pub async fn unencapsulate_from_manifest(
     repo: &ostree::Repo,
     imgref: &OstreeImageReference,
     manifest: &oci_spec::image::ImageManifest,
-    options: Option<ImportOptions>,
+    options: Option<UnencapsulateOptions>,
 ) -> Result<String> {
     if matches!(imgref.sigverify, SignatureSource::ContainerPolicy)
         && skopeo::container_policy_is_default_insecure()?

@@ -1,9 +1,9 @@
 //! APIs for storing (layered) container images as OSTree commits
 //!
-//! # Extension of import support
+//! # Extension of encapsulation support
 //!
 //! This code supports ingesting arbitrary layered container images from an ostree-exported
-//! base.  See [`super::import`] for more information on encaspulation of images.
+//! base.  See [`encapsulate`][`super::encapsulate()`] for more information on encaspulation of images.
 
 use super::*;
 use crate::refescape;
@@ -231,9 +231,12 @@ impl LayeredImageImporter {
             c
         } else {
             let base_layer_ref = &base_layer.layer;
-            let (blob, driver) =
-                super::import::fetch_layer_decompress(&proxy, &self.proxy_img, &base_layer.layer)
-                    .await?;
+            let (blob, driver) = super::unencapsulate::fetch_layer_decompress(
+                &proxy,
+                &self.proxy_img,
+                &base_layer.layer,
+            )
+            .await?;
             let importer = crate::tar::import_tar(&self.repo, blob, None);
             let (commit, driver) = tokio::join!(importer, driver);
             driver?;
@@ -255,9 +258,12 @@ impl LayeredImageImporter {
             if let Some(c) = layer.commit {
                 layer_commits.push(c.to_string());
             } else {
-                let (blob, driver) =
-                    super::import::fetch_layer_decompress(&proxy, &self.proxy_img, &layer.layer)
-                        .await?;
+                let (blob, driver) = super::unencapsulate::fetch_layer_decompress(
+                    &proxy,
+                    &self.proxy_img,
+                    &layer.layer,
+                )
+                .await?;
                 // An important aspect of this is that we SELinux label the derived layers using
                 // the base policy.
                 let opts = crate::tar::WriteTarOptions {
