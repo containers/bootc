@@ -26,9 +26,9 @@ fn export_ostree_ref_to_blobdir(
     rev: &str,
     ocidir: &openat::Dir,
     compression: Option<flate2::Compression>,
-) -> Result<oci::Layer> {
+) -> Result<ociwriter::Layer> {
     let commit = repo.resolve_rev(rev, false)?.unwrap();
-    let mut w = oci::LayerWriter::new(ocidir, compression)?;
+    let mut w = ociwriter::LayerWriter::new(ocidir, compression)?;
     ostree_tar::export_commit(repo, commit.as_str(), &mut w)?;
     w.complete()
 }
@@ -45,7 +45,7 @@ fn build_oci(
     // Explicitly error if the target exists
     std::fs::create_dir(ocidir_path).context("Creating OCI dir")?;
     let ocidir = &openat::Dir::open(ocidir_path)?;
-    let mut writer = oci::OciWriter::new(ocidir)?;
+    let mut writer = ociwriter::OciWriter::new(ocidir)?;
 
     let commit = repo.resolve_rev(rev, false)?.unwrap();
     let commit = commit.as_str();

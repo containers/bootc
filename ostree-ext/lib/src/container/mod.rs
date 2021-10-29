@@ -233,7 +233,7 @@ mod export;
 pub use export::*;
 mod import;
 pub use import::*;
-mod oci;
+mod ociwriter;
 mod skopeo;
 pub mod store;
 
