@@ -84,6 +84,8 @@ impl ManifestLayerState {
 pub struct PreparedImport {
     /// The manifest digest that was found
     pub manifest_digest: String,
+    /// The deserialized manifest.
+    pub manifest: oci_image::ImageManifest,
     /// The previously stored manifest digest.
     pub previous_manifest_digest: Option<String>,
     /// The previously stored image ID.
@@ -92,8 +94,6 @@ pub struct PreparedImport {
     pub base_layer: ManifestLayerState,
     /// Any further layers.
     pub layers: Vec<ManifestLayerState>,
-    /// The deserialized manifest.
-    manifest: oci_image::ImageManifest,
 }
 
 /// A successful import of a container image.
