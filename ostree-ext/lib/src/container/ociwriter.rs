@@ -4,7 +4,7 @@
 use anyhow::{anyhow, Result};
 use flate2::write::GzEncoder;
 use fn_error_context::context;
-use oci_image::MediaType;
+use oci_image::{Descriptor, MediaType};
 use oci_spec::image as oci_image;
 use openat_ext::*;
 use openssl::hash::{Hasher, MessageDigest};
@@ -76,7 +76,7 @@ pub(crate) struct OciWriter<'a> {
 
     cmd: Option<Vec<String>>,
 
-    root_layer: Option<Layer>,
+    layers: Vec<Layer>,
 }
 
 /// Write a serializable data (JSON) as an OCI blob
@@ -101,13 +101,13 @@ impl<'a> OciWriter<'a> {
             dir,
             config_annotations: Default::default(),
             manifest_annotations: Default::default(),
-            root_layer: None,
+            layers: Vec::new(),
             cmd: None,
         })
     }
 
-    pub(crate) fn set_root_layer(&mut self, layer: Layer) {
-        assert!(self.root_layer.replace(layer).is_none())
+    pub(crate) fn push_layer(&mut self, layer: Layer) {
+        self.layers.push(layer)
     }
 
     pub(crate) fn set_cmd(&mut self, e: &[&str]) {
@@ -134,10 +134,17 @@ impl<'a> OciWriter<'a> {
         let arch = MACHINE_TO_OCI.get(machine).unwrap_or(&machine);
         let arch = oci_image::Arch::from(*arch);
 
-        let rootfs_blob = self.root_layer.as_ref().unwrap();
-        let root_layer_id = format!("sha256:{}", rootfs_blob.uncompressed_sha256);
+        if self.layers.is_empty() {
+            return Err(anyhow!("No layers specified"));
+        }
+
+        let diffids: Vec<String> = self
+            .layers
+            .iter()
+            .map(|l| format!("sha256:{}", l.uncompressed_sha256))
+            .collect();
         let rootfs = oci_image::RootFsBuilder::default()
-            .diff_ids(vec![root_layer_id])
+            .diff_ids(diffids)
             .build()
             .unwrap();
 
@@ -167,14 +174,21 @@ impl<'a> OciWriter<'a> {
             .unwrap();
         let config_blob = write_json_blob(self.dir, &config, MediaType::ImageConfig)?;
 
+        let layers: Vec<Descriptor> = self
+            .layers
+            .iter()
+            .map(|layer| {
+                layer
+                    .descriptor()
+                    .media_type(MediaType::ImageLayerGzip)
+                    .build()
+                    .unwrap()
+            })
+            .collect();
         let manifest_data = oci_image::ImageManifestBuilder::default()
             .schema_version(oci_image::SCHEMA_VERSION)
             .config(config_blob.build().unwrap())
-            .layers(vec![rootfs_blob
-                .descriptor()
-                .media_type(MediaType::ImageLayerGzip)
-                .build()
-                .unwrap()])
+            .layers(layers)
             .annotations(self.manifest_annotations)
             .build()
             .unwrap();
@@ -331,7 +345,7 @@ mod tests {
             root_layer.uncompressed_sha256,
             "349438e5faf763e8875b43de4d7101540ef4d865190336c2cc549a11f33f8d7c"
         );
-        w.set_root_layer(root_layer);
+        w.push_layer(root_layer);
         w.complete()?;
         Ok(())
     }
