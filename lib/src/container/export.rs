@@ -1,5 +1,6 @@
 //! APIs for creating container images from OSTree commits
 
+use super::ociwriter::OciWriter;
 use super::*;
 use crate::tar as ostree_tar;
 use anyhow::Context;
@@ -21,14 +22,14 @@ pub struct Config {
 
 /// Write an ostree commit to an OCI blob
 #[context("Writing ostree root to blob")]
-fn export_ostree_ref_to_blobdir(
+fn export_ostree_ref(
     repo: &ostree::Repo,
     rev: &str,
-    ocidir: &openat::Dir,
+    writer: &mut OciWriter,
     compression: Option<flate2::Compression>,
 ) -> Result<ociwriter::Layer> {
     let commit = repo.resolve_rev(rev, false)?.unwrap();
-    let mut w = ociwriter::LayerWriter::new(ocidir, compression)?;
+    let mut w = writer.create_raw_layer(compression)?;
     ostree_tar::export_commit(repo, commit.as_str(), &mut w)?;
     w.complete()
 }
@@ -72,7 +73,7 @@ fn build_oci(
         writer.set_cmd(&cmd);
     }
 
-    let rootfs_blob = export_ostree_ref_to_blobdir(repo, commit, ocidir, compression)?;
+    let rootfs_blob = export_ostree_ref(repo, commit, &mut writer, compression)?;
     writer.push_layer(rootfs_blob);
     writer.complete()?;
 
