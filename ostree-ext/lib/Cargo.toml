@@ -24,7 +24,6 @@ hex = "0.4.3"
 indicatif = "0.16.0"
 lazy_static = "1.4.0"
 libc = "0.2.92"
-maplit = "1.0.2"
 nix = "0.22.0"
 oci-spec = "0.5.0"
 openat = "0.1.20"
@@ -35,21 +34,17 @@ phf = { features = ["macros"], version = "0.9.0" }
 pin-project = "1.0"
 serde = { features = ["derive"], version = "1.0.125" }
 serde_json = "1.0.64"
-serde_plain = "0.3.0"
 structopt = "0.3.21"
 tar = "0.4.33"
 tempfile = "3.2.0"
 tokio = { features = ["full"], version = "1" }
-tokio-stream = "0.1.5"
 tokio-util = { features = ["io"], version = "0.6" }
 tracing = "0.1"
 
 [dev-dependencies]
-clap = "2.33.3"
 indoc = "1.0.3"
 quickcheck = "1"
 sh-inline = "0.1.0"
-structopt = "0.3.21"
 
 [package.metadata.docs.rs]
 features = ["dox"]
