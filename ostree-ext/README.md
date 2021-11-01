@@ -2,6 +2,55 @@
 
 Extension APIs for [ostree](https://github.com/ostreedev/ostree/) that are written in Rust, using the [Rust ostree bindings](https://crates.io/crates/ostree).
 
+If you are writing tooling that uses ostree and Rust, this crate is intended for you.
+However, while the ostree core is very stable, the APIs and data models and this crate
+should be considered "slushy".  An effort will be made to preserve backwards compatibility
+for data written by prior versions (e.g. of tar and container serialization), but
+if you choose to use this crate, please [file an issue](https://github.com/ostreedev/ostree-rs-ext/issues)
+to let us know.
+
+At the moment, the following projects are known to use this crate:
+
+- https://github.com/coreos/rpm-ostree/
+
+The intention of this crate is to be where new high level ostree-related features
+land.  However, at this time it is kept separate from the core C library, which
+is in turn separate from the [ostree-rs bindings](https://github.com/ostreedev/ostree-rs).
+
+High level features (more on this below):
+
+- ostree and [opencontainers/image](https://github.com/opencontainers/image-spec) bridging/integration
+- Generalized tar import/export
+- APIs to diff ostree commits
+
+```
+┌─────────────────┐
+│                 │
+│  ostree-rs-ext  ├────────────┐
+│                 │            │
+└────────┬────────┘            │
+         │                     │
+┌────────▼────────┐   ┌────────▼─────────┐
+│                 │   │                  │
+│    ostree-rs    │   │  imageproxy-rs   │
+│                 │   │                  │
+└────────┬────────┘   └────────┬─────────┘
+         │                     │
+┌────────▼────────┐   ┌────────▼─────────┐
+│                 │   │                  │
+│     ostree      │   │     skopeo       │
+│                 │   │                  │
+└─────────────────┘   └────────┬─────────┘
+                               │
+                      ┌────────▼─────────┐
+                      │                  │
+                      │ containers/image │
+                      │                  │
+                      └──────────────────┘
+```
+
+For more information on the container stack, see below.
+
 ## module "tar": tar export/import
 
 ostree's support for exporting to a tarball is lossy because it doesn't have e.g. commit
@@ -47,26 +96,26 @@ A major distinction is the addition of special `.xattr` files; tar variants and 
 
 This is used by `rpm-ostree ex apply-live`.
 
-## module "container": Encapsulate ostree commits in OCI/Docker images
+## module "container": Bridging between ostree and OCI/Docker images
 
-This module contains APIs to bidirectionally map between a single OSTree commit and a container image wrapping it.
+
+This module contains APIs to bidirectionally map between OSTree commits and the [opencontainers](https://github.com/opencontainers)
+ecosystem.
+
 Because container images are just layers of tarballs, this builds on the [`crate::tar`] module.
-To emphasize this, the current high level model is that this is a one-to-one mapping - an ostree commit
-can be exported (wrapped) into a container image, which will have exactly one layer.  Upon import
-back into an ostree repository, all container metadata except for its digested checksum will be discarded.
-#### Signatures
-OSTree supports GPG and ed25519 signatures natively, and it's expected by default that
-when booting from a fetched container image, one verifies ostree-level signatures.
-For ostree, a signing configuration is specified via an ostree remote.  In order to
-pair this configuration together, this library defines a "URL-like" string schema:
-`ostree-remote-registry:<remotename>:<containerimage>`
-A concrete instantiation might be e.g.: `ostree-remote-registry:fedora:quay.io/coreos/fedora-coreos:stable`
-To parse and generate these strings, see [`OstreeImageReference`].
-#### Layering
 
-A key feature of container images is support for layering.  At the moment, support
-for this is [planned but not implemented](https://github.com/ostreedev/ostree-rs-ext/issues/12).
-### Encapsulate an OSTree commit inside a container image
+This module builds on [containers-image-proxy-rs](https://github.com/containers/containers-image-proxy-rs)
+and [skopeo](https://github.com/containers/skopeo), which in turn is ultimately a frontend
+around the [containers/image](https://github.com/containers/image) ecosystem.
+
+In particular, the `containers/image` library is used to fetch content from remote registries,
+which allows building on top of functionality in that library, including signatures, mirroring
+and in general a battle tested codebase for interacting with both OCI and Docker registries.
+
+### Encapsulation
+
+For existing organizations which use ostree, APIs (and a CLI) are provided to "encapsulate"
+and "unencapsulate" an OSTree commit as as an OCI image.
 
 ```
 $ ostree-ext-cli container encapsulate --repo=/path/to/repo exampleos/x86_64/stable docker://quay.io/exampleos/exampleos:stable
@@ -103,69 +152,48 @@ $ rpm-ostree rebase ostree-remote-image:someremote:quay.io/exampleos/exampleos:s
 
 (Along with the usual `rpm-ostree upgrade` knowing to pull that container image)
 
-### Future: Running an ostree-container as a webserver
 
-It also should work to run the ostree-container as a webserver, which will expose a webserver that responds to `GET /repo`.
+To emphasize this, the current high level model is that this is a one-to-one mapping - an ostree commit
+can be exported (wrapped) into a container image, which will have exactly one layer.  Upon import
+back into an ostree repository, all container metadata except for its digested checksum will be discarded.
 
-The effect will be as if it was built from a `Dockerfile` that contains `EXPOSE 8080`; it will work to e.g.
-`kubectl run nginx --image=quay.io/exampleos/exampleos:latest --replicas=1`
-and then also create a service for it.
+#### Signatures
 
-### Integrating with future container deltas
+OSTree supports GPG and ed25519 signatures natively, and it's expected by default that
+when booting from a fetched container image, one verifies ostree-level signatures.
+For ostree, a signing configuration is specified via an ostree remote.  In order to
+pair this configuration together, this library defines a "URL-like" string schema:
+`ostree-remote-registry:<remotename>:<containerimage>`
+A concrete instantiation might be e.g.: `ostree-remote-registry:fedora:quay.io/coreos/fedora-coreos:stable`
+To parse and generate these strings, see [`OstreeImageReference`].
 
-See https://blogs.gnome.org/alexl/2020/05/13/putting-container-updates-on-a-diet/
+### Layering
 
+A key feature of container images is support for layering.  This functionality is handled
+via a separate [container/store](https://docs.rs/ostree_ext/latest/container/store/) module.
 
-# ostree vs OCI/Docker
+These APIs are also exposed via the CLI:
 
-Looking at this, one might ask: why even have ostree?  Why not just have the operating system directly use something like the [containers/image](https://github.com/containers/image/) storage?
+```
+$ ostree-ext-cli container image --help
+ostree-ext-cli-container-image 0.4.0-alpha.0
+Commands for working with (possibly layered, non-encapsulated) container images
 
-The first answer to this is that it's a goal of this project to "hide" ostree usage; it should feel "native" to ship and manage the operating system "as if" it was just running a container.
+USAGE:
+    ostree-ext-cli container image <SUBCOMMAND>
 
-But, ostree has a *lot* of stuff built up around it and we can't just throw that away.
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
 
-## Understanding kernels
+SUBCOMMANDS:
+    copy      Copy a pulled container image from one repo to another
+    deploy    Perform initial deployment for a container image
+    help      Prints this message or the help of the given subcommand(s)
+    list      List container images
+    pull      Pull (or update) a container image
+```
 
-ostree was designed from the start to manage bootable operating system trees - hence the name of the project.  For example, ostree understands bootloaders and kernels/initramfs images.  Container tools don't.
+## More details about ostree and containers
 
-## Signing
-
-ostree also quite early on gained an opinionated mechanism to sign images (commits) via GPG.  As of this time there are multiple competing mechanisms for container signing, and it is not widely deployed.
-For running random containers from `docker.io`, it can be OK to just trust TLS or pin via `@sha256` - a whole idea of Docker is that containers are isolated and it should be reasonably safe to
-at least try out random containers.  But for the *operating system* its integrity is paramount because it's ultimately trusted.
-
-## Deduplication
-
-ostree's hardlink store is designed around de-duplication.  Operating systems can get large and they are most natural as "base images" - which in the Docker container model
-are duplicated on disk.  Of course storage systems like containers/image could learn to de-duplicate; but it would be a use case that *mostly* applied to just the operating system.
-
-## Being able to remove all container images
-
-In Kubernetes, the kubelet will prune the image storage periodically, removing images not backed by containers.  If we store the operating system itself as an image...well, we'd need to do something like teach the container storage to have the concept of an image that is "pinned" because it's actually the booted filesystem.  Or create a "fake" container representing the running operating system.
-
-Other projects in this space ended up having an "early docker" distinct from the "main docker" which brings its own large set of challenges.
-
-## SELinux 
-
-OSTree has *first class* support for SELinux.  It was baked into the design from the very start.  Handling SELinux is very tricky because it's a part of the operating system that can influence *everything else*.  And specifically file labels.
-
-In this approach we aren't trying to inject xattrs into the tar stream; they're stored out of band for reliability.
-
-## Independence of complexity of container storage
-
-This stuff could be done - but the container storage and tooling is already quite complex, and introducing a special case like this would be treading into new ground.
-
-Today for example, cri-o ships a `crio-wipe.service` which removes all container storage across major version upgrades.
-
-ostree is a fairly simple format and has been 100% stable throughout its life so far.
-
-## ostree format has per-file integrity
-
-More on this here: https://ostreedev.github.io/ostree/related-projects/#docker
-
-## Allow hiding ostree while not reinventing everything
-
-So, again the goal here is: make it feel "native" to ship and manage the operating system "as if" it was just running a container without throwing away everything in ostree today.
-
-
-
+See [ostree-and-containers.md](ostree-and-containers.md).
