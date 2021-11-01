@@ -144,7 +144,7 @@ async fn build_impl(
             sigverify: SignatureSource::ContainerPolicyAllowInsecure,
             imgref: dest.to_owned(),
         };
-        let (_, digest) = super::import::fetch_manifest(&imgref).await?;
+        let (_, digest) = super::unencapsulate::fetch_manifest(&imgref).await?;
         Ok(digest)
     }
 }
@@ -152,7 +152,7 @@ async fn build_impl(
 /// Given an OSTree repository and ref, generate a container image.
 ///
 /// The returned `ImageReference` will contain a digested (e.g. `@sha256:`) version of the destination.
-pub async fn export<S: AsRef<str>>(
+pub async fn encapsulate<S: AsRef<str>>(
     repo: &ostree::Repo,
     ostree_ref: S,
     config: &Config,

@@ -229,10 +229,10 @@ impl std::fmt::Display for OstreeImageReference {
 }
 
 pub mod deploy;
-mod export;
-pub use export::*;
-mod import;
-pub use import::*;
+mod encapsulate;
+pub use encapsulate::*;
+mod unencapsulate;
+pub use unencapsulate::*;
 mod ociwriter;
 mod skopeo;
 pub mod store;

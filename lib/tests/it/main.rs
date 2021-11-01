@@ -326,9 +326,10 @@ async fn test_container_import_export() -> Result<()> {
         ),
         cmd: Some(vec!["/bin/bash".to_string()]),
     };
-    let digest = ostree_ext::container::export(&fixture.srcrepo, TESTREF, &config, &srcoci_imgref)
-        .await
-        .context("exporting")?;
+    let digest =
+        ostree_ext::container::encapsulate(&fixture.srcrepo, TESTREF, &config, &srcoci_imgref)
+            .await
+            .context("exporting")?;
     assert!(srcoci_path.exists());
 
     let inspect = skopeo_inspect(&srcoci_imgref.to_string())?;
@@ -349,7 +350,7 @@ async fn test_container_import_export() -> Result<()> {
         sigverify: SignatureSource::OstreeRemote("unknownremote".to_string()),
         imgref: srcoci_imgref.clone(),
     };
-    let r = ostree_ext::container::import(&fixture.destrepo, &srcoci_unknownremote, None)
+    let r = ostree_ext::container::unencapsulate(&fixture.destrepo, &srcoci_unknownremote, None)
         .await
         .context("importing");
     assert_err_contains(r, r#"Remote "unknownremote" not found"#);
@@ -372,7 +373,7 @@ async fn test_container_import_export() -> Result<()> {
         sigverify: SignatureSource::OstreeRemote("myremote".to_string()),
         imgref: srcoci_imgref.clone(),
     };
-    let import = ostree_ext::container::import(&fixture.destrepo, &srcoci_verified, None)
+    let import = ostree_ext::container::unencapsulate(&fixture.destrepo, &srcoci_verified, None)
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
@@ -380,7 +381,7 @@ async fn test_container_import_export() -> Result<()> {
     // Test without signature verification
     // Create a new repo
     let fixture = Fixture::new()?;
-    let import = ostree_ext::container::import(&fixture.destrepo, &srcoci_unverified, None)
+    let import = ostree_ext::container::unencapsulate(&fixture.destrepo, &srcoci_unverified, None)
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
@@ -401,7 +402,7 @@ async fn test_container_import_derive() -> Result<()> {
             name: exampleos_path.to_string(),
         },
     };
-    let r = ostree_ext::container::import(&fixture.destrepo, &exampleos_ref, None).await;
+    let r = ostree_ext::container::unencapsulate(&fixture.destrepo, &exampleos_ref, None).await;
     assert_err_contains(r, "Expected 1 layer, found 2");
     Ok(())
 }
@@ -555,9 +556,10 @@ async fn test_container_import_export_registry() -> Result<()> {
         cmd: Some(vec!["/bin/bash".to_string()]),
         ..Default::default()
     };
-    let digest = ostree_ext::container::export(&fixture.srcrepo, TESTREF, &config, &src_imgref)
-        .await
-        .context("exporting to registry")?;
+    let digest =
+        ostree_ext::container::encapsulate(&fixture.srcrepo, TESTREF, &config, &src_imgref)
+            .await
+            .context("exporting to registry")?;
     let mut digested_imgref = src_imgref.clone();
     digested_imgref.name = format!("{}@{}", src_imgref.name, digest);
 
@@ -565,7 +567,7 @@ async fn test_container_import_export_registry() -> Result<()> {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref: digested_imgref,
     };
-    let import = ostree_ext::container::import(&fixture.destrepo, &import_ref, None)
+    let import = ostree_ext::container::unencapsulate(&fixture.destrepo, &import_ref, None)
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());

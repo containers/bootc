@@ -13,7 +13,7 @@ use std::ffi::OsString;
 use structopt::StructOpt;
 
 use crate::container::store::{LayeredImageImporter, PrepareResult};
-use crate::container::{Config, ImageReference, ImportOptions, OstreeImageReference};
+use crate::container::{Config, ImageReference, OstreeImageReference, UnencapsulateOptions};
 
 fn parse_imgref(s: &str) -> Result<OstreeImageReference> {
     OstreeImageReference::try_from(s)
@@ -261,10 +261,10 @@ async fn container_import(
     } else {
         None
     };
-    let opts = ImportOptions {
+    let opts = UnencapsulateOptions {
         progress: Some(tx_progress),
     };
-    let import = crate::container::import(repo, &imgref, Some(opts));
+    let import = crate::container::unencapsulate(repo, &imgref, Some(opts));
     tokio::pin!(import);
     tokio::pin!(rx_progress);
     let import = loop {
@@ -316,7 +316,7 @@ async fn container_export(
         labels: Some(labels),
         cmd,
     };
-    let pushed = crate::container::export(repo, rev, &config, &imgref).await?;
+    let pushed = crate::container::encapsulate(repo, rev, &config, &imgref).await?;
     println!("{}", pushed);
     Ok(())
 }
