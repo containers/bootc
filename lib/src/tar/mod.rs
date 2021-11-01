@@ -32,11 +32,6 @@
 //! to have the container runtime try to unpack and apply those.  For this reason, this module
 //! serializes extended attributes into separate `.xattr` files associated with each ostree object.
 
-//#![deny(missing_docs)]
-// Good defaults
-#![forbid(unused_must_use)]
-#![deny(unsafe_code)]
-
 mod import;
 pub use import::*;
 mod export;
