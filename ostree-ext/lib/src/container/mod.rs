@@ -25,11 +25,6 @@
 //! A key feature of container images is support for layering.  At the moment, support
 //! for this is [planned but not implemented](https://github.com/ostreedev/ostree-rs-ext/issues/12).
 
-//#![deny(missing_docs)]
-// Good defaults
-#![forbid(unused_must_use)]
-#![deny(unsafe_code)]
-
 use anyhow::anyhow;
 use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
