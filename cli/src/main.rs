@@ -1,3 +1,7 @@
+// Good defaults
+#![forbid(unused_must_use)]
+#![deny(unsafe_code)]
+
 use anyhow::Result;
 
 async fn run() -> Result<()> {
