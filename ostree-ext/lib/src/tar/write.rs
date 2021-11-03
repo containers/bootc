@@ -7,7 +7,6 @@
 //! In the future, this may also evolve into parsing the tar
 //! stream in Rust, not in C.
 
-use crate::async_util::{ReadBridge, WriteBridge};
 use crate::cmdext::CommandRedirectionExt;
 use crate::Result;
 use anyhow::{anyhow, Context};
@@ -163,9 +162,10 @@ async fn filter_tar_async(
     mut dest: impl AsyncWrite + Send + Unpin,
 ) -> Result<BTreeMap<String, u32>> {
     let (tx_buf, mut rx_buf) = tokio::io::duplex(8192);
+    let src = Box::pin(src);
     let tar_transformer = tokio::task::spawn_blocking(move || -> Result<_> {
-        let src = ReadBridge::new(src);
-        let dest = WriteBridge::new(tx_buf);
+        let src = tokio_util::io::SyncIoBridge::new(src);
+        let dest = tokio_util::io::SyncIoBridge::new(tx_buf);
         filter_tar(src, dest)
     });
     let copier = tokio::io::copy(&mut rx_buf, &mut dest);
