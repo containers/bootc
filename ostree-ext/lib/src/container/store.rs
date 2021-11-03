@@ -112,10 +112,8 @@ pub struct PreparedImport {
 /// A successful import of a container image.
 #[derive(Debug, PartialEq, Eq)]
 pub struct CompletedImport {
-    /// The ostree ref used for the container image.
-    pub ostree_ref: String,
-    /// The current commit.
-    pub commit: String,
+    /// The completed layered image state
+    pub state: LayeredImageState,
     /// A mapping from layer blob IDs to a count of content filtered out
     /// by toplevel path.
     pub layer_filtered_content: BTreeMap<String, BTreeMap<String, u32>>,
@@ -312,8 +310,9 @@ impl LayeredImageImporter {
         // Destructure to transfer ownership to thread
         let repo = self.repo;
         let target_ref = self.ostree_ref;
-        let (ostree_ref, commit) = crate::tokio_util::spawn_blocking_cancellable(
-            move |cancellable| -> Result<(String, String)> {
+        let imgref = self.imgref;
+        let state = crate::tokio_util::spawn_blocking_cancellable(
+            move |cancellable| -> Result<LayeredImageState> {
                 let cancellable = Some(cancellable);
                 let repo = &repo;
                 let txn = repo.auto_transaction(cancellable)?;
@@ -344,13 +343,15 @@ impl LayeredImageImporter {
                 )?;
                 repo.transaction_set_ref(None, &target_ref, Some(merged_commit.as_str()));
                 txn.commit(cancellable)?;
-                Ok((target_ref, merged_commit.to_string()))
+                // Here we re-query state just to run through the same code path,
+                // though it'd be cheaper to synthesize it from the data we already have.
+                let state = query_image(&repo, &imgref)?.unwrap();
+                Ok(state)
             },
         )
         .await??;
         Ok(CompletedImport {
-            ostree_ref,
-            commit,
+            state,
             layer_filtered_content,
         })
     }
