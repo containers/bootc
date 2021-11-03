@@ -334,7 +334,7 @@ async fn container_store(repo: &str, imgref: &OstreeImageReference) -> Result<()
     let mut imp = LayeredImageImporter::new(repo, &imgref).await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
-            println!("No changes in {} => {}", imgref, c);
+            println!("No changes in {} => {}", imgref, c.merge_commit);
             return Ok(());
         }
         PrepareResult::Ready(r) => r,
