@@ -22,7 +22,6 @@ pub use ostree::gio::glib;
 /// to a string to output to a terminal or logs.
 type Result<T> = anyhow::Result<T>;
 
-mod async_util;
 pub mod cli;
 pub mod container;
 pub mod diff;
