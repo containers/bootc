@@ -366,10 +366,7 @@ async fn container_store(repo: &str, imgref: &OstreeImageReference) -> Result<()
             }
         }
     }
-    println!(
-        "Wrote: {} => {} => {}",
-        imgref, import.ostree_ref, import.commit
-    );
+    println!("Wrote: {} => {}", imgref, import.state.merge_commit);
     Ok(())
 }
 

@@ -10,10 +10,11 @@ pub const ORIGIN_CONTAINER: &str = "container-image-reference";
 
 async fn pull_idempotent(repo: &ostree::Repo, imgref: &OstreeImageReference) -> Result<String> {
     let mut imp = super::store::LayeredImageImporter::new(repo, imgref).await?;
-    match imp.prepare().await? {
-        PrepareResult::AlreadyPresent(r) => Ok(r.merge_commit),
-        PrepareResult::Ready(prep) => Ok(imp.import(prep).await?.commit),
-    }
+    let state = match imp.prepare().await? {
+        PrepareResult::AlreadyPresent(r) => r,
+        PrepareResult::Ready(prep) => imp.import(prep).await?.state,
+    };
+    Ok(state.merge_commit)
 }
 
 /// Options configuring deployment.
