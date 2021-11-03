@@ -10,7 +10,7 @@ use crate::refescape;
 use anyhow::{anyhow, Context};
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
-use oci_spec::image as oci_image;
+use oci_spec::image::{self as oci_image, ImageManifest};
 use ostree::prelude::{Cast, ToVariant};
 use ostree::{gio, glib};
 use std::collections::{BTreeMap, HashMap};
@@ -40,6 +40,19 @@ fn ref_for_image(l: &ImageReference) -> Result<String> {
     refescape::prefix_escape_for_ref(IMAGE_PREFIX, &l.to_string())
 }
 
+/// State of an already pulled layered image.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LayeredImageState {
+    /// The base ostree commit
+    pub base_commit: String,
+    /// The merge commit unions all layers
+    pub merge_commit: String,
+    /// Whether or not the image has multiple layers.
+    pub is_layered: bool,
+    /// The digest of the original manifest
+    pub manifest_digest: String,
+}
+
 /// Context for importing a container image.
 pub struct LayeredImageImporter {
     repo: ostree::Repo,
@@ -52,7 +65,7 @@ pub struct LayeredImageImporter {
 /// Result of invoking [`LayeredImageImporter::prepare`].
 pub enum PrepareResult {
     /// The image reference is already present; the contained string is the OSTree commit.
-    AlreadyPresent(String),
+    AlreadyPresent(LayeredImageState),
     /// The image needs to be downloaded
     Ready(Box<PreparedImport>),
 }
@@ -179,26 +192,27 @@ impl LayeredImageImporter {
         let new_imageid = manifest.config().digest().as_str();
 
         // Query for previous stored state
-        let (previous_manifest_digest, previous_imageid) = if let Some(merge_commit) =
-            self.repo.resolve_rev(&self.ostree_ref, true)?
-        {
-            let merge_commit_obj = &self.repo.load_commit(merge_commit.as_str())?.0;
-            let commit_meta = &merge_commit_obj.child_value(0);
-            let commit_meta = &ostree::glib::VariantDict::new(Some(commit_meta));
-            let (previous_manifest, previous_digest) = manifest_data_from_commitmeta(commit_meta)?;
-            // If the manifest digests match, we're done.
-            if previous_digest == manifest_digest {
-                return Ok(PrepareResult::AlreadyPresent(merge_commit.to_string()));
-            }
-            // Failing that, if they have the same imageID, we're also done.
-            let previous_imageid = previous_manifest.config().digest().as_str();
-            if previous_imageid == new_imageid {
-                return Ok(PrepareResult::AlreadyPresent(merge_commit.to_string()));
-            }
-            (Some(previous_digest), Some(previous_imageid.to_string()))
-        } else {
-            (None, None)
-        };
+
+        let (previous_manifest_digest, previous_imageid) =
+            if let Some((previous_manifest, previous_state)) =
+                query_image_impl(&self.repo, &self.imgref)?
+            {
+                // If the manifest digests match, we're done.
+                if previous_state.manifest_digest == manifest_digest {
+                    return Ok(PrepareResult::AlreadyPresent(previous_state));
+                }
+                // Failing that, if they have the same imageID, we're also done.
+                let previous_imageid = previous_manifest.config().digest().as_str();
+                if previous_imageid == new_imageid {
+                    return Ok(PrepareResult::AlreadyPresent(previous_state));
+                }
+                (
+                    Some(previous_state.manifest_digest),
+                    Some(previous_imageid.to_string()),
+                )
+            } else {
+                (None, None)
+            };
 
         let mut layers = manifest.layers().iter().cloned();
         // We require a base layer.
@@ -353,6 +367,46 @@ pub fn list_images(repo: &ostree::Repo) -> Result<Vec<String>> {
     refs.keys()
         .map(|imgname| refescape::unprefix_unescape_ref(IMAGE_PREFIX, imgname))
         .collect()
+}
+
+fn query_image_impl(
+    repo: &ostree::Repo,
+    imgref: &OstreeImageReference,
+) -> Result<Option<(ImageManifest, LayeredImageState)>> {
+    let ostree_ref = &ref_for_image(&imgref.imgref)?;
+    let merge_rev = repo.resolve_rev(&ostree_ref, true)?;
+    let (merge_commit, merge_commit_obj) = if let Some(r) = merge_rev {
+        (r.to_string(), repo.load_commit(r.as_str())?.0)
+    } else {
+        return Ok(None);
+    };
+    let commit_meta = &merge_commit_obj.child_value(0);
+    let commit_meta = &ostree::glib::VariantDict::new(Some(commit_meta));
+    let (manifest, manifest_digest) = manifest_data_from_commitmeta(commit_meta)?;
+    let mut layers = manifest.layers().iter().cloned();
+    // We require a base layer.
+    let base_layer = layers.next().ok_or_else(|| anyhow!("No layers found"))?;
+    let base_layer = query_layer(repo, base_layer)?;
+    let base_commit = base_layer
+        .commit
+        .ok_or_else(|| anyhow!("Missing base image ref"))?;
+    // If there are more layers after the base, then we're layered.
+    let is_layered = layers.count() > 0;
+    let state = LayeredImageState {
+        base_commit,
+        merge_commit,
+        is_layered,
+        manifest_digest,
+    };
+    Ok(Some((manifest, state)))
+}
+
+/// Query metadata for a pulled image.
+pub fn query_image(
+    repo: &ostree::Repo,
+    imgref: &OstreeImageReference,
+) -> Result<Option<LayeredImageState>> {
+    Ok(query_image_impl(repo, imgref)?.map(|v| v.1))
 }
 
 /// Copy a downloaded image from one repository to another.

@@ -466,7 +466,7 @@ async fn test_container_write_derive() -> Result<()> {
             panic!("Should have already imported {}", import.ostree_ref)
         }
     };
-    assert_eq!(import.commit, already_present);
+    assert_eq!(import.commit, already_present.merge_commit);
 
     // Test upgrades; replace the oci-archive with new content.
     std::fs::write(exampleos_path, EXAMPLEOS_DERIVED_V2_OCI)?;
@@ -486,7 +486,7 @@ async fn test_container_write_derive() -> Result<()> {
     }
     let import = imp.import(prep).await?;
     // New commit.
-    assert_ne!(import.commit, already_present);
+    assert_ne!(import.commit, already_present.merge_commit);
     // We should still have exactly one image stored.
     let images = ostree_ext::container::store::list_images(&fixture.destrepo)?;
     assert_eq!(images.len(), 1);
@@ -513,7 +513,7 @@ async fn test_container_write_derive() -> Result<()> {
             panic!("Should have already imported {}", import.ostree_ref)
         }
     };
-    assert_eq!(import.commit, already_present);
+    assert_eq!(import.commit, already_present.merge_commit);
 
     // Create a new repo, and copy to it
     let destrepo2 = ostree::Repo::create_at(
