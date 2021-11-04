@@ -53,6 +53,22 @@ pub struct LayeredImageState {
     pub manifest_digest: String,
 }
 
+impl LayeredImageState {
+    /// Return the default ostree commit digest for this image.
+    ///
+    /// If this is a non-layered image, the merge commit will be
+    /// ignored, and the base commit returned.
+    ///
+    /// Otherwise, this returns the merge commit.
+    pub fn get_commit(&self) -> &str {
+        if self.is_layered {
+            self.merge_commit.as_str()
+        } else {
+            self.base_commit.as_str()
+        }
+    }
+}
+
 /// Context for importing a container image.
 pub struct LayeredImageImporter {
     repo: ostree::Repo,
