@@ -37,6 +37,9 @@ pub async fn deploy<'opts>(
     let options = options.unwrap_or_default();
     let repo = &sysroot.repo().unwrap();
     let mut imp = super::store::LayeredImageImporter::new(repo, imgref).await?;
+    if let Some(target) = options.target_imgref {
+        imp.set_target(target);
+    }
     let state = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(r) => r,
         PrepareResult::Ready(prep) => imp.import(prep).await?.state,
