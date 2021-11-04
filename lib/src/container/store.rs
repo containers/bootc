@@ -290,6 +290,7 @@ impl LayeredImageImporter {
         let mut layer_filtered_content = BTreeMap::new();
         for layer in import.layers {
             if let Some(c) = layer.commit {
+                tracing::debug!("Reusing fetched commit {}", c);
                 layer_commits.push(c.to_string());
             } else {
                 let (blob, driver) = super::unencapsulate::fetch_layer_decompress(
@@ -318,6 +319,7 @@ impl LayeredImageImporter {
 
         // We're done with the proxy, make sure it didn't have any errors.
         proxy.finalize().await?;
+        tracing::debug!("finalized proxy");
 
         let serialized_manifest = serde_json::to_string(&import.manifest)?;
         let mut metadata = HashMap::new();
@@ -420,6 +422,7 @@ fn query_image_impl(
         is_layered,
         manifest_digest,
     };
+    tracing::debug!(state = ?state);
     Ok(Some((manifest, state)))
 }
 
