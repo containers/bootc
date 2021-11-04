@@ -74,8 +74,8 @@ pub struct LayeredImageImporter {
     repo: ostree::Repo,
     proxy: ImageProxy,
     imgref: OstreeImageReference,
+    target_imgref: Option<OstreeImageReference>,
     proxy_img: OpenedImage,
-    ostree_ref: String,
 }
 
 /// Result of invoking [`LayeredImageImporter::prepare`].
@@ -176,14 +176,18 @@ impl LayeredImageImporter {
         let proxy = ImageProxy::new().await?;
         let proxy_img = proxy.open_image(&imgref.imgref.to_string()).await?;
         let repo = repo.clone();
-        let ostree_ref = ref_for_image(&imgref.imgref)?;
         Ok(LayeredImageImporter {
             repo,
             proxy,
             proxy_img,
-            ostree_ref,
+            target_imgref: None,
             imgref: imgref.clone(),
         })
+    }
+
+    /// Write cached data as if the image came from this source.
+    pub fn set_target(&mut self, target: &OstreeImageReference) {
+        self.target_imgref = Some(target.clone())
     }
 
     /// Determine if there is a new manifest, and if so return its digest.
@@ -252,6 +256,8 @@ impl LayeredImageImporter {
     /// Import a layered container image
     pub async fn import(self, import: Box<PreparedImport>) -> Result<CompletedImport> {
         let proxy = self.proxy;
+        let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
+        let ostree_ref = ref_for_image(&target_imgref.imgref)?;
         // First download the base image (if necessary) - we need the SELinux policy
         // there to label all following layers.
         let base_layer = import.base_layer;
@@ -325,8 +331,7 @@ impl LayeredImageImporter {
 
         // Destructure to transfer ownership to thread
         let repo = self.repo;
-        let target_ref = self.ostree_ref;
-        let imgref = self.imgref;
+        let imgref = self.target_imgref.unwrap_or(self.imgref);
         let state = crate::tokio_util::spawn_blocking_cancellable(
             move |cancellable| -> Result<LayeredImageState> {
                 let cancellable = Some(cancellable);
@@ -357,7 +362,7 @@ impl LayeredImageImporter {
                     &merged_root,
                     cancellable,
                 )?;
-                repo.transaction_set_ref(None, &target_ref, Some(merged_commit.as_str()));
+                repo.transaction_set_ref(None, &ostree_ref, Some(merged_commit.as_str()));
                 txn.commit(cancellable)?;
                 // Here we re-query state just to run through the same code path,
                 // though it'd be cheaper to synthesize it from the data we already have.
