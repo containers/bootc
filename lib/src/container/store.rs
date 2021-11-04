@@ -10,7 +10,7 @@ use crate::refescape;
 use anyhow::{anyhow, Context};
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
-use oci_spec::image as oci_image;
+use oci_spec::image::{self as oci_image, ImageManifest};
 use ostree::prelude::{Cast, ToVariant};
 use ostree::{gio, glib};
 use std::collections::{BTreeMap, HashMap};
@@ -40,19 +40,48 @@ fn ref_for_image(l: &ImageReference) -> Result<String> {
     refescape::prefix_escape_for_ref(IMAGE_PREFIX, &l.to_string())
 }
 
+/// State of an already pulled layered image.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LayeredImageState {
+    /// The base ostree commit
+    pub base_commit: String,
+    /// The merge commit unions all layers
+    pub merge_commit: String,
+    /// Whether or not the image has multiple layers.
+    pub is_layered: bool,
+    /// The digest of the original manifest
+    pub manifest_digest: String,
+}
+
+impl LayeredImageState {
+    /// Return the default ostree commit digest for this image.
+    ///
+    /// If this is a non-layered image, the merge commit will be
+    /// ignored, and the base commit returned.
+    ///
+    /// Otherwise, this returns the merge commit.
+    pub fn get_commit(&self) -> &str {
+        if self.is_layered {
+            self.merge_commit.as_str()
+        } else {
+            self.base_commit.as_str()
+        }
+    }
+}
+
 /// Context for importing a container image.
 pub struct LayeredImageImporter {
     repo: ostree::Repo,
     proxy: ImageProxy,
     imgref: OstreeImageReference,
+    target_imgref: Option<OstreeImageReference>,
     proxy_img: OpenedImage,
-    ostree_ref: String,
 }
 
 /// Result of invoking [`LayeredImageImporter::prepare`].
 pub enum PrepareResult {
     /// The image reference is already present; the contained string is the OSTree commit.
-    AlreadyPresent(String),
+    AlreadyPresent(LayeredImageState),
     /// The image needs to be downloaded
     Ready(Box<PreparedImport>),
 }
@@ -99,10 +128,8 @@ pub struct PreparedImport {
 /// A successful import of a container image.
 #[derive(Debug, PartialEq, Eq)]
 pub struct CompletedImport {
-    /// The ostree ref used for the container image.
-    pub ostree_ref: String,
-    /// The current commit.
-    pub commit: String,
+    /// The completed layered image state
+    pub state: LayeredImageState,
     /// A mapping from layer blob IDs to a count of content filtered out
     /// by toplevel path.
     pub layer_filtered_content: BTreeMap<String, BTreeMap<String, u32>>,
@@ -149,14 +176,18 @@ impl LayeredImageImporter {
         let proxy = ImageProxy::new().await?;
         let proxy_img = proxy.open_image(&imgref.imgref.to_string()).await?;
         let repo = repo.clone();
-        let ostree_ref = ref_for_image(&imgref.imgref)?;
         Ok(LayeredImageImporter {
             repo,
             proxy,
             proxy_img,
-            ostree_ref,
+            target_imgref: None,
             imgref: imgref.clone(),
         })
+    }
+
+    /// Write cached data as if the image came from this source.
+    pub fn set_target(&mut self, target: &OstreeImageReference) {
+        self.target_imgref = Some(target.clone())
     }
 
     /// Determine if there is a new manifest, and if so return its digest.
@@ -179,26 +210,27 @@ impl LayeredImageImporter {
         let new_imageid = manifest.config().digest().as_str();
 
         // Query for previous stored state
-        let (previous_manifest_digest, previous_imageid) = if let Some(merge_commit) =
-            self.repo.resolve_rev(&self.ostree_ref, true)?
-        {
-            let merge_commit_obj = &self.repo.load_commit(merge_commit.as_str())?.0;
-            let commit_meta = &merge_commit_obj.child_value(0);
-            let commit_meta = &ostree::glib::VariantDict::new(Some(commit_meta));
-            let (previous_manifest, previous_digest) = manifest_data_from_commitmeta(commit_meta)?;
-            // If the manifest digests match, we're done.
-            if previous_digest == manifest_digest {
-                return Ok(PrepareResult::AlreadyPresent(merge_commit.to_string()));
-            }
-            // Failing that, if they have the same imageID, we're also done.
-            let previous_imageid = previous_manifest.config().digest().as_str();
-            if previous_imageid == new_imageid {
-                return Ok(PrepareResult::AlreadyPresent(merge_commit.to_string()));
-            }
-            (Some(previous_digest), Some(previous_imageid.to_string()))
-        } else {
-            (None, None)
-        };
+
+        let (previous_manifest_digest, previous_imageid) =
+            if let Some((previous_manifest, previous_state)) =
+                query_image_impl(&self.repo, &self.imgref)?
+            {
+                // If the manifest digests match, we're done.
+                if previous_state.manifest_digest == manifest_digest {
+                    return Ok(PrepareResult::AlreadyPresent(previous_state));
+                }
+                // Failing that, if they have the same imageID, we're also done.
+                let previous_imageid = previous_manifest.config().digest().as_str();
+                if previous_imageid == new_imageid {
+                    return Ok(PrepareResult::AlreadyPresent(previous_state));
+                }
+                (
+                    Some(previous_state.manifest_digest),
+                    Some(previous_imageid.to_string()),
+                )
+            } else {
+                (None, None)
+            };
 
         let mut layers = manifest.layers().iter().cloned();
         // We require a base layer.
@@ -224,6 +256,8 @@ impl LayeredImageImporter {
     /// Import a layered container image
     pub async fn import(self, import: Box<PreparedImport>) -> Result<CompletedImport> {
         let proxy = self.proxy;
+        let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
+        let ostree_ref = ref_for_image(&target_imgref.imgref)?;
         // First download the base image (if necessary) - we need the SELinux policy
         // there to label all following layers.
         let base_layer = import.base_layer;
@@ -297,9 +331,9 @@ impl LayeredImageImporter {
 
         // Destructure to transfer ownership to thread
         let repo = self.repo;
-        let target_ref = self.ostree_ref;
-        let (ostree_ref, commit) = crate::tokio_util::spawn_blocking_cancellable(
-            move |cancellable| -> Result<(String, String)> {
+        let imgref = self.target_imgref.unwrap_or(self.imgref);
+        let state = crate::tokio_util::spawn_blocking_cancellable(
+            move |cancellable| -> Result<LayeredImageState> {
                 let cancellable = Some(cancellable);
                 let repo = &repo;
                 let txn = repo.auto_transaction(cancellable)?;
@@ -328,15 +362,17 @@ impl LayeredImageImporter {
                     &merged_root,
                     cancellable,
                 )?;
-                repo.transaction_set_ref(None, &target_ref, Some(merged_commit.as_str()));
+                repo.transaction_set_ref(None, &ostree_ref, Some(merged_commit.as_str()));
                 txn.commit(cancellable)?;
-                Ok((target_ref, merged_commit.to_string()))
+                // Here we re-query state just to run through the same code path,
+                // though it'd be cheaper to synthesize it from the data we already have.
+                let state = query_image(&repo, &imgref)?.unwrap();
+                Ok(state)
             },
         )
         .await??;
         Ok(CompletedImport {
-            ostree_ref,
-            commit,
+            state,
             layer_filtered_content,
         })
     }
@@ -353,6 +389,46 @@ pub fn list_images(repo: &ostree::Repo) -> Result<Vec<String>> {
     refs.keys()
         .map(|imgname| refescape::unprefix_unescape_ref(IMAGE_PREFIX, imgname))
         .collect()
+}
+
+fn query_image_impl(
+    repo: &ostree::Repo,
+    imgref: &OstreeImageReference,
+) -> Result<Option<(ImageManifest, LayeredImageState)>> {
+    let ostree_ref = &ref_for_image(&imgref.imgref)?;
+    let merge_rev = repo.resolve_rev(&ostree_ref, true)?;
+    let (merge_commit, merge_commit_obj) = if let Some(r) = merge_rev {
+        (r.to_string(), repo.load_commit(r.as_str())?.0)
+    } else {
+        return Ok(None);
+    };
+    let commit_meta = &merge_commit_obj.child_value(0);
+    let commit_meta = &ostree::glib::VariantDict::new(Some(commit_meta));
+    let (manifest, manifest_digest) = manifest_data_from_commitmeta(commit_meta)?;
+    let mut layers = manifest.layers().iter().cloned();
+    // We require a base layer.
+    let base_layer = layers.next().ok_or_else(|| anyhow!("No layers found"))?;
+    let base_layer = query_layer(repo, base_layer)?;
+    let base_commit = base_layer
+        .commit
+        .ok_or_else(|| anyhow!("Missing base image ref"))?;
+    // If there are more layers after the base, then we're layered.
+    let is_layered = layers.count() > 0;
+    let state = LayeredImageState {
+        base_commit,
+        merge_commit,
+        is_layered,
+        manifest_digest,
+    };
+    Ok(Some((manifest, state)))
+}
+
+/// Query metadata for a pulled image.
+pub fn query_image(
+    repo: &ostree::Repo,
+    imgref: &OstreeImageReference,
+) -> Result<Option<LayeredImageState>> {
+    Ok(query_image_impl(repo, imgref)?.map(|v| v.1))
 }
 
 /// Copy a downloaded image from one repository to another.

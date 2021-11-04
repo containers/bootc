@@ -8,14 +8,6 @@ use ostree::glib;
 /// The key in the OSTree origin which holds a serialized [`super::OstreeImageReference`].
 pub const ORIGIN_CONTAINER: &str = "container-image-reference";
 
-async fn pull_idempotent(repo: &ostree::Repo, imgref: &OstreeImageReference) -> Result<String> {
-    let mut imp = super::store::LayeredImageImporter::new(repo, imgref).await?;
-    match imp.prepare().await? {
-        PrepareResult::AlreadyPresent(r) => Ok(r),
-        PrepareResult::Ready(prep) => Ok(imp.import(prep).await?.commit),
-    }
-}
-
 /// Options configuring deployment.
 #[derive(Debug, Default)]
 pub struct DeployOpts<'a> {
@@ -44,7 +36,15 @@ pub async fn deploy<'opts>(
     let cancellable = ostree::gio::NONE_CANCELLABLE;
     let options = options.unwrap_or_default();
     let repo = &sysroot.repo().unwrap();
-    let commit = &pull_idempotent(repo, imgref).await?;
+    let mut imp = super::store::LayeredImageImporter::new(repo, imgref).await?;
+    if let Some(target) = options.target_imgref {
+        imp.set_target(target);
+    }
+    let state = match imp.prepare().await? {
+        PrepareResult::AlreadyPresent(r) => r,
+        PrepareResult::Ready(prep) => imp.import(prep).await?.state,
+    };
+    let commit = state.get_commit();
     let origin = glib::KeyFile::new();
     let target_imgref = options.target_imgref.unwrap_or(imgref);
     origin.set_string("origin", ORIGIN_CONTAINER, &target_imgref.to_string());
