@@ -13,7 +13,8 @@ use fn_error_context::context;
 use oci_spec::image::{self as oci_image, ImageManifest};
 use ostree::prelude::{Cast, ToVariant};
 use ostree::{gio, glib};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
+use std::iter::FromIterator;
 
 /// The ostree ref prefix for blobs.
 const LAYER_PREFIX: &str = "ostree/container/blob";
@@ -24,6 +25,10 @@ const IMAGE_PREFIX: &str = "ostree/container/image";
 const META_MANIFEST_DIGEST: &str = "ostree.manifest-digest";
 /// The key injected into the merge commit with the manifest serialized as JSON.
 const META_MANIFEST: &str = "ostree.manifest";
+/// Value of type `a{sa{su}}` containing number of filtered out files
+pub const META_FILTERED: &str = "ostree.tar-filtered";
+/// The type used to store content filtering information with `META_FILTERED`.
+pub type MetaFilteredData = HashMap<String, HashMap<String, u32>>;
 
 /// Convert e.g. sha256:12345... into `/ostree/container/blob/sha256_2B12345...`.
 fn ref_for_blob_digest(d: &str) -> Result<String> {
@@ -123,16 +128,6 @@ pub struct PreparedImport {
     pub base_layer: ManifestLayerState,
     /// Any further layers.
     pub layers: Vec<ManifestLayerState>,
-}
-
-/// A successful import of a container image.
-#[derive(Debug, PartialEq, Eq)]
-pub struct CompletedImport {
-    /// The completed layered image state
-    pub state: LayeredImageState,
-    /// A mapping from layer blob IDs to a count of content filtered out
-    /// by toplevel path.
-    pub layer_filtered_content: BTreeMap<String, BTreeMap<String, u32>>,
 }
 
 // Given a manifest, compute its ostree ref name and cached ostree commit
@@ -254,7 +249,7 @@ impl LayeredImageImporter {
     }
 
     /// Import a layered container image
-    pub async fn import(self, import: Box<PreparedImport>) -> Result<CompletedImport> {
+    pub async fn import(self, import: Box<PreparedImport>) -> Result<LayeredImageState> {
         let mut proxy = self.proxy;
         let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
         let ostree_ref = ref_for_image(&target_imgref.imgref)?;
@@ -287,7 +282,7 @@ impl LayeredImageImporter {
         };
 
         let mut layer_commits = Vec::new();
-        let mut layer_filtered_content = BTreeMap::new();
+        let mut layer_filtered_content: MetaFilteredData = HashMap::new();
         for layer in import.layers {
             if let Some(c) = layer.commit {
                 tracing::debug!("Reusing fetched commit {}", c);
@@ -312,7 +307,8 @@ impl LayeredImageImporter {
                 driver?;
                 layer_commits.push(r.commit);
                 if !r.filtered.is_empty() {
-                    layer_filtered_content.insert(layer.digest().to_string(), r.filtered);
+                    let filtered = HashMap::from_iter(r.filtered.into_iter());
+                    layer_filtered_content.insert(layer.digest().to_string(), filtered);
                 }
             }
         }
@@ -329,6 +325,8 @@ impl LayeredImageImporter {
             "ostree.importer.version",
             env!("CARGO_PKG_VERSION").to_variant(),
         );
+        let filtered = layer_filtered_content.to_variant();
+        metadata.insert(META_FILTERED, filtered);
         let metadata = metadata.to_variant();
 
         // Destructure to transfer ownership to thread
@@ -373,10 +371,7 @@ impl LayeredImageImporter {
             },
         )
         .await??;
-        Ok(CompletedImport {
-            state,
-            layer_filtered_content,
-        })
+        Ok(state)
     }
 }
 
