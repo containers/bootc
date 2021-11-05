@@ -97,7 +97,7 @@ fn unescape_for_ref(s: &str) -> Result<String> {
                 } else if let Some(c) = next {
                     buf.clear();
                     buf.push(c);
-                    while let Some(c) = it.next() {
+                    for c in &mut it {
                         if c == '_' {
                             break;
                         }
