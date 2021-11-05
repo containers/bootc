@@ -368,7 +368,7 @@ impl LayeredImageImporter {
                 txn.commit(cancellable)?;
                 // Here we re-query state just to run through the same code path,
                 // though it'd be cheaper to synthesize it from the data we already have.
-                let state = query_image(&repo, &imgref)?.unwrap();
+                let state = query_image(repo, &imgref)?.unwrap();
                 Ok(state)
             },
         )
@@ -398,7 +398,7 @@ fn query_image_impl(
     imgref: &OstreeImageReference,
 ) -> Result<Option<(ImageManifest, LayeredImageState)>> {
     let ostree_ref = &ref_for_image(&imgref.imgref)?;
-    let merge_rev = repo.resolve_rev(&ostree_ref, true)?;
+    let merge_rev = repo.resolve_rev(ostree_ref, true)?;
     let (merge_commit, merge_commit_obj) = if let Some(r) = merge_rev {
         (r.to_string(), repo.load_commit(r.as_str())?.0)
     } else {

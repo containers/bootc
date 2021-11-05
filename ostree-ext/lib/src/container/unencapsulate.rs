@@ -192,7 +192,7 @@ pub async fn unencapsulate_from_manifest(
         return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
     }
     let options = options.unwrap_or_default();
-    let layer = require_one_layer_blob(&manifest)?;
+    let layer = require_one_layer_blob(manifest)?;
     event!(
         Level::DEBUG,
         "target blob digest:{} size: {}",

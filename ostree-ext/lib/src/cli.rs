@@ -264,7 +264,7 @@ async fn container_import(
     let opts = UnencapsulateOptions {
         progress: Some(tx_progress),
     };
-    let import = crate::container::unencapsulate(repo, &imgref, Some(opts));
+    let import = crate::container::unencapsulate(repo, imgref, Some(opts));
     tokio::pin!(import);
     tokio::pin!(rx_progress);
     let import = loop {
@@ -316,14 +316,14 @@ async fn container_export(
         labels: Some(labels),
         cmd,
     };
-    let pushed = crate::container::encapsulate(repo, rev, &config, &imgref).await?;
+    let pushed = crate::container::encapsulate(repo, rev, &config, imgref).await?;
     println!("{}", pushed);
     Ok(())
 }
 
 /// Load metadata for a container image with an encapsulated ostree commit.
 async fn container_info(imgref: &OstreeImageReference) -> Result<()> {
-    let (_, digest) = crate::container::fetch_manifest(&imgref).await?;
+    let (_, digest) = crate::container::fetch_manifest(imgref).await?;
     println!("{} digest: {}", imgref, digest);
     Ok(())
 }
@@ -331,7 +331,7 @@ async fn container_info(imgref: &OstreeImageReference) -> Result<()> {
 /// Write a layered container image into an OSTree commit.
 async fn container_store(repo: &str, imgref: &OstreeImageReference) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
-    let mut imp = LayeredImageImporter::new(repo, &imgref).await?;
+    let mut imp = LayeredImageImporter::new(repo, imgref).await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
             println!("No changes in {} => {}", imgref, c.merge_commit);
