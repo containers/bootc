@@ -111,7 +111,7 @@ impl<'a> OciWriter<'a> {
         &self,
         c: Option<flate2::Compression>,
     ) -> Result<RawLayerWriter> {
-        RawLayerWriter::new(&self.dir, c)
+        RawLayerWriter::new(self.dir, c)
     }
 
     #[allow(dead_code)]
