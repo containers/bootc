@@ -173,7 +173,7 @@ pub fn manifest_digest_from_commit(commit: &glib::Variant) -> Result<String> {
 impl LayeredImageImporter {
     /// Create a new importer.
     pub async fn new(repo: &ostree::Repo, imgref: &OstreeImageReference) -> Result<Self> {
-        let proxy = ImageProxy::new().await?;
+        let mut proxy = ImageProxy::new().await?;
         let proxy_img = proxy.open_image(&imgref.imgref.to_string()).await?;
         let repo = repo.clone();
         Ok(LayeredImageImporter {
@@ -255,7 +255,7 @@ impl LayeredImageImporter {
 
     /// Import a layered container image
     pub async fn import(self, import: Box<PreparedImport>) -> Result<CompletedImport> {
-        let proxy = self.proxy;
+        let mut proxy = self.proxy;
         let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
         let ostree_ref = ref_for_image(&target_imgref.imgref)?;
         // First download the base image (if necessary) - we need the SELinux policy
@@ -266,7 +266,7 @@ impl LayeredImageImporter {
         } else {
             let base_layer_ref = &base_layer.layer;
             let (blob, driver) = super::unencapsulate::fetch_layer_decompress(
-                &proxy,
+                &mut proxy,
                 &self.proxy_img,
                 &base_layer.layer,
             )
@@ -294,7 +294,7 @@ impl LayeredImageImporter {
                 layer_commits.push(c.to_string());
             } else {
                 let (blob, driver) = super::unencapsulate::fetch_layer_decompress(
-                    &proxy,
+                    &mut proxy,
                     &self.proxy_img,
                     &layer.layer,
                 )

@@ -92,7 +92,7 @@ impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
 pub async fn fetch_manifest(
     imgref: &OstreeImageReference,
 ) -> Result<(oci_spec::image::ImageManifest, String)> {
-    let proxy = ImageProxy::new().await?;
+    let mut proxy = ImageProxy::new().await?;
     let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
     let (digest, raw_manifest) = proxy.fetch_manifest(oi).await?;
     proxy.close_image(oi).await?;
@@ -160,15 +160,16 @@ fn new_async_decompressor<'a>(
 }
 
 /// A wrapper for [`get_blob`] which fetches a layer and decompresses it.
-#[instrument(skip(proxy, img))]
+#[instrument(skip(proxy, img, layer))]
 pub(crate) async fn fetch_layer_decompress<'a>(
-    proxy: &'a ImageProxy,
+    proxy: &'a mut ImageProxy,
     img: &OpenedImage,
     layer: &oci_image::Descriptor,
 ) -> Result<(
     Box<dyn AsyncBufRead + Send + Unpin>,
     impl Future<Output = Result<()>> + 'a,
 )> {
+    tracing::debug!("fetching {}", layer.digest());
     let (blob, driver) = proxy
         .get_blob(img, layer.digest().as_str(), layer.size() as u64)
         .await?;
@@ -198,9 +199,9 @@ pub async fn unencapsulate_from_manifest(
         layer.digest().as_str(),
         layer.size()
     );
-    let proxy = ImageProxy::new().await?;
-    let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
-    let (blob, driver) = fetch_layer_decompress(&proxy, oi, layer).await?;
+    let mut proxy = ImageProxy::new().await?;
+    let oi = proxy.open_image(&imgref.imgref.to_string()).await?;
+    let (blob, driver) = fetch_layer_decompress(&mut proxy, &oi, layer).await?;
     let blob = ProgressReader {
         reader: blob,
         progress: options.progress,
