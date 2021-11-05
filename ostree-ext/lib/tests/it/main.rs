@@ -446,7 +446,7 @@ async fn test_container_write_derive() -> Result<()> {
 
     let imported_commit = &fixture
         .destrepo
-        .load_commit(import.state.merge_commit.as_str())?
+        .load_commit(import.merge_commit.as_str())?
         .0;
     let digest = ostree_ext::container::store::manifest_digest_from_commit(imported_commit)?;
     assert!(digest.starts_with("sha256:"));
@@ -456,7 +456,7 @@ async fn test_container_write_derive() -> Result<()> {
     bash!(
         "ostree --repo={repo} ls {r} /usr/share/anewfile",
         repo = fixture.destrepo_path.as_str(),
-        r = import.state.merge_commit.as_str()
+        r = import.merge_commit.as_str()
     )?;
 
     // Import again, but there should be no changes.
@@ -469,7 +469,7 @@ async fn test_container_write_derive() -> Result<()> {
             panic!("Should have already imported {}", &exampleos_ref)
         }
     };
-    assert_eq!(import.state.merge_commit, already_present.merge_commit);
+    assert_eq!(import.merge_commit, already_present.merge_commit);
 
     // Test upgrades; replace the oci-archive with new content.
     std::fs::write(exampleos_path, EXAMPLEOS_DERIVED_V2_OCI)?;
@@ -489,7 +489,7 @@ async fn test_container_write_derive() -> Result<()> {
     }
     let import = imp.import(prep).await?;
     // New commit.
-    assert_ne!(import.state.merge_commit, already_present.merge_commit);
+    assert_ne!(import.merge_commit, already_present.merge_commit);
     // We should still have exactly one image stored.
     let images = ostree_ext::container::store::list_images(&fixture.destrepo)?;
     assert_eq!(images.len(), 1);
@@ -503,7 +503,7 @@ async fn test_container_write_derive() -> Result<()> {
          fi
         ",
         repo = fixture.destrepo_path.as_str(),
-        r = import.state.merge_commit.as_str()
+        r = import.merge_commit.as_str()
     )?;
 
     // And there should be no changes on upgrade again.
@@ -516,7 +516,7 @@ async fn test_container_write_derive() -> Result<()> {
             panic!("Should have already imported {}", &exampleos_ref)
         }
     };
-    assert_eq!(import.state.merge_commit, already_present.merge_commit);
+    assert_eq!(import.merge_commit, already_present.merge_commit);
 
     // Create a new repo, and copy to it
     let destrepo2 = ostree::Repo::create_at(

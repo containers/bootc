@@ -42,7 +42,7 @@ pub async fn deploy<'opts>(
     }
     let state = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(r) => r,
-        PrepareResult::Ready(prep) => imp.import(prep).await?.state,
+        PrepareResult::Ready(prep) => imp.import(prep).await?,
     };
     let commit = state.get_commit();
     let origin = glib::KeyFile::new();
