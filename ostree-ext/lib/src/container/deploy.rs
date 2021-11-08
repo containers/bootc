@@ -27,11 +27,11 @@ pub struct DeployOpts<'a> {
 /// Write a container image to an OSTree deployment.
 ///
 /// This API is currently intended for only an initial deployment.
-pub async fn deploy<'opts>(
+pub async fn deploy(
     sysroot: &ostree::Sysroot,
     stateroot: &str,
     imgref: &OstreeImageReference,
-    options: Option<DeployOpts<'opts>>,
+    options: Option<DeployOpts<'_>>,
 ) -> Result<()> {
     let cancellable = ostree::gio::NONE_CANCELLABLE;
     let options = options.unwrap_or_default();
