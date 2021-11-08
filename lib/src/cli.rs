@@ -6,12 +6,13 @@
 //! such as `rpm-ostree` can directly reuse it.
 
 use anyhow::Result;
-use ostree::gio;
+use ostree::{gio, glib};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::ffi::OsString;
 use structopt::StructOpt;
 
+use crate::container as ostree_container;
 use crate::container::store::{LayeredImageImporter, PrepareResult};
 use crate::container::{Config, ImageReference, OstreeImageReference, UnencapsulateOptions};
 
@@ -358,15 +359,20 @@ async fn container_store(repo: &str, imgref: &OstreeImageReference) -> Result<()
         }
     }
     let import = imp.import(prep).await?;
-    if !import.layer_filtered_content.is_empty() {
-        for (layerid, filtered) in import.layer_filtered_content {
+    let commit = &repo.load_commit(&import.merge_commit)?.0;
+    let commit_meta = &glib::VariantDict::new(Some(&commit.child_value(0)));
+    let filtered = commit_meta.lookup::<ostree_container::store::MetaFilteredData>(
+        ostree_container::store::META_FILTERED,
+    )?;
+    if let Some(filtered) = filtered {
+        for (layerid, filtered) in filtered {
             eprintln!("Unsupported paths filtered from {}:", layerid);
             for (prefix, count) in filtered {
                 eprintln!("  {}: {}", prefix, count);
             }
         }
     }
-    println!("Wrote: {} => {}", imgref, import.state.merge_commit);
+    println!("Wrote: {} => {}", imgref, import.merge_commit);
     Ok(())
 }
 
