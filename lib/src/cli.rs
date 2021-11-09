@@ -317,7 +317,8 @@ async fn container_export(
         labels: Some(labels),
         cmd,
     };
-    let pushed = crate::container::encapsulate(repo, rev, &config, imgref).await?;
+    let opts = Some(Default::default());
+    let pushed = crate::container::encapsulate(repo, rev, &config, opts, &imgref).await?;
     println!("{}", pushed);
     Ok(())
 }
