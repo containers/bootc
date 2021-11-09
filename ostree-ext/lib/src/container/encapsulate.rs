@@ -41,7 +41,7 @@ fn build_oci(
     rev: &str,
     ocidir_path: &Path,
     config: &Config,
-    compression: Option<flate2::Compression>,
+    opts: ExportOpts,
 ) -> Result<ImageReference> {
     // Explicitly error if the target exists
     std::fs::create_dir(ocidir_path).context("Creating OCI dir")?;
@@ -72,8 +72,13 @@ fn build_oci(
         let cmd: Vec<_> = cmd.iter().map(|s| s.as_str()).collect();
         writer.set_cmd(&cmd);
     }
+    let compression = if opts.compress {
+        flate2::Compression::default()
+    } else {
+        flate2::Compression::none()
+    };
 
-    let rootfs_blob = export_ostree_ref(repo, commit, &mut writer, compression)?;
+    let rootfs_blob = export_ostree_ref(repo, commit, &mut writer, Some(compression))?;
     writer.push_layer(rootfs_blob);
     writer.complete()?;
 
@@ -89,20 +94,20 @@ async fn build_impl(
     repo: &ostree::Repo,
     ostree_ref: &str,
     config: &Config,
+    opts: Option<ExportOpts>,
     dest: &ImageReference,
 ) -> Result<String> {
-    let compression = if dest.transport == Transport::ContainerStorage {
-        Some(flate2::Compression::none())
-    } else {
-        None
-    };
+    let mut opts = opts.unwrap_or_default();
+    if dest.transport == Transport::ContainerStorage {
+        opts.compress = false;
+    }
     let digest = if dest.transport == Transport::OciDir {
         let _copied: ImageReference = build_oci(
             repo,
             ostree_ref,
             Path::new(dest.name.as_str()),
             config,
-            compression,
+            opts,
         )?;
         None
     } else {
@@ -115,7 +120,7 @@ async fn build_impl(
             None
         };
 
-        let src = build_oci(repo, ostree_ref, Path::new(tempdest), config, compression)?;
+        let src = build_oci(repo, ostree_ref, Path::new(tempdest), config, opts)?;
 
         let mut cmd = skopeo::new_cmd();
         tracing::event!(Level::DEBUG, "Copying {} to {}", src, dest);
@@ -149,6 +154,13 @@ async fn build_impl(
     }
 }
 
+/// Options controlling commit export into OCI
+#[derive(Debug, Default)]
+pub struct ExportOpts {
+    /// If true, perform gzip compression of the tar layers.
+    pub compress: bool,
+}
+
 /// Given an OSTree repository and ref, generate a container image.
 ///
 /// The returned `ImageReference` will contain a digested (e.g. `@sha256:`) version of the destination.
@@ -156,7 +168,8 @@ pub async fn encapsulate<S: AsRef<str>>(
     repo: &ostree::Repo,
     ostree_ref: S,
     config: &Config,
+    opts: Option<ExportOpts>,
     dest: &ImageReference,
 ) -> Result<String> {
-    build_impl(repo, ostree_ref.as_ref(), config, dest).await
+    build_impl(repo, ostree_ref.as_ref(), config, opts, dest).await
 }
