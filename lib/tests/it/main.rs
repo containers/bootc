@@ -326,10 +326,15 @@ async fn test_container_import_export() -> Result<()> {
         ),
         cmd: Some(vec!["/bin/bash".to_string()]),
     };
-    let digest =
-        ostree_ext::container::encapsulate(&fixture.srcrepo, TESTREF, &config, &srcoci_imgref)
-            .await
-            .context("exporting")?;
+    let digest = ostree_ext::container::encapsulate(
+        &fixture.srcrepo,
+        TESTREF,
+        &config,
+        None,
+        &srcoci_imgref,
+    )
+    .await
+    .context("exporting")?;
     assert!(srcoci_path.exists());
 
     let inspect = skopeo_inspect(&srcoci_imgref.to_string())?;
@@ -560,7 +565,7 @@ async fn test_container_import_export_registry() -> Result<()> {
         ..Default::default()
     };
     let digest =
-        ostree_ext::container::encapsulate(&fixture.srcrepo, TESTREF, &config, &src_imgref)
+        ostree_ext::container::encapsulate(&fixture.srcrepo, TESTREF, &config, None, &src_imgref)
             .await
             .context("exporting to registry")?;
     let mut digested_imgref = src_imgref.clone();
