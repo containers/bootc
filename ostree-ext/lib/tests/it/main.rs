@@ -431,9 +431,12 @@ async fn test_container_write_derive() -> Result<()> {
     assert!(images.is_empty());
 
     // Pull a derived image - two layers, new base plus one layer.
-    let mut imp =
-        ostree_ext::container::store::LayeredImageImporter::new(&fixture.destrepo, &exampleos_ref)
-            .await?;
+    let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
+        &fixture.destrepo,
+        &exampleos_ref,
+        Default::default(),
+    )
+    .await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         PrepareResult::Ready(r) => r,
@@ -465,9 +468,12 @@ async fn test_container_write_derive() -> Result<()> {
     )?;
 
     // Import again, but there should be no changes.
-    let mut imp =
-        ostree_ext::container::store::LayeredImageImporter::new(&fixture.destrepo, &exampleos_ref)
-            .await?;
+    let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
+        &fixture.destrepo,
+        &exampleos_ref,
+        Default::default(),
+    )
+    .await?;
     let already_present = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => c,
         PrepareResult::Ready(_) => {
@@ -478,9 +484,12 @@ async fn test_container_write_derive() -> Result<()> {
 
     // Test upgrades; replace the oci-archive with new content.
     std::fs::write(exampleos_path, EXAMPLEOS_DERIVED_V2_OCI)?;
-    let mut imp =
-        ostree_ext::container::store::LayeredImageImporter::new(&fixture.destrepo, &exampleos_ref)
-            .await?;
+    let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
+        &fixture.destrepo,
+        &exampleos_ref,
+        Default::default(),
+    )
+    .await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         PrepareResult::Ready(r) => r,
@@ -512,9 +521,12 @@ async fn test_container_write_derive() -> Result<()> {
     )?;
 
     // And there should be no changes on upgrade again.
-    let mut imp =
-        ostree_ext::container::store::LayeredImageImporter::new(&fixture.destrepo, &exampleos_ref)
-            .await?;
+    let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
+        &fixture.destrepo,
+        &exampleos_ref,
+        Default::default(),
+    )
+    .await?;
     let already_present = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => c,
         PrepareResult::Ready(_) => {

@@ -22,6 +22,9 @@ pub struct DeployOpts<'a> {
     ///
     /// To implement this, use this option for the latter `:latest` tag.
     pub target_imgref: Option<&'a OstreeImageReference>,
+
+    /// Configuration for fetching containers.
+    pub proxy_cfg: Option<super::store::ImageProxyConfig>,
 }
 
 /// Write a container image to an OSTree deployment.
@@ -36,7 +39,12 @@ pub async fn deploy(
     let cancellable = ostree::gio::NONE_CANCELLABLE;
     let options = options.unwrap_or_default();
     let repo = &sysroot.repo().unwrap();
-    let mut imp = super::store::LayeredImageImporter::new(repo, imgref).await?;
+    let mut imp = super::store::LayeredImageImporter::new(
+        repo,
+        imgref,
+        options.proxy_cfg.unwrap_or_default(),
+    )
+    .await?;
     if let Some(target) = options.target_imgref {
         imp.set_target(target);
     }
