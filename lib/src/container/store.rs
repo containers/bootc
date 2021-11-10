@@ -168,7 +168,7 @@ pub fn manifest_digest_from_commit(commit: &glib::Variant) -> Result<String> {
 impl LayeredImageImporter {
     /// Create a new importer.
     pub async fn new(repo: &ostree::Repo, imgref: &OstreeImageReference) -> Result<Self> {
-        let mut proxy = ImageProxy::new().await?;
+        let proxy = ImageProxy::new().await?;
         let proxy_img = proxy.open_image(&imgref.imgref.to_string()).await?;
         let repo = repo.clone();
         Ok(LayeredImageImporter {
