@@ -92,7 +92,7 @@ impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
 pub async fn fetch_manifest(
     imgref: &OstreeImageReference,
 ) -> Result<(oci_spec::image::ImageManifest, String)> {
-    let mut proxy = ImageProxy::new().await?;
+    let proxy = ImageProxy::new().await?;
     let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
     let (digest, raw_manifest) = proxy.fetch_manifest(oi).await?;
     proxy.close_image(oi).await?;
