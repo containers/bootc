@@ -125,6 +125,18 @@ enum ContainerOpts {
     Image(ContainerImageOpts),
 }
 
+/// Options for container image fetching.
+#[derive(Debug, StructOpt)]
+struct ContainerProxyOpts {
+    #[structopt(long)]
+    /// Path to Docker-formatted authentication file.
+    authfile: Option<String>,
+
+    #[structopt(long)]
+    /// Skip TLS verification.
+    insecure_skip_tls_verification: bool,
+}
+
 /// Options for import/export to tar archives.
 #[derive(Debug, StructOpt)]
 enum ContainerImageOpts {
@@ -144,6 +156,9 @@ enum ContainerImageOpts {
         /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
         #[structopt(parse(try_from_str = parse_imgref))]
         imgref: OstreeImageReference,
+
+        #[structopt(flatten)]
+        proxyopts: ContainerProxyOpts,
     },
 
     /// Copy a pulled container image from one repo to another.
@@ -175,6 +190,9 @@ enum ContainerImageOpts {
         #[structopt(long)]
         #[structopt(parse(try_from_str = parse_imgref))]
         imgref: OstreeImageReference,
+
+        #[structopt(flatten)]
+        proxyopts: ContainerProxyOpts,
 
         /// Target image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
         ///
@@ -218,6 +236,15 @@ enum Opt {
     Container(ContainerOpts),
     /// IMA signatures
     ImaSign(ImaSignOpts),
+}
+
+impl Into<ostree_container::store::ImageProxyConfig> for ContainerProxyOpts {
+    fn into(self) -> ostree_container::store::ImageProxyConfig {
+        ostree_container::store::ImageProxyConfig {
+            authfile: self.authfile,
+            insecure_skip_tls_verification: Some(self.insecure_skip_tls_verification),
+        }
+    }
 }
 
 /// Import a tar archive containing an ostree commit.
@@ -331,9 +358,13 @@ async fn container_info(imgref: &OstreeImageReference) -> Result<()> {
 }
 
 /// Write a layered container image into an OSTree commit.
-async fn container_store(repo: &str, imgref: &OstreeImageReference) -> Result<()> {
+async fn container_store(
+    repo: &str,
+    imgref: &OstreeImageReference,
+    proxyopts: ContainerProxyOpts,
+) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
-    let mut imp = LayeredImageImporter::new(repo, imgref).await?;
+    let mut imp = LayeredImageImporter::new(repo, imgref, proxyopts.into()).await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
             println!("No changes in {} => {}", imgref, c.merge_commit);
@@ -444,7 +475,11 @@ where
                     }
                     Ok(())
                 }
-                ContainerImageOpts::Pull { repo, imgref } => container_store(&repo, &imgref).await,
+                ContainerImageOpts::Pull {
+                    repo,
+                    imgref,
+                    proxyopts,
+                } => container_store(&repo, &imgref, proxyopts).await,
                 ContainerImageOpts::Copy {
                     src_repo,
                     dest_repo,
@@ -462,6 +497,7 @@ where
                     imgref,
                     target_imgref,
                     karg,
+                    proxyopts,
                 } => {
                     let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
                     sysroot.load(gio::NONE_CANCELLABLE)?;
@@ -473,6 +509,7 @@ where
                     let options = crate::container::deploy::DeployOpts {
                         kargs: kargs.as_deref(),
                         target_imgref: target_imgref.as_ref(),
+                        proxy_cfg: Some(proxyopts.into()),
                     };
                     crate::container::deploy::deploy(sysroot, &stateroot, &imgref, Some(options))
                         .await
