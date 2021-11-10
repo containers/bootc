@@ -1,3 +1,6 @@
+# Inspired by https://github.com/rust-analyzer/rust-analyzer/blob/master/.github/workflows/ci.yaml
+# but tweaked in several ways.  If you make changes here, consider doing so across other
+# repositories in e.g. ostreedev etc.
 name: Rust
 
 permissions:
@@ -5,27 +8,28 @@ permissions:
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Install deps
-      run: ./ci/installdeps.sh
-    - name: Format
-      run: cargo fmt -- --check -l
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
-
+      - uses: actions/checkout@v2
+      - name: Install deps
+        run: ./ci/installdeps.sh
+      - name: Format
+        run: cargo fmt -- --check -l
+      # xref containers/containers-image-proxy-rs
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@ce325b60658c1b38465c06cc965b79baf32c1e72
+      - name: Build
+        run: cargo test --no-run
+      - name: Run tests
+        run: cargo test -- --nocapture --quiet
