@@ -333,7 +333,7 @@ async fn container_info(imgref: &OstreeImageReference) -> Result<()> {
 /// Write a layered container image into an OSTree commit.
 async fn container_store(repo: &str, imgref: &OstreeImageReference) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
-    let mut imp = LayeredImageImporter::new(repo, imgref).await?;
+    let mut imp = LayeredImageImporter::new(repo, imgref, Default::default()).await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
             println!("No changes in {} => {}", imgref, c.merge_commit);
@@ -473,6 +473,7 @@ where
                     let options = crate::container::deploy::DeployOpts {
                         kargs: kargs.as_deref(),
                         target_imgref: target_imgref.as_ref(),
+                        ..Default::default()
                     };
                     crate::container::deploy::deploy(sysroot, &stateroot, &imgref, Some(options))
                         .await
