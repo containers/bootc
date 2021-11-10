@@ -16,6 +16,12 @@ use ostree::{gio, glib};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
+/// Configuration for the proxy.
+///
+/// We re-export this rather than inventing our own wrapper
+/// in the interest of avoiding duplication.
+pub use containers_image_proxy::ImageProxyConfig;
+
 /// The ostree ref prefix for blobs.
 const LAYER_PREFIX: &str = "ostree/container/blob";
 /// The ostree ref prefix for image references.
@@ -167,8 +173,12 @@ pub fn manifest_digest_from_commit(commit: &glib::Variant) -> Result<String> {
 
 impl LayeredImageImporter {
     /// Create a new importer.
-    pub async fn new(repo: &ostree::Repo, imgref: &OstreeImageReference) -> Result<Self> {
-        let proxy = ImageProxy::new().await?;
+    pub async fn new(
+        repo: &ostree::Repo,
+        imgref: &OstreeImageReference,
+        config: ImageProxyConfig,
+    ) -> Result<Self> {
+        let proxy = ImageProxy::new_with_config(config).await?;
         let proxy_img = proxy.open_image(&imgref.imgref.to_string()).await?;
         let repo = repo.clone();
         Ok(LayeredImageImporter {
