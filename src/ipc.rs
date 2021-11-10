@@ -83,7 +83,7 @@ impl ClientToDaemonConnection {
             if buf.is_empty() {
                 bail!("Server sent an empty reply");
             }
-            bincode::deserialize(&buf).context("client parsing reply")?
+            bincode::deserialize(buf).context("client parsing reply")?
         };
         match reply {
             DaemonToClientReply::Success::<T>(r) => Ok(r),

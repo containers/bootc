@@ -95,7 +95,7 @@ fn process_client_requests(client: ipc::AuthenticatedClient) -> Result<()> {
             break;
         }
 
-        let msg = bincode::deserialize(&buf)?;
+        let msg = bincode::deserialize(buf)?;
         log::trace!("processing request: {:?}", &msg);
         let r = match msg {
             ClientRequest::Update { component } => {

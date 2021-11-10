@@ -110,7 +110,7 @@ pub(crate) fn update(name: &str) -> Result<ComponentUpdateResult> {
     let sysroot = openat::Dir::open("/")?;
     let update = component.query_update(&sysroot)?;
     let update = match update.as_ref() {
-        Some(p) if inst.meta.can_upgrade_to(&p) => p,
+        Some(p) if inst.meta.can_upgrade_to(p) => p,
         _ => return Ok(ComponentUpdateResult::AtLatestVersion),
     };
 

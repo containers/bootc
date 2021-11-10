@@ -26,7 +26,6 @@ use crate::util::CommandRunExt;
 /// The ESP partition label
 pub(crate) const ESP_PART_LABEL: &str = "EFI-SYSTEM";
 
-#[macro_use]
 lazy_static! {
     /// The path to a temporary ESP mount
     static ref MOUNT_PATH: PathBuf = {
@@ -142,7 +141,7 @@ impl Component for Efi {
     }
 
     fn install(&self, src_root: &openat::Dir, dest_root: &str) -> Result<InstalledContent> {
-        let meta = if let Some(meta) = get_component_update(&src_root, self)? {
+        let meta = if let Some(meta) = get_component_update(src_root, self)? {
             meta
         } else {
             anyhow::bail!("No update metadata for component {} found", self.name());
