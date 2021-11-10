@@ -1,6 +1,9 @@
 [workspace]
 members = ["cli", "lib"]
 
+# These bits are copied from rpm-ostree.
+[profile.dev]
+opt-level = 1 # No optimizations are too slow for us.
+
 [profile.release]
-codegen-units = 1
 lto = "thin"
