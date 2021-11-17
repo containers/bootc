@@ -243,6 +243,7 @@ impl Into<ostree_container::store::ImageProxyConfig> for ContainerProxyOpts {
         ostree_container::store::ImageProxyConfig {
             authfile: self.authfile,
             insecure_skip_tls_verification: Some(self.insecure_skip_tls_verification),
+            ..Default::default()
         }
     }
 }
