@@ -35,7 +35,7 @@ pin-project = "1.0"
 serde = { features = ["derive"], version = "1.0.125" }
 serde_json = "1.0.64"
 structopt = "0.3.21"
-tar = "0.4.33"
+tar = "0.4.38"
 tempfile = "3.2.0"
 tokio = { features = ["full"], version = "1" }
 tokio-util = { features = ["io-util"], version = "0.6.9" }
