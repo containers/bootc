@@ -231,13 +231,11 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                     .append_data(&mut h, &path, &mut instream)
                     .with_context(|| format!("Writing regfile {}", checksum))?;
             } else {
-                h.set_size(0);
-                h.set_entry_type(tar::EntryType::Symlink);
                 let context = || format!("Writing content symlink: {}", checksum);
-                h.set_link_name(meta.symlink_target().unwrap().as_str())
-                    .with_context(context)?;
+                h.set_entry_type(tar::EntryType::Symlink);
+                h.set_size(0);
                 self.out
-                    .append_data(&mut h, &path, &mut std::io::empty())
+                    .append_link(&mut h, &path, meta.symlink_target().unwrap().as_str())
                     .with_context(context)?;
             }
         }
