@@ -1,6 +1,7 @@
 //! APIs for creating container images from OSTree commits
 
 use crate::objgv::*;
+use anyhow::Context;
 use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
@@ -157,10 +158,12 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         let data = data.as_ref();
         h.set_size(data.len() as u64);
         self.out
-            .append_data(&mut h, &object_path(objtype, checksum), data)?;
+            .append_data(&mut h, &object_path(objtype, checksum), data)
+            .with_context(|| format!("Writing object {}", checksum))?;
         Ok(())
     }
 
+    #[context("Writing xattrs")]
     fn append_xattrs(
         &mut self,
         xattrs: &glib::Variant,
@@ -224,12 +227,18 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                 h.set_entry_type(tar::EntryType::Regular);
                 h.set_size(meta.size() as u64);
                 let mut instream = BufReader::with_capacity(BUF_CAPACITY, instream.into_read());
-                self.out.append_data(&mut h, &path, &mut instream)?;
+                self.out
+                    .append_data(&mut h, &path, &mut instream)
+                    .with_context(|| format!("Writing regfile {}", checksum))?;
             } else {
                 h.set_size(0);
                 h.set_entry_type(tar::EntryType::Symlink);
-                h.set_link_name(meta.symlink_target().unwrap().as_str())?;
-                self.out.append_data(&mut h, &path, &mut std::io::empty())?;
+                let context = || format!("Writing content symlink: {}", checksum);
+                h.set_link_name(meta.symlink_target().unwrap().as_str())
+                    .with_context(context)?;
+                self.out
+                    .append_data(&mut h, &path, &mut std::io::empty())
+                    .with_context(context)?;
             }
         }
 
