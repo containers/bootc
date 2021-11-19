@@ -523,6 +523,8 @@ impl Importer {
                 ostree::RepoVerifyFlags::empty(),
             )?;
 
+            self.repo.mark_commit_partial(&checksum, true)?;
+
             // Write the commit object, which also verifies its checksum.
             let actual_checksum =
                 self.repo
@@ -534,6 +536,8 @@ impl Importer {
             self.repo
                 .write_commit_detached_metadata(&checksum, Some(&commitmeta), cancellable)?;
         } else {
+            self.repo.mark_commit_partial(&checksum, true)?;
+
             // We're not doing any validation of the commit, so go ahead and write it.
             let actual_checksum =
                 self.repo
@@ -571,6 +575,8 @@ impl Importer {
             }
         }
         txn.commit(cancellable)?;
+
+        self.repo.mark_commit_partial(&checksum, false)?;
 
         Ok(checksum)
     }
