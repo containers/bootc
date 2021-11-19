@@ -284,7 +284,6 @@ impl Importer {
     ) -> Result<()> {
         let (uid, gid, _) = header_attrs(entry.header())?;
         let target = entry
-            .header()
             .link_name()?
             .ok_or_else(|| anyhow!("Invalid symlink"))?;
         let target = target
