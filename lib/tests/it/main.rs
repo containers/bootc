@@ -226,13 +226,14 @@ async fn test_tar_import_signed() -> Result<()> {
         }),
     )
     .await?;
-    let (commitdata, _) = fixture.destrepo.load_commit(&imported)?;
+    let (commitdata, state) = fixture.destrepo.load_commit(&imported)?;
     assert_eq!(
         EXAMPLEOS_CONTENT_CHECKSUM,
         ostree::commit_get_content_checksum(&commitdata)
             .unwrap()
             .as_str()
     );
+    assert_eq!(state, ostree::RepoCommitState::NORMAL);
     Ok(())
 }
 
