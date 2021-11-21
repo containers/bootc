@@ -152,12 +152,16 @@ impl Importer {
         }
     }
 
-    // Given a tar entry, filter it out if it doesn't start with the repository prefix.
+    // Given a tar entry, filter it out if it doesn't look like an object file in
+    // `/sysroot/ostree`.
     // It is an error if the filename is invalid UTF-8.  If it is valid UTF-8, return
     // an owned copy of the path.
     fn filter_entry<R: std::io::Read>(
         e: tar::Entry<R>,
     ) -> Result<Option<(tar::Entry<R>, Utf8PathBuf)>> {
+        if e.header().entry_type() == tar::EntryType::Directory {
+            return Ok(None);
+        }
         let orig_path = e.path()?;
         let path = Utf8Path::from_path(&*orig_path)
             .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", orig_path))?;
@@ -457,12 +461,7 @@ impl Importer {
 
         // Create an iterator that skips over directories; we just care about the file names.
         let mut ents = archive.entries()?.filter_map(|e| match e {
-            Ok(e) => {
-                if e.header().entry_type() == tar::EntryType::Directory {
-                    return None;
-                }
-                Self::filter_entry(e).transpose()
-            }
+            Ok(e) => Self::filter_entry(e).transpose(),
             Err(e) => Some(Err(anyhow::Error::msg(e))),
         });
 
