@@ -51,12 +51,6 @@ struct Importer {
     stats: ImportStats,
 }
 
-impl Drop for Importer {
-    fn drop(&mut self) {
-        let _ = self.repo.abort_transaction(gio::NONE_CANCELLABLE);
-    }
-}
-
 /// Validate size/type of a tar header for OSTree metadata object.
 fn validate_metadata_header(header: &tar::Header, desc: &str) -> Result<usize> {
     if header.entry_type() != tar::EntryType::Regular {
