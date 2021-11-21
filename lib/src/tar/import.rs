@@ -455,10 +455,6 @@ impl Importer {
         archive: &mut tar::Archive<impl Read + Send + Unpin>,
         cancellable: Option<&gio::Cancellable>,
     ) -> Result<String> {
-        // Unfortunately our use of `&mut self` here clashes with borrowing the repo
-        let txn_repo = self.repo.clone();
-        let txn = txn_repo.auto_transaction(cancellable)?;
-
         // Create an iterator that skips over directories; we just care about the file names.
         let mut ents = archive.entries()?.filter_map(|e| match e {
             Ok(e) => Self::filter_entry(e).transpose(),
@@ -567,9 +563,6 @@ impl Importer {
                 self.import_xattrs(entry)?;
             }
         }
-        txn.commit(cancellable)?;
-
-        self.repo.mark_commit_partial(&checksum, false)?;
 
         Ok(checksum)
     }
@@ -604,8 +597,12 @@ pub async fn import_tar(
     let repo = repo.clone();
     let import = crate::tokio_util::spawn_blocking_cancellable(move |cancellable| {
         let mut archive = tar::Archive::new(src);
+        let txn = repo.auto_transaction(Some(cancellable))?;
         let importer = Importer::new(&repo, options.remote);
-        importer.import(&mut archive, Some(cancellable))
+        let checksum = importer.import(&mut archive, Some(cancellable))?;
+        txn.commit(Some(cancellable))?;
+        repo.mark_commit_partial(&checksum, false)?;
+        Ok::<_, anyhow::Error>(checksum)
     })
     .map_err(anyhow::Error::msg);
     let import: String = import.await??;
