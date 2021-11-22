@@ -51,12 +51,6 @@ struct Importer {
     stats: ImportStats,
 }
 
-impl Drop for Importer {
-    fn drop(&mut self) {
-        let _ = self.repo.abort_transaction(gio::NONE_CANCELLABLE);
-    }
-}
-
 /// Validate size/type of a tar header for OSTree metadata object.
 fn validate_metadata_header(header: &tar::Header, desc: &str) -> Result<usize> {
     if header.entry_type() != tar::EntryType::Regular {
@@ -158,12 +152,16 @@ impl Importer {
         }
     }
 
-    // Given a tar entry, filter it out if it doesn't start with the repository prefix.
+    // Given a tar entry, filter it out if it doesn't look like an object file in
+    // `/sysroot/ostree`.
     // It is an error if the filename is invalid UTF-8.  If it is valid UTF-8, return
     // an owned copy of the path.
     fn filter_entry<R: std::io::Read>(
         e: tar::Entry<R>,
     ) -> Result<Option<(tar::Entry<R>, Utf8PathBuf)>> {
+        if e.header().entry_type() == tar::EntryType::Directory {
+            return Ok(None);
+        }
         let orig_path = e.path()?;
         let path = Utf8Path::from_path(&*orig_path)
             .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", orig_path))?;
@@ -457,18 +455,9 @@ impl Importer {
         archive: &mut tar::Archive<impl Read + Send + Unpin>,
         cancellable: Option<&gio::Cancellable>,
     ) -> Result<String> {
-        // Unfortunately our use of `&mut self` here clashes with borrowing the repo
-        let txn_repo = self.repo.clone();
-        let txn = txn_repo.auto_transaction(cancellable)?;
-
         // Create an iterator that skips over directories; we just care about the file names.
         let mut ents = archive.entries()?.filter_map(|e| match e {
-            Ok(e) => {
-                if e.header().entry_type() == tar::EntryType::Directory {
-                    return None;
-                }
-                Self::filter_entry(e).transpose()
-            }
+            Ok(e) => Self::filter_entry(e).transpose(),
             Err(e) => Some(Err(anyhow::Error::msg(e))),
         });
 
@@ -574,9 +563,6 @@ impl Importer {
                 self.import_xattrs(entry)?;
             }
         }
-        txn.commit(cancellable)?;
-
-        self.repo.mark_commit_partial(&checksum, false)?;
 
         Ok(checksum)
     }
@@ -611,8 +597,12 @@ pub async fn import_tar(
     let repo = repo.clone();
     let import = crate::tokio_util::spawn_blocking_cancellable(move |cancellable| {
         let mut archive = tar::Archive::new(src);
+        let txn = repo.auto_transaction(Some(cancellable))?;
         let importer = Importer::new(&repo, options.remote);
-        importer.import(&mut archive, Some(cancellable))
+        let checksum = importer.import(&mut archive, Some(cancellable))?;
+        txn.commit(Some(cancellable))?;
+        repo.mark_commit_partial(&checksum, false)?;
+        Ok::<_, anyhow::Error>(checksum)
     })
     .map_err(anyhow::Error::msg);
     let import: String = import.await??;
