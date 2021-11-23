@@ -76,7 +76,7 @@ pub(crate) struct OciWriter<'a> {
 
     cmd: Option<Vec<String>>,
 
-    layers: Vec<Layer>,
+    layers: Vec<(oci_image::Descriptor, String)>,
 }
 
 /// Write a serializable data (JSON) as an OCI blob
@@ -131,9 +131,28 @@ impl<'a> OciWriter<'a> {
         Ok(())
     }
 
-    /// Add a layer to the top of the image stack.  The firsh pushed layer becomes the root.
+    /// Add a layer to the top of the image stack.
+    ///
+    /// The first pushed layer becomes the root.
     pub(crate) fn push_layer(&mut self, layer: Layer) {
-        self.layers.push(layer)
+        let v: Option<HashMap<String, String>> = None;
+        self.push_layer_annotated(layer, v);
+    }
+
+    /// Add a layer to the top of the image stack with optional annotations.
+    ///
+    /// This is otherwise equivalent to [`Self::push_layer`].
+    pub(crate) fn push_layer_annotated(
+        &mut self,
+        layer: Layer,
+        annotations: Option<impl Into<HashMap<String, String>>>,
+    ) {
+        let mut builder = layer.descriptor().media_type(MediaType::ImageLayerGzip);
+        if let Some(annotations) = annotations {
+            builder = builder.annotations(annotations);
+        }
+        self.layers
+            .push((builder.build().unwrap(), layer.uncompressed_sha256));
     }
 
     pub(crate) fn set_cmd(&mut self, e: &[&str]) {
@@ -167,7 +186,7 @@ impl<'a> OciWriter<'a> {
         let diffids: Vec<String> = self
             .layers
             .iter()
-            .map(|l| format!("sha256:{}", l.uncompressed_sha256))
+            .map(|(_, diffid)| format!("sha256:{}", diffid))
             .collect();
         let rootfs = oci_image::RootFsBuilder::default()
             .diff_ids(diffids)
@@ -200,17 +219,7 @@ impl<'a> OciWriter<'a> {
             .unwrap();
         let config_blob = write_json_blob(self.dir, &config, MediaType::ImageConfig)?;
 
-        let layers: Vec<Descriptor> = self
-            .layers
-            .iter()
-            .map(|layer| {
-                layer
-                    .descriptor()
-                    .media_type(MediaType::ImageLayerGzip)
-                    .build()
-                    .unwrap()
-            })
-            .collect();
+        let layers: Vec<Descriptor> = self.layers.into_iter().map(|v| v.0).collect();
         let manifest_data = oci_image::ImageManifestBuilder::default()
             .schema_version(oci_image::SCHEMA_VERSION)
             .config(config_blob.build().unwrap())
