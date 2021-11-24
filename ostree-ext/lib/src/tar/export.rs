@@ -83,7 +83,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             h.set_gid(0);
             h.set_mode(0o755);
             h.set_size(0);
-            let path = format!("{}/repo/objects/{:#04x}", OSTREEDIR, d);
+            let path = format!("{}/repo/objects/{:02x}", OSTREEDIR, d);
             self.out.append_data(&mut h, &path, &mut std::io::empty())?;
         }
 
