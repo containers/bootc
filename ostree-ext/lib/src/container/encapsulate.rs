@@ -11,6 +11,12 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use tracing::{instrument, Level};
 
+/// Annotation injected into the layer to say that this is an ostree commit.
+/// However, because this gets lost when converted to D2S2 https://docs.docker.com/registry/spec/manifest-v2-2/
+/// schema, it's not actually useful today.  But, we keep it
+/// out of principle.
+const BLOB_OSTREE_ANNOTATION: &str = "ostree.encapsulated";
+
 /// Configuration for the generated container.
 #[derive(Debug, Default)]
 pub struct Config {
@@ -79,7 +85,8 @@ fn build_oci(
     };
 
     let rootfs_blob = export_ostree_ref(repo, commit, &mut writer, Some(compression))?;
-    writer.push_layer(rootfs_blob);
+    let annos = [(BLOB_OSTREE_ANNOTATION.to_string(), "true".to_string())];
+    writer.push_layer_annotated(rootfs_blob, Some(annos));
     writer.complete()?;
 
     Ok(ImageReference {
