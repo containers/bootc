@@ -79,13 +79,15 @@ undo_manifest_fork() {
 if test -z "${e2e_skip_build:-}"; then
     echo "Building starting image"
     rm -f ${overrides}/rpm/*.rpm
-    add_override grub2-2.06-2.fc34
+    # Version from F35 Beta, and different from F35 Final
+    add_override grub2-2.06-5.fc35
     runv cosa build
     prev_image=$(runv cosa meta --image-path qemu)
     create_manifest_fork
     rm -f ${overrides}/rpm/*.rpm
     echo "Building update ostree"
-    add_override grub2-2.06~rc1-3.fc34
+    # Version queued in current f35 updates
+    add_override grub2-2.06-8.fc35
     mv ${test_tmpdir}/yumrepo/packages/$(arch)/*.rpm ${overrides}/rpm/
     # Only build ostree update
     runv cosa build ostree
