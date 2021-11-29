@@ -69,6 +69,18 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         }
     }
 
+    /// Add a directory entry with default permissions (root/root 0755)
+    fn append_default_dir(&mut self, path: &Utf8Path) -> Result<()> {
+        let mut h = tar::Header::new_gnu();
+        h.set_entry_type(tar::EntryType::Directory);
+        h.set_uid(0);
+        h.set_gid(0);
+        h.set_mode(0o755);
+        h.set_size(0);
+        self.out.append_data(&mut h, &path, &mut std::io::empty())?;
+        Ok(())
+    }
+
     /// Write the initial directory structure.
     fn write_initial_directories(&mut self) -> Result<()> {
         if self.wrote_initdirs {
@@ -77,25 +89,13 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         self.wrote_initdirs = true;
         // Object subdirectories
         for d in 0..0xFF {
-            let mut h = tar::Header::new_gnu();
-            h.set_entry_type(tar::EntryType::Directory);
-            h.set_uid(0);
-            h.set_gid(0);
-            h.set_mode(0o755);
-            h.set_size(0);
-            let path = format!("{}/repo/objects/{:02x}", OSTREEDIR, d);
-            self.out.append_data(&mut h, &path, &mut std::io::empty())?;
+            let path: Utf8PathBuf = format!("{}/repo/objects/{:02x}", OSTREEDIR, d).into();
+            self.append_default_dir(&path)?;
         }
 
         // The special `repo/xattrs` directory used only in our tar serialization.
-        let mut h = tar::Header::new_gnu();
-        h.set_entry_type(tar::EntryType::Directory);
-        h.set_uid(0);
-        h.set_gid(0);
-        h.set_mode(0o755);
-        h.set_size(0);
-        let path = format!("{}/repo/xattrs", OSTREEDIR);
-        self.out.append_data(&mut h, &path, &mut std::io::empty())?;
+        let path: Utf8PathBuf = format!("{}/repo/xattrs", OSTREEDIR).into();
+        self.append_default_dir(&path)?;
         Ok(())
     }
 
