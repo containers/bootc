@@ -87,9 +87,24 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             return Ok(());
         }
         self.wrote_initdirs = true;
+
+        let objdir: Utf8PathBuf = format!("{}/repo/objects", OSTREEDIR).into();
+        // Add all parent directories
+        let parent_dirs = {
+            let mut parts: Vec<_> = objdir.ancestors().collect();
+            parts.reverse();
+            parts
+        };
+        for path in parent_dirs {
+            match path.as_str() {
+                "/" | "" => continue,
+                _ => {}
+            }
+            self.append_default_dir(&path)?;
+        }
         // Object subdirectories
         for d in 0..0xFF {
-            let path: Utf8PathBuf = format!("{}/repo/objects/{:02x}", OSTREEDIR, d).into();
+            let path: Utf8PathBuf = format!("{}/{:02x}", objdir, d).into();
             self.append_default_dir(&path)?;
         }
 
