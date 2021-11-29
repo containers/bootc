@@ -170,7 +170,7 @@ To parse and generate these strings, see [`OstreeImageReference`].
 ### Layering
 
 A key feature of container images is support for layering.  This functionality is handled
-via a separate [container/store](https://docs.rs/ostree_ext/latest/container/store/) module.
+via a separate [container/store](https://docs.rs/ostree_ext/latest/ostree_ext/container/store/) module.
 
 These APIs are also exposed via the CLI:
 
