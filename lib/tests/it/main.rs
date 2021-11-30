@@ -237,6 +237,21 @@ async fn test_tar_import_signed() -> Result<()> {
     Ok(())
 }
 
+/// Validate basic structure of the tar export.
+/// Right now just checks the first entry is `sysroot` with mode 0755.
+#[test]
+fn test_tar_export_structure() -> Result<()> {
+    let fixture = Fixture::new()?;
+    let src_tar = initial_export(&fixture)?;
+    let src_tar = std::io::BufReader::new(std::fs::File::open(&src_tar)?);
+    let mut src_tar = tar::Archive::new(src_tar);
+    let first = src_tar.entries()?.next().unwrap()?;
+    let firstpath = first.path()?;
+    assert_eq!(firstpath.to_str().unwrap(), "sysroot");
+    assert_eq!(first.header().mode()?, 0o755);
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_tar_import_export() -> Result<()> {
     let fixture = Fixture::new()?;
