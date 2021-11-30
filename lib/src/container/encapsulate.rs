@@ -7,7 +7,7 @@ use anyhow::Context;
 use fn_error_context::context;
 use gio::glib;
 use ostree::gio;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use tracing::{instrument, Level};
 
@@ -85,7 +85,8 @@ fn build_oci(
     };
 
     let rootfs_blob = export_ostree_ref(repo, commit, &mut writer, Some(compression))?;
-    let annos = [(BLOB_OSTREE_ANNOTATION.to_string(), "true".to_string())];
+    let mut annos = HashMap::new();
+    annos.insert(BLOB_OSTREE_ANNOTATION.to_string(), "true".to_string());
     writer.push_layer_annotated(rootfs_blob, Some(annos));
     writer.complete()?;
 
