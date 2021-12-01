@@ -238,6 +238,7 @@ enum Opt {
     ImaSign(ImaSignOpts),
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<ostree_container::store::ImageProxyConfig> for ContainerProxyOpts {
     fn into(self) -> ostree_container::store::ImageProxyConfig {
         ostree_container::store::ImageProxyConfig {
@@ -346,7 +347,7 @@ async fn container_export(
         cmd,
     };
     let opts = Some(Default::default());
-    let pushed = crate::container::encapsulate(repo, rev, &config, opts, &imgref).await?;
+    let pushed = crate::container::encapsulate(repo, rev, &config, opts, imgref).await?;
     println!("{}", pushed);
     Ok(())
 }
