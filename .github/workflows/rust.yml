@@ -16,6 +16,8 @@ env:
   CARGO_TERM_COLOR: always
   # Minimum supported Rust version (MSRV)
   ACTION_MSRV_TOOLCHAIN: 1.54.0
+  # Pinned toolchain for linting
+  ACTION_LINTS_TOOLCHAIN: 1.56.0
 
 jobs:
   build:
@@ -25,8 +27,6 @@ jobs:
       - uses: actions/checkout@v2
       - name: Install deps
         run: ./ci/installdeps.sh
-      - name: Format
-        run: cargo fmt -- --check -l
       # xref containers/containers-image-proxy-rs
       - name: Cache Dependencies
         uses: Swatinem/rust-cache@ce325b60658c1b38465c06cc965b79baf32c1e72
@@ -54,3 +54,24 @@ jobs:
         uses: Swatinem/rust-cache@ce325b60658c1b38465c06cc965b79baf32c1e72
       - name: cargo build (release)
         run: cargo build --release
+  linting:
+    name: "Lints, pinned toolchain"
+    runs-on: ubuntu-latest
+    container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Install deps
+        run: ./ci/installdeps.sh
+      - name: Remove system Rust toolchain
+        run: dnf remove -y rust cargo
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env['ACTION_LINTS_TOOLCHAIN']  }}
+          default: true
+          components: rustfmt, clippy
+      - name: cargo fmt (check)
+        run: cargo fmt -- --check -l
+      - name: cargo clippy (warnings)
+        run: cargo clippy -- -D warnings
