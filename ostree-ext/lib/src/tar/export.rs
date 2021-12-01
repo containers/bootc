@@ -100,7 +100,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                 "/" | "" => continue,
                 _ => {}
             }
-            self.append_default_dir(&path)?;
+            self.append_default_dir(path)?;
         }
         // Object subdirectories
         for d in 0..0xFF {
