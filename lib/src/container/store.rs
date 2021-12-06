@@ -31,6 +31,8 @@ const IMAGE_PREFIX: &str = "ostree/container/image";
 const META_MANIFEST_DIGEST: &str = "ostree.manifest-digest";
 /// The key injected into the merge commit with the manifest serialized as JSON.
 const META_MANIFEST: &str = "ostree.manifest";
+/// The key injected into the merge commit with the image configuration serialized as JSON.
+const META_CONFIG: &str = "ostree.container.image-config";
 /// Value of type `a{sa{su}}` containing number of filtered out files
 pub const META_FILTERED: &str = "ostree.tar-filtered";
 /// The type used to store content filtering information with `META_FILTERED`.
@@ -128,6 +130,8 @@ pub struct PreparedImport {
     pub manifest_digest: String,
     /// The deserialized manifest.
     pub manifest: oci_image::ImageManifest,
+    /// The deserialized configuration.
+    pub config: Option<oci_image::ImageConfiguration>,
     /// The previously stored manifest digest.
     pub previous_manifest_digest: Option<String>,
     /// The previously stored image ID.
@@ -200,6 +204,7 @@ impl LayeredImageImporter {
     /// Determine if there is a new manifest, and if so return its digest.
     #[context("Fetching manifest")]
     pub async fn prepare(&mut self) -> Result<PrepareResult> {
+        let proxy_023 = self.proxy.get_0_2_3();
         match &self.imgref.sigverify {
             SignatureSource::ContainerPolicy if skopeo::container_policy_is_default_insecure()? => {
                 return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
@@ -213,7 +218,8 @@ impl LayeredImageImporter {
         }
 
         let (manifest_digest, manifest_bytes) = self.proxy.fetch_manifest(&self.proxy_img).await?;
-        let manifest: oci_image::ImageManifest = serde_json::from_slice(&manifest_bytes)?;
+        let manifest: oci_image::ImageManifest =
+            serde_json::from_slice(&manifest_bytes).context("Parsing image manifest")?;
         let new_imageid = manifest.config().digest().as_str();
 
         // Query for previous stored state
@@ -239,6 +245,15 @@ impl LayeredImageImporter {
                 (None, None)
             };
 
+        let config = if let Some(proxy) = proxy_023 {
+            let config_bytes = proxy.fetch_config(&self.proxy_img).await?;
+            let config: oci_image::ImageConfiguration =
+                serde_json::from_slice(&config_bytes).context("Parsing image configuration")?;
+            Some(config)
+        } else {
+            None
+        };
+
         let mut layers = manifest.layers().iter().cloned();
         // We require a base layer.
         let base_layer = layers.next().ok_or_else(|| anyhow!("No layers found"))?;
@@ -252,6 +267,7 @@ impl LayeredImageImporter {
         let imp = PreparedImport {
             manifest,
             manifest_digest,
+            config,
             previous_manifest_digest,
             previous_imageid,
             base_layer,
@@ -329,9 +345,11 @@ impl LayeredImageImporter {
         tracing::debug!("finalized proxy");
 
         let serialized_manifest = serde_json::to_string(&import.manifest)?;
+        let serialized_config = serde_json::to_string(&import.config)?;
         let mut metadata = HashMap::new();
         metadata.insert(META_MANIFEST_DIGEST, import.manifest_digest.to_variant());
         metadata.insert(META_MANIFEST, serialized_manifest.to_variant());
+        metadata.insert(META_CONFIG, serialized_config.to_variant());
         metadata.insert(
             "ostree.importer.version",
             env!("CARGO_PKG_VERSION").to_variant(),
