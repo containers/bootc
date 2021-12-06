@@ -476,6 +476,21 @@ async fn test_container_write_derive() -> Result<()> {
     assert!(digest.starts_with("sha256:"));
     assert_eq!(digest, expected_digest);
 
+    // For now we need to make this test dynamic
+    {
+        let proxy = containers_image_proxy::ImageProxy::new().await?;
+        let proxy = proxy.get_0_2_3();
+        if proxy.is_some() {
+            let commit_meta = &imported_commit.child_value(0);
+            let commit_meta = glib::VariantDict::new(Some(commit_meta));
+            let config = commit_meta
+                .lookup::<String>("ostree.container.image-config")?
+                .unwrap();
+            let config: oci_spec::image::ImageConfiguration = serde_json::from_str(&config)?;
+            assert_eq!(config.os(), &oci_spec::image::Os::Linux);
+        }
+    }
+
     // Parse the commit and verify we pulled the derived content.
     bash!(
         "ostree --repo={repo} ls {r} /usr/share/anewfile",
