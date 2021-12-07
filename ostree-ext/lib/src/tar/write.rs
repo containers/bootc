@@ -36,6 +36,7 @@ pub struct WriteTarOptions {
 ///
 /// This includes some basic data on the number of files that were filtered
 /// out because they were not in `/usr`.
+#[derive(Debug, Default)]
 pub struct WriteTarResult {
     /// The resulting OSTree commit SHA-256.
     pub commit: String,

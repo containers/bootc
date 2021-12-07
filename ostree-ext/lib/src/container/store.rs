@@ -81,6 +81,7 @@ impl LayeredImageState {
 }
 
 /// Context for importing a container image.
+#[derive(Debug)]
 pub struct LayeredImageImporter {
     repo: ostree::Repo,
     proxy: ImageProxy,
@@ -90,6 +91,7 @@ pub struct LayeredImageImporter {
 }
 
 /// Result of invoking [`LayeredImageImporter::prepare`].
+#[derive(Debug)]
 pub enum PrepareResult {
     /// The image reference is already present; the contained string is the OSTree commit.
     AlreadyPresent(LayeredImageState),
