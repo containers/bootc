@@ -12,7 +12,6 @@ version = "0.5.1"
 anyhow = "1.0"
 containers-image-proxy = "0.3"
 async-compression = { version = "0.3", features = ["gzip", "tokio"] }
-bytes = "1.0.1"
 bitflags = "1"
 camino = "1.0.4"
 cjson = "0.1.1"
