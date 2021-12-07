@@ -4,8 +4,10 @@
 //! and the Rust bindings to it, adding new functionality
 //! written in Rust.  
 
+// See https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
 #![deny(missing_docs)]
-// Good defaults
+#![deny(missing_debug_implementations)]
+#![deny(unreachable_pub)]
 #![forbid(unused_must_use)]
 #![deny(unsafe_code)]
 #![cfg_attr(feature = "dox", feature(doc_cfg))]
