@@ -87,16 +87,23 @@ impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
     }
 }
 
+async fn fetch_manifest_impl(
+    proxy: &mut ImageProxy,
+    imgref: &OstreeImageReference,
+) -> Result<(oci_spec::image::ImageManifest, String)> {
+    let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
+    let (digest, raw_manifest) = proxy.fetch_manifest(oi).await?;
+    proxy.close_image(oi).await?;
+    Ok((serde_json::from_slice(&raw_manifest)?, digest))
+}
+
 /// Download the manifest for a target image and its sha256 digest.
 #[context("Fetching manifest")]
 pub async fn fetch_manifest(
     imgref: &OstreeImageReference,
 ) -> Result<(oci_spec::image::ImageManifest, String)> {
-    let proxy = ImageProxy::new().await?;
-    let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
-    let (digest, raw_manifest) = proxy.fetch_manifest(oi).await?;
-    proxy.close_image(oi).await?;
-    Ok((serde_json::from_slice(&raw_manifest)?, digest))
+    let mut proxy = ImageProxy::new().await?;
+    fetch_manifest_impl(&mut proxy, imgref).await
 }
 
 /// The result of an import operation
@@ -137,8 +144,10 @@ pub async fn unencapsulate(
     imgref: &OstreeImageReference,
     options: Option<UnencapsulateOptions>,
 ) -> Result<Import> {
-    let (manifest, image_digest) = fetch_manifest(imgref).await?;
-    let ostree_commit = unencapsulate_from_manifest(repo, imgref, &manifest, options).await?;
+    let mut proxy = ImageProxy::new().await?;
+    let (manifest, image_digest) = fetch_manifest_impl(&mut proxy, imgref).await?;
+    let ostree_commit =
+        unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, &manifest, options).await?;
     Ok(Import {
         ostree_commit,
         image_digest,
@@ -177,11 +186,9 @@ pub(crate) async fn fetch_layer_decompress<'a>(
     Ok((blob, driver))
 }
 
-/// Fetch a container image using an in-memory manifest and import its embedded OSTree commit.
-#[context("Importing {}", imgref)]
-#[instrument(skip(repo, options, manifest))]
-pub async fn unencapsulate_from_manifest(
+async fn unencapsulate_from_manifest_impl(
     repo: &ostree::Repo,
+    proxy: &mut ImageProxy,
     imgref: &OstreeImageReference,
     manifest: &oci_spec::image::ImageManifest,
     options: Option<UnencapsulateOptions>,
@@ -199,9 +206,8 @@ pub async fn unencapsulate_from_manifest(
         layer.digest().as_str(),
         layer.size()
     );
-    let mut proxy = ImageProxy::new().await?;
     let oi = proxy.open_image(&imgref.imgref.to_string()).await?;
-    let (blob, driver) = fetch_layer_decompress(&mut proxy, &oi, layer).await?;
+    let (blob, driver) = fetch_layer_decompress(proxy, &oi, layer).await?;
     let blob = ProgressReader {
         reader: blob,
         progress: options.progress,
@@ -215,8 +221,23 @@ pub async fn unencapsulate_from_manifest(
     let (import, driver) = tokio::join!(import, driver);
     driver?;
     let ostree_commit = import.with_context(|| format!("Parsing blob {}", layer.digest()))?;
-    // FIXME write ostree commit after proxy finalization
-    proxy.finalize().await?;
+
     event!(Level::DEBUG, "created commit {}", ostree_commit);
     Ok(ostree_commit)
+}
+
+/// Fetch a container image using an in-memory manifest and import its embedded OSTree commit.
+#[context("Importing {}", imgref)]
+#[instrument(skip(repo, options, manifest))]
+pub async fn unencapsulate_from_manifest(
+    repo: &ostree::Repo,
+    imgref: &OstreeImageReference,
+    manifest: &oci_spec::image::ImageManifest,
+    options: Option<UnencapsulateOptions>,
+) -> Result<String> {
+    let mut proxy = ImageProxy::new().await?;
+    let r = unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, manifest, options).await?;
+    // FIXME write ostree commit after proxy finalization
+    proxy.finalize().await?;
+    Ok(r)
 }
