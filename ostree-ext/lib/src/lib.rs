@@ -5,6 +5,7 @@
 //! written in Rust.  
 
 #![deny(missing_docs)]
+#![deny(missing_debug_implementations)]
 // Good defaults
 #![forbid(unused_must_use)]
 #![deny(unsafe_code)]

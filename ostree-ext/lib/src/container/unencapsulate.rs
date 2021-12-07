@@ -51,6 +51,7 @@ type Progress = tokio::sync::watch::Sender<UnencapsulationProgress>;
 
 /// A read wrapper that updates the download progress.
 #[pin_project::pin_project]
+#[derive(Debug)]
 struct ProgressReader<T> {
     #[pin]
     reader: T,
