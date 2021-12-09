@@ -106,7 +106,7 @@ target_commit=$(cosa meta --get-value ostree-commit)
 echo "Target commit: ${target_commit}"
 # For some reason 9p can't write to tmpfs
 
-cat >${testtmp}/test.fcct << EOF
+cat >${testtmp}/test.bu << EOF
 variant: fcos
 version: 1.0.0
 systemd:
@@ -128,7 +128,7 @@ systemd:
         [Install]
         WantedBy=multi-user.target
 EOF
-runv fcct -o ${testtmp}/test.ign ${testtmp}/test.fcct
+runv butane -o ${testtmp}/test.ign ${testtmp}/test.bu
 cd ${testtmp}
 qemuexec_args=(kola qemuexec --propagate-initramfs-failure --qemu-image "${prev_image}" --qemu-firmware uefi \
     -i test.ign --bind-ro ${COSA_DIR},/run/cosadir --bind-ro ${bootupd_git},/run/bootupd-source --bind-rw .,/run/testtmp)
