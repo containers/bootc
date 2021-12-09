@@ -10,6 +10,7 @@ use ostree::{gio, glib};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::ffi::OsString;
+use std::path::PathBuf;
 use structopt::StructOpt;
 
 use crate::container as ostree_container;
@@ -130,7 +131,12 @@ enum ContainerOpts {
 struct ContainerProxyOpts {
     #[structopt(long)]
     /// Path to Docker-formatted authentication file.
-    authfile: Option<String>,
+    authfile: Option<PathBuf>,
+
+    #[structopt(long)]
+    /// Directory with certificates (*.crt, *.cert, *.key) used to connect to registry
+    /// Equivalent to `skopeo --cert-dir`
+    cert_dir: Option<PathBuf>,
 
     #[structopt(long)]
     /// Skip TLS verification.
@@ -229,6 +235,7 @@ struct ImaSignOpts {
 #[derive(Debug, StructOpt)]
 #[structopt(name = "ostree-ext")]
 #[structopt(rename_all = "kebab-case")]
+#[allow(clippy::large_enum_variant)]
 enum Opt {
     /// Import and export to tar
     Tar(TarOpts),
@@ -243,6 +250,7 @@ impl Into<ostree_container::store::ImageProxyConfig> for ContainerProxyOpts {
     fn into(self) -> ostree_container::store::ImageProxyConfig {
         ostree_container::store::ImageProxyConfig {
             authfile: self.authfile,
+            certificate_directory: self.cert_dir,
             insecure_skip_tls_verification: Some(self.insecure_skip_tls_verification),
             ..Default::default()
         }
