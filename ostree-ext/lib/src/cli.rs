@@ -235,6 +235,7 @@ struct ImaSignOpts {
 #[derive(Debug, StructOpt)]
 #[structopt(name = "ostree-ext")]
 #[structopt(rename_all = "kebab-case")]
+#[allow(clippy::large_enum_variant)]
 enum Opt {
     /// Import and export to tar
     Tar(TarOpts),
