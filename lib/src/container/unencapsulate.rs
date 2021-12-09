@@ -130,6 +130,41 @@ fn require_one_layer_blob(manifest: &oci_image::ImageManifest) -> Result<&oci_im
     }
 }
 
+/// Use this to process potential errors from a worker and a driver.
+/// This is really a brutal hack around the fact that an error can occur
+/// on either our side or in the proxy.  But if an error occurs on our
+/// side, then we will close the pipe, which will *also* cause the proxy
+/// to error out.
+///
+/// What we really want is for the proxy to tell us when it got an
+/// error from us closing the pipe.  Or, we could store that state
+/// on our side.  Both are slightly tricky, so we have this (again)
+/// hacky thing where we just search for `broken pipe` in the error text.
+///
+/// Or to restate all of the above - what this function does is check
+/// to see if the worker function had an error *and* if the proxy
+/// had an error, but if the proxy's error ends in `broken pipe`
+/// then it means the real only error is from the worker.
+pub(crate) async fn join_fetch<T: std::fmt::Debug>(
+    worker: impl Future<Output = Result<T>>,
+    driver: impl Future<Output = Result<()>>,
+) -> Result<T> {
+    let (worker, driver) = tokio::join!(worker, driver);
+    match (worker, driver) {
+        (Ok(t), Ok(())) => Ok(t),
+        (Err(worker), Err(driver)) => {
+            let text = driver.root_cause().to_string();
+            if text.ends_with("broken pipe") {
+                Err(worker)
+            } else {
+                Err(worker.context(format!("proxy failure: {} and client error", text)))
+            }
+        }
+        (Ok(_), Err(driver)) => Err(driver),
+        (Err(worker), Ok(())) => Err(worker),
+    }
+}
+
 /// Configuration for container fetches.
 #[derive(Debug, Default)]
 pub struct UnencapsulateOptions {
@@ -219,9 +254,9 @@ async fn unencapsulate_from_manifest_impl(
         SignatureSource::ContainerPolicy | SignatureSource::ContainerPolicyAllowInsecure => {}
     }
     let import = crate::tar::import_tar(repo, blob, Some(taropts));
-    let (import, driver) = tokio::join!(import, driver);
-    driver?;
-    let ostree_commit = import.with_context(|| format!("Parsing blob {}", layer.digest()))?;
+    let ostree_commit = join_fetch(import, driver)
+        .await
+        .with_context(|| format!("Parsing blob {}", layer.digest()))?;
 
     event!(Level::DEBUG, "created commit {}", ostree_commit);
     Ok(ostree_commit)

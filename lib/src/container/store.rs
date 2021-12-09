@@ -279,10 +279,9 @@ impl LayeredImageImporter {
             )
             .await?;
             let importer = crate::tar::import_tar(&self.repo, blob, None);
-            let (commit, driver) = tokio::join!(importer, driver);
-            driver?;
-            let commit =
-                commit.with_context(|| format!("Parsing blob {}", base_layer_ref.digest()))?;
+            let commit = super::unencapsulate::join_fetch(importer, driver)
+                .await
+                .with_context(|| format!("Parsing blob {}", base_layer_ref.digest()))?;
             // TODO support ref writing in tar import
             self.repo.set_ref_immediate(
                 None,
@@ -314,9 +313,9 @@ impl LayeredImageImporter {
                 };
                 let w =
                     crate::tar::write_tar(&self.repo, blob, layer.ostree_ref.as_str(), Some(opts));
-                let (r, driver) = tokio::join!(w, driver);
-                let r = r.with_context(|| format!("Parsing layer blob {}", layer.digest()))?;
-                driver?;
+                let r = super::unencapsulate::join_fetch(w, driver)
+                    .await
+                    .with_context(|| format!("Parsing layer blob {}", layer.digest()))?;
                 layer_commits.push(r.commit);
                 if !r.filtered.is_empty() {
                     let filtered = HashMap::from_iter(r.filtered.into_iter());
