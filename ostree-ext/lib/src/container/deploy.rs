@@ -3,6 +3,7 @@
 use super::OstreeImageReference;
 use crate::container::store::PrepareResult;
 use anyhow::Result;
+use fn_error_context::context;
 use ostree::glib;
 
 /// The key in the OSTree origin which holds a serialized [`super::OstreeImageReference`].
@@ -30,6 +31,7 @@ pub struct DeployOpts<'a> {
 /// Write a container image to an OSTree deployment.
 ///
 /// This API is currently intended for only an initial deployment.
+#[context("Performing deployment")]
 pub async fn deploy(
     sysroot: &ostree::Sysroot,
     stateroot: &str,
