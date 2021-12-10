@@ -57,6 +57,13 @@ fn build_oci(
     let commit = repo.resolve_rev(rev, false)?.unwrap();
     let commit = commit.as_str();
     let (commit_v, _) = repo.load_commit(commit)?;
+    let commit_subject = commit_v.child_value(3);
+    let commit_subject = commit_subject.str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Corrupted commit {}; expecting string value for subject",
+            commit
+        )
+    })?;
     let commit_meta = &commit_v.child_value(0);
     let commit_meta = glib::VariantDict::new(Some(commit_meta));
 
@@ -85,9 +92,14 @@ fn build_oci(
     };
 
     let rootfs_blob = export_ostree_ref(repo, commit, &mut writer, Some(compression))?;
+    let description = if commit_subject.is_empty() {
+        Cow::Owned(format!("ostree export of commit {}", commit))
+    } else {
+        Cow::Borrowed(commit_subject)
+    };
     let mut annos = HashMap::new();
     annos.insert(BLOB_OSTREE_ANNOTATION.to_string(), "true".to_string());
-    writer.push_layer_annotated(rootfs_blob, Some(annos));
+    writer.push_layer_annotated(rootfs_blob, Some(annos), &description);
     writer.complete()?;
 
     Ok(ImageReference {

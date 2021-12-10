@@ -77,6 +77,7 @@ pub(crate) struct OciWriter<'a> {
     cmd: Option<Vec<String>>,
 
     layers: Vec<(oci_image::Descriptor, String)>,
+    history: Vec<String>,
 }
 
 /// Write a serializable data (JSON) as an OCI blob
@@ -102,6 +103,7 @@ impl<'a> OciWriter<'a> {
             config_annotations: Default::default(),
             manifest_annotations: Default::default(),
             layers: Vec::new(),
+            history: Vec::new(),
             cmd: None,
         })
     }
@@ -123,20 +125,11 @@ impl<'a> OciWriter<'a> {
         Ok(tar::Builder::new(self.create_raw_layer(c)?))
     }
 
+    /// Add a layer to the top of the image stack.  The firsh pushed layer becomes the root.
     #[allow(dead_code)]
-    /// Finish all I/O for a layer writer, and add it to the layers in the image.
-    pub(crate) fn finish_and_push_layer(&mut self, w: RawLayerWriter) -> Result<()> {
-        let w = w.complete()?;
-        self.push_layer(w);
-        Ok(())
-    }
-
-    /// Add a layer to the top of the image stack.
-    ///
-    /// The first pushed layer becomes the root.
-    pub(crate) fn push_layer(&mut self, layer: Layer) {
-        let v: Option<HashMap<String, String>> = None;
-        self.push_layer_annotated(layer, v);
+    pub(crate) fn push_layer(&mut self, layer: Layer, description: &str) {
+        let annotations: Option<HashMap<String, String>> = None;
+        self.push_layer_annotated(layer, annotations, description);
     }
 
     /// Add a layer to the top of the image stack with optional annotations.
@@ -146,6 +139,7 @@ impl<'a> OciWriter<'a> {
         &mut self,
         layer: Layer,
         annotations: Option<impl Into<HashMap<String, String>>>,
+        description: &str,
     ) {
         let mut builder = layer.descriptor().media_type(MediaType::ImageLayerGzip);
         if let Some(annotations) = annotations {
@@ -153,6 +147,7 @@ impl<'a> OciWriter<'a> {
         }
         self.layers
             .push((builder.build().unwrap(), layer.uncompressed_sha256));
+        self.history.push(description.to_string());
     }
 
     pub(crate) fn set_cmd(&mut self, e: &[&str]) {
@@ -201,20 +196,22 @@ impl<'a> OciWriter<'a> {
         }
         .build()
         .unwrap();
-        let history = oci_image::HistoryBuilder::default()
-            .created_by(format!(
-                "created by {} {}",
-                env!("CARGO_PKG_NAME"),
-                env!("CARGO_PKG_VERSION")
-            ))
-            .build()
-            .unwrap();
+        let history: Vec<_> = self
+            .history
+            .into_iter()
+            .map(|h| {
+                oci_image::HistoryBuilder::default()
+                    .created_by(h)
+                    .build()
+                    .unwrap()
+            })
+            .collect();
         let config = oci_image::ImageConfigurationBuilder::default()
             .architecture(arch.clone())
             .os(oci_image::Os::Linux)
             .config(ctrconfig)
             .rootfs(rootfs)
-            .history(vec![history])
+            .history(history)
             .build()
             .unwrap();
         let config_blob = write_json_blob(self.dir, &config, MediaType::ImageConfig)?;
@@ -380,7 +377,7 @@ mod tests {
             root_layer.uncompressed_sha256,
             "349438e5faf763e8875b43de4d7101540ef4d865190336c2cc549a11f33f8d7c"
         );
-        w.push_layer(root_layer);
+        w.push_layer(root_layer, "root");
         w.complete()?;
         Ok(())
     }
