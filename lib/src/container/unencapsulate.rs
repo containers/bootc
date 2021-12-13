@@ -183,7 +183,8 @@ pub async fn unencapsulate(
     let mut proxy = ImageProxy::new().await?;
     let (manifest, image_digest) = fetch_manifest_impl(&mut proxy, imgref).await?;
     let ostree_commit =
-        unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, &manifest, options).await?;
+        unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, &manifest, options, false)
+            .await?;
     Ok(Import {
         ostree_commit,
         image_digest,
@@ -222,12 +223,13 @@ pub(crate) async fn fetch_layer_decompress<'a>(
     Ok((blob, driver))
 }
 
-async fn unencapsulate_from_manifest_impl(
+pub(crate) async fn unencapsulate_from_manifest_impl(
     repo: &ostree::Repo,
     proxy: &mut ImageProxy,
     imgref: &OstreeImageReference,
     manifest: &oci_spec::image::ImageManifest,
     options: Option<UnencapsulateOptions>,
+    ignore_layered: bool,
 ) -> Result<String> {
     if matches!(imgref.sigverify, SignatureSource::ContainerPolicy)
         && skopeo::container_policy_is_default_insecure()?
@@ -235,7 +237,14 @@ async fn unencapsulate_from_manifest_impl(
         return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
     }
     let options = options.unwrap_or_default();
-    let layer = require_one_layer_blob(manifest)?;
+    let layer = if ignore_layered {
+        manifest
+            .layers()
+            .get(0)
+            .ok_or_else(|| anyhow!("No layers in image"))?
+    } else {
+        require_one_layer_blob(manifest)?
+    };
     event!(
         Level::DEBUG,
         "target blob digest:{} size: {}",
@@ -272,7 +281,8 @@ pub async fn unencapsulate_from_manifest(
     options: Option<UnencapsulateOptions>,
 ) -> Result<String> {
     let mut proxy = ImageProxy::new().await?;
-    let r = unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, manifest, options).await?;
+    let r = unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, manifest, options, false)
+        .await?;
     // FIXME write ostree commit after proxy finalization
     proxy.finalize().await?;
     Ok(r)
