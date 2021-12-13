@@ -264,33 +264,34 @@ impl LayeredImageImporter {
     pub async fn import(self, import: Box<PreparedImport>) -> Result<LayeredImageState> {
         let mut proxy = self.proxy;
         let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
-        let ostree_ref = ref_for_image(&target_imgref.imgref)?;
+
         // First download the base image (if necessary) - we need the SELinux policy
         // there to label all following layers.
         let base_layer = import.base_layer;
         let base_commit = if let Some(c) = base_layer.commit {
             c
         } else {
-            let base_layer_ref = &base_layer.layer;
-            let (blob, driver) = super::unencapsulate::fetch_layer_decompress(
+            let base_commit = super::unencapsulate_from_manifest_impl(
+                &self.repo,
                 &mut proxy,
-                &self.proxy_img,
-                &base_layer.layer,
+                target_imgref,
+                &import.manifest,
+                None,
+                true,
             )
             .await?;
-            let importer = crate::tar::import_tar(&self.repo, blob, None);
-            let commit = super::unencapsulate::join_fetch(importer, driver)
-                .await
-                .with_context(|| format!("Parsing blob {}", base_layer_ref.digest()))?;
-            // TODO support ref writing in tar import
+            // Write the ostree ref for that single layer; TODO
+            // handle this as part of the overall transaction.
             self.repo.set_ref_immediate(
                 None,
                 base_layer.ostree_ref.as_str(),
-                Some(commit.as_str()),
+                Some(base_commit.as_str()),
                 gio::NONE_CANCELLABLE,
             )?;
-            commit
+            base_commit
         };
+
+        let ostree_ref = ref_for_image(&target_imgref.imgref)?;
 
         let mut layer_commits = Vec::new();
         let mut layer_filtered_content: MetaFilteredData = HashMap::new();
