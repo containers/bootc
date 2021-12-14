@@ -182,7 +182,7 @@ impl TryFrom<&str> for OstreeImageReference {
                 (SignatureSource::OstreeRemote(remote.to_string()), second)
             }
             o => {
-                return Err(anyhow!("Invalid signature source: {}", o));
+                return Err(anyhow!("Invalid ostree image reference scheme: {}", o));
             }
         };
         let imgref = rest.deref().try_into()?;
