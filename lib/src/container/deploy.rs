@@ -41,12 +41,9 @@ pub async fn deploy(
     let cancellable = ostree::gio::NONE_CANCELLABLE;
     let options = options.unwrap_or_default();
     let repo = &sysroot.repo().unwrap();
-    let mut imp = super::store::LayeredImageImporter::new(
-        repo,
-        imgref,
-        options.proxy_cfg.unwrap_or_default(),
-    )
-    .await?;
+    let mut imp =
+        super::store::ImageImporter::new(repo, imgref, options.proxy_cfg.unwrap_or_default())
+            .await?;
     if let Some(target) = options.target_imgref {
         imp.set_target(target);
     }
