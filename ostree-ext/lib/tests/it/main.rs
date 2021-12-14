@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
 use camino::Utf8Path;
+use cap_std::fs::{Dir, DirBuilder};
 use once_cell::sync::Lazy;
+use ostree::cap_std;
+use ostree_ext::chunking::ObjectMetaSized;
 use ostree_ext::container::store::PrepareResult;
 use ostree_ext::container::{
-    Config, ImageReference, OstreeImageReference, SignatureSource, Transport,
+    Config, ExportOpts, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
 use ostree_ext::prelude::FileExt;
 use ostree_ext::tar::TarImportOptions;
@@ -11,6 +14,7 @@ use ostree_ext::{gio, glib};
 use sh_inline::bash_in;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::os::unix::fs::DirBuilderExt;
 use std::process::Command;
 
 use ostree_ext::fixture::{FileDef, Fixture, CONTENTS_CHECKSUM_V0};
@@ -20,7 +24,7 @@ const TEST_REGISTRY_DEFAULT: &str = "localhost:5000";
 
 fn assert_err_contains<T>(r: Result<T>, s: impl AsRef<str>) {
     let s = s.as_ref();
-    let msg = format!("{:#}", r.err().unwrap());
+    let msg = format!("{:#}", r.err().expect("Expecting an error"));
     if !msg.contains(s) {
         panic!(r#"Error message "{}" did not contain "{}""#, msg, s);
     }
@@ -220,8 +224,6 @@ fn test_tar_export_structure() -> Result<()> {
     use tar::EntryType::{Directory, Regular};
 
     let mut fixture = Fixture::new_v1()?;
-    // Just test that we can retrieve ownership for all objects
-    let _objmeta = fixture.get_object_meta()?;
 
     let src_tar = fixture.export_tar()?;
     let src_tar = std::io::BufReader::new(fixture.dir.open(src_tar)?);
@@ -391,8 +393,7 @@ fn skopeo_inspect_config(imgref: &str) -> Result<oci_spec::image::ImageConfigura
     Ok(serde_json::from_slice(&out.stdout)?)
 }
 
-#[tokio::test]
-async fn test_container_import_export() -> Result<()> {
+async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
     let fixture = Fixture::new_v1()?;
     let testrev = fixture
         .srcrepo()
@@ -413,7 +414,14 @@ async fn test_container_import_export() -> Result<()> {
         ),
         ..Default::default()
     };
-    let opts = ostree_ext::container::ExportOpts {
+    // If chunking is requested, compute object ownership and size mappings
+    let contentmeta = chunked
+        .then(|| {
+            let meta = fixture.get_object_meta().context("Computing object meta")?;
+            ObjectMetaSized::compute_sizes(fixture.srcrepo(), meta).context("Computing sizes")
+        })
+        .transpose()?;
+    let opts = ExportOpts {
         copy_meta_keys: vec!["buildsys.checksum".to_string()],
         ..Default::default()
     };
@@ -422,6 +430,7 @@ async fn test_container_import_export() -> Result<()> {
         fixture.testref(),
         &config,
         Some(opts),
+        contentmeta,
         &srcoci_imgref,
     )
     .await
@@ -450,6 +459,10 @@ async fn test_container_import_export() -> Result<()> {
             .as_str(),
         "/usr/bin/bash"
     );
+
+    let n_chunks = if chunked { 7 } else { 1 };
+    assert_eq!(cfg.rootfs().diff_ids().len(), n_chunks);
+    assert_eq!(cfg.history().len(), n_chunks);
 
     let srcoci_unverified = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
@@ -505,6 +518,116 @@ async fn test_container_import_export() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn impl_test_container_chunked() -> Result<()> {
+    let nlayers = 6u32;
+    let mut fixture = Fixture::new_v1()?;
+
+    let (imgref, expected_digest) = fixture.export_container().await.unwrap();
+    let imgref = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: imgref,
+    };
+
+    let mut imp = ostree_ext::container::store::ImageImporter::new(
+        fixture.destrepo(),
+        &imgref,
+        Default::default(),
+    )
+    .await?;
+    let prep = match imp.prepare().await.context("Init prep derived")? {
+        PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        PrepareResult::Ready(r) => r,
+    };
+    let digest = prep.manifest_digest.clone();
+    assert!(prep.ostree_commit_layer.commit.is_none());
+    assert_eq!(prep.ostree_layers.len(), nlayers as usize);
+    assert_eq!(prep.layers.len(), 0);
+    for layer in prep.layers.iter() {
+        assert!(layer.commit.is_none());
+    }
+    assert_eq!(digest, expected_digest);
+    let _import = imp.import(prep).await.context("Init pull derived").unwrap();
+
+    const ADDITIONS: &str = indoc::indoc! { "
+r usr/bin/bash bash-v0
+"};
+    fixture
+        .update(FileDef::iter_from(ADDITIONS), std::iter::empty())
+        .context("Failed to update")?;
+
+    let expected_digest = fixture.export_container().await.unwrap().1;
+    assert_ne!(digest, expected_digest);
+
+    let mut imp = ostree_ext::container::store::ImageImporter::new(
+        fixture.destrepo(),
+        &imgref,
+        Default::default(),
+    )
+    .await?;
+    let prep = match imp.prepare().await.context("Init prep derived")? {
+        PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        PrepareResult::Ready(r) => r,
+    };
+    let to_fetch = prep.layers_to_fetch().collect::<Result<Vec<_>>>()?;
+    assert_eq!(to_fetch.len(), 2);
+    assert_eq!(expected_digest, prep.manifest_digest.as_str());
+    assert!(prep.ostree_commit_layer.commit.is_none());
+    assert_eq!(prep.ostree_layers.len(), nlayers as usize);
+    let (first, second) = (to_fetch[0], to_fetch[1]);
+    assert_eq!(first.1, "bash");
+    assert!(first.0.commit.is_none());
+    assert!(second.1.starts_with("ostree export of commit"));
+    assert!(second.0.commit.is_none());
+
+    let _import = imp.import(prep).await.unwrap();
+
+    // Build a derived image
+    let derived_path = &fixture.path.join("derived.oci");
+    let srcpath = imgref.imgref.name.as_str();
+    oci_clone(srcpath, derived_path).await.unwrap();
+    let temproot = &fixture.path.join("temproot");
+    || -> Result<_> {
+        std::fs::create_dir(temproot)?;
+        let temprootd = Dir::open_ambient_dir(temproot, cap_std::ambient_authority())?;
+        let mut db = DirBuilder::new();
+        db.mode(0o755);
+        db.recursive(true);
+        temprootd.create_dir_with("usr/bin", &db)?;
+        temprootd.write("usr/bin/newderivedfile", "newderivedfile v0")?;
+        temprootd.write("usr/bin/newderivedfile3", "newderivedfile3 v0")?;
+        Ok(())
+    }()
+    .context("generating temp content")?;
+    ostree_ext::integrationtest::generate_derived_oci(derived_path, temproot)?;
+
+    let derived_imgref = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: ImageReference {
+            transport: Transport::OciDir,
+            name: derived_path.to_string(),
+        },
+    };
+    let mut imp = ostree_ext::container::store::ImageImporter::new(
+        fixture.destrepo(),
+        &derived_imgref,
+        Default::default(),
+    )
+    .await?;
+    let prep = match imp.prepare().await.unwrap() {
+        PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        PrepareResult::Ready(r) => r,
+    };
+    let to_fetch = prep.layers_to_fetch().collect::<Result<Vec<_>>>()?;
+    assert_eq!(to_fetch.len(), 1);
+    assert!(prep.ostree_commit_layer.commit.is_some());
+    assert_eq!(prep.ostree_layers.len(), nlayers as usize);
+
+    let _import = imp.import(prep).await.unwrap();
+
+    Ok(())
+}
+
 /// Copy an OCI directory.
 async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Result<()> {
     let src = src.as_ref();
@@ -522,6 +645,13 @@ async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Res
     Ok(())
 }
 
+#[tokio::test]
+async fn test_container_import_export() -> Result<()> {
+    impl_test_container_import_export(false).await?;
+    impl_test_container_import_export(true).await?;
+    Ok(())
+}
+
 /// But layers work via the container::write module.
 #[tokio::test]
 async fn test_container_write_derive() -> Result<()> {
@@ -534,6 +664,7 @@ async fn test_container_write_derive() -> Result<()> {
             cmd: Some(vec!["/bin/bash".to_string()]),
             ..Default::default()
         },
+        None,
         None,
         &ImageReference {
             transport: Transport::OciDir,
@@ -578,28 +709,28 @@ async fn test_container_write_derive() -> Result<()> {
     let images = ostree_ext::container::store::list_images(fixture.destrepo())?;
     assert!(images.is_empty());
 
-    // Verify importing a derive dimage fails
+    // Verify importing a derived image fails
     let r = ostree_ext::container::unencapsulate(fixture.destrepo(), &derived_ref, None).await;
-    assert_err_contains(r, "Expected 1 layer, found 2");
+    assert_err_contains(r, "Image has 1 non-ostree layers");
 
     // Pull a derived image - two layers, new base plus one layer.
-    let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
+    let mut imp = ostree_ext::container::store::ImageImporter::new(
         fixture.destrepo(),
         &derived_ref,
         Default::default(),
     )
     .await?;
-    let prep = match imp.prepare().await? {
+    let prep = match imp.prepare().await.context("Init prep derived")? {
         PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         PrepareResult::Ready(r) => r,
     };
     let expected_digest = prep.manifest_digest.clone();
-    assert!(prep.base_layer.commit.is_none());
+    assert!(prep.ostree_commit_layer.commit.is_none());
     assert_eq!(prep.layers.len(), 1);
     for layer in prep.layers.iter() {
         assert!(layer.commit.is_none());
     }
-    let import = imp.import(prep).await?;
+    let import = imp.import(prep).await.context("Init pull derived")?;
     // We should have exactly one image stored.
     let images = ostree_ext::container::store::list_images(fixture.destrepo())?;
     assert_eq!(images.len(), 1);
@@ -613,17 +744,13 @@ async fn test_container_write_derive() -> Result<()> {
     assert!(digest.starts_with("sha256:"));
     assert_eq!(digest, expected_digest);
 
-    #[cfg(feature = "proxy_v0_2_3")]
-    {
-        let commit_meta = &imported_commit.child_value(0);
-        let proxy = containers_image_proxy::ImageProxy::new().await?;
-        let commit_meta = glib::VariantDict::new(Some(commit_meta));
-        let config = commit_meta
-            .lookup::<String>("ostree.container.image-config")?
-            .unwrap();
-        let config: oci_spec::image::ImageConfiguration = serde_json::from_str(&config)?;
-        assert_eq!(config.os(), &oci_spec::image::Os::Linux);
-    }
+    let commit_meta = &imported_commit.child_value(0);
+    let commit_meta = glib::VariantDict::new(Some(commit_meta));
+    let config = commit_meta
+        .lookup::<String>("ostree.container.image-config")?
+        .unwrap();
+    let config: oci_spec::image::ImageConfiguration = serde_json::from_str(&config)?;
+    assert_eq!(config.os(), &oci_spec::image::Os::Linux);
 
     // Parse the commit and verify we pulled the derived content.
     bash_in!(
@@ -633,7 +760,7 @@ async fn test_container_write_derive() -> Result<()> {
     )?;
 
     // Import again, but there should be no changes.
-    let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
+    let mut imp = ostree_ext::container::store::ImageImporter::new(
         fixture.destrepo(),
         &derived_ref,
         Default::default(),
@@ -650,7 +777,7 @@ async fn test_container_write_derive() -> Result<()> {
     // Test upgrades; replace the oci-archive with new content.
     std::fs::remove_dir_all(derived_path)?;
     std::fs::rename(derived2_path, derived_path)?;
-    let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
+    let mut imp = ostree_ext::container::store::ImageImporter::new(
         fixture.destrepo(),
         &derived_ref,
         Default::default(),
@@ -661,7 +788,7 @@ async fn test_container_write_derive() -> Result<()> {
         PrepareResult::Ready(r) => r,
     };
     // We *should* already have the base layer.
-    assert!(prep.base_layer.commit.is_some());
+    assert!(prep.ostree_commit_layer.commit.is_some());
     // One new layer
     assert_eq!(prep.layers.len(), 1);
     for layer in prep.layers.iter() {
@@ -689,7 +816,7 @@ async fn test_container_write_derive() -> Result<()> {
     )?;
 
     // And there should be no changes on upgrade again.
-    let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
+    let mut imp = ostree_ext::container::store::ImageImporter::new(
         fixture.destrepo(),
         &derived_ref,
         Default::default(),
@@ -744,10 +871,16 @@ async fn test_container_import_export_registry() -> Result<()> {
         cmd: Some(vec!["/bin/bash".to_string()]),
         ..Default::default()
     };
-    let digest =
-        ostree_ext::container::encapsulate(fixture.srcrepo(), testref, &config, None, &src_imgref)
-            .await
-            .context("exporting to registry")?;
+    let digest = ostree_ext::container::encapsulate(
+        fixture.srcrepo(),
+        testref,
+        &config,
+        None,
+        None,
+        &src_imgref,
+    )
+    .await
+    .context("exporting to registry")?;
     let mut digested_imgref = src_imgref.clone();
     digested_imgref.name = format!("{}@{}", src_imgref.name, digest);
 

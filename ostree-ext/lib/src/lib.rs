@@ -37,6 +37,7 @@ pub mod refescape;
 pub mod tar;
 pub mod tokio_util;
 
+pub mod chunking;
 pub(crate) mod commit;
 pub mod objectsource;
 pub(crate) mod objgv;
