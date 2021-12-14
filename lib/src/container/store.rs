@@ -275,6 +275,7 @@ impl LayeredImageImporter {
                 &self.repo,
                 &mut proxy,
                 target_imgref,
+                &self.proxy_img,
                 &import.manifest,
                 None,
                 true,
