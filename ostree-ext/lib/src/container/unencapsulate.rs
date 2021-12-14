@@ -181,10 +181,13 @@ pub async fn unencapsulate(
     options: Option<UnencapsulateOptions>,
 ) -> Result<Import> {
     let mut proxy = ImageProxy::new().await?;
-    let (manifest, image_digest) = fetch_manifest_impl(&mut proxy, imgref).await?;
+    let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
+    let (image_digest, raw_manifest) = proxy.fetch_manifest(oi).await?;
+    let manifest = serde_json::from_slice(&raw_manifest)?;
     let ostree_commit =
-        unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, &manifest, options, false)
+        unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, oi, &manifest, options, false)
             .await?;
+    proxy.close_image(oi).await?;
     Ok(Import {
         ostree_commit,
         image_digest,
@@ -227,6 +230,7 @@ pub(crate) async fn unencapsulate_from_manifest_impl(
     repo: &ostree::Repo,
     proxy: &mut ImageProxy,
     imgref: &OstreeImageReference,
+    oi: &containers_image_proxy::OpenedImage,
     manifest: &oci_spec::image::ImageManifest,
     options: Option<UnencapsulateOptions>,
     ignore_layered: bool,
@@ -251,8 +255,7 @@ pub(crate) async fn unencapsulate_from_manifest_impl(
         layer.digest().as_str(),
         layer.size()
     );
-    let oi = proxy.open_image(&imgref.imgref.to_string()).await?;
-    let (blob, driver) = fetch_layer_decompress(proxy, &oi, layer).await?;
+    let (blob, driver) = fetch_layer_decompress(proxy, oi, layer).await?;
     let blob = ProgressReader {
         reader: blob,
         progress: options.progress,
@@ -281,8 +284,11 @@ pub async fn unencapsulate_from_manifest(
     options: Option<UnencapsulateOptions>,
 ) -> Result<String> {
     let mut proxy = ImageProxy::new().await?;
-    let r = unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, manifest, options, false)
-        .await?;
+    let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
+    let r =
+        unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, oi, manifest, options, false)
+            .await?;
+    proxy.close_image(oi).await?;
     // FIXME write ostree commit after proxy finalization
     proxy.finalize().await?;
     Ok(r)
