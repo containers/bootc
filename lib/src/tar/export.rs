@@ -56,6 +56,17 @@ fn xattrs_path(checksum: &str) -> Utf8PathBuf {
     format!("{}/repo/xattrs/{}", OSTREEDIR, checksum).into()
 }
 
+/// Check for "denormal" symlinks which contain "//"
+/// See https://github.com/fedora-sysv/chkconfig/pull/67
+/// [root@cosa-devsh ~]# rpm -qf /usr/lib/systemd/systemd-sysv-install
+/// chkconfig-1.13-2.el8.x86_64
+/// [root@cosa-devsh ~]# ll /usr/lib/systemd/systemd-sysv-install
+/// lrwxrwxrwx. 2 root root 24 Nov 29 18:08 /usr/lib/systemd/systemd-sysv-install -> ../../..//sbin/chkconfig
+/// [root@cosa-devsh ~]#
+fn symlink_is_denormal(target: &str) -> bool {
+    target.contains("//")
+}
+
 impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     fn new(repo: &'a ostree::Repo, out: &'a mut tar::Builder<W>) -> Self {
         Self {
@@ -246,14 +257,23 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                     .append_data(&mut h, &path, &mut instream)
                     .with_context(|| format!("Writing regfile {}", checksum))?;
             } else {
-                h.set_size(0);
-                h.set_entry_type(tar::EntryType::Symlink);
+                let target = meta.symlink_target().unwrap();
+                let target = target.as_str();
                 let context = || format!("Writing content symlink: {}", checksum);
-                h.set_link_name(meta.symlink_target().unwrap().as_str())
-                    .with_context(context)?;
-                self.out
-                    .append_data(&mut h, &path, &mut std::io::empty())
-                    .with_context(context)?;
+                // Handle //chkconfig, see above
+                if symlink_is_denormal(target) {
+                    h.set_link_name_literal(meta.symlink_target().unwrap().as_str())
+                        .with_context(context)?;
+                    self.out
+                        .append_data(&mut h, &path, &mut std::io::empty())
+                        .with_context(context)?;
+                } else {
+                    h.set_entry_type(tar::EntryType::Symlink);
+                    h.set_size(0);
+                    self.out
+                        .append_link(&mut h, &path, target)
+                        .with_context(context)?;
+                }
             }
         }
 
@@ -354,5 +374,17 @@ mod tests {
             map_path("./usr/etc/blah".into()),
             Utf8Path::new("./etc/blah")
         );
+    }
+
+    #[test]
+    fn test_denormal_symlink() {
+        let normal = ["/", "/usr", "../usr/bin/blah"];
+        let denormal = ["../../usr/sbin//chkconfig", "foo//bar/baz"];
+        for path in normal {
+            assert!(!symlink_is_denormal(path));
+        }
+        for path in denormal {
+            assert!(symlink_is_denormal(path));
+        }
     }
 }
