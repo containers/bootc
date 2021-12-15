@@ -245,10 +245,30 @@ fn test_tar_export_structure() -> Result<()> {
     let src_tar = initial_export(&fixture)?;
     let src_tar = std::io::BufReader::new(std::fs::File::open(&src_tar)?);
     let mut src_tar = tar::Archive::new(src_tar);
-    let first = src_tar.entries()?.next().unwrap()?;
+    let mut entries = src_tar.entries()?;
+    // The first entry should be the root directory.
+    let first = entries.next().unwrap()?;
     let firstpath = first.path()?;
-    assert_eq!(firstpath.to_str().unwrap(), "sysroot");
-    assert_eq!(first.header().mode()?, 0o755);
+    assert_eq!(firstpath.to_str().unwrap(), "./");
+    assert_eq!(first.header().mode()?, libc::S_IFDIR | 0o755);
+    let next = entries.next().unwrap().unwrap();
+    assert_eq!(next.path().unwrap().as_os_str(), "sysroot");
+    // Verify we're injecting directories, fixes the absence of `/tmp` in our
+    // images for example.
+    entries
+        .map(|e| e.unwrap())
+        .find(|entry| {
+            let header = entry.header();
+            let path = entry.path().unwrap();
+            if path.as_os_str() == "usr" {
+                assert_eq!(header.entry_type(), tar::EntryType::Directory);
+                assert_eq!(header.mode().unwrap(), libc::S_IFDIR | 0o755);
+                true
+            } else {
+                false
+            }
+        })
+        .unwrap();
     Ok(())
 }
 
