@@ -26,6 +26,7 @@ type Result<T> = anyhow::Result<T>;
 
 pub mod cli;
 pub mod container;
+pub mod container_utils;
 pub mod diff;
 pub mod ima;
 pub mod keyfileext;
