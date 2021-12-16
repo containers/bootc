@@ -14,6 +14,8 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::io::BufReader;
 
+// This is both special in the tar stream *and* it's in the ostree commit.
+const SYSROOT: &str = "sysroot";
 // This way the default ostree -> sysroot/ostree symlink works.
 const OSTREEDIR: &str = "sysroot/ostree";
 
@@ -129,12 +131,30 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     fn write_commit(&mut self, checksum: &str) -> Result<()> {
         let cancellable = gio::NONE_CANCELLABLE;
 
-        self.write_initial_directories()?;
-
         let (commit_v, _) = self.repo.load_commit(checksum)?;
         let commit_v = &commit_v;
-        self.append(ostree::ObjectType::Commit, checksum, commit_v)?;
 
+        let commit_bytes = commit_v.data_as_bytes();
+        let commit_bytes = commit_bytes.try_as_aligned()?;
+        let commit = gv_commit!().cast(commit_bytes);
+        let commit = commit.to_tuple();
+        let contents = &hex::encode(commit.6);
+        let metadata_checksum = &hex::encode(commit.7);
+        let metadata_v = self
+            .repo
+            .load_variant(ostree::ObjectType::DirMeta, metadata_checksum)?;
+        // Safety: We passed the correct variant type just above
+        let metadata = &ostree::DirMetaParsed::from_variant(&metadata_v).unwrap();
+        let rootpath = Utf8Path::new("./");
+
+        // We need to write the root directory, before we write any objects.  This should be the very
+        // first thing.
+        self.append_dir(rootpath, metadata)?;
+
+        // Now, we create sysroot/ and everything under it
+        self.write_initial_directories()?;
+
+        self.append(ostree::ObjectType::Commit, checksum, commit_v)?;
         if let Some(commitmeta) = self
             .repo
             .read_commit_detached_metadata(checksum, cancellable)?
@@ -142,17 +162,11 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             self.append(ostree::ObjectType::CommitMeta, checksum, &commitmeta)?;
         }
 
-        let commit_v = commit_v.data_as_bytes();
-        let commit_v = commit_v.try_as_aligned()?;
-        let commit = gv_commit!().cast(commit_v);
-        let commit = commit.to_tuple();
-        let contents = &hex::encode(commit.6);
-        let metadata_checksum = &hex::encode(commit.7);
-        let metadata_v = self
-            .repo
-            .load_variant(ostree::ObjectType::DirMeta, metadata_checksum)?;
+        // The ostree dirmeta object for the root.
         self.append(ostree::ObjectType::DirMeta, metadata_checksum, &metadata_v)?;
-        self.append_dirtree(Utf8Path::new("./"), contents, cancellable)?;
+
+        // Recurse and write everything else.
+        self.append_dirtree(Utf8Path::new("./"), contents, true, cancellable)?;
         Ok(())
     }
 
@@ -280,11 +294,25 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         Ok((path, target_header))
     }
 
+    /// Write a directory using the provided metadata.
+    fn append_dir(&mut self, dirpath: &Utf8Path, meta: &ostree::DirMetaParsed) -> Result<()> {
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Directory);
+        header.set_size(0);
+        header.set_uid(meta.uid as u64);
+        header.set_gid(meta.gid as u64);
+        header.set_mode(meta.mode);
+        self.out
+            .append_data(&mut header, dirpath, std::io::empty())?;
+        Ok(())
+    }
+
     /// Write a dirtree object.
     fn append_dirtree<C: IsA<gio::Cancellable>>(
         &mut self,
         dirpath: &Utf8Path,
         checksum: &str,
+        is_root: bool,
         cancellable: Option<&C>,
     ) -> Result<()> {
         let v = &self
@@ -320,19 +348,26 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         for item in dirs {
             let (name, contents_csum, meta_csum) = item.to_tuple();
             let name = name.to_str();
-            {
+            // Special hack because tar stream for containers can't have duplicates.
+            if is_root && name == SYSROOT {
+                continue;
+            }
+            let metadata = {
                 hex::encode_to_slice(meta_csum, &mut hexbuf)?;
                 let meta_csum = std::str::from_utf8(&hexbuf)?;
                 let meta_v = &self
                     .repo
                     .load_variant(ostree::ObjectType::DirMeta, meta_csum)?;
                 self.append(ostree::ObjectType::DirMeta, meta_csum, meta_v)?;
-            }
+                // Safety: We passed the correct variant type just above
+                ostree::DirMetaParsed::from_variant(meta_v).unwrap()
+            };
             hex::encode_to_slice(contents_csum, &mut hexbuf)?;
             let dirtree_csum = std::str::from_utf8(&hexbuf)?;
             let subpath = &dirpath.join(name);
             let subpath = map_path(subpath);
-            self.append_dirtree(&*subpath, dirtree_csum, cancellable)?;
+            self.append_dir(&*subpath, &metadata)?;
+            self.append_dirtree(&*subpath, dirtree_csum, false, cancellable)?;
         }
 
         Ok(())
