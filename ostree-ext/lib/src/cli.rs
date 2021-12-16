@@ -231,6 +231,13 @@ struct ImaSignOpts {
     key: String,
 }
 
+/// Options for internal testing
+#[derive(Debug, StructOpt)]
+enum TestingOpts {
+    // Detect the current environment
+    DetectEnv,
+}
+
 /// Toplevel options for extended ostree functionality.
 #[derive(Debug, StructOpt)]
 #[structopt(name = "ostree-ext")]
@@ -243,6 +250,8 @@ enum Opt {
     Container(ContainerOpts),
     /// IMA signatures
     ImaSign(ImaSignOpts),
+    #[structopt(setting(structopt::clap::AppSettings::Hidden))]
+    InternalOnlyForTesting(TestingOpts),
 }
 
 #[allow(clippy::from_over_into)]
@@ -437,6 +446,16 @@ fn ima_sign(cmdopts: &ImaSignOpts) -> Result<()> {
     Ok(())
 }
 
+fn testing(opts: &TestingOpts) -> Result<()> {
+    match opts {
+        TestingOpts::DetectEnv => {
+            let s = crate::integrationtest::detectenv();
+            println!("{}", s);
+            Ok(())
+        }
+    }
+}
+
 /// Parse the provided arguments and execute.
 /// Calls [`structopt::clap::Error::exit`] on failure, printing the error message and aborting the program.
 pub async fn run_from_iter<I>(args: I) -> Result<()>
@@ -525,5 +544,6 @@ where
             },
         },
         Opt::ImaSign(ref opts) => ima_sign(opts),
+        Opt::InternalOnlyForTesting(ref opts) => testing(opts),
     }
 }

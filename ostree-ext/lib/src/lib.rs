@@ -41,3 +41,5 @@ pub mod prelude {
     #[doc(hidden)]
     pub use ostree::prelude::*;
 }
+
+mod integrationtest;
