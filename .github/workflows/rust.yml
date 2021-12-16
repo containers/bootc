@@ -31,9 +31,14 @@ jobs:
       - name: Cache Dependencies
         uses: Swatinem/rust-cache@ce325b60658c1b38465c06cc965b79baf32c1e72
       - name: Build
-        run: cargo test --no-run
+        run: cargo test --no-run && cargo build
       - name: Run tests
         run: cargo test -- --nocapture --quiet
+      - name: Upload binary
+        uses: actions/upload-artifact@v2
+        with:
+          name: ostree-ext-cli
+          path: target/debug/ostree-ext-cli
   build-minimum-toolchain:
     name: "Build, minimum supported toolchain (MSRV)"
     runs-on: ubuntu-latest
@@ -75,3 +80,19 @@ jobs:
         run: cargo fmt -- --check -l
       - name: cargo clippy (warnings)
         run: cargo clippy -- -D warnings
+  integration:
+    name: "Integration"
+    needs: build
+    runs-on: ubuntu-latest
+    container: quay.io/cgwalters/fcos
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Download ostree-ext-cli
+        uses: actions/download-artifact@v2
+        with:
+          name: ostree-ext-cli
+      - name: Install
+        run: install ostree-ext-cli /usr/bin && rm -v ostree-ext-cli
+      - name: Integration tests
+        run: ./ci/integration.sh
