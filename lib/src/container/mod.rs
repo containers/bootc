@@ -100,12 +100,10 @@ impl TryFrom<&str> for ImageReference {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self> {
-        let mut parts = value.splitn(2, ':');
-        let transport_name = parts.next().unwrap();
-        let transport: Transport = transport_name.try_into()?;
-        let mut name = parts
-            .next()
+        let (transport_name, mut name) = value
+            .split_once(':')
             .ok_or_else(|| anyhow!("Missing ':' in {}", value))?;
+        let transport: Transport = transport_name.try_into()?;
         if name.is_empty() {
             return Err(anyhow!("Invalid empty name in {}", value));
         }
@@ -140,11 +138,8 @@ impl TryFrom<&str> for OstreeImageReference {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self> {
-        let mut parts = value.splitn(2, ':');
-        // Safety: Split always returns at least one value.
-        let first = parts.next().unwrap();
-        let second = parts
-            .next()
+        let (first, second) = value
+            .split_once(':')
             .ok_or_else(|| anyhow!("Missing ':' in {}", value))?;
         let (sigverify, rest) = match first {
             "ostree-image-signed" => (SignatureSource::ContainerPolicy, Cow::Borrowed(second)),
@@ -159,11 +154,8 @@ impl TryFrom<&str> for OstreeImageReference {
             ),
             // This is a shorthand for ostree-remote-image with registry:
             "ostree-remote-registry" => {
-                let mut subparts = second.splitn(2, ':');
-                // Safety: Split always returns at least one value.
-                let remote = subparts.next().unwrap();
-                let rest = subparts
-                    .next()
+                let (remote, rest) = second
+                    .split_once(':')
                     .ok_or_else(|| anyhow!("Missing second ':' in {}", value))?;
                 (
                     SignatureSource::OstreeRemote(remote.to_string()),
@@ -171,15 +163,13 @@ impl TryFrom<&str> for OstreeImageReference {
                 )
             }
             "ostree-remote-image" => {
-                let mut subparts = second.splitn(2, ':');
-                // Safety: Split always returns at least one value.
-                let remote = subparts.next().unwrap();
-                let second = Cow::Borrowed(
-                    subparts
-                        .next()
-                        .ok_or_else(|| anyhow!("Missing second ':' in {}", value))?,
-                );
-                (SignatureSource::OstreeRemote(remote.to_string()), second)
+                let (remote, rest) = second
+                    .split_once(':')
+                    .ok_or_else(|| anyhow!("Missing second ':' in {}", value))?;
+                (
+                    SignatureSource::OstreeRemote(remote.to_string()),
+                    Cow::Borrowed(rest),
+                )
             }
             o => {
                 return Err(anyhow!("Invalid ostree image reference scheme: {}", o));
