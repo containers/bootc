@@ -466,10 +466,8 @@ where
                 let labels: Result<BTreeMap<_, _>> = labels
                     .into_iter()
                     .map(|l| {
-                        let mut parts = l.splitn(2, '=');
-                        let k = parts.next().unwrap();
-                        let v = parts
-                            .next()
+                        let (k, v) = l
+                            .split_once('=')
                             .ok_or_else(|| anyhow::anyhow!("Missing '=' in label {}", l))?;
                         Ok((k.to_string(), v.to_string()))
                     })
