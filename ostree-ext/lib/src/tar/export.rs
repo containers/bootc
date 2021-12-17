@@ -348,10 +348,6 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         for item in dirs {
             let (name, contents_csum, meta_csum) = item.to_tuple();
             let name = name.to_str();
-            // Special hack because tar stream for containers can't have duplicates.
-            if is_root && name == SYSROOT {
-                continue;
-            }
             let metadata = {
                 hex::encode_to_slice(meta_csum, &mut hexbuf)?;
                 let meta_csum = std::str::from_utf8(&hexbuf)?;
@@ -362,6 +358,10 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                 // Safety: We passed the correct variant type just above
                 ostree::DirMetaParsed::from_variant(meta_v).unwrap()
             };
+            // Special hack because tar stream for containers can't have duplicates.
+            if is_root && name == SYSROOT {
+                continue;
+            }
             hex::encode_to_slice(contents_csum, &mut hexbuf)?;
             let dirtree_csum = std::str::from_utf8(&hexbuf)?;
             let subpath = &dirpath.join(name);
