@@ -253,22 +253,31 @@ fn test_tar_export_structure() -> Result<()> {
     assert_eq!(first.header().mode()?, libc::S_IFDIR | 0o755);
     let next = entries.next().unwrap().unwrap();
     assert_eq!(next.path().unwrap().as_os_str(), "sysroot");
+
+    let expected = vec![
+        ("sysroot/ostree/repo/config", tar::EntryType::Regular, 0o644),
+        ("usr", tar::EntryType::Directory, libc::S_IFDIR | 0o755),
+    ];
+    let mut entries = entries.map(|e| e.unwrap());
+
     // Verify we're injecting directories, fixes the absence of `/tmp` in our
     // images for example.
-    entries
-        .map(|e| e.unwrap())
-        .find(|entry| {
+    for (path, expected_type, expected_mode) in expected {
+        let mut found = false;
+        while let Some(entry) = entries.next() {
             let header = entry.header();
-            let path = entry.path().unwrap();
-            if path.as_os_str() == "usr" {
-                assert_eq!(header.entry_type(), tar::EntryType::Directory);
-                assert_eq!(header.mode().unwrap(), libc::S_IFDIR | 0o755);
-                true
-            } else {
-                false
+            let entry_path = entry.path().unwrap();
+            if path == entry_path.as_os_str() {
+                assert_eq!(header.entry_type(), expected_type);
+                assert_eq!(header.mode().unwrap(), expected_mode);
+                found = true;
+                break;
             }
-        })
-        .unwrap();
+        }
+        if !found {
+            panic!("Failed to find entry: {}", path);
+        }
+    }
     Ok(())
 }
 
