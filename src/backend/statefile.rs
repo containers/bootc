@@ -90,6 +90,7 @@ impl SavedState {
 #[derive(Debug)]
 pub(crate) struct StateLockGuard {
     pub(crate) sysroot: openat::Dir,
+    #[allow(dead_code)]
     lockfile: Option<File>,
 }
 
