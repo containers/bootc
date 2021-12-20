@@ -251,6 +251,7 @@ enum Opt {
     /// IMA signatures
     ImaSign(ImaSignOpts),
     #[structopt(setting(structopt::clap::AppSettings::Hidden))]
+    #[cfg(feature = "internal-testing-api")]
     InternalOnlyForTesting(TestingOpts),
 }
 
@@ -446,6 +447,7 @@ fn ima_sign(cmdopts: &ImaSignOpts) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "internal-testing-api")]
 fn testing(opts: &TestingOpts) -> Result<()> {
     match opts {
         TestingOpts::DetectEnv => {
@@ -544,6 +546,7 @@ where
             },
         },
         Opt::ImaSign(ref opts) => ima_sign(opts),
+        #[cfg(feature = "internal-testing-api")]
         Opt::InternalOnlyForTesting(ref opts) => testing(opts),
     }
 }
