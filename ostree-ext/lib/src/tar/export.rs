@@ -138,7 +138,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         let commit_bytes = commit_bytes.try_as_aligned()?;
         let commit = gv_commit!().cast(commit_bytes);
         let commit = commit.to_tuple();
-        let contents = &hex::encode(commit.6);
+        let contents = hex::encode(commit.6);
         let metadata_checksum = &hex::encode(commit.7);
         let metadata_v = self
             .repo
@@ -218,9 +218,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         h.set_mode(0o644);
         h.set_size(0);
         let digest = openssl::hash::hash(openssl::hash::MessageDigest::sha256(), xattrs_data)?;
-        let mut hexbuf = [0u8; 64];
-        hex::encode_to_slice(digest, &mut hexbuf)?;
-        let checksum = std::str::from_utf8(&hexbuf)?;
+        let checksum = &hex::encode(digest);
         let path = xattrs_path(checksum);
 
         if !self.wrote_xattrs.contains(checksum) {
@@ -311,14 +309,15 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     fn append_dirtree<C: IsA<gio::Cancellable>>(
         &mut self,
         dirpath: &Utf8Path,
-        checksum: &str,
+        checksum: String,
         is_root: bool,
         cancellable: Option<&C>,
     ) -> Result<()> {
         let v = &self
             .repo
-            .load_variant(ostree::ObjectType::DirTree, checksum)?;
-        self.append(ostree::ObjectType::DirTree, checksum, v)?;
+            .load_variant(ostree::ObjectType::DirTree, &checksum)?;
+        self.append(ostree::ObjectType::DirTree, &checksum, v)?;
+        drop(checksum);
         let v = v.data_as_bytes();
         let v = v.try_as_aligned()?;
         let v = gv_dirtree!().cast(v);
@@ -328,14 +327,10 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             c.set_error_if_cancelled()?;
         }
 
-        // A reusable buffer to avoid heap allocating these
-        let mut hexbuf = [0u8; 64];
-
         for file in files {
             let (name, csum) = file.to_tuple();
             let name = name.to_str();
-            hex::encode_to_slice(csum, &mut hexbuf)?;
-            let checksum = std::str::from_utf8(&hexbuf)?;
+            let checksum = &hex::encode(csum);
             let (objpath, mut h) = self.append_content(checksum)?;
             h.set_entry_type(tar::EntryType::Link);
             h.set_link_name(&objpath)?;
@@ -349,8 +344,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             let (name, contents_csum, meta_csum) = item.to_tuple();
             let name = name.to_str();
             let metadata = {
-                hex::encode_to_slice(meta_csum, &mut hexbuf)?;
-                let meta_csum = std::str::from_utf8(&hexbuf)?;
+                let meta_csum = &hex::encode(meta_csum);
                 let meta_v = &self
                     .repo
                     .load_variant(ostree::ObjectType::DirMeta, meta_csum)?;
@@ -362,8 +356,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             if is_root && name == SYSROOT {
                 continue;
             }
-            hex::encode_to_slice(contents_csum, &mut hexbuf)?;
-            let dirtree_csum = std::str::from_utf8(&hexbuf)?;
+            let dirtree_csum = hex::encode(contents_csum);
             let subpath = &dirpath.join(name);
             let subpath = map_path(subpath);
             self.append_dir(&*subpath, &metadata)?;
