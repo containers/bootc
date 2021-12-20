@@ -42,4 +42,5 @@ pub mod prelude {
     pub use ostree::prelude::*;
 }
 
+#[cfg(feature = "internal-testing-api")]
 mod integrationtest;
