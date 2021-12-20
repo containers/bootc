@@ -7,7 +7,6 @@
 // See https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
-#![deny(unreachable_pub)]
 #![forbid(unused_must_use)]
 #![deny(unsafe_code)]
 #![cfg_attr(feature = "dox", feature(doc_cfg))]
@@ -43,4 +42,4 @@ pub mod prelude {
 }
 
 #[cfg(feature = "internal-testing-api")]
-mod integrationtest;
+pub mod integrationtest;
