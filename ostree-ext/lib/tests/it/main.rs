@@ -24,10 +24,6 @@ const EXAMPLEOS_CONTENT_CHECKSUM: &str =
     "0ef7461f9db15e1d8bd8921abf20694225fbaa4462cadf7deed8ea0e43162120";
 const TEST_REGISTRY_DEFAULT: &str = "localhost:5000";
 
-/// Image that contains a base exported layer, then a `podman build` of an added file on top.
-const EXAMPLEOS_DERIVED_OCI: &[u8] = include_bytes!("fixtures/exampleos-derive.ociarchive");
-const EXAMPLEOS_DERIVED_V2_OCI: &[u8] = include_bytes!("fixtures/exampleos-derive-v2.ociarchive");
-
 fn assert_err_contains<T>(r: Result<T>, s: impl AsRef<str>) {
     let s = s.as_ref();
     let msg = format!("{:#}", r.err().unwrap());
@@ -471,30 +467,32 @@ async fn test_container_import_export() -> Result<()> {
 
     // Test without signature verification
     // Create a new repo
-    let fixture = Fixture::new()?;
-    let import = ostree_ext::container::unencapsulate(&fixture.destrepo, &srcoci_unverified, None)
-        .await
-        .context("importing")?;
-    assert_eq!(import.ostree_commit, testrev.as_str());
+    {
+        let fixture = Fixture::new()?;
+        let import =
+            ostree_ext::container::unencapsulate(&fixture.destrepo, &srcoci_unverified, None)
+                .await
+                .context("importing")?;
+        assert_eq!(import.ostree_commit, testrev.as_str());
+    }
 
     Ok(())
 }
 
-/// We should reject an image with multiple layers when doing an "import" - i.e. a direct un-encapsulation.
-#[tokio::test]
-async fn test_container_import_derive() -> Result<()> {
-    let fixture = Fixture::new()?;
-    let exampleos_path = &fixture.path.join("exampleos.ociarchive");
-    std::fs::write(exampleos_path, EXAMPLEOS_DERIVED_OCI)?;
-    let exampleos_ref = OstreeImageReference {
-        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
-        imgref: ImageReference {
-            transport: Transport::OciArchive,
-            name: exampleos_path.to_string(),
-        },
-    };
-    let r = ostree_ext::container::unencapsulate(&fixture.destrepo, &exampleos_ref, None).await;
-    assert_err_contains(r, "Expected 1 layer, found 2");
+/// Copy an OCI directory.
+async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Result<()> {
+    let src = src.as_ref();
+    let dest = dest.as_ref();
+    // For now we just fork off `cp` and rely on reflinks, but we could and should
+    // explicitly hardlink blobs/sha256 e.g.
+    let cmd = tokio::process::Command::new("cp")
+        .args(&["-a", "--reflink=auto"])
+        .args(&[src, dest])
+        .status()
+        .await?;
+    if !cmd.success() {
+        anyhow::bail!("cp failed");
+    }
     Ok(())
 }
 
@@ -502,24 +500,66 @@ async fn test_container_import_derive() -> Result<()> {
 #[tokio::test]
 async fn test_container_write_derive() -> Result<()> {
     let fixture = Fixture::new()?;
-    let exampleos_path = &fixture.path.join("exampleos-derive.ociarchive");
-    std::fs::write(exampleos_path, EXAMPLEOS_DERIVED_OCI)?;
-    let exampleos_ref = OstreeImageReference {
+    let base_oci_path = &fixture.path.join("exampleos.oci");
+    let _digest = ostree_ext::container::encapsulate(
+        &fixture.srcrepo,
+        TESTREF,
+        &Config {
+            cmd: Some(vec!["/bin/bash".to_string()]),
+            ..Default::default()
+        },
+        None,
+        &ImageReference {
+            transport: Transport::OciDir,
+            name: base_oci_path.to_string(),
+        },
+    )
+    .await
+    .context("exporting")?;
+    assert!(base_oci_path.exists());
+
+    // Build the derived images
+    let derived_path = &fixture.path.join("derived.oci");
+    oci_clone(base_oci_path, derived_path).await?;
+    let temproot = &fixture.path.join("temproot");
+    std::fs::create_dir_all(&temproot.join("usr/bin"))?;
+    std::fs::write(temproot.join("usr/bin/newderivedfile"), "newderivedfile v0")?;
+    std::fs::write(
+        temproot.join("usr/bin/newderivedfile3"),
+        "newderivedfile3 v0",
+    )?;
+    ostree_ext::integrationtest::generate_derived_oci(derived_path, temproot)?;
+    // And v2
+    let derived2_path = &fixture.path.join("derived2.oci");
+    oci_clone(base_oci_path, derived2_path).await?;
+    std::fs::remove_dir_all(temproot)?;
+    std::fs::create_dir_all(&temproot.join("usr/bin"))?;
+    std::fs::write(temproot.join("usr/bin/newderivedfile"), "newderivedfile v1")?;
+    std::fs::write(
+        temproot.join("usr/bin/newderivedfile2"),
+        "newderivedfile2 v0",
+    )?;
+    ostree_ext::integrationtest::generate_derived_oci(derived2_path, temproot)?;
+
+    let derived_ref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref: ImageReference {
-            transport: Transport::OciArchive,
-            name: exampleos_path.to_string(),
+            transport: Transport::OciDir,
+            name: derived_path.to_string(),
         },
     };
-
     // There shouldn't be any container images stored yet.
     let images = ostree_ext::container::store::list_images(&fixture.destrepo)?;
     assert!(images.is_empty());
 
+    // Verify importing a derive dimage fails
+    let r = ostree_ext::container::unencapsulate(&fixture.destrepo, &derived_ref, None).await;
+    assert_err_contains(r, "Expected 1 layer, found 2");
+
     // Pull a derived image - two layers, new base plus one layer.
     let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
         &fixture.destrepo,
-        &exampleos_ref,
+        &derived_ref,
         Default::default(),
     )
     .await?;
@@ -529,6 +569,7 @@ async fn test_container_write_derive() -> Result<()> {
     };
     let expected_digest = prep.manifest_digest.clone();
     assert!(prep.base_layer.commit.is_none());
+    assert_eq!(prep.layers.len(), 1);
     for layer in prep.layers.iter() {
         assert!(layer.commit.is_none());
     }
@@ -536,7 +577,7 @@ async fn test_container_write_derive() -> Result<()> {
     // We should have exactly one image stored.
     let images = ostree_ext::container::store::list_images(&fixture.destrepo)?;
     assert_eq!(images.len(), 1);
-    assert_eq!(images[0], exampleos_ref.imgref.to_string());
+    assert_eq!(images[0], derived_ref.imgref.to_string());
 
     let imported_commit = &fixture
         .destrepo
@@ -560,7 +601,7 @@ async fn test_container_write_derive() -> Result<()> {
 
     // Parse the commit and verify we pulled the derived content.
     bash!(
-        "ostree --repo={repo} ls {r} /usr/share/anewfile",
+        "ostree --repo={repo} ls {r} /usr/bin/newderivedfile",
         repo = fixture.destrepo_path.as_str(),
         r = import.merge_commit.as_str()
     )?;
@@ -568,23 +609,24 @@ async fn test_container_write_derive() -> Result<()> {
     // Import again, but there should be no changes.
     let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
         &fixture.destrepo,
-        &exampleos_ref,
+        &derived_ref,
         Default::default(),
     )
     .await?;
     let already_present = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => c,
         PrepareResult::Ready(_) => {
-            panic!("Should have already imported {}", &exampleos_ref)
+            panic!("Should have already imported {}", &derived_ref)
         }
     };
     assert_eq!(import.merge_commit, already_present.merge_commit);
 
     // Test upgrades; replace the oci-archive with new content.
-    std::fs::write(exampleos_path, EXAMPLEOS_DERIVED_V2_OCI)?;
+    std::fs::remove_dir_all(derived_path)?;
+    std::fs::rename(derived2_path, derived_path)?;
     let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
         &fixture.destrepo,
-        &exampleos_ref,
+        &derived_ref,
         Default::default(),
     )
     .await?;
@@ -604,16 +646,18 @@ async fn test_container_write_derive() -> Result<()> {
     assert_ne!(import.merge_commit, already_present.merge_commit);
     // We should still have exactly one image stored.
     let images = ostree_ext::container::store::list_images(&fixture.destrepo)?;
+    assert_eq!(images[0], derived_ref.imgref.to_string());
     assert_eq!(images.len(), 1);
-    assert_eq!(images[0], exampleos_ref.imgref.to_string());
 
     // Verify we have the new file and *not* the old one
     bash!(
-        "ostree --repo={repo} ls {r} /usr/share/anewfile2 >/dev/null
-         if ostree --repo={repo} ls {r} /usr/share/anewfile 2>/dev/null; then
+        r#"set -x;
+         ostree --repo={repo} ls {r} /usr/bin/newderivedfile2 >/dev/null
+         test "$(ostree --repo={repo} cat {r} /usr/bin/newderivedfile)" = "newderivedfile v1"
+         if ostree --repo={repo} ls {r} /usr/bin/newderivedfile3 2>/dev/null; then
            echo oops; exit 1
          fi
-        ",
+        "#,
         repo = fixture.destrepo_path.as_str(),
         r = import.merge_commit.as_str()
     )?;
@@ -621,14 +665,14 @@ async fn test_container_write_derive() -> Result<()> {
     // And there should be no changes on upgrade again.
     let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
         &fixture.destrepo,
-        &exampleos_ref,
+        &derived_ref,
         Default::default(),
     )
     .await?;
     let already_present = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => c,
         PrepareResult::Ready(_) => {
-            panic!("Should have already imported {}", &exampleos_ref)
+            panic!("Should have already imported {}", &derived_ref)
         }
     };
     assert_eq!(import.merge_commit, already_present.merge_commit);
@@ -641,11 +685,11 @@ async fn test_container_write_derive() -> Result<()> {
         None,
         gio::NONE_CANCELLABLE,
     )?;
-    ostree_ext::container::store::copy(&fixture.destrepo, &destrepo2, &exampleos_ref).await?;
+    ostree_ext::container::store::copy(&fixture.destrepo, &destrepo2, &derived_ref).await?;
 
     let images = ostree_ext::container::store::list_images(&destrepo2)?;
     assert_eq!(images.len(), 1);
-    assert_eq!(images[0], exampleos_ref.imgref.to_string());
+    assert_eq!(images[0], derived_ref.imgref.to_string());
 
     Ok(())
 }

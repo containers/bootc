@@ -218,7 +218,7 @@ mod encapsulate;
 pub use encapsulate::*;
 mod unencapsulate;
 pub use unencapsulate::*;
-mod ociwriter;
+pub(crate) mod ociwriter;
 mod skopeo;
 pub mod store;
 

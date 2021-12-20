@@ -475,7 +475,7 @@ pub async fn copy(
     let layer_refs = manifest
         .layers()
         .iter()
-        .map(|layer| ref_for_layer(layer))
+        .map(ref_for_layer)
         .chain(std::iter::once(Ok(ostree_ref)));
     for ostree_ref in layer_refs {
         let ostree_ref = ostree_ref?;
