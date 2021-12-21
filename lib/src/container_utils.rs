@@ -6,7 +6,11 @@ use ostree::glib;
 use std::io::Read;
 use std::path::Path;
 
-const REPO_CONFIG: &str = "/sysroot/ostree/repo/config";
+// See https://github.com/coreos/rpm-ostree/pull/3285#issuecomment-999101477
+// For compatibility with older ostree, we stick this in /sysroot where
+// it will be ignored.
+const V0_REPO_CONFIG: &str = "/sysroot/config";
+const V1_REPO_CONFIG: &str = "/sysroot/ostree/repo/config";
 
 /// Attempts to detect if the current process is running inside a container.
 /// This looks for the `container` environment variable or the presence
@@ -37,7 +41,11 @@ fn open_optional(path: impl AsRef<Path>) -> std::io::Result<Option<std::fs::File
 /// Returns `true` if the current root filesystem has an ostree repository in `bare-split-xattrs` mode.
 /// This will be the case in a running ostree-native container.
 pub fn is_bare_split_xattrs() -> Result<bool> {
-    if let Some(configf) = open_optional(REPO_CONFIG)? {
+    if let Some(configf) = open_optional(V1_REPO_CONFIG)
+        .transpose()
+        .or_else(|| open_optional(V0_REPO_CONFIG).transpose())
+    {
+        let configf = configf?;
         let mut bufr = std::io::BufReader::new(configf);
         let mut s = String::new();
         bufr.read_to_string(&mut s)?;
