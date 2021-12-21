@@ -294,6 +294,8 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                 let target = meta.symlink_target().unwrap();
                 let target = target.as_str();
                 let context = || format!("Writing content symlink: {}", checksum);
+                h.set_entry_type(tar::EntryType::Symlink);
+                h.set_size(0);
                 // Handle //chkconfig, see above
                 if symlink_is_denormal(target) {
                     h.set_link_name_literal(meta.symlink_target().unwrap().as_str())
@@ -302,8 +304,6 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                         .append_data(&mut h, &path, &mut std::io::empty())
                         .with_context(context)?;
                 } else {
-                    h.set_entry_type(tar::EntryType::Symlink);
-                    h.set_size(0);
                     self.out
                         .append_link(&mut h, &path, target)
                         .with_context(context)?;
