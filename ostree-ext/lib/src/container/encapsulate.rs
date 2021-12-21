@@ -36,7 +36,7 @@ fn export_ostree_ref(
 ) -> Result<ociwriter::Layer> {
     let commit = repo.resolve_rev(rev, false)?.unwrap();
     let mut w = writer.create_raw_layer(compression)?;
-    ostree_tar::export_commit(repo, commit.as_str(), &mut w)?;
+    ostree_tar::export_commit(repo, commit.as_str(), &mut w, None)?;
     w.complete()
 }
 
