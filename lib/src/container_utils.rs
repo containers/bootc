@@ -61,3 +61,10 @@ pub fn is_bare_split_xattrs() -> Result<bool> {
         Ok(false)
     }
 }
+
+/// Returns `true` if the current booted filesystem appears to be an ostree-native container.
+///
+/// This just invokes [`is_bare_split_xattrs`] and [`running_in_container`].
+pub fn is_ostree_container() -> Result<bool> {
+    Ok(running_in_container() && is_bare_split_xattrs()?)
+}
