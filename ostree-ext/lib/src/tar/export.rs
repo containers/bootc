@@ -44,6 +44,7 @@ fn map_path(p: &Utf8Path) -> std::borrow::Cow<Utf8Path> {
 struct OstreeTarWriter<'a, W: std::io::Write> {
     repo: &'a ostree::Repo,
     out: &'a mut tar::Builder<W>,
+    options: ExportOptions,
     wrote_initdirs: bool,
     wrote_dirtree: HashSet<String>,
     wrote_dirmeta: HashSet<String>,
@@ -80,10 +81,11 @@ fn symlink_is_denormal(target: &str) -> bool {
 }
 
 impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
-    fn new(repo: &'a ostree::Repo, out: &'a mut tar::Builder<W>) -> Self {
+    fn new(repo: &'a ostree::Repo, out: &'a mut tar::Builder<W>, options: ExportOptions) -> Self {
         Self {
             repo,
             out,
+            options,
             wrote_initdirs: false,
             wrote_dirmeta: HashSet::new(),
             wrote_dirtree: HashSet::new(),
@@ -140,11 +142,13 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         h.set_gid(0);
         h.set_mode(0o644);
         h.set_size(REPO_CONFIG.as_bytes().len() as u64);
-        self.out.append_data(
-            &mut h,
-            &format!("{}/repo/config", OSTREEDIR),
-            std::io::Cursor::new(REPO_CONFIG),
-        )?;
+        let path = match self.options.format_version {
+            0 => format!("{}/config", SYSROOT),
+            1 => format!("{}/repo/config", OSTREEDIR),
+            n => anyhow::bail!("Unsupported ostree tar format version {}", n),
+        };
+        self.out
+            .append_data(&mut h, path, std::io::Cursor::new(REPO_CONFIG))?;
 
         Ok(())
     }
@@ -397,18 +401,32 @@ fn impl_export<W: std::io::Write>(
     repo: &ostree::Repo,
     commit_checksum: &str,
     out: &mut tar::Builder<W>,
+    options: ExportOptions,
 ) -> Result<()> {
-    let writer = &mut OstreeTarWriter::new(repo, out);
+    let writer = &mut OstreeTarWriter::new(repo, out, options);
     writer.write_commit(commit_checksum)?;
     Ok(())
 }
 
+/// Configuration for tar export.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ExportOptions {
+    /// Format version; must be 0 or 1.
+    pub format_version: u32,
+}
+
 /// Export an ostree commit to an (uncompressed) tar archive stream.
 #[context("Exporting commit")]
-pub fn export_commit(repo: &ostree::Repo, rev: &str, out: impl std::io::Write) -> Result<()> {
+pub fn export_commit(
+    repo: &ostree::Repo,
+    rev: &str,
+    out: impl std::io::Write,
+    options: Option<ExportOptions>,
+) -> Result<()> {
     let commit = repo.resolve_rev(rev, false)?;
     let mut tar = tar::Builder::new(out);
-    impl_export(repo, commit.unwrap().as_str(), &mut tar)?;
+    let options = options.unwrap_or_default();
+    impl_export(repo, commit.unwrap().as_str(), &mut tar, options)?;
     tar.finish()?;
     Ok(())
 }

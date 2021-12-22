@@ -55,6 +55,10 @@ struct ExportOpts {
     #[structopt(long)]
     repo: String,
 
+    /// The format version.  Must be 0 or 1.
+    #[structopt(long)]
+    format_version: u32,
+
     /// The ostree ref or commit to export
     rev: String,
 }
@@ -284,7 +288,12 @@ async fn tar_import(opts: &ImportOpts) -> Result<()> {
 /// Export a tar archive containing an ostree commit.
 fn tar_export(opts: &ExportOpts) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, opts.repo.as_str(), gio::NONE_CANCELLABLE)?;
-    crate::tar::export_commit(repo, opts.rev.as_str(), std::io::stdout())?;
+    #[allow(clippy::needless_update)]
+    let subopts = crate::tar::ExportOptions {
+        format_version: opts.format_version,
+        ..Default::default()
+    };
+    crate::tar::export_commit(repo, opts.rev.as_str(), std::io::stdout(), Some(subopts))?;
     Ok(())
 }
 
