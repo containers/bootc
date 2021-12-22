@@ -103,7 +103,11 @@ fn initial_export(fixture: &Fixture) -> Result<Utf8PathBuf> {
     );
     let destpath = fixture.path.join("exampleos-export.tar");
     let mut outf = std::io::BufWriter::new(std::fs::File::create(&destpath)?);
-    ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut outf)?;
+    let options = ostree_ext::tar::ExportOptions {
+        format_version: fixture.format_version,
+        ..Default::default()
+    };
+    ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut outf, Some(options))?;
     outf.flush()?;
     Ok(destpath)
 }
@@ -116,6 +120,8 @@ struct Fixture {
     srcrepo: ostree::Repo,
     destrepo: ostree::Repo,
     destrepo_path: Utf8PathBuf,
+
+    format_version: u32,
 }
 
 impl Fixture {
@@ -142,6 +148,7 @@ impl Fixture {
             srcrepo,
             destrepo,
             destrepo_path,
+            format_version: 0,
         })
     }
 }
@@ -162,14 +169,14 @@ async fn test_tar_export_reproducible() -> Result<()> {
         .read_commit(TESTREF, gio::NONE_CANCELLABLE)?;
     let export1 = {
         let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
-        ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut h)?;
+        ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut h, None)?;
         h.finish()?
     };
     // Artificial delay to flush out mtimes (one second granularity baseline, plus another 100ms for good measure).
     std::thread::sleep(std::time::Duration::from_millis(1100));
     let export2 = {
         let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
-        ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut h)?;
+        ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut h, None)?;
         h.finish()?
     };
     assert_eq!(*export1, *export2);
@@ -237,11 +244,54 @@ async fn test_tar_import_signed() -> Result<()> {
     Ok(())
 }
 
+struct TarExpected {
+    path: &'static str,
+    etype: tar::EntryType,
+    mode: u32,
+}
+
+impl Into<TarExpected> for &(&'static str, tar::EntryType, u32) {
+    fn into(self) -> TarExpected {
+        TarExpected {
+            path: self.0,
+            etype: self.1,
+            mode: self.2,
+        }
+    }
+}
+
+fn validate_tar_expected<T: std::io::Read>(
+    t: tar::Entries<T>,
+    expected: impl IntoIterator<Item = TarExpected>,
+) -> Result<()> {
+    let expected = expected.into_iter();
+    let mut entries = t.map(|e| e.unwrap());
+    // Verify we're injecting directories, fixes the absence of `/tmp` in our
+    // images for example.
+    for exp in expected {
+        let mut found = false;
+        while let Some(entry) = entries.next() {
+            let header = entry.header();
+            let entry_path = entry.path().unwrap();
+            if exp.path == entry_path.as_os_str() {
+                assert_eq!(header.entry_type(), exp.etype);
+                assert_eq!(header.mode().unwrap(), exp.mode);
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            anyhow::bail!("Failed to find entry: {}", exp.path);
+        }
+    }
+    Ok(())
+}
+
 /// Validate basic structure of the tar export.
 /// Right now just checks the first entry is `sysroot` with mode 0755.
 #[test]
 fn test_tar_export_structure() -> Result<()> {
-    let fixture = Fixture::new()?;
+    let mut fixture = Fixture::new()?;
     let src_tar = initial_export(&fixture)?;
     let src_tar = std::io::BufReader::new(std::fs::File::open(&src_tar)?);
     let mut src_tar = tar::Archive::new(src_tar);
@@ -254,30 +304,24 @@ fn test_tar_export_structure() -> Result<()> {
     let next = entries.next().unwrap().unwrap();
     assert_eq!(next.path().unwrap().as_os_str(), "sysroot");
 
-    let expected = vec![
+    // Validate format version 0
+    let expected = [
+        ("sysroot/config", tar::EntryType::Regular, 0o644),
+        ("usr", tar::EntryType::Directory, libc::S_IFDIR | 0o755),
+    ];
+    validate_tar_expected(entries, expected.iter().map(Into::into))?;
+
+    // Validate format version 1
+    fixture.format_version = 1;
+    let src_tar = initial_export(&fixture)?;
+    let src_tar = std::io::BufReader::new(std::fs::File::open(&src_tar)?);
+    let mut src_tar = tar::Archive::new(src_tar);
+    let expected = [
         ("sysroot/ostree/repo/config", tar::EntryType::Regular, 0o644),
         ("usr", tar::EntryType::Directory, libc::S_IFDIR | 0o755),
     ];
-    let mut entries = entries.map(|e| e.unwrap());
+    validate_tar_expected(src_tar.entries()?, expected.iter().map(Into::into))?;
 
-    // Verify we're injecting directories, fixes the absence of `/tmp` in our
-    // images for example.
-    for (path, expected_type, expected_mode) in expected {
-        let mut found = false;
-        while let Some(entry) = entries.next() {
-            let header = entry.header();
-            let entry_path = entry.path().unwrap();
-            if path == entry_path.as_os_str() {
-                assert_eq!(header.entry_type(), expected_type);
-                assert_eq!(header.mode().unwrap(), expected_mode);
-                found = true;
-                break;
-            }
-        }
-        if !found {
-            panic!("Failed to find entry: {}", path);
-        }
-    }
     Ok(())
 }
 
