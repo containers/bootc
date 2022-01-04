@@ -80,17 +80,17 @@ fn steal_xattr(f: &File, k: &str) -> Result<Vec<u8>> {
         let k = k.as_ptr() as *const _;
         let r = libc::fgetxattr(f.as_raw_fd(), k, std::ptr::null_mut(), 0);
         if r < 0 {
-            return Err(nix::Error::last().into());
+            return Err(std::io::Error::last_os_error().into());
         }
         let sz: usize = r.try_into()?;
         let mut buf = vec![0u8; sz];
         let r = libc::fgetxattr(f.as_raw_fd(), k, buf.as_mut_ptr() as *mut _, sz);
         if r < 0 {
-            return Err(nix::Error::last().into());
+            return Err(std::io::Error::last_os_error().into());
         }
         let r = libc::fremovexattr(f.as_raw_fd(), k);
         if r < 0 {
-            return Err(nix::Error::last().into());
+            return Err(std::io::Error::last_os_error().into());
         }
         Ok(buf)
     }
