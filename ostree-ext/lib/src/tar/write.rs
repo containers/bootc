@@ -13,12 +13,13 @@ use anyhow::{anyhow, Context};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use ostree::gio;
 use ostree::prelude::FileExt;
+use rustix::fd::FromFd;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::io::{BufWriter, Write};
-use std::os::unix::prelude::AsRawFd;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tracing::instrument;
 
@@ -197,13 +198,14 @@ pub async fn write_tar(
     };
     let mut c = std::process::Command::new("ostree");
     let repofd = repo.dfd_as_file()?;
+    let repofd = Arc::new(rustix::io::OwnedFd::from_into_fd(repofd));
     {
         let c = c
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .args(&["commit"]);
-        c.take_fd_n(repofd.as_raw_fd(), 3);
+        c.take_fd_n(repofd.clone(), 3);
         c.arg("--repo=/proc/self/fd/3");
         if let Some(sepolicy) = sepolicy.as_ref() {
             c.arg("--selinux-policy");
