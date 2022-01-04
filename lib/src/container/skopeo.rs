@@ -1,6 +1,7 @@
 //! Fork skopeo as a subprocess
 
 use anyhow::{Context, Result};
+use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::process::Stdio;
 use tokio::process::Command;
@@ -18,20 +19,18 @@ bitflags::bitflags! {
     }
 }
 
-lazy_static::lazy_static! {
-    static ref SKOPEO_FEATURES: Result<SkopeoFeatures> = {
-        let mut features = SkopeoFeatures::empty();
-        let c = std::process::Command::new("skopeo")
-            .args(&["copy", "--help"])
-            .stderr(std::process::Stdio::piped())
-            .output()?;
-        let stdout = String::from_utf8_lossy(&c.stderr);
-        if stdout.contains("--digestfile") {
-            features.insert(SkopeoFeatures::COPY_DIGESTFILE);
-        }
-        Ok(features)
-    };
-}
+static SKOPEO_FEATURES: Lazy<Result<SkopeoFeatures>> = Lazy::new(|| {
+    let mut features = SkopeoFeatures::empty();
+    let c = std::process::Command::new("skopeo")
+        .args(&["copy", "--help"])
+        .stderr(std::process::Stdio::piped())
+        .output()?;
+    let stdout = String::from_utf8_lossy(&c.stderr);
+    if stdout.contains("--digestfile") {
+        features.insert(SkopeoFeatures::COPY_DIGESTFILE);
+    }
+    Ok(features)
+});
 
 pub(crate) fn skopeo_has_features(wanted: SkopeoFeatures) -> Result<bool> {
     match &*SKOPEO_FEATURES {
