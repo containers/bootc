@@ -169,8 +169,8 @@ impl<'a> OciWriter<'a> {
 
     #[context("Writing OCI")]
     pub(crate) fn complete(self) -> Result<()> {
-        let utsname = nix::sys::utsname::uname();
-        let machine = utsname.machine();
+        let uname = rustix::process::uname();
+        let machine = uname.machine().to_str().unwrap();
         let arch = MACHINE_TO_OCI.get(machine).unwrap_or(&machine);
         let arch = oci_image::Arch::from(*arch);
 
