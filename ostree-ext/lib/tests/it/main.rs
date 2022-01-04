@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use indoc::indoc;
+use once_cell::sync::Lazy;
 use ostree_ext::container::store::PrepareResult;
 use ostree_ext::container::{
     Config, ImageReference, OstreeImageReference, SignatureSource, Transport,
@@ -35,14 +36,10 @@ fn assert_err_contains<T>(r: Result<T>, s: impl AsRef<str>) {
     }
 }
 
-lazy_static::lazy_static! {
-    static ref TEST_REGISTRY: String = {
-        match std::env::var_os("TEST_REGISTRY") {
-            Some(t) => t.to_str().unwrap().to_owned(),
-            None => TEST_REGISTRY_DEFAULT.to_string()
-        }
-    };
-}
+static TEST_REGISTRY: Lazy<String> = Lazy::new(|| match std::env::var_os("TEST_REGISTRY") {
+    Some(t) => t.to_str().unwrap().to_owned(),
+    None => TEST_REGISTRY_DEFAULT.to_string(),
+});
 
 #[context("Generating test repo")]
 fn generate_test_repo(dir: &Utf8Path) -> Result<Utf8PathBuf> {
