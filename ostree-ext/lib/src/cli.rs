@@ -13,6 +13,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
+use crate::commit::container_commit;
 use crate::container as ostree_container;
 use crate::container::store::{LayeredImageImporter, PrepareResult};
 use crate::container::{Config, ImageReference, OstreeImageReference, UnencapsulateOptions};
@@ -113,6 +114,9 @@ enum ContainerOpts {
         #[structopt(long)]
         cmd: Option<Vec<String>>,
     },
+
+    #[structopt(alias = "commit")]
+    Commit,
 
     /// Commands for working with (possibly layered, non-encapsulated) container images.
     Image(ContainerImageOpts),
@@ -468,6 +472,7 @@ where
         Opt::Tar(TarOpts::Export(ref opt)) => tar_export(opt),
         Opt::Container(o) => match o {
             ContainerOpts::Info { imgref } => container_info(&imgref).await,
+            ContainerOpts::Commit {} => container_commit().await,
             ContainerOpts::Unencapsulate {
                 repo,
                 imgref,
