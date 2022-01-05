@@ -204,7 +204,6 @@ impl LayeredImageImporter {
     /// Determine if there is a new manifest, and if so return its digest.
     #[context("Fetching manifest")]
     pub async fn prepare(&mut self) -> Result<PrepareResult> {
-        let proxy_023 = self.proxy.get_0_2_3();
         match &self.imgref.sigverify {
             SignatureSource::ContainerPolicy if skopeo::container_policy_is_default_insecure()? => {
                 return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
@@ -245,14 +244,15 @@ impl LayeredImageImporter {
                 (None, None)
             };
 
-        let config = if let Some(proxy) = proxy_023 {
-            let config_bytes = proxy.fetch_config(&self.proxy_img).await?;
+        #[cfg(feature = "proxy_v0_2_3")]
+        let config = {
+            let config_bytes = self.proxy.fetch_config(&self.proxy_img).await?;
             let config: oci_image::ImageConfiguration =
                 serde_json::from_slice(&config_bytes).context("Parsing image configuration")?;
             Some(config)
-        } else {
-            None
         };
+        #[cfg(not(feature = "proxy_v0_2_3"))]
+        let config = None;
 
         let mut layers = manifest.layers().iter().cloned();
         // We require a base layer.
