@@ -25,18 +25,6 @@ fn parse_base_imgref(s: &str) -> Result<ImageReference> {
     ImageReference::try_from(s)
 }
 
-#[derive(Debug, StructOpt)]
-struct BuildOpts {
-    #[structopt(long)]
-    repo: String,
-
-    #[structopt(long = "ref")]
-    ostree_ref: String,
-
-    #[structopt(long)]
-    oci_dir: String,
-}
-
 /// Options for importing a tar archive.
 #[derive(Debug, StructOpt)]
 struct ImportOpts {
