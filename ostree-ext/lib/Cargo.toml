@@ -10,8 +10,7 @@ version = "0.5.1"
 
 [dependencies]
 anyhow = "1.0"
-# containers-image-proxy = "0.3"
-containers-image-proxy = { git = "https://github.com/containers/containers-image-proxy-rs" }
+containers-image-proxy = "0.4.0"
 
 async-compression = { version = "0.3", features = ["gzip", "tokio"] }
 bitflags = "1"
@@ -57,4 +56,4 @@ features = ["dox"]
 [features]
 dox = ["ostree/dox"]
 internal-testing-api = []
-
+proxy_v0_2_3 = ["containers-image-proxy/proxy_v0_2_3"]
