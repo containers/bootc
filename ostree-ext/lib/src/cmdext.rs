@@ -1,19 +1,23 @@
-use std::os::unix::prelude::{CommandExt, RawFd};
+use rustix::fd::{FromRawFd, IntoRawFd};
+use rustix::io::OwnedFd;
+use std::os::unix::prelude::CommandExt;
+use std::sync::Arc;
 
 pub(crate) trait CommandRedirectionExt {
     /// Pass a file descriptor into the target process.
-    /// IMPORTANT: `fd` must be valid (i.e. cannot be closed) until after [`std::Process::Command::spawn`] or equivalent is invoked.
-    fn take_fd_n(&mut self, fd: i32, target: i32) -> &mut Self;
+    fn take_fd_n(&mut self, fd: Arc<OwnedFd>, target: i32) -> &mut Self;
 }
 
 #[allow(unsafe_code)]
 impl CommandRedirectionExt for std::process::Command {
-    fn take_fd_n(&mut self, fd: i32, target: i32) -> &mut Self {
+    fn take_fd_n(&mut self, fd: Arc<OwnedFd>, target: i32) -> &mut Self {
         unsafe {
             self.pre_exec(move || {
-                nix::unistd::dup2(fd, target as RawFd)
-                    .map(|_r| ())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)))
+                let target = rustix::io::OwnedFd::from_raw_fd(target);
+                rustix::io::dup2(&*fd, &target)?;
+                // Intentionally leak into the child.
+                let _ = target.into_raw_fd();
+                Ok(())
             });
         }
         self
