@@ -29,8 +29,7 @@ oci-spec = "0.5.0"
 openat = "0.1.20"
 openat-ext = "0.2.0"
 openssl = "0.10.33"
-# ostree = { features = ["v2021_5"], version = "0.13.3" }
-ostree = { git = "https://github.com/ostreedev/ostree-rs", features = ["v2021_5"] }
+ostree = { features = ["v2021_5"], version = "0.13.4" }
 phf = { features = ["macros"], version = "0.10" }
 pin-project = "1.0"
 serde = { features = ["derive"], version = "1.0.125" }
