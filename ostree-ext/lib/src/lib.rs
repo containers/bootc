@@ -35,6 +35,7 @@ pub mod tar;
 pub mod tokio_util;
 
 mod cmdext;
+pub(crate) mod commit;
 pub(crate) mod objgv;
 /// Prelude, intended for glob import.
 pub mod prelude {
