@@ -16,6 +16,7 @@ async-compression = { version = "0.3", features = ["gzip", "tokio"] }
 bitflags = "1"
 camino = "1.0.4"
 cjson = "0.1.1"
+cap-std-ext = "0.1.0"
 flate2 = { features = ["zlib"], default_features = false, version = "1.0.20" }
 fn-error-context = "0.2.0"
 futures-util = "0.3.13"
