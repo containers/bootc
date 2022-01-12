@@ -7,7 +7,7 @@ use flate2::write::GzEncoder;
 use fn_error_context::context;
 use oci_image::MediaType;
 use oci_spec::image as oci_image;
-use once_cell::sync::OnceCell;
+use once_cell::sync::Lazy;
 use openat_ext::*;
 use openssl::hash::{Hasher, MessageDigest};
 use phf::phf_map;
@@ -24,7 +24,8 @@ static MACHINE_TO_OCI: phf::Map<&str, &str> = phf_map! {
 };
 
 static THIS_OCI_ARCH: Lazy<oci_image::Arch> = Lazy::new(|| {
-    let machine = rustix::process::uname().machine();
+    let uname = rustix::process::uname();
+    let machine = uname.machine().to_str().unwrap();
     let arch = MACHINE_TO_OCI.get(machine).unwrap_or(&machine);
     oci_image::Arch::from(*arch)
 });
@@ -140,10 +141,11 @@ pub(crate) fn new_empty_manifest() -> oci_image::ImageManifestBuilder {
 }
 
 /// Generate an image configuration targeting Linux for this architecture.
-pub(crate) fn new_config() -> oci_image::ImageConfigurationBuilder {
-    oci_image::ImageConfigurationBuilder::default()
-        .architecture(THIS_OCI_ARCH.clone())
-        .os(oci_image::Os::Linux)
+pub(crate) fn new_config_thisarch_linux() -> oci_image::ImageConfiguration {
+    let mut r = oci_image::ImageConfiguration::default();
+    r.set_architecture(THIS_OCI_ARCH.clone());
+    r.set_os(oci_image::Os::Linux);
+    r
 }
 
 /// Return a Platform object for Linux for this architecture.
