@@ -1,12 +1,16 @@
 //! APIs for creating container images from OSTree commits
 
 use super::ociwriter::OciWriter;
-use super::*;
+use super::{ociwriter, OstreeImageReference, Transport};
+use super::{ImageReference, SignatureSource, OSTREE_COMMIT_LABEL};
+use crate::container::skopeo;
 use crate::tar as ostree_tar;
 use anyhow::Context;
+use anyhow::Result;
 use fn_error_context::context;
 use gio::glib;
 use ostree::gio;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use tracing::{instrument, Level};
