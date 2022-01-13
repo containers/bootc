@@ -63,45 +63,24 @@ pub fn generate_derived_oci(src: impl AsRef<Utf8Path>, dir: impl AsRef<Utf8Path>
     let bw = layer_tar.into_inner()?;
     let new_layer = bw.complete()?;
 
-    let layers: Vec<_> = manifest
-        .layers()
-        .iter()
-        .cloned()
-        .chain(std::iter::once(
-            new_layer
-                .blob
-                .descriptor()
-                .media_type(oci_spec::image::MediaType::ImageLayerGzip)
-                .build()
-                .unwrap(),
-        ))
-        .collect();
-    manifest.set_layers(layers);
-    let history: Vec<_> = config
-        .history()
-        .iter()
-        .cloned()
-        .chain(std::iter::once(
-            oci_spec::image::HistoryBuilder::default()
-                .created_by("generate_derived_oci")
-                .build()
-                .unwrap(),
-        ))
-        .collect();
-    config.set_history(history);
-    let diffids: Vec<_> = config
-        .rootfs()
-        .diff_ids()
-        .iter()
-        .cloned()
-        .chain(std::iter::once(new_layer.uncompressed_sha256))
-        .collect();
-    config.set_rootfs(
-        oci_spec::image::RootFsBuilder::default()
-            .diff_ids(diffids)
+    manifest.layers_mut().push(
+        new_layer
+            .blob
+            .descriptor()
+            .media_type(oci_spec::image::MediaType::ImageLayerGzip)
             .build()
             .unwrap(),
     );
+    config.history_mut().push(
+        oci_spec::image::HistoryBuilder::default()
+            .created_by("generate_derived_oci")
+            .build()
+            .unwrap(),
+    );
+    config
+        .rootfs_mut()
+        .diff_ids_mut()
+        .push(new_layer.uncompressed_sha256);
     let new_config_desc = crate::container::ociwriter::write_json_blob(
         srcdir,
         &config,
