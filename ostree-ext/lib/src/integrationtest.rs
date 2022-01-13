@@ -1,9 +1,9 @@
 //! Module used for integration tests; should not be public.
 
-use anyhow::{Context, Result};
+use crate::container::ocidir;
+use anyhow::Result;
 use camino::Utf8Path;
 use fn_error_context::context;
-use std::path::Path;
 
 fn has_ostree() -> bool {
     std::path::Path::new("/sysroot/ostree/repo").exists()
@@ -18,46 +18,20 @@ pub(crate) fn detectenv() -> &'static str {
     }
 }
 
-fn deserialize_json_path<T: serde::de::DeserializeOwned + Send + 'static>(
-    p: impl AsRef<Path>,
-) -> Result<T> {
-    let p = p.as_ref();
-    let ctx = || format!("Parsing {:?}", p);
-    let f = std::io::BufReader::new(std::fs::File::open(p).with_context(ctx)?);
-    serde_json::from_reader(f).with_context(ctx)
-}
-
-fn deserialize_json_blob<T: serde::de::DeserializeOwned + Send + 'static>(
-    ocidir: impl AsRef<Utf8Path>,
-    desc: &oci_spec::image::Descriptor,
-) -> Result<T> {
-    let ocidir = ocidir.as_ref();
-    let blobpath = desc.digest().replace(':', "/");
-    deserialize_json_path(&ocidir.join(&format!("blobs/{}", blobpath)))
-}
-
 /// Using `src` as a base, take append `dir` into OCI image.
 /// Should only be enabled for testing.
 #[cfg(feature = "internal-testing-api")]
 #[context("Generating derived oci")]
 pub fn generate_derived_oci(src: impl AsRef<Utf8Path>, dir: impl AsRef<Utf8Path>) -> Result<()> {
+    use std::rc::Rc;
     let src = src.as_ref();
+    let src = Rc::new(openat::Dir::open(src.as_std_path())?);
+    let src = ocidir::OciDir::open(src)?;
     let dir = dir.as_ref();
-    let index_path = &src.join("index.json");
-    let mut idx: oci_spec::image::ImageIndex = deserialize_json_path(index_path)?;
-    let mut manifest: oci_spec::image::ImageManifest = {
-        let manifest_desc = idx
-            .manifests()
-            .get(0)
-            .ok_or_else(|| anyhow::anyhow!("No manifests found"))?;
-        deserialize_json_blob(src, manifest_desc)?
-    };
-    let mut config: oci_spec::image::ImageConfiguration =
-        deserialize_json_blob(src, manifest.config())?;
+    let mut manifest = src.read_manifest()?;
+    let mut config: oci_spec::image::ImageConfiguration = src.read_json_blob(manifest.config())?;
 
-    let srcdir = &openat::Dir::open(src.as_std_path())?;
-
-    let bw = crate::container::ociwriter::RawLayerWriter::new(srcdir, None)?;
+    let bw = src.create_raw_layer(None)?;
     let mut layer_tar = tar::Builder::new(bw);
     layer_tar.append_dir_all("./", dir.as_std_path())?;
     let bw = layer_tar.into_inner()?;
@@ -81,23 +55,9 @@ pub fn generate_derived_oci(src: impl AsRef<Utf8Path>, dir: impl AsRef<Utf8Path>
         .rootfs_mut()
         .diff_ids_mut()
         .push(new_layer.uncompressed_sha256);
-    let new_config_desc = crate::container::ociwriter::write_json_blob(
-        srcdir,
-        &config,
-        oci_spec::image::MediaType::ImageConfig,
-    )?
-    .build()
-    .unwrap();
+    let new_config_desc = src.write_config(config)?;
     manifest.set_config(new_config_desc);
 
-    let new_manifest_desc = crate::container::ociwriter::write_json_blob(
-        srcdir,
-        &manifest,
-        oci_spec::image::MediaType::ImageManifest,
-    )?
-    .build()
-    .unwrap();
-    idx.set_manifests(vec![new_manifest_desc]);
-    idx.to_file(index_path.as_std_path())?;
+    src.write_manifest(manifest, ocidir::this_platform())?;
     Ok(())
 }
