@@ -1,7 +1,7 @@
 //! APIs for creating container images from OSTree commits
 
-use super::ociwriter::OciWriter;
-use super::{ociwriter, OstreeImageReference, Transport};
+use super::ocidir::OciDir;
+use super::{ocidir, OstreeImageReference, Transport};
 use super::{ImageReference, SignatureSource, OSTREE_COMMIT_LABEL};
 use crate::container::skopeo;
 use crate::tar as ostree_tar;
@@ -9,10 +9,12 @@ use anyhow::Context;
 use anyhow::Result;
 use fn_error_context::context;
 use gio::glib;
+use oci_spec::image as oci_image;
 use ostree::gio;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use std::rc::Rc;
 use tracing::{instrument, Level};
 
 /// Annotation injected into the layer to say that this is an ostree commit.
@@ -35,9 +37,9 @@ pub struct Config {
 fn export_ostree_ref(
     repo: &ostree::Repo,
     rev: &str,
-    writer: &mut OciWriter,
+    writer: &mut OciDir,
     compression: Option<flate2::Compression>,
-) -> Result<ociwriter::Layer> {
+) -> Result<ocidir::Layer> {
     let commit = repo.resolve_rev(rev, false)?.unwrap();
     let mut w = writer.create_raw_layer(compression)?;
     ostree_tar::export_commit(repo, commit.as_str(), &mut w, None)?;
@@ -55,8 +57,8 @@ fn build_oci(
 ) -> Result<ImageReference> {
     // Explicitly error if the target exists
     std::fs::create_dir(ocidir_path).context("Creating OCI dir")?;
-    let ocidir = &openat::Dir::open(ocidir_path)?;
-    let mut writer = ociwriter::OciWriter::new(ocidir)?;
+    let ocidir = Rc::new(openat::Dir::open(ocidir_path)?);
+    let mut writer = ocidir::OciDir::create(ocidir)?;
 
     let commit = repo.resolve_rev(rev, false)?.unwrap();
     let commit = commit.as_str();
@@ -71,24 +73,29 @@ fn build_oci(
     let commit_meta = &commit_v.child_value(0);
     let commit_meta = glib::VariantDict::new(Some(commit_meta));
 
+    let mut ctrcfg = oci_image::Config::default();
+    let mut imgcfg = ocidir::new_config_thisarch_linux();
+    let labels = ctrcfg.labels_mut().get_or_insert_with(Default::default);
+    let mut manifest = ocidir::new_empty_manifest().build().unwrap();
+
     if let Some(version) =
         commit_meta.lookup_value("version", Some(glib::VariantTy::new("s").unwrap()))
     {
         let version = version.str().unwrap();
-        writer.add_config_annotation("version", version);
-        writer.add_manifest_annotation("ostree.version", version);
+        labels.insert("version".into(), version.into());
     }
 
-    writer.add_config_annotation(OSTREE_COMMIT_LABEL, commit);
-    writer.add_manifest_annotation(OSTREE_COMMIT_LABEL, commit);
+    labels.insert(OSTREE_COMMIT_LABEL.into(), commit.into());
 
     for (k, v) in config.labels.iter().map(|k| k.iter()).flatten() {
-        writer.add_config_annotation(k, v);
+        labels.insert(k.into(), v.into());
     }
     if let Some(cmd) = config.cmd.as_ref() {
-        let cmd: Vec<_> = cmd.iter().map(|s| s.as_str()).collect();
-        writer.set_cmd(&cmd);
+        ctrcfg.set_cmd(Some(cmd.clone()));
     }
+
+    imgcfg.set_config(Some(ctrcfg));
+
     let compression = if opts.compress {
         flate2::Compression::default()
     } else {
@@ -103,8 +110,16 @@ fn build_oci(
     };
     let mut annos = HashMap::new();
     annos.insert(BLOB_OSTREE_ANNOTATION.to_string(), "true".to_string());
-    writer.push_layer_annotated(rootfs_blob, Some(annos), &description);
-    writer.complete()?;
+    writer.push_layer_annotated(
+        &mut manifest,
+        &mut imgcfg,
+        rootfs_blob,
+        Some(annos),
+        &description,
+    );
+    let ctrcfg = writer.write_config(imgcfg)?;
+    manifest.set_config(ctrcfg);
+    writer.write_manifest(manifest, ocidir::this_platform())?;
 
     Ok(ImageReference {
         transport: Transport::OciDir,
