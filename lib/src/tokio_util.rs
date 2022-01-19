@@ -1,7 +1,8 @@
 //! Helpers for bridging GLib async/mainloop with Tokio.
 
 use anyhow::Result;
-use futures_util::Future;
+use core::fmt::{Debug, Display};
+use futures_util::{Future, FutureExt};
 use ostree::gio;
 use ostree::prelude::CancellableExt;
 
@@ -48,6 +49,28 @@ where
         f(&dropper.0)
     })
 }
+
+/// Flatten a nested Result<Result<T>>, defaulting to converting the error type to an `anyhow::Error`.
+/// See https://doc.rust-lang.org/std/result/enum.Result.html#method.flatten
+pub(crate) fn flatten_anyhow<T, E>(r: std::result::Result<Result<T>, E>) -> Result<T>
+where
+    E: Display + Debug + Send + Sync + 'static,
+{
+    match r {
+        Ok(x) => x,
+        Err(e) => Err(anyhow::anyhow!(e)),
+    }
+}
+
+/// A wrapper around [`spawn_blocking_cancellable`] that flattens nested results.
+pub fn spawn_blocking_cancellable_flatten<F, T>(f: F) -> impl Future<Output = Result<T>>
+where
+    F: FnOnce(&gio::Cancellable) -> Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    spawn_blocking_cancellable(f).map(flatten_anyhow)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
