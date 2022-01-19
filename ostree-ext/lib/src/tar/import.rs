@@ -5,7 +5,6 @@ use anyhow::{anyhow, Context};
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use fn_error_context::context;
-use futures_util::TryFutureExt;
 use gio::glib;
 use gio::prelude::*;
 use glib::Variant;
@@ -599,7 +598,7 @@ pub async fn import_tar(
     let options = options.unwrap_or_default();
     let src = tokio_util::io::SyncIoBridge::new(src);
     let repo = repo.clone();
-    let import = crate::tokio_util::spawn_blocking_cancellable(move |cancellable| {
+    let import = crate::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| {
         let mut archive = tar::Archive::new(src);
         let txn = repo.auto_transaction(Some(cancellable))?;
         let importer = Importer::new(&repo, options.remote);
@@ -607,9 +606,8 @@ pub async fn import_tar(
         txn.commit(Some(cancellable))?;
         repo.mark_commit_partial(&checksum, false)?;
         Ok::<_, anyhow::Error>(checksum)
-    })
-    .map_err(anyhow::Error::msg);
-    let import: String = import.await??;
+    });
+    let import: String = import.await?;
     Ok(import)
 }
 

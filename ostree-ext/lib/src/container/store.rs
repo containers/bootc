@@ -363,7 +363,7 @@ impl LayeredImageImporter {
         // Destructure to transfer ownership to thread
         let repo = self.repo;
         let imgref = self.target_imgref.unwrap_or(self.imgref);
-        let state = crate::tokio_util::spawn_blocking_cancellable(
+        let state = crate::tokio_util::spawn_blocking_cancellable_flatten(
             move |cancellable| -> Result<LayeredImageState> {
                 let cancellable = Some(cancellable);
                 let repo = &repo;
@@ -401,7 +401,7 @@ impl LayeredImageImporter {
                 Ok(state)
             },
         )
-        .await??;
+        .await?;
         Ok(state)
     }
 }
@@ -481,7 +481,7 @@ pub async fn copy(
         let ostree_ref = ostree_ref?;
         let src_repo = src_repo.clone();
         let dest_repo = dest_repo.clone();
-        crate::tokio_util::spawn_blocking_cancellable(move |cancellable| -> Result<_> {
+        crate::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| -> Result<_> {
             let cancellable = Some(cancellable);
             let srcfd = &format!("file:///proc/self/fd/{}", src_repo.dfd());
             let flags = ostree::RepoPullFlags::MIRROR;
@@ -495,7 +495,7 @@ pub async fn copy(
             dest_repo.pull_with_options(srcfd, &options, None, cancellable)?;
             Ok(())
         })
-        .await??;
+        .await?;
     }
     Ok(())
 }
