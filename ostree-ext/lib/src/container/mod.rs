@@ -213,6 +213,17 @@ impl std::fmt::Display for OstreeImageReference {
     }
 }
 
+/// Apply default configuration for container image pulls to an existing configuration.
+/// For example, if `authfile` is not set, and `auth_anonymous` is `false`, and a global configuration file exists, it will be used.
+pub fn merge_default_container_proxy_opts(
+    config: &mut containers_image_proxy::ImageProxyConfig,
+) -> Result<()> {
+    if !config.auth_anonymous && config.authfile.is_none() {
+        config.authfile = crate::globals::get_global_authfile_path()?;
+    }
+    Ok(())
+}
+
 pub mod deploy;
 mod encapsulate;
 pub use encapsulate::*;

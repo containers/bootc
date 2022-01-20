@@ -19,4 +19,7 @@ env=$(ostree-ext-cli internal-only-for-testing detect-env)
 test "${env}" = ostree-container
 tap_ok environment
 
+ostree-ext-cli internal-only-for-testing run
+tap_ok integrationtests
+
 tap_end

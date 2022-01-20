@@ -30,7 +30,7 @@ pub fn running_in_container() -> bool {
 
 // https://docs.rs/openat-ext/0.1.10/openat_ext/trait.OpenatDirExt.html#tymethod.open_file_optional
 // https://users.rust-lang.org/t/why-i-use-anyhow-error-even-in-libraries/68592
-fn open_optional(path: impl AsRef<Path>) -> std::io::Result<Option<std::fs::File>> {
+pub(crate) fn open_optional(path: impl AsRef<Path>) -> std::io::Result<Option<std::fs::File>> {
     match std::fs::File::open(path.as_ref()) {
         Ok(r) => Ok(Some(r)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
