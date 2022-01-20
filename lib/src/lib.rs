@@ -23,6 +23,9 @@ pub use ostree::gio::glib;
 /// to a string to output to a terminal or logs.
 type Result<T> = anyhow::Result<T>;
 
+// Import global functions.
+mod globals;
+
 pub mod cli;
 pub mod container;
 pub mod container_utils;
