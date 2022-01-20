@@ -1,5 +1,7 @@
 //! Module used for integration tests; should not be public.
 
+use std::path::Path;
+
 use crate::container::ocidir;
 use anyhow::Result;
 use camino::Utf8Path;
@@ -59,5 +61,38 @@ pub fn generate_derived_oci(src: impl AsRef<Utf8Path>, dir: impl AsRef<Utf8Path>
     manifest.set_config(new_config_desc);
 
     src.write_manifest(manifest, ocidir::this_platform())?;
+    Ok(())
+}
+
+fn test_proxy_auth() -> Result<()> {
+    use containers_image_proxy::ImageProxyConfig;
+    let merge = crate::container::merge_default_container_proxy_opts;
+    let mut c = ImageProxyConfig::default();
+    merge(&mut c)?;
+    assert_eq!(c.authfile, None);
+    std::fs::create_dir_all("/etc/ostree")?;
+    let authpath = Path::new("/etc/ostree/auth.json");
+    std::fs::write(authpath, "{}")?;
+    let mut c = ImageProxyConfig::default();
+    merge(&mut c)?;
+    assert_eq!(c.authfile.unwrap().as_path(), authpath,);
+    let c = ImageProxyConfig {
+        auth_anonymous: true,
+        ..Default::default()
+    };
+    assert_eq!(c.authfile, None);
+    std::fs::remove_file(authpath)?;
+    let mut c = ImageProxyConfig::default();
+    merge(&mut c)?;
+    assert_eq!(c.authfile, None);
+    Ok(())
+}
+
+#[cfg(feature = "internal-testing-api")]
+#[context("Running integration tests")]
+pub(crate) fn run_tests() -> Result<()> {
+    // When there's a new integration test to run, add it here.
+    test_proxy_auth()?;
+    println!("integration tests succeeded.");
     Ok(())
 }

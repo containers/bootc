@@ -126,6 +126,10 @@ enum ContainerOpts {
 #[derive(Debug, StructOpt)]
 struct ContainerProxyOpts {
     #[structopt(long)]
+    /// Do not use default authentication files.
+    auth_anonymous: bool,
+
+    #[structopt(long)]
     /// Path to Docker-formatted authentication file.
     authfile: Option<PathBuf>,
 
@@ -232,6 +236,8 @@ struct ImaSignOpts {
 enum TestingOpts {
     // Detect the current environment
     DetectEnv,
+    /// Execute integration tests, assuming mutable environment
+    Run,
 }
 
 /// Toplevel options for extended ostree functionality.
@@ -255,6 +261,7 @@ enum Opt {
 impl Into<ostree_container::store::ImageProxyConfig> for ContainerProxyOpts {
     fn into(self) -> ostree_container::store::ImageProxyConfig {
         ostree_container::store::ImageProxyConfig {
+            auth_anonymous: self.auth_anonymous,
             authfile: self.authfile,
             certificate_directory: self.cert_dir,
             insecure_skip_tls_verification: Some(self.insecure_skip_tls_verification),
@@ -456,6 +463,7 @@ fn testing(opts: &TestingOpts) -> Result<()> {
             println!("{}", s);
             Ok(())
         }
+        TestingOpts::Run => crate::integrationtest::run_tests(),
     }
 }
 
