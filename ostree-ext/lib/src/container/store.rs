@@ -182,8 +182,10 @@ impl LayeredImageImporter {
     pub async fn new(
         repo: &ostree::Repo,
         imgref: &OstreeImageReference,
-        config: ImageProxyConfig,
+        mut config: ImageProxyConfig,
     ) -> Result<Self> {
+        // Apply our defaults to the proxy config
+        merge_default_container_proxy_opts(&mut config)?;
         let proxy = ImageProxy::new_with_config(config).await?;
         let proxy_img = proxy.open_image(&imgref.imgref.to_string()).await?;
         let repo = repo.clone();
