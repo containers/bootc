@@ -91,6 +91,7 @@ fn test_proxy_auth() -> Result<()> {
 #[cfg(feature = "internal-testing-api")]
 #[context("Running integration tests")]
 pub(crate) fn run_tests() -> Result<()> {
+    crate::container_utils::require_ostree_container()?;
     // When there's a new integration test to run, add it here.
     test_proxy_auth()?;
     println!("integration tests succeeded.");
