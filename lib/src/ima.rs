@@ -271,7 +271,7 @@ impl<'a> CommitRewriter<'a> {
     /// Write a commit object.
     #[context("Mapping {}", rev)]
     fn map_commit(&mut self, rev: &str) -> Result<String> {
-        let checksum = self.repo.resolve_rev(rev, false)?.unwrap();
+        let checksum = self.repo.require_rev(rev)?;
         let cancellable = gio::NONE_CANCELLABLE;
         let (commit_v, _) = self.repo.load_commit(&checksum)?;
         let commit_v = &commit_v;

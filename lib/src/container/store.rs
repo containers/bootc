@@ -469,7 +469,7 @@ pub async fn copy(
     imgref: &OstreeImageReference,
 ) -> Result<()> {
     let ostree_ref = ref_for_image(&imgref.imgref)?;
-    let rev = src_repo.resolve_rev(&ostree_ref, false)?.unwrap();
+    let rev = src_repo.require_rev(&ostree_ref)?;
     let (commit_obj, _) = src_repo.load_commit(rev.as_str())?;
     let commit_meta = &glib::VariantDict::new(Some(&commit_obj.child_value(0)));
     let (manifest, _) = manifest_data_from_commitmeta(commit_meta)?;
