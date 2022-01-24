@@ -7,28 +7,12 @@ use flate2::write::GzEncoder;
 use fn_error_context::context;
 use oci_image::MediaType;
 use oci_spec::image as oci_image;
-use once_cell::sync::Lazy;
 use openat_ext::*;
 use openssl::hash::{Hasher, MessageDigest};
-use phf::phf_map;
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::path::Path;
 use std::rc::Rc;
-
-/// Map the value from `uname -m` to the Go architecture.
-/// TODO find a more canonical home for this.
-static MACHINE_TO_OCI: phf::Map<&str, &str> = phf_map! {
-    "x86_64" => "amd64",
-    "aarch64" => "arm64",
-};
-
-static THIS_OCI_ARCH: Lazy<oci_image::Arch> = Lazy::new(|| {
-    let uname = rustix::process::uname();
-    let machine = uname.machine().to_str().unwrap();
-    let arch = MACHINE_TO_OCI.get(machine).unwrap_or(&machine);
-    oci_image::Arch::from(*arch)
-});
 
 /// Path inside an OCI directory to the blobs
 const BLOBDIR: &str = "blobs/sha256";
@@ -138,23 +122,6 @@ pub(crate) fn new_empty_manifest() -> oci_image::ImageManifestBuilder {
         .schema_version(oci_image::SCHEMA_VERSION)
         .config(empty_config_descriptor())
         .layers(Vec::new())
-}
-
-/// Generate an image configuration targeting Linux for this architecture.
-pub(crate) fn new_config_thisarch_linux() -> oci_image::ImageConfiguration {
-    let mut r = oci_image::ImageConfiguration::default();
-    r.set_architecture(THIS_OCI_ARCH.clone());
-    r.set_os(oci_image::Os::Linux);
-    r
-}
-
-/// Return a Platform object for Linux for this architecture.
-pub(crate) fn this_platform() -> oci_image::Platform {
-    oci_image::PlatformBuilder::default()
-        .os(oci_image::Os::Linux)
-        .architecture(THIS_OCI_ARCH.clone())
-        .build()
-        .unwrap()
 }
 
 impl OciDir {
@@ -456,7 +423,7 @@ mod tests {
         w.push_layer(&mut manifest, &mut config, root_layer, "root");
         let config = w.write_config(config)?;
         manifest.set_config(config);
-        w.write_manifest(manifest, this_platform())?;
+        w.write_manifest(manifest, oci_image::Platform::default())?;
         Ok(())
     }
 }

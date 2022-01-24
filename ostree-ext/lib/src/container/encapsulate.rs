@@ -74,7 +74,7 @@ fn build_oci(
     let commit_meta = glib::VariantDict::new(Some(commit_meta));
 
     let mut ctrcfg = oci_image::Config::default();
-    let mut imgcfg = ocidir::new_config_thisarch_linux();
+    let mut imgcfg = oci_image::ImageConfiguration::default();
     let labels = ctrcfg.labels_mut().get_or_insert_with(Default::default);
     let mut manifest = ocidir::new_empty_manifest().build().unwrap();
 
@@ -119,7 +119,7 @@ fn build_oci(
     );
     let ctrcfg = writer.write_config(imgcfg)?;
     manifest.set_config(ctrcfg);
-    writer.write_manifest(manifest, ocidir::this_platform())?;
+    writer.write_manifest(manifest, oci_image::Platform::default())?;
 
     Ok(ImageReference {
         transport: Transport::OciDir,
