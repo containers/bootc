@@ -390,9 +390,8 @@ async fn test_container_import_export() -> Result<()> {
     let fixture = Fixture::new()?;
     let testrev = fixture
         .srcrepo
-        .resolve_rev(TESTREF, false)
-        .context("Failed to resolve ref")?
-        .unwrap();
+        .require_rev(TESTREF)
+        .context("Failed to resolve ref")?;
 
     let srcoci_path = &fixture.path.join("oci");
     let srcoci_imgref = ImageReference {
@@ -707,9 +706,8 @@ async fn test_container_import_export_registry() -> Result<()> {
     let fixture = Fixture::new()?;
     let testrev = fixture
         .srcrepo
-        .resolve_rev(TESTREF, false)
-        .context("Failed to resolve ref")?
-        .unwrap();
+        .require_rev(TESTREF)
+        .context("Failed to resolve ref")?;
     let src_imgref = ImageReference {
         transport: Transport::Registry,
         name: format!("{}/exampleos", tr),
