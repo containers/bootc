@@ -6,6 +6,7 @@ use crate::container::ocidir;
 use anyhow::Result;
 use camino::Utf8Path;
 use fn_error_context::context;
+use oci_spec::image as oci_image;
 
 fn has_ostree() -> bool {
     std::path::Path::new("/sysroot/ostree/repo").exists()
@@ -60,7 +61,7 @@ pub fn generate_derived_oci(src: impl AsRef<Utf8Path>, dir: impl AsRef<Utf8Path>
     let new_config_desc = src.write_config(config)?;
     manifest.set_config(new_config_desc);
 
-    src.write_manifest(manifest, ocidir::this_platform())?;
+    src.write_manifest(manifest, oci_image::Platform::default())?;
     Ok(())
 }
 
