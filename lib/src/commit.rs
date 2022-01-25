@@ -1,13 +1,13 @@
-/// This module contains the functions to implement the commit
-/// procedures as part of building an ostree container image.
-/// https://github.com/ostreedev/ostree-rs-ext/issues/159
+//! This module contains the functions to implement the commit
+//! procedures as part of building an ostree container image.
+//! https://github.com/ostreedev/ostree-rs-ext/issues/159
+
+use crate::container_utils::require_ostree_container;
 use anyhow::Context;
 use anyhow::Result;
 use std::fs;
 use std::path::Path;
 use tokio::task;
-
-use crate::container_utils::is_ostree_container;
 
 /// Check if there are any files that are not directories and error out if
 /// we find any, /var should not contain any files to commit in a container
@@ -35,22 +35,19 @@ fn validate_directories_only(path: &Path, error_count: &mut i32) -> Result<()> {
 /// Entrypoint to the commit procedures, initially we just
 /// have one validation but we expect more in the future.
 pub(crate) async fn container_commit() -> Result<()> {
-    if is_ostree_container()? {
-        println!("Checking /var for files");
-        let var_path = Path::new("/var");
+    require_ostree_container()?;
+    println!("Checking /var for files");
+    let var_path = Path::new("/var");
 
-        let mut error_count = 0;
+    let mut error_count = 0;
 
-        task::spawn_blocking(move || -> Result<()> {
-            validate_directories_only(var_path, &mut error_count)
-        })
-        .await??;
+    task::spawn_blocking(move || -> Result<()> {
+        validate_directories_only(var_path, &mut error_count)
+    })
+    .await??;
 
-        if error_count != 0 {
-            anyhow::bail!("Found content in /var");
-        }
-    } else {
-        anyhow::bail!("Not a container can't commit");
+    if error_count != 0 {
+        anyhow::bail!("Found content in /var");
     }
     Ok(())
 }
