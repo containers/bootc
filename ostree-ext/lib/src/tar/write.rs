@@ -7,10 +7,10 @@
 //! In the future, this may also evolve into parsing the tar
 //! stream in Rust, not in C.
 
-use crate::cmdext::CommandRedirectionExt;
 use crate::Result;
 use anyhow::{anyhow, Context};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
+use cap_std_ext::cmdext::CapStdExtCommandExt;
 use ostree::gio;
 use ostree::prelude::FileExt;
 use rustix::fd::FromFd;
