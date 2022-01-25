@@ -111,7 +111,6 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         if self.wrote_initdirs {
             return Ok(());
         }
-        self.wrote_initdirs = true;
 
         let objdir: Utf8PathBuf = format!("{}/repo/objects", OSTREEDIR).into();
         // Add all parent directories
@@ -128,8 +127,18 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             self.append_default_dir(path)?;
         }
         // Object subdirectories
-        for d in 0..0xFF {
+        for d in 0..=0xFF {
             let path: Utf8PathBuf = format!("{}/{:02x}", objdir, d).into();
+            self.append_default_dir(&path)?;
+        }
+        // Tmp subdirectories
+        for d in ["tmp", "tmp/cache"] {
+            let path: Utf8PathBuf = format!("{}/repo/{}", OSTREEDIR, d).into();
+            self.append_default_dir(&path)?;
+        }
+        // Refs subdirectories
+        for d in ["refs", "refs/heads", "refs/mirrors", "refs/remotes"] {
+            let path: Utf8PathBuf = format!("{}/repo/{}", OSTREEDIR, d).into();
             self.append_default_dir(&path)?;
         }
 
@@ -150,6 +159,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         self.out
             .append_data(&mut h, path, std::io::Cursor::new(REPO_CONFIG))?;
 
+        self.wrote_initdirs = true;
         Ok(())
     }
 
