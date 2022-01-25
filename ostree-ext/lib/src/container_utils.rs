@@ -68,3 +68,13 @@ pub fn is_bare_split_xattrs() -> Result<bool> {
 pub fn is_ostree_container() -> Result<bool> {
     Ok(running_in_container() && is_bare_split_xattrs()?)
 }
+
+/// Returns an error unless the current filesystem is an ostree-based container
+///
+/// This just wraps [`is_ostree_container`].
+pub fn require_ostree_container() -> Result<()> {
+    if !is_ostree_container()? {
+        anyhow::bail!("Not in an ostree-based container environment");
+    }
+    Ok(())
+}
