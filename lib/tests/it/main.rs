@@ -269,7 +269,15 @@ fn validate_tar_expected<T: std::io::Read>(
         let entry_path = entry.path().unwrap().to_string_lossy().into_owned();
         if let Some(exp) = expected.remove(entry_path.as_str()) {
             assert_eq!(header.entry_type(), exp.etype, "{}", entry_path);
-            assert_eq!(header.mode().unwrap(), exp.mode, "{}", entry_path);
+            // FIXME: change the generation code to not inject the format bits into the mode,
+            // because tar doesn't need/use it.
+            // https://github.com/ostreedev/ostree-rs-ext/pull/217/files#r791942496
+            assert_eq!(
+                header.mode().unwrap() & !libc::S_IFMT,
+                exp.mode,
+                "{}",
+                entry_path
+            );
         }
     }
 
@@ -316,7 +324,7 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/tmp", Directory, 0o755),
         ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
         ("sysroot/ostree/repo/xattrs", Directory, 0o755),
-        ("usr", Directory, libc::S_IFDIR | 0o755),
+        ("usr", Directory, 0o755),
     ];
     validate_tar_expected(entries, expected.iter().map(Into::into))?;
 
@@ -340,12 +348,8 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/refs/remotes", Directory, 0o755),
         ("sysroot/ostree/repo/tmp", Directory, 0o755),
         ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
-        (
-            "sysroot/ostree/repo/xattrs",
-            Directory,
-            libc::S_IFDIR | 0o755,
-        ),
-        ("usr", Directory, libc::S_IFDIR | 0o755),
+        ("sysroot/ostree/repo/xattrs", Directory, 0o755),
+        ("usr", Directory, 0o755),
     ];
     validate_tar_expected(src_tar.entries()?, expected.iter().map(Into::into))?;
 
