@@ -10,6 +10,7 @@ use ostree_ext::container::{
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
 use sh_inline::bash;
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::{io::Write, process::Command};
 
@@ -237,6 +238,7 @@ async fn test_tar_import_signed() -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
 struct TarExpected {
     path: &'static str,
     etype: tar::EntryType,
@@ -257,33 +259,33 @@ fn validate_tar_expected<T: std::io::Read>(
     t: tar::Entries<T>,
     expected: impl IntoIterator<Item = TarExpected>,
 ) -> Result<()> {
-    let expected = expected.into_iter();
-    let mut entries = t.map(|e| e.unwrap());
+    let mut expected: HashMap<&'static str, TarExpected> =
+        expected.into_iter().map(|exp| (exp.path, exp)).collect();
+    let entries = t.map(|e| e.unwrap());
     // Verify we're injecting directories, fixes the absence of `/tmp` in our
     // images for example.
-    for exp in expected {
-        let mut found = false;
-        while let Some(entry) = entries.next() {
-            let header = entry.header();
-            let entry_path = entry.path().unwrap();
-            if exp.path == entry_path.as_os_str() {
-                assert_eq!(header.entry_type(), exp.etype);
-                assert_eq!(header.mode().unwrap(), exp.mode);
-                found = true;
-                break;
-            }
-        }
-        if !found {
-            anyhow::bail!("Failed to find entry: {}", exp.path);
+    for entry in entries {
+        let header = entry.header();
+        let entry_path = entry.path().unwrap().to_string_lossy().into_owned();
+        if let Some(exp) = expected.remove(entry_path.as_str()) {
+            assert_eq!(header.entry_type(), exp.etype, "{}", entry_path);
+            assert_eq!(header.mode().unwrap(), exp.mode, "{}", entry_path);
         }
     }
+
+    assert!(
+        expected.is_empty(),
+        "Expected but not found:\n{:?}",
+        expected
+    );
     Ok(())
 }
 
 /// Validate basic structure of the tar export.
-/// Right now just checks the first entry is `sysroot` with mode 0755.
 #[test]
 fn test_tar_export_structure() -> Result<()> {
+    use tar::EntryType::{Directory, Regular};
+
     let mut fixture = Fixture::new()?;
     let src_tar = initial_export(&fixture)?;
     let src_tar = std::io::BufReader::new(std::fs::File::open(&src_tar)?);
@@ -299,8 +301,22 @@ fn test_tar_export_structure() -> Result<()> {
 
     // Validate format version 0
     let expected = [
-        ("sysroot/config", tar::EntryType::Regular, 0o644),
-        ("usr", tar::EntryType::Directory, libc::S_IFDIR | 0o755),
+        ("sysroot/config", Regular, 0o644),
+        ("sysroot/ostree/repo", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/00", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/23", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/77", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/bc", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/ff", Directory, 0o755),
+        ("sysroot/ostree/repo/refs", Directory, 0o755),
+        ("sysroot/ostree/repo/refs", Directory, 0o755),
+        ("sysroot/ostree/repo/refs/heads", Directory, 0o755),
+        ("sysroot/ostree/repo/refs/mirrors", Directory, 0o755),
+        ("sysroot/ostree/repo/refs/remotes", Directory, 0o755),
+        ("sysroot/ostree/repo/tmp", Directory, 0o755),
+        ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
+        ("sysroot/ostree/repo/xattrs", Directory, 0o755),
+        ("usr", Directory, libc::S_IFDIR | 0o755),
     ];
     validate_tar_expected(entries, expected.iter().map(Into::into))?;
 
@@ -310,8 +326,26 @@ fn test_tar_export_structure() -> Result<()> {
     let src_tar = std::io::BufReader::new(std::fs::File::open(&src_tar)?);
     let mut src_tar = tar::Archive::new(src_tar);
     let expected = [
-        ("sysroot/ostree/repo/config", tar::EntryType::Regular, 0o644),
-        ("usr", tar::EntryType::Directory, libc::S_IFDIR | 0o755),
+        ("sysroot/ostree/repo", Directory, 0o755),
+        ("sysroot/ostree/repo/config", Regular, 0o644),
+        ("sysroot/ostree/repo/objects/00", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/23", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/77", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/bc", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/ff", Directory, 0o755),
+        ("sysroot/ostree/repo/refs", Directory, 0o755),
+        ("sysroot/ostree/repo/refs", Directory, 0o755),
+        ("sysroot/ostree/repo/refs/heads", Directory, 0o755),
+        ("sysroot/ostree/repo/refs/mirrors", Directory, 0o755),
+        ("sysroot/ostree/repo/refs/remotes", Directory, 0o755),
+        ("sysroot/ostree/repo/tmp", Directory, 0o755),
+        ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
+        (
+            "sysroot/ostree/repo/xattrs",
+            Directory,
+            libc::S_IFDIR | 0o755,
+        ),
+        ("usr", Directory, libc::S_IFDIR | 0o755),
     ];
     validate_tar_expected(src_tar.entries()?, expected.iter().map(Into::into))?;
 
