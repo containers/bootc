@@ -127,7 +127,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             self.append_default_dir(path)?;
         }
         // Object subdirectories
-        for d in 0..0xFF {
+        for d in 0..=0xFF {
             let path: Utf8PathBuf = format!("{}/{:02x}", objdir, d).into();
             self.append_default_dir(&path)?;
         }
