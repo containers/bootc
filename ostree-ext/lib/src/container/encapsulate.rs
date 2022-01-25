@@ -40,7 +40,7 @@ fn export_ostree_ref(
     writer: &mut OciDir,
     compression: Option<flate2::Compression>,
 ) -> Result<ocidir::Layer> {
-    let commit = repo.resolve_rev(rev, false)?.unwrap();
+    let commit = repo.require_rev(rev)?;
     let mut w = writer.create_raw_layer(compression)?;
     ostree_tar::export_commit(repo, commit.as_str(), &mut w, None)?;
     w.complete()
@@ -60,7 +60,7 @@ fn build_oci(
     let ocidir = Rc::new(openat::Dir::open(ocidir_path)?);
     let mut writer = ocidir::OciDir::create(ocidir)?;
 
-    let commit = repo.resolve_rev(rev, false)?.unwrap();
+    let commit = repo.require_rev(rev)?;
     let commit = commit.as_str();
     let (commit_v, _) = repo.load_commit(commit)?;
     let commit_subject = commit_v.child_value(3);

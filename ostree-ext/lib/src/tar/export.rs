@@ -423,10 +423,10 @@ pub fn export_commit(
     out: impl std::io::Write,
     options: Option<ExportOptions>,
 ) -> Result<()> {
-    let commit = repo.resolve_rev(rev, false)?;
+    let commit = repo.require_rev(rev)?;
     let mut tar = tar::Builder::new(out);
     let options = options.unwrap_or_default();
-    impl_export(repo, commit.unwrap().as_str(), &mut tar, options)?;
+    impl_export(repo, commit.as_str(), &mut tar, options)?;
     tar.finish()?;
     Ok(())
 }
