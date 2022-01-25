@@ -54,8 +54,8 @@ fn generate_test_repo(dir: &Utf8Path) -> Result<Utf8PathBuf> {
         cd {dir}
         ostree --repo=repo init --mode=archive
         ostree --repo=repo commit -b {testref} --bootable --no-bindings --add-metadata-string=version=42.0 --gpg-homedir={gpghome} --gpg-sign={keyid} \
-               --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst
-        ostree --repo=repo show {testref}
+               --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst >/dev/null
+        ostree --repo=repo show {testref} >/dev/null
     "},
         testref = TESTREF,
         gpghome = gpghome.as_str(),
@@ -213,7 +213,7 @@ async fn test_tar_import_signed() -> Result<()> {
 
     // And signed correctly
     bash!(
-        "ostree --repo={repo} remote gpg-import --stdin myremote < {p}/gpghome/key1.asc",
+        "ostree --repo={repo} remote gpg-import --stdin myremote < {p}/gpghome/key1.asc >/dev/null",
         repo = fixture.destrepo_path.as_str(),
         p = fixture.srcdir.as_str()
     )?;
@@ -334,7 +334,7 @@ async fn test_tar_import_export() -> Result<()> {
     );
     bash!(
         r#"
-         ostree --repo={destrepodir} ls -R {imported_commit}
+         ostree --repo={destrepodir} ls -R {imported_commit} >/dev/null
          val=$(ostree --repo={destrepodir} show --print-detached-metadata-key=my-detached-key {imported_commit})
          test "${{val}}" = "'my-detached-value'"
         "#,
@@ -600,7 +600,7 @@ async fn test_container_write_derive() -> Result<()> {
 
     // Parse the commit and verify we pulled the derived content.
     bash!(
-        "ostree --repo={repo} ls {r} /usr/bin/newderivedfile",
+        "ostree --repo={repo} ls {r} /usr/bin/newderivedfile >/dev/null",
         repo = fixture.destrepo_path.as_str(),
         r = import.merge_commit.as_str()
     )?;
