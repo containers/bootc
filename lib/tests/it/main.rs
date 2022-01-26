@@ -269,15 +269,7 @@ fn validate_tar_expected<T: std::io::Read>(
         let entry_path = entry.path().unwrap().to_string_lossy().into_owned();
         if let Some(exp) = expected.remove(entry_path.as_str()) {
             assert_eq!(header.entry_type(), exp.etype, "{}", entry_path);
-            // FIXME: change the generation code to not inject the format bits into the mode,
-            // because tar doesn't need/use it.
-            // https://github.com/ostreedev/ostree-rs-ext/pull/217/files#r791942496
-            assert_eq!(
-                header.mode().unwrap() & !libc::S_IFMT,
-                exp.mode,
-                "{}",
-                entry_path
-            );
+            assert_eq!(header.mode().unwrap(), exp.mode, "{}", entry_path);
         }
     }
 
@@ -303,7 +295,7 @@ fn test_tar_export_structure() -> Result<()> {
     let first = entries.next().unwrap()?;
     let firstpath = first.path()?;
     assert_eq!(firstpath.to_str().unwrap(), "./");
-    assert_eq!(first.header().mode()?, libc::S_IFDIR | 0o755);
+    assert_eq!(first.header().mode()?, 0o755);
     let next = entries.next().unwrap().unwrap();
     assert_eq!(next.path().unwrap().as_os_str(), "sysroot");
 
