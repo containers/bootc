@@ -229,6 +229,15 @@ mod encapsulate;
 pub use encapsulate::*;
 mod unencapsulate;
 pub use unencapsulate::*;
+// We have this trick of compiling ourself with integration testing
+// enabled, which uses a lot of the code here.   See the
+// `ostree-ext = { path = ".", features = ["internal-testing-api"] }`
+// bit in Cargo.toml.
+//
+// But that isn't turned on for other crates that use this, and correctly gating all
+// of it is a little tedious.  So let's just use the big hammer for now to
+// quiet the dead code warnings.
+#[allow(dead_code)]
 pub(crate) mod ocidir;
 mod skopeo;
 pub mod store;
