@@ -281,7 +281,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         h.set_uid(meta.attribute_uint32("unix::uid") as u64);
         h.set_gid(meta.attribute_uint32("unix::gid") as u64);
         let mode = meta.attribute_uint32("unix::mode");
-        h.set_mode(mode);
+        h.set_mode(mode & !libc::S_IFMT);
         let mut target_header = h.clone();
         target_header.set_size(0);
 
@@ -335,7 +335,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         header.set_size(0);
         header.set_uid(meta.uid as u64);
         header.set_gid(meta.gid as u64);
-        header.set_mode(meta.mode);
+        header.set_mode(meta.mode & !libc::S_IFMT);
         self.out
             .append_data(&mut header, dirpath, std::io::empty())?;
         Ok(())
