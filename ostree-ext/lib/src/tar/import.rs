@@ -266,7 +266,7 @@ impl Importer {
             Some(checksum),
             uid,
             gid,
-            mode,
+            libc::S_IFREG | mode,
             xattrs.as_ref(),
             &buf,
             cancellable,
