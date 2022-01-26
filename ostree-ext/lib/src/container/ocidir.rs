@@ -133,7 +133,6 @@ impl OciDir {
         Self::open(dir)
     }
 
-    #[allow(dead_code)]
     /// Clone an OCI directory, using reflinks for blobs.
     pub(crate) fn clone_to(&self, destdir: &openat::Dir, p: impl AsRef<Path>) -> Result<Self> {
         let p = p.as_ref();
@@ -160,7 +159,6 @@ impl OciDir {
         RawLayerWriter::new(&self.dir, c)
     }
 
-    #[allow(dead_code)]
     /// Create a tar output stream, backed by a blob
     pub(crate) fn create_layer(
         &self,
@@ -170,7 +168,7 @@ impl OciDir {
     }
 
     /// Add a layer to the top of the image stack.  The firsh pushed layer becomes the root.
-    #[allow(dead_code)]
+
     pub(crate) fn push_layer(
         &self,
         manifest: &mut oci_image::ImageManifest,
