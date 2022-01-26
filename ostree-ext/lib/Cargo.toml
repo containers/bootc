@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 name = "ostree-ext"
 readme = "README.md"
 repository = "https://github.com/ostreedev/ostree-rs-ext"
-version = "0.6.0"
+version = "0.6.1"
 
 [dependencies]
 anyhow = "1.0"
@@ -16,7 +16,7 @@ async-compression = { version = "0.3", features = ["gzip", "tokio"] }
 bitflags = "1"
 camino = "1.0.4"
 cjson = "0.1.1"
-cap-std-ext = "0.1.0"
+cap-std-ext = "0.23"
 flate2 = { features = ["zlib"], default_features = false, version = "1.0.20" }
 fn-error-context = "0.2.0"
 futures-util = "0.3.13"
@@ -25,10 +25,7 @@ hex = "0.4.3"
 indicatif = "0.16.0"
 once_cell = "1.9"
 libc = "0.2.92"
-rustix = "0.31.3"
-# oci-spec = "0.5.3"
-# Until the next release
-oci-spec = { git = "https://github.com/containers/oci-spec-rs" }
+oci-spec = "0.5.4"
 openat = "0.1.20"
 openat-ext = "0.2.0"
 openssl = "0.10.33"

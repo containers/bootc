@@ -1,6 +1,7 @@
 //! Global functions.
 
 use super::Result;
+use cap_std_ext::rustix;
 use once_cell::sync::OnceCell;
 use ostree::glib;
 use std::fs::File;
