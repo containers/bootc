@@ -256,6 +256,7 @@ impl Into<TarExpected> for &(&'static str, tar::EntryType, u32) {
 }
 
 fn validate_tar_expected<T: std::io::Read>(
+    format_version: u32,
     t: tar::Entries<T>,
     expected: impl IntoIterator<Item = TarExpected>,
 ) -> Result<()> {
@@ -269,7 +270,25 @@ fn validate_tar_expected<T: std::io::Read>(
         let entry_path = entry.path().unwrap().to_string_lossy().into_owned();
         if let Some(exp) = expected.remove(entry_path.as_str()) {
             assert_eq!(header.entry_type(), exp.etype, "{}", entry_path);
-            assert_eq!(header.mode().unwrap(), exp.mode, "{}", entry_path);
+            let is_old_object = format_version == 0;
+            let mut expected_mode = exp.mode;
+            if is_old_object && !entry_path.starts_with("sysroot/") {
+                let fmtbits = match header.entry_type() {
+                    tar::EntryType::Regular => libc::S_IFREG,
+                    tar::EntryType::Directory => libc::S_IFDIR,
+                    tar::EntryType::Symlink => 0,
+                    o => panic!("Unexpected entry type {:?}", o),
+                };
+                expected_mode |= fmtbits;
+            }
+            assert_eq!(
+                header.mode().unwrap(),
+                expected_mode,
+                "fmtver: {} type: {:?} path: {}",
+                format_version,
+                header.entry_type(),
+                entry_path
+            );
         }
     }
 
@@ -295,7 +314,7 @@ fn test_tar_export_structure() -> Result<()> {
     let first = entries.next().unwrap()?;
     let firstpath = first.path()?;
     assert_eq!(firstpath.to_str().unwrap(), "./");
-    assert_eq!(first.header().mode()?, 0o755);
+    assert_eq!(first.header().mode()?, libc::S_IFDIR | 0o755);
     let next = entries.next().unwrap().unwrap();
     assert_eq!(next.path().unwrap().as_os_str(), "sysroot");
 
@@ -318,7 +337,11 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/xattrs", Directory, 0o755),
         ("usr", Directory, 0o755),
     ];
-    validate_tar_expected(entries, expected.iter().map(Into::into))?;
+    validate_tar_expected(
+        fixture.format_version,
+        entries,
+        expected.iter().map(Into::into),
+    )?;
 
     // Validate format version 1
     fixture.format_version = 1;
@@ -343,7 +366,11 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/xattrs", Directory, 0o755),
         ("usr", Directory, 0o755),
     ];
-    validate_tar_expected(src_tar.entries()?, expected.iter().map(Into::into))?;
+    validate_tar_expected(
+        fixture.format_version,
+        src_tar.entries()?,
+        expected.iter().map(Into::into),
+    )?;
 
     Ok(())
 }
