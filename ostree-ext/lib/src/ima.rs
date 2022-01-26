@@ -4,6 +4,7 @@
 
 use crate::objgv::*;
 use anyhow::{Context, Result};
+use cap_std_ext::rustix::fd::BorrowedFd;
 use fn_error_context::context;
 use gio::glib;
 use gio::prelude::*;
@@ -11,13 +12,13 @@ use glib::Cast;
 use glib::Variant;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{gv, Marker, Structure};
-use openat_ext::FileExt;
+use io_lifetimes::AsFilelike;
 use ostree::gio;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::CString;
 use std::fs::File;
+use std::ops::DerefMut;
 use std::os::unix::io::AsRawFd;
-use std::os::unix::prelude::{FromRawFd, IntoRawFd};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::{convert::TryInto, io::Seek};
@@ -122,10 +123,9 @@ impl<'a> CommitRewriter<'a> {
         // If we're operating on a bare repo, we can clone the file (copy_file_range) directly.
         if let Ok(instream) = instream.clone().downcast::<gio::UnixInputStream>() {
             // View the fd as a File
-            let instream_fd = unsafe { File::from_raw_fd(instream.as_raw_fd()) };
-            instream_fd.copy_to(tempf.as_file_mut())?;
-            // Leak to avoid double close
-            let _ = instream_fd.into_raw_fd();
+            let instream_fd = unsafe { BorrowedFd::borrow_raw_fd(instream.as_raw_fd()) };
+            let instream_fd = &mut instream_fd.as_filelike_view::<File>();
+            std::io::copy(instream_fd.deref_mut(), tempf.as_file_mut())?;
         } else {
             // If we're operating on an archive repo, then we need to uncompress
             // and recompress...
