@@ -94,6 +94,17 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         }
     }
 
+    /// Convert the ostree mode to tar mode.
+    /// The ostree mode bits include the format, tar does not.
+    /// Historically in format version 0 we injected them, so we need to keep doing so.
+    fn filter_mode(&self, mode: u32) -> u32 {
+        if self.options.format_version == 0 {
+            mode
+        } else {
+            mode & !libc::S_IFMT
+        }
+    }
+
     /// Add a directory entry with default permissions (root/root 0755)
     fn append_default_dir(&mut self, path: &Utf8Path) -> Result<()> {
         let mut h = tar::Header::new_gnu();
@@ -281,7 +292,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         h.set_uid(meta.attribute_uint32("unix::uid") as u64);
         h.set_gid(meta.attribute_uint32("unix::gid") as u64);
         let mode = meta.attribute_uint32("unix::mode");
-        h.set_mode(mode & !libc::S_IFMT);
+        h.set_mode(self.filter_mode(mode));
         let mut target_header = h.clone();
         target_header.set_size(0);
 
@@ -335,7 +346,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         header.set_size(0);
         header.set_uid(meta.uid as u64);
         header.set_gid(meta.gid as u64);
-        header.set_mode(meta.mode & !libc::S_IFMT);
+        header.set_mode(self.filter_mode(meta.mode));
         self.out
             .append_data(&mut header, dirpath, std::io::empty())?;
         Ok(())
