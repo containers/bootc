@@ -588,7 +588,8 @@ pub struct TarImportOptions {
     pub remote: Option<String>,
 }
 
-/// Read the contents of a tarball and import the ostree commit inside.  The sha56 of the imported commit will be returned.
+/// Read the contents of a tarball and import the ostree commit inside.
+/// Returns the sha256 of the imported commit.
 #[instrument(skip(repo, src))]
 pub async fn import_tar(
     repo: &ostree::Repo,
@@ -598,7 +599,8 @@ pub async fn import_tar(
     let options = options.unwrap_or_default();
     let src = tokio_util::io::SyncIoBridge::new(src);
     let repo = repo.clone();
-    let import = crate::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| {
+    // The tar code we use today is blocking, so we spawn a thread.
+    crate::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| {
         let mut archive = tar::Archive::new(src);
         let txn = repo.auto_transaction(Some(cancellable))?;
         let importer = Importer::new(&repo, options.remote);
@@ -606,9 +608,8 @@ pub async fn import_tar(
         txn.commit(Some(cancellable))?;
         repo.mark_commit_partial(&checksum, false)?;
         Ok::<_, anyhow::Error>(checksum)
-    });
-    let import: String = import.await?;
-    Ok(import)
+    })
+    .await
 }
 
 #[cfg(test)]
