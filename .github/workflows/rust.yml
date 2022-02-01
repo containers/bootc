@@ -84,7 +84,7 @@ jobs:
     name: "Integration"
     needs: build
     runs-on: ubuntu-latest
-    container: quay.io/cgwalters/fcos
+    container: quay.io/coreos-assembler/fcos:testing-devel
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
