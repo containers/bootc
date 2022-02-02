@@ -203,18 +203,9 @@ impl OciDir {
             format!("sha256:{}", layer.uncompressed_sha256),
         ));
         config.set_rootfs(rootfs);
-        // There is e.g. https://docs.rs/chrono/latest/chrono/struct.DateTime.html#method.to_rfc3339_opts
-        // and chrono is already in our dependency chain, just indirectly because of tracing-subscriber.
-        // glib actually also has https://docs.rs/glib/latest/glib/struct.DateTime.html#method.format_iso8601
-        // but that requires a newer glib.
-        // Since glib is going to be required by ostree for the forseeable future, for now
-        // let's use that instead of adding chrono.
-        let now = ostree::glib::DateTime::new_now_utc()
-            .unwrap()
-            .format("%Y-%m-%dT%H:%M:%S.%fZ")
-            .unwrap();
+        let now = chrono::offset::Utc::now();
         let h = oci_image::HistoryBuilder::default()
-            .created(now)
+            .created(now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
             .created_by(description.to_string())
             .build()
             .unwrap();
