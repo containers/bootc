@@ -97,12 +97,6 @@ fn parse_one_filename(s: &str) -> Result<&str> {
         .ok_or_else(|| anyhow!("Invalid filename {}", s))
 }
 
-// Sadly the builder bits in the OCI spec don't offer mutable access to fields
-// https://github.com/containers/oci-spec-rs/issues/86
-fn vec_clone_append<T: Clone>(s: &[T], i: T) -> Vec<T> {
-    s.iter().cloned().chain(std::iter::once(i)).collect()
-}
-
 /// Create a dummy config descriptor.
 /// Our API right now always mutates a manifest, which means we need
 /// a "valid" manifest, which requires a "valid" config descriptor.
@@ -196,12 +190,11 @@ impl OciDir {
             builder = builder.annotations(annotations);
         }
         let blobdesc = builder.build().unwrap();
-        manifest.set_layers(vec_clone_append(manifest.layers(), blobdesc));
+        manifest.layers_mut().push(blobdesc);
         let mut rootfs = config.rootfs().clone();
-        rootfs.set_diff_ids(vec_clone_append(
-            rootfs.diff_ids(),
-            format!("sha256:{}", layer.uncompressed_sha256),
-        ));
+        rootfs
+            .diff_ids_mut()
+            .push(format!("sha256:{}", layer.uncompressed_sha256));
         config.set_rootfs(rootfs);
         let now = chrono::offset::Utc::now();
         let h = oci_image::HistoryBuilder::default()
@@ -209,7 +202,7 @@ impl OciDir {
             .created_by(description.to_string())
             .build()
             .unwrap();
-        config.set_history(vec_clone_append(config.history(), h));
+        config.history_mut().push(h);
     }
 
     /// Read a JSON blob.
