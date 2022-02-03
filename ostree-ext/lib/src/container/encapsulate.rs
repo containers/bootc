@@ -5,8 +5,7 @@ use super::{ocidir, OstreeImageReference, Transport};
 use super::{ImageReference, SignatureSource, OSTREE_COMMIT_LABEL};
 use crate::container::skopeo;
 use crate::tar as ostree_tar;
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use fn_error_context::context;
 use gio::glib;
 use oci_spec::image as oci_image;
@@ -22,7 +21,6 @@ use tracing::{instrument, Level};
 /// schema, it's not actually useful today.  But, we keep it
 /// out of principle.
 const BLOB_OSTREE_ANNOTATION: &str = "ostree.encapsulated";
-
 /// Configuration for the generated container.
 #[derive(Debug, Default)]
 pub struct Config {
@@ -44,6 +42,32 @@ fn export_ostree_ref(
     let mut w = writer.create_raw_layer(compression)?;
     ostree_tar::export_commit(repo, commit.as_str(), &mut w, None)?;
     w.complete()
+}
+
+fn commit_meta_to_labels<'a>(
+    meta: &glib::VariantDict,
+    keys: impl IntoIterator<Item = &'a str>,
+    labels: &mut HashMap<String, String>,
+) -> Result<()> {
+    for k in keys {
+        let v = meta
+            .lookup::<String>(k)
+            .context("Expected string for commit metadata value")?
+            .ok_or_else(|| anyhow!("Could not find commit metadata key: {}", k))?;
+        labels.insert(k.to_string(), v);
+    }
+    // Copy standard metadata keys `ostree.bootable` and `ostree.linux`.
+    // Bootable is an odd one out in being a boolean.
+    if let Some(v) = meta.lookup::<bool>(*ostree::METADATA_KEY_BOOTABLE)? {
+        labels.insert(ostree::METADATA_KEY_BOOTABLE.to_string(), v.to_string());
+    }
+    // Handle any other string-typed values here.
+    for k in &[&ostree::METADATA_KEY_LINUX] {
+        if let Some(v) = meta.lookup::<String>(k)? {
+            labels.insert(k.to_string(), v);
+        }
+    }
+    Ok(())
 }
 
 /// Generate an OCI image from a given ostree root
@@ -76,6 +100,13 @@ fn build_oci(
     let mut ctrcfg = oci_image::Config::default();
     let mut imgcfg = oci_image::ImageConfiguration::default();
     let labels = ctrcfg.labels_mut().get_or_insert_with(Default::default);
+
+    commit_meta_to_labels(
+        &commit_meta,
+        opts.copy_meta_keys.iter().map(|k| k.as_str()),
+        labels,
+    )?;
+
     let mut manifest = ocidir::new_empty_manifest().build().unwrap();
 
     if let Some(version) =
@@ -198,6 +229,8 @@ async fn build_impl(
 pub struct ExportOpts {
     /// If true, perform gzip compression of the tar layers.
     pub compress: bool,
+    /// A set of commit metadata keys to copy as image labels.
+    pub copy_meta_keys: Vec<String>,
 }
 
 /// Given an OSTree repository and ref, generate a container image.
