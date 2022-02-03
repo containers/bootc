@@ -110,6 +110,10 @@ enum ContainerOpts {
         #[structopt(name = "label", long, short)]
         labels: Vec<String>,
 
+        /// Propagate an OSTree commit metadata key to container label
+        #[structopt(name = "copymeta", long)]
+        copy_meta_keys: Vec<String>,
+
         /// Corresponds to the Dockerfile `CMD` instruction.
         #[structopt(long)]
         cmd: Option<Vec<String>>,
@@ -365,6 +369,7 @@ async fn container_export(
     rev: &str,
     imgref: &ImageReference,
     labels: BTreeMap<String, String>,
+    copy_meta_keys: Vec<String>,
     cmd: Option<Vec<String>>,
 ) -> Result<()> {
     let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
@@ -372,8 +377,11 @@ async fn container_export(
         labels: Some(labels),
         cmd,
     };
-    let opts = Some(Default::default());
-    let pushed = crate::container::encapsulate(repo, rev, &config, opts, imgref).await?;
+    let opts = crate::container::ExportOpts {
+        copy_meta_keys,
+        ..Default::default()
+    };
+    let pushed = crate::container::encapsulate(repo, rev, &config, Some(opts), imgref).await?;
     println!("{}", pushed);
     Ok(())
 }
@@ -492,6 +500,7 @@ where
                 rev,
                 imgref,
                 labels,
+                copy_meta_keys,
                 cmd,
             } => {
                 let labels: Result<BTreeMap<_, _>> = labels
@@ -503,7 +512,7 @@ where
                         Ok((k.to_string(), v.to_string()))
                     })
                     .collect();
-                container_export(&repo, &rev, &imgref, labels?, cmd).await
+                container_export(&repo, &rev, &imgref, labels?, copy_meta_keys, cmd).await
             }
             ContainerOpts::Image(opts) => match opts {
                 ContainerImageOpts::List { repo } => {

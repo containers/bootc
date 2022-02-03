@@ -54,8 +54,8 @@ fn generate_test_repo(dir: &Utf8Path) -> Result<Utf8PathBuf> {
         indoc! {"
         cd {dir}
         ostree --repo=repo init --mode=archive
-        ostree --repo=repo commit -b {testref} --bootable --no-bindings --add-metadata-string=version=42.0 --gpg-homedir={gpghome} --gpg-sign={keyid} \
-               --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst >/dev/null
+        ostree --repo=repo commit -b {testref} --bootable --no-bindings --add-metadata-string=version=42.0 --add-metadata-string=buildsys.checksum=41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3 --gpg-homedir={gpghome} --gpg-sign={keyid} \
+          --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst >/dev/null
         ostree --repo=repo show {testref} >/dev/null
     "},
         testref = TESTREF,
@@ -464,11 +464,15 @@ async fn test_container_import_export() -> Result<()> {
         ),
         cmd: Some(vec!["/bin/bash".to_string()]),
     };
+    let opts = ostree_ext::container::ExportOpts {
+        copy_meta_keys: vec!["buildsys.checksum".to_string()],
+        ..Default::default()
+    };
     let digest = ostree_ext::container::encapsulate(
         &fixture.srcrepo,
         TESTREF,
         &config,
-        None,
+        Some(opts),
         &srcoci_imgref,
     )
     .await
@@ -479,6 +483,9 @@ async fn test_container_import_export() -> Result<()> {
     assert!(inspect.contains(r#""version": "42.0""#));
     assert!(inspect.contains(r#""foo": "bar""#));
     assert!(inspect.contains(r#""test": "value""#));
+    assert!(inspect.contains(
+        r#""buildsys.checksum": "41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3""#
+    ));
 
     let srcoci_unverified = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
