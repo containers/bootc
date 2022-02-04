@@ -54,7 +54,7 @@ fn generate_test_repo(dir: &Utf8Path) -> Result<Utf8PathBuf> {
         indoc! {"
         cd {dir}
         ostree --repo=repo init --mode=archive
-        ostree --repo=repo commit -b {testref} --bootable --no-bindings --add-metadata-string=version=42.0 --add-metadata-string=buildsys.checksum=41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3 --gpg-homedir={gpghome} --gpg-sign={keyid} \
+        ostree --repo=repo commit -b {testref} --bootable --no-bindings --add-metadata=ostree.container-cmd='[\"/usr/bin/bash\"]' --add-metadata-string=version=42.0 --add-metadata-string=buildsys.checksum=41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3 --gpg-homedir={gpghome} --gpg-sign={keyid} \
           --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst >/dev/null
         ostree --repo=repo show {testref} >/dev/null
     "},
@@ -442,6 +442,14 @@ fn skopeo_inspect(imgref: &str) -> Result<String> {
     Ok(String::from_utf8(out.stdout)?)
 }
 
+fn skopeo_inspect_config(imgref: &str) -> Result<oci_spec::image::ImageConfiguration> {
+    let out = Command::new("skopeo")
+        .args(&["inspect", "--config", imgref])
+        .stdout(std::process::Stdio::piped())
+        .output()?;
+    Ok(serde_json::from_slice(&out.stdout)?)
+}
+
 #[tokio::test]
 async fn test_container_import_export() -> Result<()> {
     let fixture = Fixture::new()?;
@@ -462,7 +470,7 @@ async fn test_container_import_export() -> Result<()> {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
         ),
-        cmd: Some(vec!["/bin/bash".to_string()]),
+        ..Default::default()
     };
     let opts = ostree_ext::container::ExportOpts {
         copy_meta_keys: vec!["buildsys.checksum".to_string()],
@@ -486,6 +494,21 @@ async fn test_container_import_export() -> Result<()> {
     assert!(inspect.contains(
         r#""buildsys.checksum": "41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3""#
     ));
+    let cfg = skopeo_inspect_config(&srcoci_imgref.to_string())?;
+    // unwrap.  Unwrap.  UnWrap.  UNWRAP!!!!!!!
+    assert_eq!(
+        cfg.config()
+            .as_ref()
+            .unwrap()
+            .cmd()
+            .as_ref()
+            .unwrap()
+            .get(0)
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        "/usr/bin/bash"
+    );
 
     let srcoci_unverified = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
