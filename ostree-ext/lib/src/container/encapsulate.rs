@@ -121,7 +121,11 @@ fn build_oci(
     for (k, v) in config.labels.iter().map(|k| k.iter()).flatten() {
         labels.insert(k.into(), v.into());
     }
-    if let Some(cmd) = config.cmd.as_ref() {
+    // Lookup the cmd embedded in commit metadata
+    let cmd = commit_meta.lookup::<Vec<String>>(ostree::COMMIT_META_CONTAINER_CMD)?;
+    // But support it being overridden by CLI options
+    let cmd = config.cmd.as_ref().or_else(|| cmd.as_ref());
+    if let Some(cmd) = cmd {
         ctrcfg.set_cmd(Some(cmd.clone()));
     }
 
