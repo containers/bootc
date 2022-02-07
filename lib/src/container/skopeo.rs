@@ -1,7 +1,6 @@
 //! Fork skopeo as a subprocess
 
 use anyhow::{Context, Result};
-use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::process::Stdio;
 use tokio::process::Command;
@@ -12,32 +11,6 @@ use tokio::process::Command;
 // but for now we parse the policy.
 const POLICY_PATH: &str = "/etc/containers/policy.json";
 const INSECURE_ACCEPT_ANYTHING: &str = "insecureAcceptAnything";
-
-bitflags::bitflags! {
-    pub(crate) struct SkopeoFeatures: u32 {
-        const COPY_DIGESTFILE = 0b00000001;
-    }
-}
-
-static SKOPEO_FEATURES: Lazy<Result<SkopeoFeatures>> = Lazy::new(|| {
-    let mut features = SkopeoFeatures::empty();
-    let c = std::process::Command::new("skopeo")
-        .args(&["copy", "--help"])
-        .stderr(std::process::Stdio::piped())
-        .output()?;
-    let stdout = String::from_utf8_lossy(&c.stderr);
-    if stdout.contains("--digestfile") {
-        features.insert(SkopeoFeatures::COPY_DIGESTFILE);
-    }
-    Ok(features)
-});
-
-pub(crate) fn skopeo_has_features(wanted: SkopeoFeatures) -> Result<bool> {
-    match &*SKOPEO_FEATURES {
-        Ok(found) => Ok(found.intersects(wanted)),
-        Err(e) => Err(anyhow::Error::msg(e)),
-    }
-}
 
 #[derive(Deserialize)]
 struct PolicyEntry {

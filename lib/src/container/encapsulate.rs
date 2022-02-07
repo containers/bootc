@@ -188,21 +188,15 @@ async fn build_impl(
         let tempdir = tempfile::tempdir_in("/var/tmp")?;
         let tempdest = tempdir.path().join("d");
         let tempdest = tempdest.to_str().unwrap();
-        let digestfile = if skopeo::skopeo_has_features(skopeo::SkopeoFeatures::COPY_DIGESTFILE)? {
-            Some(tempdir.path().join("digestfile"))
-        } else {
-            None
-        };
+        let digestfile = tempdir.path().join("digestfile");
 
         let src = build_oci(repo, ostree_ref, Path::new(tempdest), config, opts)?;
 
         let mut cmd = skopeo::new_cmd();
         tracing::event!(Level::DEBUG, "Copying {} to {}", src, dest);
         cmd.stdout(std::process::Stdio::null()).arg("copy");
-        if let Some(ref digestfile) = digestfile {
-            cmd.arg("--digestfile");
-            cmd.arg(digestfile);
-        }
+        cmd.arg("--digestfile");
+        cmd.arg(&digestfile);
         cmd.args(&[src.to_string(), dest.to_string()]);
         let proc = super::skopeo::spawn(cmd)?;
         let output = proc.wait_with_output().await?;
@@ -210,9 +204,7 @@ async fn build_impl(
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(anyhow::anyhow!("skopeo failed: {}\n", stderr));
         }
-        digestfile
-            .map(|p| -> Result<String> { Ok(std::fs::read_to_string(p)?.trim().to_string()) })
-            .transpose()?
+        Some(std::fs::read_to_string(digestfile)?.trim().to_string())
     };
     if let Some(digest) = digest {
         Ok(digest)
