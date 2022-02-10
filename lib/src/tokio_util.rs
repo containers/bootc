@@ -16,6 +16,8 @@ where
     let notify2 = notify.clone();
     cancellable.connect_cancelled(move |_| notify2.notify_one());
     cancellable.set_error_if_cancelled()?;
+    // See https://blog.yoshuawuyts.com/futures-concurrency-3/ on why
+    // `select!` is a trap in general, but I believe this case is safe.
     tokio::select! {
        r = f => r,
        _ = notify.notified() => {
