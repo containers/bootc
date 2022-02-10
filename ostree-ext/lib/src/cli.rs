@@ -6,16 +6,19 @@
 //! such as `rpm-ostree` can directly reuse it.
 
 use anyhow::Result;
+use futures_util::FutureExt;
 use ostree::{gio, glib};
+use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use structopt::StructOpt;
+use tokio_stream::StreamExt;
 
 use crate::commit::container_commit;
-use crate::container as ostree_container;
 use crate::container::store::{LayeredImageImporter, PrepareResult};
+use crate::container::{self as ostree_container, UnencapsulationProgress};
 use crate::container::{Config, ImageReference, OstreeImageReference, UnencapsulateOptions};
 
 fn parse_imgref(s: &str) -> Result<OstreeImageReference> {
@@ -300,6 +303,11 @@ fn tar_export(opts: &ExportOpts) -> Result<()> {
     Ok(())
 }
 
+enum ProgressOrFinish {
+    Progress(UnencapsulationProgress),
+    Finished(Result<ostree_container::Import>),
+}
+
 /// Import a container image with an encapsulated ostree commit.
 async fn container_import(
     repo: &str,
@@ -324,26 +332,32 @@ async fn container_import(
     let opts = UnencapsulateOptions {
         progress: Some(tx_progress),
     };
-    let import = crate::container::unencapsulate(repo, imgref, Some(opts));
-    tokio::pin!(import);
-    tokio::pin!(rx_progress);
-    let import = loop {
-        tokio::select! {
-            _ = rx_progress.changed() => {
-                let n = rx_progress.borrow().processed_bytes;
+    let rx_progress_stream =
+        tokio_stream::wrappers::WatchStream::new(rx_progress).map(ProgressOrFinish::Progress);
+    let import = crate::container::unencapsulate(repo, imgref, Some(opts))
+        .into_stream()
+        .map(ProgressOrFinish::Finished);
+    let stream = rx_progress_stream.merge(import);
+    tokio::pin!(stream);
+    let mut import_result = None;
+    while let Some(value) = stream.next().await {
+        match value {
+            ProgressOrFinish::Progress(progress) => {
+                let n = progress.borrow().processed_bytes;
                 if let Some(pb) = pb.as_ref() {
                     pb.set_message(format!("Processed: {}", indicatif::HumanBytes(n)));
                 }
             }
-            import = &mut import => {
-                if let Some(pb) = pb.as_ref() {
-                    pb.finish();
-                }
-                break import?;
+            ProgressOrFinish::Finished(import) => {
+                import_result = Some(import?);
             }
         }
-    };
-
+    }
+    if let Some(pb) = pb.as_ref() {
+        pb.finish();
+    }
+    // It must have been set
+    let import = import_result.unwrap();
     if let Some(write_ref) = write_ref {
         repo.set_ref_immediate(
             None,

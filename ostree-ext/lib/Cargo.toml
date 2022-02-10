@@ -40,6 +40,7 @@ tar = "0.4.38"
 tempfile = "3.2.0"
 tokio = { features = ["full"], version = "1" }
 tokio-util = { features = ["io-util"], version = "0.6.9" }
+tokio-stream = { features = ["sync"], version = "0.1.8" }
 tracing = "0.1"
 
 [dev-dependencies]
