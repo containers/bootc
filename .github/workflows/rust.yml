@@ -17,7 +17,7 @@ env:
   # Minimum supported Rust version (MSRV)
   ACTION_MSRV_TOOLCHAIN: 1.54.0
   # Pinned toolchain for linting
-  ACTION_LINTS_TOOLCHAIN: 1.56.0
+  ACTION_LINTS_TOOLCHAIN: 1.58.1
 
 jobs:
   build:
