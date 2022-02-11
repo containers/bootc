@@ -1,8 +1,7 @@
 //! APIs for creating container images from OSTree commits
 
 use crate::objgv::*;
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use gio::glib;
@@ -65,17 +64,41 @@ fn object_path(objtype: ostree::ObjectType, checksum: &str) -> Utf8PathBuf {
     format!("{}/repo/objects/{}/{}.{}", OSTREEDIR, first, rest, suffix).into()
 }
 
-fn xattrs_path(checksum: &str) -> Utf8PathBuf {
+fn v0_xattrs_path(checksum: &str) -> Utf8PathBuf {
     format!("{}/repo/xattrs/{}", OSTREEDIR, checksum).into()
 }
 
+fn v0_xattrs_object_path(checksum: &str) -> Utf8PathBuf {
+    let (first, rest) = checksum.split_at(2);
+    format!("{}/repo/objects/{}/{}.file.xattrs", OSTREEDIR, first, rest).into()
+}
+
+fn v1_xattrs_object_path(checksum: &str) -> Utf8PathBuf {
+    let (first, rest) = checksum.split_at(2);
+    format!("{}/repo/objects/{}/{}.file-xattrs", OSTREEDIR, first, rest).into()
+}
+
+fn v1_xattrs_link_object_path(checksum: &str) -> Utf8PathBuf {
+    let (first, rest) = checksum.split_at(2);
+    format!(
+        "{}/repo/objects/{}/{}.file-xattrs-link",
+        OSTREEDIR, first, rest
+    )
+    .into()
+}
+
+fn v1_xattrs_link_target(checksum: &str) -> Utf8PathBuf {
+    let (first, rest) = checksum.split_at(2);
+    format!("../{}/{}.file-xattrs", first, rest).into()
+}
+
 /// Check for "denormal" symlinks which contain "//"
-/// See https://github.com/fedora-sysv/chkconfig/pull/67
-/// [root@cosa-devsh ~]# rpm -qf /usr/lib/systemd/systemd-sysv-install
-/// chkconfig-1.13-2.el8.x86_64
-/// [root@cosa-devsh ~]# ll /usr/lib/systemd/systemd-sysv-install
-/// lrwxrwxrwx. 2 root root 24 Nov 29 18:08 /usr/lib/systemd/systemd-sysv-install -> ../../..//sbin/chkconfig
-/// [root@cosa-devsh ~]#
+// See https://github.com/fedora-sysv/chkconfig/pull/67
+// [root@cosa-devsh ~]# rpm -qf /usr/lib/systemd/systemd-sysv-install
+// chkconfig-1.13-2.el8.x86_64
+// [root@cosa-devsh ~]# ll /usr/lib/systemd/systemd-sysv-install
+// lrwxrwxrwx. 2 root root 24 Nov 29 18:08 /usr/lib/systemd/systemd-sysv-install -> ../../..//sbin/chkconfig
+// [root@cosa-devsh ~]#
 fn symlink_is_denormal(target: &str) -> bool {
     target.contains("//")
 }
@@ -117,6 +140,31 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         Ok(())
     }
 
+    /// Add a regular file entry with default permissions (root/root 0644)
+    fn append_default_data(&mut self, path: &Utf8Path, data: &[u8]) -> Result<()> {
+        let mut h = tar::Header::new_gnu();
+        h.set_entry_type(tar::EntryType::Regular);
+        h.set_uid(0);
+        h.set_gid(0);
+        h.set_mode(0o644);
+        h.set_size(data.len() as u64);
+        self.out.append_data(&mut h, &path, data)?;
+        Ok(())
+    }
+
+    /// Add an hardlink entry with default permissions (root/root 0644)
+    fn append_default_hardlink(&mut self, path: &Utf8Path, link_target: &Utf8Path) -> Result<()> {
+        let mut h = tar::Header::new_gnu();
+        h.set_entry_type(tar::EntryType::Link);
+        h.set_uid(0);
+        h.set_gid(0);
+        h.set_mode(0o644);
+        h.set_size(0);
+        h.set_link_name(&link_target)?;
+        self.out.append_data(&mut h, &path, &mut std::io::empty())?;
+        Ok(())
+    }
+
     /// Write the initial /sysroot/ostree/repo structure.
     fn write_repo_structure(&mut self) -> Result<()> {
         if self.wrote_initdirs {
@@ -153,22 +201,21 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             self.append_default_dir(&path)?;
         }
 
-        // The special `repo/xattrs` directory used only in our tar serialization.
-        let path: Utf8PathBuf = format!("{}/repo/xattrs", OSTREEDIR).into();
-        self.append_default_dir(&path)?;
-        let mut h = tar::Header::new_gnu();
-        h.set_entry_type(tar::EntryType::Regular);
-        h.set_uid(0);
-        h.set_gid(0);
-        h.set_mode(0o644);
-        h.set_size(REPO_CONFIG.as_bytes().len() as u64);
-        let path = match self.options.format_version {
-            0 => format!("{}/config", SYSROOT),
-            1 => format!("{}/repo/config", OSTREEDIR),
-            n => anyhow::bail!("Unsupported ostree tar format version {}", n),
-        };
-        self.out
-            .append_data(&mut h, path, std::io::Cursor::new(REPO_CONFIG))?;
+        // The special `repo/xattrs` directory used in v0 format.
+        if self.options.format_version == 0 {
+            let path: Utf8PathBuf = format!("{}/repo/xattrs", OSTREEDIR).into();
+            self.append_default_dir(&path)?;
+        }
+
+        // Repository configuration file.
+        {
+            let path = match self.options.format_version {
+                0 => format!("{}/config", SYSROOT),
+                1 => format!("{}/repo/config", OSTREEDIR),
+                n => anyhow::bail!("Unsupported ostree tar format version {}", n),
+            };
+            self.append_default_data(Utf8Path::new(&path), REPO_CONFIG.as_bytes())?;
+        }
 
         self.wrote_initdirs = true;
         Ok(())
@@ -237,56 +284,72 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             debug_assert!(inserted);
         }
 
-        let mut h = tar::Header::new_gnu();
-        h.set_uid(0);
-        h.set_gid(0);
-        h.set_mode(0o644);
         let data = v.data_as_bytes();
         let data = data.as_ref();
-        h.set_size(data.len() as u64);
-        self.out
-            .append_data(&mut h, &object_path(objtype, checksum), data)
+        self.append_default_data(&object_path(objtype, checksum), data)
             .with_context(|| format!("Writing object {}", checksum))?;
         Ok(())
     }
 
+    /// Export xattrs to the tar stream, return whether content was written.
     #[context("Writing xattrs")]
-    fn append_xattrs(
-        &mut self,
-        xattrs: &glib::Variant,
-    ) -> Result<Option<(Utf8PathBuf, tar::Header)>> {
+    fn append_xattrs(&mut self, checksum: &str, xattrs: &glib::Variant) -> Result<bool> {
         let xattrs_data = xattrs.data_as_bytes();
         let xattrs_data = xattrs_data.as_ref();
         if xattrs_data.is_empty() {
-            return Ok(None);
+            return Ok(false);
         }
 
-        let mut h = tar::Header::new_gnu();
-        h.set_mode(0o644);
-        h.set_size(0);
-        let digest = openssl::hash::hash(openssl::hash::MessageDigest::sha256(), xattrs_data)?;
-        let checksum = &hex::encode(digest);
-        let path = xattrs_path(checksum);
+        let xattrs_checksum = {
+            let digest = openssl::hash::hash(openssl::hash::MessageDigest::sha256(), xattrs_data)?;
+            &hex::encode(digest)
+        };
 
-        if !self.wrote_xattrs.contains(checksum) {
-            let inserted = self.wrote_xattrs.insert(checksum.to_string());
-            debug_assert!(inserted);
-            let mut target_header = h.clone();
-            target_header.set_size(xattrs_data.len() as u64);
-            self.out
-                .append_data(&mut target_header, &path, xattrs_data)?;
+        if self.options.format_version == 0 {
+            let path = v0_xattrs_path(xattrs_checksum);
+
+            // Write xattrs content into a separate directory.
+            if !self.wrote_xattrs.contains(xattrs_checksum) {
+                let inserted = self.wrote_xattrs.insert(checksum.to_string());
+                debug_assert!(inserted);
+                self.append_default_data(&path, xattrs_data)?;
+            }
+            // Hardlink the object in the repo.
+            {
+                let objpath = v0_xattrs_object_path(checksum);
+                self.append_default_hardlink(&objpath, &path)?;
+            }
+        } else if self.options.format_version == 1 {
+            // Write xattrs content into a separate `.file-xattrs` object.
+            if !self.wrote_xattrs.contains(xattrs_checksum) {
+                let inserted = self.wrote_xattrs.insert(checksum.to_string());
+                debug_assert!(inserted);
+
+                let objpath = v1_xattrs_object_path(xattrs_checksum);
+                self.append_default_data(&objpath, xattrs_data)?;
+            }
+            // Write a `.file-xattrs-link` which links the file object to
+            // the corresponding detached xattrs.
+            {
+                let objpath = v1_xattrs_link_object_path(checksum);
+                let target_path = v1_xattrs_link_target(xattrs_checksum);
+                self.append_default_hardlink(&objpath, &target_path)?;
+            }
+        } else {
+            bail!("Unknown format version '{}'", self.options.format_version);
         }
-        Ok(Some((path, h)))
+
+        Ok(true)
     }
 
     /// Write a content object, returning the path/header that should be used
-    /// as a hard link to it in the target path.  This matches how ostree checkouts work.
+    /// as a hard link to it in the target path. This matches how ostree checkouts work.
     fn append_content(&mut self, checksum: &str) -> Result<(Utf8PathBuf, tar::Header)> {
         let path = object_path(ostree::ObjectType::File, checksum);
 
         let (instream, meta, xattrs) = self.repo.load_file(checksum, gio::NONE_CANCELLABLE)?;
-        let meta = meta.unwrap();
-        let xattrs = xattrs.unwrap();
+        let meta = meta.ok_or_else(|| anyhow!("Missing metadata for object {}", checksum))?;
+        let xattrs = xattrs.ok_or_else(|| anyhow!("Missing xattrs for object {}", checksum))?;
 
         let mut h = tar::Header::new_gnu();
         h.set_uid(meta.attribute_uint32("unix::uid") as u64);
@@ -300,15 +363,14 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             let inserted = self.wrote_content.insert(checksum.to_string());
             debug_assert!(inserted);
 
-            if let Some((xattrspath, mut xattrsheader)) = self.append_xattrs(&xattrs)? {
-                xattrsheader.set_entry_type(tar::EntryType::Link);
-                xattrsheader.set_link_name(xattrspath)?;
-                let subpath = format!("{}.xattrs", path);
-                self.out
-                    .append_data(&mut xattrsheader, subpath, &mut std::io::empty())?;
-            }
+            // The xattrs objects need to be exported before the regular object they
+            // refer to. Otherwise the importing logic won't have the xattrs available
+            // when importing file content.
+            self.append_xattrs(checksum, &xattrs)?;
 
             if let Some(instream) = instream {
+                ensure!(meta.file_type() == gio::FileType::Regular);
+
                 h.set_entry_type(tar::EntryType::Regular);
                 h.set_size(meta.size() as u64);
                 let mut instream = BufReader::with_capacity(BUF_CAPACITY, instream.into_read());
@@ -316,13 +378,16 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                     .append_data(&mut h, &path, &mut instream)
                     .with_context(|| format!("Writing regfile {}", checksum))?;
             } else {
-                let target = meta.symlink_target().unwrap();
-                let target = target.as_str();
+                ensure!(meta.file_type() == gio::FileType::SymbolicLink);
+
+                let target = meta
+                    .symlink_target()
+                    .ok_or_else(|| anyhow!("Missing symlink target"))?;
                 let context = || format!("Writing content symlink: {}", checksum);
                 h.set_entry_type(tar::EntryType::Symlink);
                 h.set_size(0);
                 // Handle //chkconfig, see above
-                if symlink_is_denormal(target) {
+                if symlink_is_denormal(&target) {
                     h.set_link_name_literal(meta.symlink_target().unwrap().as_str())
                         .with_context(context)?;
                     self.out
@@ -330,7 +395,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                         .with_context(context)?;
                 } else {
                     self.out
-                        .append_link(&mut h, &path, target)
+                        .append_link(&mut h, &path, target.as_str())
                         .with_context(context)?;
                 }
             }
@@ -475,5 +540,46 @@ mod tests {
         for path in denormal {
             assert!(symlink_is_denormal(path));
         }
+    }
+
+    #[test]
+    fn test_v0_xattrs_path() {
+        let checksum = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
+        let expected = "sysroot/ostree/repo/xattrs/b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
+        let output = v0_xattrs_path(checksum);
+        assert_eq!(&output, expected);
+    }
+
+    #[test]
+    fn test_v0_xattrs_object_path() {
+        let checksum = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
+        let expected = "sysroot/ostree/repo/objects/b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file.xattrs";
+        let output = v0_xattrs_object_path(checksum);
+        assert_eq!(&output, expected);
+    }
+
+    #[test]
+    fn test_v1_xattrs_object_path() {
+        let checksum = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
+        let expected = "sysroot/ostree/repo/objects/b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs";
+        let output = v1_xattrs_object_path(checksum);
+        assert_eq!(&output, expected);
+    }
+
+    #[test]
+    fn test_v1_xattrs_link_object_path() {
+        let checksum = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
+        let expected = "sysroot/ostree/repo/objects/b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs-link";
+        let output = v1_xattrs_link_object_path(checksum);
+        assert_eq!(&output, expected);
+    }
+
+    #[test]
+    fn test_v1_xattrs_link_target() {
+        let checksum = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
+        let expected =
+            "../b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs";
+        let output = v1_xattrs_link_target(checksum);
+        assert_eq!(&output, expected);
     }
 }

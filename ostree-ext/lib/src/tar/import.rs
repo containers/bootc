@@ -1,7 +1,7 @@
 //! APIs for extracting OSTree commits from container images
 
 use crate::Result;
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, ensure, Context};
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use fn_error_context::context;
@@ -15,14 +15,15 @@ use std::io::prelude::*;
 use tracing::{event, instrument, Level};
 
 /// Arbitrary limit on xattrs to avoid RAM exhaustion attacks. The actual filesystem limits are often much smaller.
-/// See https://en.wikipedia.org/wiki/Extended_file_attributes
-/// For example, XFS limits to 614 KiB.
+// See https://en.wikipedia.org/wiki/Extended_file_attributes
+// For example, XFS limits to 614 KiB.
 const MAX_XATTR_SIZE: u32 = 1024 * 1024;
 /// Limit on metadata objects (dirtree/dirmeta); this is copied
 /// from ostree-core.h.  TODO: Bind this in introspection
 const MAX_METADATA_SIZE: u32 = 10 * 1024 * 1024;
 
-/// https://stackoverflow.com/questions/258091/when-should-i-use-mmap-for-file-access
+/// Upper size limit for "small" regular files.
+// https://stackoverflow.com/questions/258091/when-should-i-use-mmap-for-file-access
 pub(crate) const SMALL_REGFILE_SIZE: usize = 127 * 1024;
 
 // The prefix for filenames that contain content we actually look at.
@@ -41,9 +42,11 @@ struct ImportStats {
 struct Importer {
     repo: ostree::Repo,
     remote: Option<String>,
+    // Cache of xattrs, keyed by their content checksum.
     xattrs: HashMap<String, glib::Variant>,
+    // Reusable buffer for xattrs references. It maps a file checksum (.0)
+    // to an xattrs checksum (.1) in the `xattrs` cache above.
     next_xattrs: Option<(String, String)>,
-
     // Reusable buffer for reads.  See also https://github.com/rust-lang/rust/issues/78485
     buf: Vec<u8>,
 
@@ -74,8 +77,8 @@ fn header_attrs(header: &tar::Header) -> Result<(u32, u32, u32)> {
     Ok((uid, gid, mode))
 }
 
-/// The C function ostree_object_type_from_string aborts on
-/// unknown strings, so we have a safe version here.
+// The C function ostree_object_type_from_string aborts on
+// unknown strings, so we have a safe version here.
 fn objtype_from_string(t: &str) -> Option<ostree::ObjectType> {
     Some(match t {
         "commit" => ostree::ObjectType::Commit,
@@ -104,6 +107,7 @@ fn entry_to_variant<R: std::io::Read, T: StaticVariantType>(
 }
 
 /// Parse an object path into (parent, rest, objtype).
+///
 /// Normal ostree object paths look like 00/1234.commit.
 /// In the tar format, we may also see 00/1234.file.xattrs.
 fn parse_object_entry_path(path: &Utf8Path) -> Result<(&str, &Utf8Path, &str)> {
@@ -123,6 +127,7 @@ fn parse_object_entry_path(path: &Utf8Path) -> Result<(&str, &Utf8Path, &str)> {
     let objtype = name
         .extension()
         .ok_or_else(|| anyhow!("Invalid objpath {}", path))?;
+
     Ok((parentname, name, objtype))
 }
 
@@ -130,12 +135,50 @@ fn parse_checksum(parent: &str, name: &Utf8Path) -> Result<String> {
     let checksum_rest = name
         .file_stem()
         .ok_or_else(|| anyhow!("Invalid object path part {}", name))?;
+    // Also take care of the double extension on `.file.xattrs`.
+    let checksum_rest = checksum_rest.trim_end_matches(".file");
 
     if checksum_rest.len() != 62 {
         return Err(anyhow!("Invalid checksum part {}", checksum_rest));
     }
-    let checksum = format!("{}{}", parent, checksum_rest);
-    validate_sha256(&checksum)?;
+    let reassembled = format!("{}{}", parent, checksum_rest);
+    validate_sha256(reassembled)
+}
+
+/// Parse a `.file-xattrs-link` link target into the corresponding checksum.
+fn parse_xattrs_link_target(path: &Utf8Path) -> Result<String> {
+    // Discard the relative parent.
+    let path = path.strip_prefix("..")?;
+
+    // Split the sharded checksum directory.
+    let parentname = path
+        .parent()
+        .map(|p| p.file_name())
+        .flatten()
+        .ok_or_else(|| anyhow!("Invalid path (no parent) {}", path))?;
+    if parentname.len() != 2 {
+        return Err(anyhow!("Invalid checksum parent {}", parentname));
+    }
+
+    // Split the filename (basename + objtype).
+    let fname = path
+        .file_name()
+        .map(Utf8Path::new)
+        .ok_or_else(|| anyhow!("Invalid filename {}", path))?;
+
+    // Ensure the link points to the correct object type.
+    let objtype = fname
+        .extension()
+        .ok_or_else(|| anyhow!("Invalid path (extension) {}", path))?;
+    if objtype != "file-xattrs" {
+        bail!("Invalid objpath {} for {}", objtype, path);
+    }
+
+    // Reassemble the target checksum and validate it.
+    let basename = fname.as_str().trim_end_matches(".file-xattrs");
+    let target = format!("{}{}", parentname, basename);
+    let checksum = validate_sha256(target)?;
+
     Ok(checksum)
 }
 
@@ -212,13 +255,13 @@ impl Importer {
         Ok(())
     }
 
-    /// Import a content object.
+    /// Import a content object, large regular file flavour.
     fn import_large_regfile_object<R: std::io::Read>(
         &mut self,
         mut entry: tar::Entry<R>,
         size: usize,
         checksum: &str,
-        xattrs: Option<glib::Variant>,
+        xattrs: glib::Variant,
         cancellable: Option<&gio::Cancellable>,
     ) -> Result<()> {
         let (uid, gid, mode) = header_attrs(entry.header())?;
@@ -228,7 +271,7 @@ impl Importer {
             gid,
             libc::S_IFREG | mode,
             size as u64,
-            xattrs.as_ref(),
+            Some(&xattrs),
         )?;
         {
             let w = w.clone().upcast::<gio::OutputStream>();
@@ -249,13 +292,13 @@ impl Importer {
         Ok(())
     }
 
-    /// Import a content object.
+    /// Import a content object, small regular file flavour.
     fn import_small_regfile_object<R: std::io::Read>(
         &mut self,
         mut entry: tar::Entry<R>,
         size: usize,
         checksum: &str,
-        xattrs: Option<glib::Variant>,
+        xattrs: glib::Variant,
         cancellable: Option<&gio::Cancellable>,
     ) -> Result<()> {
         let (uid, gid, mode) = header_attrs(entry.header())?;
@@ -267,7 +310,7 @@ impl Importer {
             uid,
             gid,
             libc::S_IFREG | mode,
-            xattrs.as_ref(),
+            Some(&xattrs),
             &buf,
             cancellable,
         )?;
@@ -276,12 +319,12 @@ impl Importer {
         Ok(())
     }
 
-    /// Import a content object.
+    /// Import a content object, symlink flavour.
     fn import_symlink_object<R: std::io::Read>(
         &mut self,
         entry: tar::Entry<R>,
         checksum: &str,
-        xattrs: Option<glib::Variant>,
+        xattrs: glib::Variant,
     ) -> Result<()> {
         let (uid, gid, _) = header_attrs(entry.header())?;
         let target = entry
@@ -295,7 +338,7 @@ impl Importer {
             Some(checksum),
             uid,
             gid,
-            xattrs.as_ref(),
+            Some(&xattrs),
             target,
             gio::NONE_CANCELLABLE,
         )?;
@@ -310,7 +353,6 @@ impl Importer {
         &mut self,
         entry: tar::Entry<R>,
         checksum: &str,
-        xattrs: Option<glib::Variant>,
         cancellable: Option<&gio::Cancellable>,
     ) -> Result<()> {
         if self
@@ -320,6 +362,23 @@ impl Importer {
             return Ok(());
         }
         let size: usize = entry.header().size()?.try_into()?;
+
+        // Pop the queued xattrs reference.
+        let (file_csum, xattrs_csum) = self
+            .next_xattrs
+            .take()
+            .ok_or_else(|| anyhow!("Missing xattrs reference"))?;
+        if checksum != file_csum {
+            return Err(anyhow!("Object mismatch, found xattrs for {}", file_csum));
+        }
+
+        // Retrieve xattrs content from the cache.
+        let xattrs = self
+            .xattrs
+            .get(&xattrs_csum)
+            .cloned()
+            .ok_or_else(|| anyhow!("Failed to find xattrs content {}", xattrs_csum,))?;
+
         match entry.header().entry_type() {
             tar::EntryType::Regular => {
                 if size > SMALL_REGFILE_SIZE {
@@ -335,103 +394,152 @@ impl Importer {
 
     /// Given a tar entry that looks like an object (its path is under ostree/repo/objects/),
     /// determine its type and import it.
-    #[context("object {}", path)]
+    #[context("Importing object {}", path)]
     fn import_object<'b, R: std::io::Read>(
         &mut self,
         entry: tar::Entry<'b, R>,
         path: &Utf8Path,
         cancellable: Option<&gio::Cancellable>,
     ) -> Result<()> {
-        let (parentname, mut name, mut objtype) = parse_object_entry_path(path)?;
-
-        let is_xattrs = objtype == "xattrs";
-        let xattrs = self.next_xattrs.take();
-        if is_xattrs {
-            if xattrs.is_some() {
-                return Err(anyhow!("Found multiple xattrs"));
-            }
-            name = name
-                .file_stem()
-                .map(Utf8Path::new)
-                .ok_or_else(|| anyhow!("Invalid xattrs {}", path))?;
-            objtype = name
-                .extension()
-                .ok_or_else(|| anyhow!("Invalid objpath {}", path))?;
-        }
+        let (parentname, name, suffix) = parse_object_entry_path(path)?;
         let checksum = parse_checksum(parentname, name)?;
-        let xattr_ref = if let Some((xattr_target, xattr_objref)) = xattrs {
-            if xattr_target.as_str() != checksum.as_str() {
-                return Err(anyhow!(
-                    "Found object {} but previous xattr was {}",
-                    checksum,
-                    xattr_target
-                ));
+
+        match suffix {
+            "commit" => Err(anyhow!("Found multiple commit objects")),
+            "file" => self.import_content_object(entry, &checksum, cancellable),
+            "file-xattrs" => self.process_file_xattrs(entry, checksum),
+            "file-xattrs-link" => self.process_file_xattrs_link(entry, checksum),
+            "xattrs" => self.process_xattr_ref(entry, checksum),
+            kind => {
+                let objtype = objtype_from_string(kind)
+                    .ok_or_else(|| anyhow!("Invalid object type {}", kind))?;
+                self.import_metadata(entry, &checksum, objtype)
             }
-            let v = self
-                .xattrs
-                .get(&xattr_objref)
-                .ok_or_else(|| anyhow!("Failed to find xattr {}", xattr_objref))?;
-            Some(v.clone())
-        } else {
-            None
-        };
-        let objtype = objtype_from_string(objtype)
-            .ok_or_else(|| anyhow!("Invalid object type {}", objtype))?;
-        if is_xattrs && objtype != ostree::ObjectType::File {
-            return Err(anyhow!("Found xattrs for non-file object type {}", objtype));
-        }
-        match objtype {
-            ostree::ObjectType::Commit => Err(anyhow!("Found multiple commit objects")),
-            ostree::ObjectType::File => {
-                if is_xattrs {
-                    self.import_xattr_ref(entry, checksum)
-                } else {
-                    self.import_content_object(entry, &checksum, xattr_ref, cancellable)
-                }
-            }
-            objtype => self.import_metadata(entry, &checksum, objtype),
         }
     }
 
-    /// Handle <checksum>.xattr hardlinks that contain extended attributes for
-    /// a content object.
-    #[context("Processing xattr ref")]
-    fn import_xattr_ref<R: std::io::Read>(
+    /// Process a `.file-xattrs` object (v1).
+    #[context("Processing file xattrs")]
+    fn process_file_xattrs(
+        &mut self,
+        entry: tar::Entry<impl std::io::Read>,
+        checksum: String,
+    ) -> Result<()> {
+        self.cache_xattrs_content(entry, Some(checksum))?;
+        Ok(())
+    }
+
+    /// Process a `.file-xattrs-link` object (v1).
+    ///
+    /// This is an hardlink that contains extended attributes for a content object.
+    /// When the max hardlink count is reached, this object may also be encoded as
+    /// a regular file instead.
+    #[context("Processing xattrs link")]
+    fn process_file_xattrs_link(
+        &mut self,
+        entry: tar::Entry<impl std::io::Read>,
+        checksum: String,
+    ) -> Result<()> {
+        use tar::EntryType::{Link, Regular};
+        if let Some(prev) = &self.next_xattrs {
+            bail!(
+                "Found previous dangling xattrs for file object '{}'",
+                prev.0
+            );
+        }
+
+        // Extract the xattrs checksum from the link target or from the content (v1).
+        // Later, it will be used as the key for a lookup into the `self.xattrs` cache.
+        let xattrs_checksum;
+        match entry.header().entry_type() {
+            Link => {
+                let link_target = entry
+                    .link_name()?
+                    .ok_or_else(|| anyhow!("No xattrs link content for {}", checksum))?;
+                let xattr_target = Utf8Path::from_path(&*link_target)
+                    .ok_or_else(|| anyhow!("Invalid non-UTF8 xattrs link {}", checksum))?;
+                xattrs_checksum = parse_xattrs_link_target(xattr_target)?;
+            }
+            Regular => {
+                xattrs_checksum = self.cache_xattrs_content(entry, None)?;
+            }
+            x => bail!("Unexpected xattrs type '{:?}' found for {}", x, checksum),
+        }
+
+        // Now xattrs are properly cached for the next content object in the stream,
+        // which should match `checksum`.
+        self.next_xattrs = Some((checksum, xattrs_checksum));
+
+        Ok(())
+    }
+
+    /// Process a `.file.xattrs` entry (v0).
+    ///
+    /// This is an hardlink that contains extended attributes for a content object.
+    #[context("Processing xattrs reference")]
+    fn process_xattr_ref<R: std::io::Read>(
         &mut self,
         entry: tar::Entry<R>,
         target: String,
     ) -> Result<()> {
-        assert!(self.next_xattrs.is_none());
+        if let Some(prev) = &self.next_xattrs {
+            bail!(
+                "Found previous dangling xattrs for file object '{}'",
+                prev.0
+            );
+        }
+
+        // Parse the xattrs checksum from the link target (v0).
+        // Later, it will be used as the key for a lookup into the `self.xattrs` cache.
         let header = entry.header();
         if header.entry_type() != tar::EntryType::Link {
-            return Err(anyhow!("Non-hardlink xattr reference found for {}", target));
+            bail!("Non-hardlink xattrs reference found for {}", target);
         }
         let xattr_target = entry
             .link_name()?
-            .ok_or_else(|| anyhow!("No xattr link content for {}", target))?;
+            .ok_or_else(|| anyhow!("No xattrs link content for {}", target))?;
         let xattr_target = Utf8Path::from_path(&*xattr_target)
-            .ok_or_else(|| anyhow!("Invalid non-UTF8 xattr link {}", target))?;
+            .ok_or_else(|| anyhow!("Invalid non-UTF8 xattrs link {}", target))?;
         let xattr_target = xattr_target
             .file_name()
-            .ok_or_else(|| anyhow!("Invalid xattr link {}", target))?;
-        validate_sha256(xattr_target)?;
-        self.next_xattrs = Some((target, xattr_target.to_string()));
+            .ok_or_else(|| anyhow!("Invalid xattrs link {}", target))?
+            .to_string();
+        let xattrs_checksum = validate_sha256(xattr_target)?;
+
+        // Now xattrs are properly cached for the next content object in the stream,
+        // which should match `checksum`.
+        self.next_xattrs = Some((target, xattrs_checksum));
+
         Ok(())
     }
 
-    /// Process a special /xattrs/ entry (sha256 of xattr values).
-    fn import_xattrs<R: std::io::Read>(&mut self, mut entry: tar::Entry<R>) -> Result<()> {
+    /// Process a special /xattrs/ entry, with checksum of xattrs content (v0).
+    fn process_split_xattrs_content<R: std::io::Read>(
+        &mut self,
+        entry: tar::Entry<R>,
+    ) -> Result<()> {
         let checksum = {
             let path = entry.path()?;
             let name = path
                 .file_name()
-                .ok_or_else(|| anyhow!("Invalid xattr dir: {:?}", path))?;
+                .ok_or_else(|| anyhow!("Invalid xattrs dir: {:?}", path))?;
             let name = name
                 .to_str()
-                .ok_or_else(|| anyhow!("Invalid non-UTF8 xattr name: {:?}", name))?;
-            validate_sha256(name)?;
-            name.to_string()
+                .ok_or_else(|| anyhow!("Invalid non-UTF8 xattrs name: {:?}", name))?;
+            validate_sha256(name.to_string())?
         };
+        self.cache_xattrs_content(entry, Some(checksum))?;
+        Ok(())
+    }
+
+    /// Read an xattrs entry and cache its content, optionally validating its checksum.
+    ///
+    /// This returns the computed checksum for the successfully cached content.
+    fn cache_xattrs_content<R: std::io::Read>(
+        &mut self,
+        mut entry: tar::Entry<R>,
+        expected_checksum: Option<String>,
+    ) -> Result<String> {
         let header = entry.header();
         if header.entry_type() != tar::EntryType::Regular {
             return Err(anyhow!(
@@ -446,11 +554,23 @@ impl Importer {
 
         let mut contents = vec![0u8; n as usize];
         entry.read_exact(contents.as_mut_slice())?;
-        let contents: glib::Bytes = contents.as_slice().into();
-        let contents = Variant::from_bytes::<&[(&[u8], &[u8])]>(&contents);
+        let data: glib::Bytes = contents.as_slice().into();
+        let xattrs_checksum = {
+            let digest = openssl::hash::hash(openssl::hash::MessageDigest::sha256(), &data)?;
+            hex::encode(digest)
+        };
+        if let Some(input) = expected_checksum {
+            ensure!(
+                input == xattrs_checksum,
+                "Checksum mismatch, expected '{}' but computed '{}'",
+                input,
+                xattrs_checksum
+            );
+        }
 
-        self.xattrs.insert(checksum, contents);
-        Ok(())
+        let contents = Variant::from_bytes::<&[(&[u8], &[u8])]>(&data);
+        self.xattrs.insert(xattrs_checksum.clone(), contents);
+        Ok(xattrs_checksum)
     }
 
     fn import(
@@ -563,7 +683,7 @@ impl Importer {
             if let Ok(p) = path.strip_prefix("objects/") {
                 self.import_object(entry, p, cancellable)?;
             } else if path.strip_prefix("xattrs/").is_ok() {
-                self.import_xattrs(entry)?;
+                self.process_split_xattrs_content(entry)?;
             }
         }
 
@@ -571,14 +691,14 @@ impl Importer {
     }
 }
 
-fn validate_sha256(s: &str) -> Result<()> {
-    if s.len() != 64 {
-        return Err(anyhow!("Invalid sha256 checksum (len) {}", s));
+fn validate_sha256(input: String) -> Result<String> {
+    if input.len() != 64 {
+        return Err(anyhow!("Invalid sha256 checksum (len) {}", input));
     }
-    if !s.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')) {
-        return Err(anyhow!("Invalid sha256 checksum {}", s));
+    if !input.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')) {
+        return Err(anyhow!("Invalid sha256 checksum {}", input));
     }
-    Ok(())
+    Ok(input)
 }
 
 /// Configuration for tar import.
@@ -630,17 +750,62 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_sha256() -> Result<()> {
-        validate_sha256("a86d80a3e9ff77c2e3144c787b7769b300f91ffd770221aac27bab854960b964")?;
-        assert!(validate_sha256("").is_err());
-        assert!(validate_sha256(
-            "a86d80a3e9ff77c2e3144c787b7769b300f91ffd770221aac27bab854960b9644"
+    fn test_validate_sha256() {
+        let err_cases = &[
+            "a86d80a3e9ff77c2e3144c787b7769b300f91ffd770221aac27bab854960b9644",
+            "a86d80a3E9ff77c2e3144c787b7769b300f91ffd770221aac27bab854960b964",
+        ];
+        for input in err_cases {
+            validate_sha256(input.to_string()).unwrap_err();
+        }
+
+        validate_sha256(
+            "a86d80a3e9ff77c2e3144c787b7769b300f91ffd770221aac27bab854960b964".to_string(),
         )
-        .is_err());
-        assert!(validate_sha256(
-            "a86d80a3E9ff77c2e3144c787b7769b300f91ffd770221aac27bab854960b964"
-        )
-        .is_err());
-        Ok(())
+        .unwrap();
+    }
+
+    #[test]
+    fn test_parse_object_entry_path() {
+        let path =
+            "sysroot/ostree/repo/objects/b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file.xattrs";
+        let input = Utf8PathBuf::from(path);
+        let expected_parent = "b8";
+        let expected_rest =
+            "627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file.xattrs";
+        let expected_objtype = "xattrs";
+        let output = parse_object_entry_path(&input).unwrap();
+        assert_eq!(output.0, expected_parent);
+        assert_eq!(output.1, expected_rest);
+        assert_eq!(output.2, expected_objtype);
+    }
+
+    #[test]
+    fn test_parse_checksum() {
+        let parent = "b8";
+        let name = "627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file.xattrs";
+        let expected = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
+        let output = parse_checksum(parent, &Utf8PathBuf::from(name)).unwrap();
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_parse_xattrs_link_target() {
+        let err_cases = &[
+            "",
+            "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs",
+            "b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs",
+            "../b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file.xattrs",
+            "../b8/62.file-xattrs",
+        ];
+        for input in err_cases {
+            parse_xattrs_link_target(&Utf8PathBuf::from(input)).unwrap_err();
+        }
+
+        let path =
+            "../b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs";
+        let expected = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
+        let output = parse_xattrs_link_target(&Utf8PathBuf::from(path)).unwrap();
+        assert_eq!(output, expected);
     }
 }
