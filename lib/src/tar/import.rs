@@ -147,39 +147,8 @@ fn parse_checksum(parent: &str, name: &Utf8Path) -> Result<String> {
 
 /// Parse a `.file-xattrs-link` link target into the corresponding checksum.
 fn parse_xattrs_link_target(path: &Utf8Path) -> Result<String> {
-    // Discard the relative parent.
-    let path = path.strip_prefix("..")?;
-
-    // Split the sharded checksum directory.
-    let parentname = path
-        .parent()
-        .map(|p| p.file_name())
-        .flatten()
-        .ok_or_else(|| anyhow!("Invalid path (no parent) {}", path))?;
-    if parentname.len() != 2 {
-        return Err(anyhow!("Invalid checksum parent {}", parentname));
-    }
-
-    // Split the filename (basename + objtype).
-    let fname = path
-        .file_name()
-        .map(Utf8Path::new)
-        .ok_or_else(|| anyhow!("Invalid filename {}", path))?;
-
-    // Ensure the link points to the correct object type.
-    let objtype = fname
-        .extension()
-        .ok_or_else(|| anyhow!("Invalid path (extension) {}", path))?;
-    if objtype != "file-xattrs" {
-        bail!("Invalid objpath {} for {}", objtype, path);
-    }
-
-    // Reassemble the target checksum and validate it.
-    let basename = fname.as_str().trim_end_matches(".file-xattrs");
-    let target = format!("{}{}", parentname, basename);
-    let checksum = validate_sha256(target)?;
-
-    Ok(checksum)
+    let (parent, rest, _objtype) = parse_object_entry_path(path)?;
+    parse_checksum(parent, rest)
 }
 
 impl Importer {
@@ -794,18 +763,20 @@ mod tests {
         let err_cases = &[
             "",
             "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs",
-            "b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs",
-            "../b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file.xattrs",
             "../b8/62.file-xattrs",
         ];
         for input in err_cases {
-            parse_xattrs_link_target(&Utf8PathBuf::from(input)).unwrap_err();
+            parse_xattrs_link_target(Utf8Path::new(input)).unwrap_err();
         }
 
-        let path =
-            "../b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs";
+        let ok_cases = &[
+            "../b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs",
+            "sysroot/ostree/repo/objects/b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs",
+        ];
         let expected = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
-        let output = parse_xattrs_link_target(&Utf8PathBuf::from(path)).unwrap();
-        assert_eq!(output, expected);
+        for input in ok_cases {
+            let output = parse_xattrs_link_target(Utf8Path::new(input)).unwrap();
+            assert_eq!(output, expected);
+        }
     }
 }
