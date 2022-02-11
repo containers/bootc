@@ -87,11 +87,6 @@ fn v1_xattrs_link_object_path(checksum: &str) -> Utf8PathBuf {
     .into()
 }
 
-fn v1_xattrs_link_target(checksum: &str) -> Utf8PathBuf {
-    let (first, rest) = checksum.split_at(2);
-    format!("../{}/{}.file-xattrs", first, rest).into()
-}
-
 /// Check for "denormal" symlinks which contain "//"
 // See https://github.com/fedora-sysv/chkconfig/pull/67
 // [root@cosa-devsh ~]# rpm -qf /usr/lib/systemd/systemd-sysv-install
@@ -160,8 +155,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         h.set_gid(0);
         h.set_mode(0o644);
         h.set_size(0);
-        h.set_link_name(&link_target)?;
-        self.out.append_data(&mut h, &path, &mut std::io::empty())?;
+        self.out.append_link(&mut h, &path, &link_target)?;
         Ok(())
     }
 
@@ -320,20 +314,19 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                 self.append_default_hardlink(&objpath, &path)?;
             }
         } else if self.options.format_version == 1 {
+            let path = v1_xattrs_object_path(xattrs_checksum);
+
             // Write xattrs content into a separate `.file-xattrs` object.
             if !self.wrote_xattrs.contains(xattrs_checksum) {
                 let inserted = self.wrote_xattrs.insert(checksum.to_string());
                 debug_assert!(inserted);
-
-                let objpath = v1_xattrs_object_path(xattrs_checksum);
-                self.append_default_data(&objpath, xattrs_data)?;
+                self.append_default_data(&path, xattrs_data)?;
             }
             // Write a `.file-xattrs-link` which links the file object to
             // the corresponding detached xattrs.
             {
-                let objpath = v1_xattrs_link_object_path(checksum);
-                let target_path = v1_xattrs_link_target(xattrs_checksum);
-                self.append_default_hardlink(&objpath, &target_path)?;
+                let link_obj_path = v1_xattrs_link_object_path(checksum);
+                self.append_default_hardlink(&link_obj_path, &path)?;
             }
         } else {
             bail!("Unknown format version '{}'", self.options.format_version);
@@ -571,15 +564,6 @@ mod tests {
         let checksum = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
         let expected = "sysroot/ostree/repo/objects/b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs-link";
         let output = v1_xattrs_link_object_path(checksum);
-        assert_eq!(&output, expected);
-    }
-
-    #[test]
-    fn test_v1_xattrs_link_target() {
-        let checksum = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
-        let expected =
-            "../b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file-xattrs";
-        let output = v1_xattrs_link_target(checksum);
         assert_eq!(&output, expected);
     }
 }
