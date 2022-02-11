@@ -363,7 +363,6 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/refs/remotes", Directory, 0o755),
         ("sysroot/ostree/repo/tmp", Directory, 0o755),
         ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
-        ("sysroot/ostree/repo/xattrs", Directory, 0o755),
         ("usr", Directory, 0o755),
     ];
     validate_tar_expected(
