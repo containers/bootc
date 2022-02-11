@@ -296,7 +296,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     fn append_xattrs(&mut self, checksum: &str, xattrs: &glib::Variant) -> Result<bool> {
         let xattrs_data = xattrs.data_as_bytes();
         let xattrs_data = xattrs_data.as_ref();
-        if xattrs_data.is_empty() {
+        if xattrs_data.is_empty() && self.options.format_version == 0 {
             return Ok(false);
         }
 
