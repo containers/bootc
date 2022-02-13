@@ -46,7 +46,7 @@ tracing = "0.1"
 [dev-dependencies]
 indoc = "1.0.3"
 quickcheck = "1"
-sh-inline = "0.1.0"
+sh-inline = { version = "0.2", features = ["cap-std-ext"] }
 # https://github.com/rust-lang/cargo/issues/2911
 # https://github.com/rust-lang/rfcs/pull/1956
 ostree-ext = { path = ".", features = ["internal-testing-api"] }
