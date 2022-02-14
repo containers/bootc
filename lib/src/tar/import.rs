@@ -324,12 +324,6 @@ impl Importer {
         checksum: &str,
         cancellable: Option<&gio::Cancellable>,
     ) -> Result<()> {
-        if self
-            .repo
-            .has_object(ostree::ObjectType::File, checksum, cancellable)?
-        {
-            return Ok(());
-        }
         let size: usize = entry.header().size()?.try_into()?;
 
         // Pop the queued xattrs reference.
@@ -339,6 +333,13 @@ impl Importer {
             .ok_or_else(|| anyhow!("Missing xattrs reference"))?;
         if checksum != file_csum {
             return Err(anyhow!("Object mismatch, found xattrs for {}", file_csum));
+        }
+
+        if self
+            .repo
+            .has_object(ostree::ObjectType::File, checksum, cancellable)?
+        {
+            return Ok(());
         }
 
         // Retrieve xattrs content from the cache.
