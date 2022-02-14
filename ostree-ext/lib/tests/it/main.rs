@@ -1,7 +1,8 @@
+mod fixture;
+
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
-use indoc::indoc;
 use once_cell::sync::Lazy;
 use ostree_ext::container::store::PrepareResult;
 use ostree_ext::container::{
@@ -11,16 +12,10 @@ use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
 use sh_inline::bash;
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::{io::Write, process::Command};
 
-const OSTREE_GPG_HOME: &[u8] = include_bytes!("fixtures/ostree-gpg-test-home.tar.gz");
-const TEST_GPG_KEYID_1: &str = "7FCA23D8472CDAFA";
-#[allow(dead_code)]
-const TEST_GPG_KEYFPR_1: &str = "5E65DE75AB1C501862D476347FCA23D8472CDAFA";
-const EXAMPLEOS_V0: &[u8] = include_bytes!("fixtures/exampleos.tar.zst");
-const EXAMPLEOS_V1: &[u8] = include_bytes!("fixtures/exampleos-v1.tar.zst");
-const TESTREF: &str = "exampleos/x86_64/stable";
+use fixture::Fixture;
+
 const EXAMPLEOS_CONTENT_CHECKSUM: &str =
     "0ef7461f9db15e1d8bd8921abf20694225fbaa4462cadf7deed8ea0e43162120";
 const TEST_REGISTRY_DEFAULT: &str = "localhost:5000";
@@ -38,56 +33,12 @@ static TEST_REGISTRY: Lazy<String> = Lazy::new(|| match std::env::var_os("TEST_R
     None => TEST_REGISTRY_DEFAULT.to_string(),
 });
 
-#[context("Generating test repo")]
-fn generate_test_repo(dir: &Utf8Path) -> Result<Utf8PathBuf> {
-    let src_tarpath = &dir.join("exampleos.tar.zst");
-    std::fs::write(src_tarpath, EXAMPLEOS_V0)?;
-
-    let gpghome = dir.join("gpghome");
-    {
-        let dec = flate2::read::GzDecoder::new(OSTREE_GPG_HOME);
-        let mut a = tar::Archive::new(dec);
-        a.unpack(&gpghome)?;
-    };
-
-    bash!(
-        indoc! {"
-        cd {dir}
-        ostree --repo=repo init --mode=archive
-        ostree --repo=repo commit -b {testref} --bootable --no-bindings --add-metadata=ostree.container-cmd='[\"/usr/bin/bash\"]' --add-metadata-string=version=42.0 --add-metadata-string=buildsys.checksum=41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3 --gpg-homedir={gpghome} --gpg-sign={keyid} \
-          --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst >/dev/null
-        ostree --repo=repo show {testref} >/dev/null
-    "},
-        testref = TESTREF,
-        gpghome = gpghome.as_str(),
-        keyid = TEST_GPG_KEYID_1,
-        dir = dir.as_str()
-    )?;
-    std::fs::remove_file(src_tarpath)?;
-    Ok(dir.join("repo"))
-}
-
-fn update_repo(repopath: &Utf8Path) -> Result<()> {
-    let repotmp = &repopath.join("tmp");
-    let srcpath = &repotmp.join("exampleos-v1.tar.zst");
-    std::fs::write(srcpath, EXAMPLEOS_V1)?;
-    let srcpath = srcpath.as_str();
-    let repopath = repopath.as_str();
-    let testref = TESTREF;
-    bash!(
-        "ostree --repo={repopath} commit -b {testref} --no-bindings --tree=tar={srcpath}",
-        testref,
-        repopath,
-        srcpath
-    )?;
-    std::fs::remove_file(srcpath)?;
-    Ok(())
-}
-
 #[context("Generating test tarball")]
 fn initial_export(fixture: &Fixture) -> Result<Utf8PathBuf> {
     let cancellable = gio::NONE_CANCELLABLE;
-    let (_, rev) = fixture.srcrepo.read_commit(TESTREF, cancellable)?;
+    let (_, rev) = fixture
+        .srcrepo
+        .read_commit(fixture.testref(), cancellable)?;
     let (commitv, _) = fixture.srcrepo.load_commit(rev.as_str())?;
     assert_eq!(
         ostree::commit_get_content_checksum(&commitv)
@@ -106,47 +57,6 @@ fn initial_export(fixture: &Fixture) -> Result<Utf8PathBuf> {
     Ok(destpath)
 }
 
-struct Fixture {
-    // Just holds a reference
-    _tempdir: tempfile::TempDir,
-    path: Utf8PathBuf,
-    srcdir: Utf8PathBuf,
-    srcrepo: ostree::Repo,
-    destrepo: ostree::Repo,
-    destrepo_path: Utf8PathBuf,
-
-    format_version: u32,
-}
-
-impl Fixture {
-    fn new() -> Result<Self> {
-        let _tempdir = tempfile::tempdir_in("/var/tmp")?;
-        let path: &Utf8Path = _tempdir.path().try_into().unwrap();
-        let path = path.to_path_buf();
-
-        let srcdir = path.join("src");
-        std::fs::create_dir(&srcdir)?;
-        let srcrepo_path = generate_test_repo(&srcdir)?;
-        let srcrepo =
-            ostree::Repo::open_at(libc::AT_FDCWD, srcrepo_path.as_str(), gio::NONE_CANCELLABLE)?;
-
-        let destdir = &path.join("dest");
-        std::fs::create_dir(destdir)?;
-        let destrepo_path = destdir.join("repo");
-        let destrepo = ostree::Repo::new_for_path(&destrepo_path);
-        destrepo.create(ostree::RepoMode::BareUser, gio::NONE_CANCELLABLE)?;
-        Ok(Self {
-            _tempdir,
-            path,
-            srcdir,
-            srcrepo,
-            destrepo,
-            destrepo_path,
-            format_version: 0,
-        })
-    }
-}
-
 #[tokio::test]
 async fn test_tar_import_empty() -> Result<()> {
     let fixture = Fixture::new()?;
@@ -160,7 +70,7 @@ async fn test_tar_export_reproducible() -> Result<()> {
     let fixture = Fixture::new()?;
     let (_, rev) = fixture
         .srcrepo
-        .read_commit(TESTREF, gio::NONE_CANCELLABLE)?;
+        .read_commit(fixture.testref(), gio::NONE_CANCELLABLE)?;
     let export1 = {
         let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
         ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut h, None)?;
@@ -377,7 +287,8 @@ fn test_tar_export_structure() -> Result<()> {
 #[tokio::test]
 async fn test_tar_import_export() -> Result<()> {
     let fixture = Fixture::new()?;
-    let src_tar = tokio::fs::File::open(&initial_export(&fixture)?).await?;
+    let p = &initial_export(&fixture)?;
+    let src_tar = tokio::fs::File::open(p).await?;
 
     let imported_commit: String =
         ostree_ext::tar::import_tar(&fixture.destrepo, src_tar, None).await?;
@@ -454,7 +365,7 @@ async fn test_container_import_export() -> Result<()> {
     let fixture = Fixture::new()?;
     let testrev = fixture
         .srcrepo
-        .require_rev(TESTREF)
+        .require_rev(fixture.testref())
         .context("Failed to resolve ref")?;
 
     let srcoci_path = &fixture.path.join("oci");
@@ -477,7 +388,7 @@ async fn test_container_import_export() -> Result<()> {
     };
     let digest = ostree_ext::container::encapsulate(
         &fixture.srcrepo,
-        TESTREF,
+        fixture.testref(),
         &config,
         Some(opts),
         &srcoci_imgref,
@@ -588,7 +499,7 @@ async fn test_container_write_derive() -> Result<()> {
     let base_oci_path = &fixture.path.join("exampleos.oci");
     let _digest = ostree_ext::container::encapsulate(
         &fixture.srcrepo,
-        TESTREF,
+        fixture.testref(),
         &Config {
             cmd: Some(vec!["/bin/bash".to_string()]),
             ..Default::default()
@@ -790,9 +701,10 @@ async fn test_container_write_derive() -> Result<()> {
 async fn test_container_import_export_registry() -> Result<()> {
     let tr = &*TEST_REGISTRY;
     let fixture = Fixture::new()?;
+    let testref = fixture.testref();
     let testrev = fixture
         .srcrepo
-        .require_rev(TESTREF)
+        .require_rev(testref)
         .context("Failed to resolve ref")?;
     let src_imgref = ImageReference {
         transport: Transport::Registry,
@@ -803,7 +715,7 @@ async fn test_container_import_export_registry() -> Result<()> {
         ..Default::default()
     };
     let digest =
-        ostree_ext::container::encapsulate(&fixture.srcrepo, TESTREF, &config, None, &src_imgref)
+        ostree_ext::container::encapsulate(&fixture.srcrepo, testref, &config, None, &src_imgref)
             .await
             .context("exporting to registry")?;
     let mut digested_imgref = src_imgref.clone();
@@ -822,15 +734,12 @@ async fn test_container_import_export_registry() -> Result<()> {
 
 #[test]
 fn test_diff() -> Result<()> {
-    let cancellable = gio::NONE_CANCELLABLE;
-    let tempdir = tempfile::tempdir()?;
-    let tempdir = Utf8Path::from_path(tempdir.path()).unwrap();
-    let repopath = &generate_test_repo(tempdir)?;
-    update_repo(repopath)?;
-    let from = &format!("{}^", TESTREF);
-    let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repopath.as_str(), cancellable)?;
+    let mut fixture = Fixture::new()?;
+    fixture.update()?;
+    let from = &format!("{}^", fixture.testref());
+    let repo = &fixture.srcrepo;
     let subdir: Option<&str> = None;
-    let diff = ostree_ext::diff::diff(repo, from, TESTREF, subdir)?;
+    let diff = ostree_ext::diff::diff(repo, from, fixture.testref(), subdir)?;
     assert!(diff.subdir.is_none());
     assert_eq!(diff.added_dirs.len(), 1);
     assert_eq!(diff.added_dirs.iter().next().unwrap(), "/usr/share");
@@ -838,7 +747,7 @@ fn test_diff() -> Result<()> {
     assert_eq!(diff.added_files.iter().next().unwrap(), "/usr/bin/newbin");
     assert_eq!(diff.removed_files.len(), 1);
     assert_eq!(diff.removed_files.iter().next().unwrap(), "/usr/bin/foo");
-    let diff = ostree_ext::diff::diff(repo, from, TESTREF, Some("/usr"))?;
+    let diff = ostree_ext::diff::diff(repo, from, fixture.testref(), Some("/usr"))?;
     assert_eq!(diff.subdir.as_ref().unwrap(), "/usr");
     assert_eq!(diff.added_dirs.len(), 1);
     assert_eq!(diff.added_dirs.iter().next().unwrap(), "/share");
