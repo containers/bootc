@@ -33,7 +33,9 @@ pub(crate) struct Fixture {
 }
 
 impl Fixture {
-    pub(crate) fn new() -> Result<Self> {
+    #[context("Initializing fixture")]
+    pub(crate) fn new_base() -> Result<Self> {
+        // Basic setup, allocate a tempdir
         let tempdir = tempfile::tempdir_in("/var/tmp")?;
         let dir = Arc::new(cap_std::fs::Dir::open_ambient_dir(
             tempdir.path(),
@@ -42,11 +44,28 @@ impl Fixture {
         let path: &Utf8Path = tempdir.path().try_into().unwrap();
         let path = path.to_path_buf();
 
+        // Create the src/ directory
         let srcdir = path.join("src");
         std::fs::create_dir(&srcdir)?;
         let srcdir_dfd = &dir.open_dir("src")?;
-        generate_test_repo(srcdir_dfd, TESTREF)?;
-        let srcrepo = ostree::Repo::open_at_dir(srcdir_dfd, "repo")?;
+
+        // Initialize the src/gpghome/ directory
+        let gpgtarname = "gpghome.tgz";
+        srcdir_dfd.write(gpgtarname, OSTREE_GPG_HOME)?;
+        let gpgtar = srcdir_dfd.open(gpgtarname)?;
+        srcdir_dfd.remove_file(gpgtarname)?;
+        srcdir_dfd.create_dir("gpghome")?;
+        let gpghome = srcdir_dfd.open_dir("gpghome")?;
+        let st = std::process::Command::new("tar")
+            .cwd_dir_owned(gpghome)
+            .stdin(Stdio::from(gpgtar))
+            .args(&["-azxf", "-"])
+            .status()?;
+        assert!(st.success());
+
+        let srcrepo =
+            ostree::Repo::create_at_dir(srcdir_dfd, "repo", ostree::RepoMode::Archive, None)
+                .context("Creating src/ repo")?;
 
         let destdir = &path.join("dest");
         std::fs::create_dir(destdir)?;
@@ -63,6 +82,12 @@ impl Fixture {
             destrepo_path,
             format_version: 0,
         })
+    }
+
+    pub(crate) fn new() -> Result<Self> {
+        let r = Self::new_base()?;
+        generate_test_repo(&r.dir.open_dir("src")?, TESTREF)?;
+        Ok(r)
     }
 
     pub(crate) fn testref(&self) -> &'static str {
@@ -89,20 +114,7 @@ impl Fixture {
 }
 
 #[context("Generating test repo")]
-pub(crate) fn generate_test_repo(dir: &Dir, testref: &str) -> Result<()> {
-    let gpgtarname = "gpghome.tgz";
-    dir.write(gpgtarname, OSTREE_GPG_HOME)?;
-    let gpgtar = dir.open(gpgtarname)?;
-    dir.remove_file(gpgtarname)?;
-
-    dir.create_dir("gpghome")?;
-    let gpghome = dir.open_dir("gpghome")?;
-    let st = std::process::Command::new("tar")
-        .cwd_dir_owned(gpghome)
-        .stdin(Stdio::from(gpgtar))
-        .args(&["-azxf", "-"])
-        .status()?;
-    assert!(st.success());
+fn generate_test_repo(dir: &Dir, testref: &str) -> Result<()> {
     let tarname = "exampleos.tar.zst";
     dir.write(tarname, EXAMPLEOS_V0)?;
     bash_in!(
