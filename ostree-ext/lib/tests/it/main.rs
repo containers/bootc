@@ -124,8 +124,7 @@ async fn test_tar_import_signed() -> Result<()> {
 
     // And signed correctly
     bash_in!(&fixture.dir,
-        "ostree --repo=dest/repo remote gpg-import --stdin myremote < ${p}/gpghome/key1.asc >/dev/null",
-        p = fixture.srcdir.as_str()
+        "ostree --repo=dest/repo remote gpg-import --stdin myremote < src/gpghome/key1.asc >/dev/null",
     )?;
     let src_tar = tokio::fs::File::open(test_tar).await?;
     let imported = ostree_ext::tar::import_tar(
@@ -446,8 +445,7 @@ async fn test_container_import_export() -> Result<()> {
         .remote_add("myremote", None, Some(&opts.end()), gio::NONE_CANCELLABLE)?;
     bash_in!(
         &fixture.dir,
-        "ostree --repo=dest/repo remote gpg-import --stdin myremote < ${p}/gpghome/key1.asc",
-        p = fixture.srcdir.as_str()
+        "ostree --repo=dest/repo remote gpg-import --stdin myremote < src/gpghome/key1.asc",
     )?;
 
     // No remote matching

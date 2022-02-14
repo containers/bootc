@@ -23,7 +23,6 @@ pub(crate) struct Fixture {
     _tempdir: tempfile::TempDir,
     pub(crate) dir: Arc<Dir>,
     pub(crate) path: Utf8PathBuf,
-    pub(crate) srcdir: Utf8PathBuf,
     pub(crate) srcrepo: ostree::Repo,
     pub(crate) destrepo: ostree::Repo,
 
@@ -43,8 +42,7 @@ impl Fixture {
         let path = path.to_path_buf();
 
         // Create the src/ directory
-        let srcdir = path.join("src");
-        std::fs::create_dir(&srcdir)?;
+        dir.create_dir("src")?;
         let srcdir_dfd = &dir.open_dir("src")?;
 
         // Initialize the src/gpghome/ directory
@@ -72,7 +70,6 @@ impl Fixture {
             _tempdir: tempdir,
             dir,
             path,
-            srcdir,
             srcrepo,
             destrepo,
             format_version: 0,
@@ -91,19 +88,16 @@ impl Fixture {
 
     #[context("Updating test repo")]
     pub(crate) fn update(&mut self) -> Result<()> {
-        let repopath = &self.srcdir.join("repo");
-        let repotmp = &repopath.join("tmp");
-        let srcpath = &repotmp.join("exampleos-v1.tar.zst");
-        std::fs::write(srcpath, EXAMPLEOS_V1)?;
-        let srcpath = srcpath.as_str();
+        let tmptarpath = "src/repo/tmp/exampleos-v1.tar.zst";
+        self.dir.write(tmptarpath, EXAMPLEOS_V1)?;
         let testref = TESTREF;
         bash_in!(
-            self.dir.open_dir("src")?,
-            "ostree --repo=repo commit -b ${testref} --no-bindings --tree=tar=${srcpath}",
+            &self.dir,
+            "ostree --repo=src/repo commit -b ${testref} --no-bindings --tree=tar=${tmptarpath}",
             testref,
-            srcpath
+            tmptarpath
         )?;
-        std::fs::remove_file(srcpath)?;
+        self.dir.remove_file(tmptarpath)?;
         Ok(())
     }
 }
