@@ -78,7 +78,19 @@ impl Fixture {
 
     pub(crate) fn new() -> Result<Self> {
         let r = Self::new_base()?;
-        generate_test_repo(&r.dir.open_dir("src")?, TESTREF)?;
+        let tarname = "exampleos.tar.zst";
+        r.dir.write(tarname, EXAMPLEOS_V0)?;
+        bash_in!(
+            r.dir,
+            indoc! {"
+            ostree --repo=src/repo commit -b ${testref} --bootable --no-bindings --add-metadata=ostree.container-cmd='[\"/usr/bin/bash\"]' --add-metadata-string=version=42.0 --add-metadata-string=buildsys.checksum=41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3 --gpg-homedir=src/gpghome --gpg-sign=${keyid} \
+              --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst >/dev/null
+            ostree --repo=src/repo show ${testref} >/dev/null
+        "},
+            testref = r.testref(),
+            keyid = TEST_GPG_KEYID_1
+        ).context("Writing commit")?;
+        r.dir.remove_file(tarname)?;
         Ok(r)
     }
 
@@ -100,23 +112,4 @@ impl Fixture {
         self.dir.remove_file(tmptarpath)?;
         Ok(())
     }
-}
-
-#[context("Generating test repo")]
-fn generate_test_repo(dir: &Dir, testref: &str) -> Result<()> {
-    let tarname = "exampleos.tar.zst";
-    dir.write(tarname, EXAMPLEOS_V0)?;
-    bash_in!(
-        dir,
-        indoc! {"
-        ostree --repo=repo init --mode=archive
-        ostree --repo=repo commit -b ${testref} --bootable --no-bindings --add-metadata=ostree.container-cmd='[\"/usr/bin/bash\"]' --add-metadata-string=version=42.0 --add-metadata-string=buildsys.checksum=41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3 --gpg-homedir=gpghome --gpg-sign=${keyid} \
-          --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst >/dev/null
-        ostree --repo=repo show ${testref} >/dev/null
-    "},
-        testref = testref,
-        keyid = TEST_GPG_KEYID_1
-    ).context("Writing commit")?;
-    dir.remove_file(tarname)?;
-    Ok(())
 }
