@@ -5,7 +5,6 @@ use cap_std_ext::prelude::CapStdExtCommandExt;
 use fn_error_context::context;
 use indoc::indoc;
 use ostree::cap_std;
-use ostree_ext::gio;
 use sh_inline::bash_in;
 use std::convert::TryInto;
 use std::process::Stdio;
@@ -27,7 +26,6 @@ pub(crate) struct Fixture {
     pub(crate) srcdir: Utf8PathBuf,
     pub(crate) srcrepo: ostree::Repo,
     pub(crate) destrepo: ostree::Repo,
-    pub(crate) destrepo_path: Utf8PathBuf,
 
     pub(crate) format_version: u32,
 }
@@ -67,11 +65,9 @@ impl Fixture {
             ostree::Repo::create_at_dir(srcdir_dfd, "repo", ostree::RepoMode::Archive, None)
                 .context("Creating src/ repo")?;
 
-        let destdir = &path.join("dest");
-        std::fs::create_dir(destdir)?;
-        let destrepo_path = destdir.join("repo");
-        let destrepo = ostree::Repo::new_for_path(&destrepo_path);
-        destrepo.create(ostree::RepoMode::BareUser, gio::NONE_CANCELLABLE)?;
+        dir.create_dir("dest")?;
+        let destrepo =
+            ostree::Repo::create_at_dir(&dir, "dest/repo", ostree::RepoMode::BareUser, None)?;
         Ok(Self {
             _tempdir: tempdir,
             dir,
@@ -79,7 +75,6 @@ impl Fixture {
             srcdir,
             srcrepo,
             destrepo,
-            destrepo_path,
             format_version: 0,
         })
     }

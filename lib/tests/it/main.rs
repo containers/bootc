@@ -10,7 +10,7 @@ use ostree_ext::container::{
 };
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
-use sh_inline::bash;
+use sh_inline::{bash, bash_in};
 use std::collections::HashMap;
 use std::{io::Write, process::Command};
 
@@ -123,9 +123,8 @@ async fn test_tar_import_signed() -> Result<()> {
     assert_err_contains(r, r#"Can't check signature: public key not found"#);
 
     // And signed correctly
-    bash!(
-        "ostree --repo=${repo} remote gpg-import --stdin myremote < ${p}/gpghome/key1.asc >/dev/null",
-        repo = fixture.destrepo_path.as_str(),
+    bash_in!(&fixture.dir,
+        "ostree --repo=dest/repo remote gpg-import --stdin myremote < ${p}/gpghome/key1.asc >/dev/null",
         p = fixture.srcdir.as_str()
     )?;
     let src_tar = tokio::fs::File::open(test_tar).await?;
@@ -299,13 +298,13 @@ async fn test_tar_import_export() -> Result<()> {
             .unwrap()
             .as_str()
     );
-    bash!(
+    bash_in!(
+        &fixture.dir,
         r#"
-         ostree --repo=${destrepodir} ls -R ${imported_commit} >/dev/null
-         val=$(ostree --repo=${destrepodir} show --print-detached-metadata-key=my-detached-key ${imported_commit})
+         ostree --repo=dest/repo ls -R ${imported_commit} >/dev/null
+         val=$(ostree --repo=dest/repo show --print-detached-metadata-key=my-detached-key ${imported_commit})
          test "${val}" = "'my-detached-value'"
         "#,
-        destrepodir = fixture.destrepo_path.as_str(),
         imported_commit = imported_commit.as_str()
     )?;
     Ok(())
@@ -332,9 +331,9 @@ async fn test_tar_write() -> Result<()> {
     )?;
     let src = tokio::fs::File::open(&tmptar).await?;
     let r = ostree_ext::tar::write_tar(&fixture.destrepo, src, "layer", None).await?;
-    bash!(
-        "ostree --repo=${repo} ls ${layer_commit} /usr/etc/someconfig.conf >/dev/null",
-        repo = fixture.destrepo_path.as_str(),
+    bash_in!(
+        &fixture.dir,
+        "ostree --repo=dest/repo ls ${layer_commit} /usr/etc/someconfig.conf >/dev/null",
         layer_commit = r.commit.as_str()
     )?;
     assert_eq!(r.filtered.len(), 2);
@@ -445,9 +444,9 @@ async fn test_container_import_export() -> Result<()> {
     fixture
         .destrepo
         .remote_add("myremote", None, Some(&opts.end()), gio::NONE_CANCELLABLE)?;
-    bash!(
-        "ostree --repo=${repo} remote gpg-import --stdin myremote < ${p}/gpghome/key1.asc",
-        repo = fixture.destrepo_path.as_str(),
+    bash_in!(
+        &fixture.dir,
+        "ostree --repo=dest/repo remote gpg-import --stdin myremote < ${p}/gpghome/key1.asc",
         p = fixture.srcdir.as_str()
     )?;
 
@@ -596,9 +595,9 @@ async fn test_container_write_derive() -> Result<()> {
     }
 
     // Parse the commit and verify we pulled the derived content.
-    bash!(
-        "ostree --repo=${repo} ls ${r} /usr/bin/newderivedfile >/dev/null",
-        repo = fixture.destrepo_path.as_str(),
+    bash_in!(
+        &fixture.dir,
+        "ostree --repo=dest/repo ls ${r} /usr/bin/newderivedfile >/dev/null",
         r = import.merge_commit.as_str()
     )?;
 
@@ -646,15 +645,15 @@ async fn test_container_write_derive() -> Result<()> {
     assert_eq!(images.len(), 1);
 
     // Verify we have the new file and *not* the old one
-    bash!(
+    bash_in!(
+        &fixture.dir,
         r#"set -x;
-         ostree --repo=${repo} ls ${r} /usr/bin/newderivedfile2 >/dev/null
-         test "$(ostree --repo=${repo} cat ${r} /usr/bin/newderivedfile)" = "newderivedfile v1"
-         if ostree --repo=${repo} ls ${r} /usr/bin/newderivedfile3 2>/dev/null; then
+         ostree --repo=dest/repo ls ${r} /usr/bin/newderivedfile2 >/dev/null
+         test "$(ostree --repo=dest/repo cat ${r} /usr/bin/newderivedfile)" = "newderivedfile v1"
+         if ostree --repo=dest/repo ls ${r} /usr/bin/newderivedfile3 2>/dev/null; then
            echo oops; exit 1
          fi
         "#,
-        repo = fixture.destrepo_path.as_str(),
         r = import.merge_commit.as_str()
     )?;
 
