@@ -5,8 +5,10 @@ use cap_std_ext::prelude::CapStdExtCommandExt;
 use fn_error_context::context;
 use indoc::indoc;
 use ostree::cap_std;
+use ostree_ext::gio;
 use sh_inline::bash_in;
 use std::convert::TryInto;
+use std::io::Write;
 use std::process::Stdio;
 use std::sync::Arc;
 
@@ -111,5 +113,20 @@ impl Fixture {
         )?;
         self.dir.remove_file(tmptarpath)?;
         Ok(())
+    }
+
+    #[context("Exporting tar")]
+    pub(crate) fn export_tar(&self) -> Result<&'static Utf8Path> {
+        let cancellable = gio::NONE_CANCELLABLE;
+        let (_, rev) = self.srcrepo.read_commit(self.testref(), cancellable)?;
+        let path = "exampleos-export.tar";
+        let mut outf = std::io::BufWriter::new(self.dir.create(path)?);
+        let options = ostree_ext::tar::ExportOptions {
+            format_version: self.format_version,
+            ..Default::default()
+        };
+        ostree_ext::tar::export_commit(&self.srcrepo, rev.as_str(), &mut outf, Some(options))?;
+        outf.flush()?;
+        Ok(path.into())
     }
 }
