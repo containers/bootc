@@ -15,6 +15,7 @@ use std::process::Command;
 
 use fixture::Fixture;
 
+const EXAMPLE_TAR_LAYER: &[u8] = include_bytes!("fixtures/hlinks.tar.gz");
 const EXAMPLEOS_CONTENT_CHECKSUM: &str =
     "0ef7461f9db15e1d8bd8921abf20694225fbaa4462cadf7deed8ea0e43162120";
 const TEST_REGISTRY_DEFAULT: &str = "localhost:5000";
@@ -321,6 +322,16 @@ async fn test_tar_write() -> Result<()> {
     assert_eq!(*r.filtered.get("var").unwrap(), 4);
     assert_eq!(*r.filtered.get("boot").unwrap(), 1);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_tar_write_tar_layer() -> Result<()> {
+    let fixture = Fixture::new()?;
+    let uncompressed_tar = tokio::io::BufReader::new(
+        async_compression::tokio::bufread::GzipDecoder::new(EXAMPLE_TAR_LAYER),
+    );
+    ostree_ext::tar::write_tar(&fixture.destrepo, uncompressed_tar, "test", None).await?;
     Ok(())
 }
 
