@@ -3,7 +3,6 @@ use camino::{Utf8Path, Utf8PathBuf};
 use cap_std::fs::Dir;
 use cap_std_ext::prelude::CapStdExtCommandExt;
 use fn_error_context::context;
-use indoc::indoc;
 use ostree::cap_std;
 use ostree_ext::gio;
 use sh_inline::bash_in;
@@ -84,11 +83,11 @@ impl Fixture {
         r.dir.write(tarname, EXAMPLEOS_V0)?;
         bash_in!(
             r.dir,
-            indoc! {"
-            ostree --repo=src/repo commit -b ${testref} --bootable --no-bindings --add-metadata=ostree.container-cmd='[\"/usr/bin/bash\"]' --add-metadata-string=version=42.0 --add-metadata-string=buildsys.checksum=41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3 --gpg-homedir=src/gpghome --gpg-sign=${keyid} \
-              --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst >/dev/null
-            ostree --repo=src/repo show ${testref} >/dev/null
-        "},
+            "ostree --repo=src/repo commit -b ${testref} --bootable --no-bindings --add-metadata=ostree.container-cmd='[\"/usr/bin/bash\"]' \
+              --add-metadata-string=version=42.0 --add-metadata-string=buildsys.checksum=41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3 \
+              --gpg-homedir=src/gpghome --gpg-sign=${keyid} \
+              --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst >/dev/null && \
+             ostree --repo=src/repo show ${testref} >/dev/null",
             testref = r.testref(),
             keyid = TEST_GPG_KEYID_1
         ).context("Writing commit")?;
