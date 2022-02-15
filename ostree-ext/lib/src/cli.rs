@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use futures_util::FutureExt;
-use ostree::{gio, glib};
+use ostree::{cap_std, gio, glib};
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
@@ -29,12 +29,18 @@ fn parse_base_imgref(s: &str) -> Result<ImageReference> {
     ImageReference::try_from(s)
 }
 
+fn parse_repo(s: &str) -> Result<ostree::Repo> {
+    let repofd = cap_std::fs::Dir::open_ambient_dir(s, cap_std::ambient_authority())?;
+    Ok(ostree::Repo::open_at_dir(&repofd, ".")?)
+}
+
 /// Options for importing a tar archive.
 #[derive(Debug, StructOpt)]
 struct ImportOpts {
     /// Path to the repository
     #[structopt(long)]
-    repo: String,
+    #[structopt(parse(try_from_str = parse_repo))]
+    repo: ostree::Repo,
 
     /// Path to a tar archive; if unspecified, will be stdin.  Currently the tar archive must not be compressed.
     path: Option<String>,
@@ -45,7 +51,8 @@ struct ImportOpts {
 struct ExportOpts {
     /// Path to the repository
     #[structopt(long)]
-    repo: String,
+    #[structopt(parse(try_from_str = parse_repo))]
+    repo: ostree::Repo,
 
     /// The format version.  Must be 0 or 1.
     #[structopt(long)]
@@ -73,7 +80,8 @@ enum ContainerOpts {
     Unencapsulate {
         /// Path to the repository
         #[structopt(long)]
-        repo: String,
+        #[structopt(parse(try_from_str = parse_repo))]
+        repo: ostree::Repo,
 
         /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
         #[structopt(parse(try_from_str = parse_imgref))]
@@ -100,7 +108,8 @@ enum ContainerOpts {
     Encapsulate {
         /// Path to the repository
         #[structopt(long)]
-        repo: String,
+        #[structopt(parse(try_from_str = parse_repo))]
+        repo: ostree::Repo,
 
         /// The ostree ref or commit to export
         rev: String,
@@ -157,14 +166,15 @@ enum ContainerImageOpts {
     List {
         /// Path to the repository
         #[structopt(long)]
-        repo: String,
+        #[structopt(parse(try_from_str = parse_repo))]
+        repo: ostree::Repo,
     },
 
     /// Pull (or update) a container image.
     Pull {
         /// Path to the repository
-        #[structopt(long)]
-        repo: String,
+        #[structopt(parse(try_from_str = parse_repo))]
+        repo: ostree::Repo,
 
         /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
         #[structopt(parse(try_from_str = parse_imgref))]
@@ -178,11 +188,13 @@ enum ContainerImageOpts {
     Copy {
         /// Path to the source repository
         #[structopt(long)]
-        src_repo: String,
+        #[structopt(parse(try_from_str = parse_repo))]
+        src_repo: ostree::Repo,
 
         /// Path to the destination repository
         #[structopt(long)]
-        dest_repo: String,
+        #[structopt(parse(try_from_str = parse_repo))]
+        dest_repo: ostree::Repo,
 
         /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
         #[structopt(parse(try_from_str = parse_imgref))]
@@ -226,7 +238,8 @@ enum ContainerImageOpts {
 struct ImaSignOpts {
     /// Path to the repository
     #[structopt(long)]
-    repo: String,
+    #[structopt(parse(try_from_str = parse_repo))]
+    repo: ostree::Repo,
     /// The ostree ref or commit to use as a base
     src_rev: String,
     /// The ostree ref to use for writing the signed commit
@@ -279,13 +292,12 @@ impl Into<ostree_container::store::ImageProxyConfig> for ContainerProxyOpts {
 
 /// Import a tar archive containing an ostree commit.
 async fn tar_import(opts: &ImportOpts) -> Result<()> {
-    let repo = &ostree::Repo::open_at(libc::AT_FDCWD, opts.repo.as_str(), gio::NONE_CANCELLABLE)?;
     let imported = if let Some(path) = opts.path.as_ref() {
         let instream = tokio::fs::File::open(path).await?;
-        crate::tar::import_tar(repo, instream, None).await?
+        crate::tar::import_tar(&opts.repo, instream, None).await?
     } else {
         let stdin = tokio::io::stdin();
-        crate::tar::import_tar(repo, stdin, None).await?
+        crate::tar::import_tar(&opts.repo, stdin, None).await?
     };
     println!("Imported: {}", imported);
     Ok(())
@@ -293,13 +305,17 @@ async fn tar_import(opts: &ImportOpts) -> Result<()> {
 
 /// Export a tar archive containing an ostree commit.
 fn tar_export(opts: &ExportOpts) -> Result<()> {
-    let repo = &ostree::Repo::open_at(libc::AT_FDCWD, opts.repo.as_str(), gio::NONE_CANCELLABLE)?;
     #[allow(clippy::needless_update)]
     let subopts = crate::tar::ExportOptions {
         format_version: opts.format_version,
         ..Default::default()
     };
-    crate::tar::export_commit(repo, opts.rev.as_str(), std::io::stdout(), Some(subopts))?;
+    crate::tar::export_commit(
+        &opts.repo,
+        opts.rev.as_str(),
+        std::io::stdout(),
+        Some(subopts),
+    )?;
     Ok(())
 }
 
@@ -310,12 +326,11 @@ enum ProgressOrFinish {
 
 /// Import a container image with an encapsulated ostree commit.
 async fn container_import(
-    repo: &str,
+    repo: &ostree::Repo,
     imgref: &OstreeImageReference,
     write_ref: Option<&str>,
     quiet: bool,
 ) -> Result<()> {
-    let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
     let (tx_progress, rx_progress) = tokio::sync::watch::channel(Default::default());
     let target = indicatif::ProgressDrawTarget::stdout();
     let style = indicatif::ProgressStyle::default_bar();
@@ -379,14 +394,13 @@ async fn container_import(
 
 /// Export a container image with an encapsulated ostree commit.
 async fn container_export(
-    repo: &str,
+    repo: &ostree::Repo,
     rev: &str,
     imgref: &ImageReference,
     labels: BTreeMap<String, String>,
     copy_meta_keys: Vec<String>,
     cmd: Option<Vec<String>>,
 ) -> Result<()> {
-    let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
     let config = Config {
         labels: Some(labels),
         cmd,
@@ -409,11 +423,10 @@ async fn container_info(imgref: &OstreeImageReference) -> Result<()> {
 
 /// Write a layered container image into an OSTree commit.
 async fn container_store(
-    repo: &str,
+    repo: &ostree::Repo,
     imgref: &OstreeImageReference,
     proxyopts: ContainerProxyOpts,
 ) -> Result<()> {
-    let repo = &ostree::Repo::open_at(libc::AT_FDCWD, repo, gio::NONE_CANCELLABLE)?;
     let mut imp = LayeredImageImporter::new(repo, imgref, proxyopts.into()).await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
@@ -460,14 +473,12 @@ async fn container_store(
 
 /// Add IMA signatures to an ostree commit, generating a new commit.
 fn ima_sign(cmdopts: &ImaSignOpts) -> Result<()> {
-    let repo =
-        &ostree::Repo::open_at(libc::AT_FDCWD, cmdopts.repo.as_str(), gio::NONE_CANCELLABLE)?;
     let signopts = crate::ima::ImaOpts {
         algorithm: cmdopts.algorithm.clone(),
         key: cmdopts.key.clone(),
     };
-    let signed_commit = crate::ima::ima_sign(repo, cmdopts.src_rev.as_str(), &signopts)?;
-    repo.set_ref_immediate(
+    let signed_commit = crate::ima::ima_sign(&cmdopts.repo, cmdopts.src_rev.as_str(), &signopts)?;
+    cmdopts.repo.set_ref_immediate(
         None,
         cmdopts.target_ref.as_str(),
         Some(signed_commit.as_str()),
@@ -530,9 +541,7 @@ where
             }
             ContainerOpts::Image(opts) => match opts {
                 ContainerImageOpts::List { repo } => {
-                    let repo =
-                        &ostree::Repo::open_at(libc::AT_FDCWD, &repo, gio::NONE_CANCELLABLE)?;
-                    for image in crate::container::store::list_images(repo)? {
+                    for image in crate::container::store::list_images(&repo)? {
                         println!("{}", image);
                     }
                     Ok(())
@@ -546,13 +555,7 @@ where
                     src_repo,
                     dest_repo,
                     imgref,
-                } => {
-                    let src_repo =
-                        &ostree::Repo::open_at(libc::AT_FDCWD, &src_repo, gio::NONE_CANCELLABLE)?;
-                    let dest_repo =
-                        &ostree::Repo::open_at(libc::AT_FDCWD, &dest_repo, gio::NONE_CANCELLABLE)?;
-                    crate::container::store::copy(src_repo, dest_repo, &imgref).await
-                }
+                } => crate::container::store::copy(&src_repo, &dest_repo, &imgref).await,
                 ContainerImageOpts::Deploy {
                     sysroot,
                     stateroot,
