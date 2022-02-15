@@ -156,7 +156,23 @@ pub(crate) fn filter_tar(
         };
 
         let mut header = entry.header().clone();
-        dest.append_data(&mut header, normalized, entry)?;
+
+        // Need to use the entry.link_name() not the header.link_name()
+        // api as the header api does not handle long paths:
+        // https://github.com/alexcrichton/tar-rs/issues/192
+        match entry.header().entry_type() {
+            tar::EntryType::Link | tar::EntryType::Symlink => {
+                let target = entry.link_name()?.ok_or_else(|| anyhow!("Invalid link"))?;
+                let target = target
+                    .as_os_str()
+                    .to_str()
+                    .ok_or_else(|| anyhow!("Non-utf8 link"))?;
+                dest.append_link(&mut header, &normalized, target)?;
+            }
+            _ => {
+                dest.append_data(&mut header, normalized, entry)?;
+            }
+        }
     }
     dest.into_inner()?.flush()?;
     Ok(filtered)
