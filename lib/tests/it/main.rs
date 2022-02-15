@@ -1,7 +1,7 @@
 mod fixture;
 
 use anyhow::{Context, Result};
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
 use fn_error_context::context;
 use once_cell::sync::Lazy;
 use ostree_ext::container::store::PrepareResult;
@@ -10,7 +10,7 @@ use ostree_ext::container::{
 };
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
-use sh_inline::bash;
+use sh_inline::bash_in;
 use std::collections::HashMap;
 use std::{io::Write, process::Command};
 
@@ -34,7 +34,7 @@ static TEST_REGISTRY: Lazy<String> = Lazy::new(|| match std::env::var_os("TEST_R
 });
 
 #[context("Generating test tarball")]
-fn initial_export(fixture: &Fixture) -> Result<Utf8PathBuf> {
+fn initial_export(fixture: &Fixture) -> Result<&'static Utf8Path> {
     let cancellable = gio::NONE_CANCELLABLE;
     let (_, rev) = fixture
         .srcrepo
@@ -46,15 +46,15 @@ fn initial_export(fixture: &Fixture) -> Result<Utf8PathBuf> {
             .as_str(),
         EXAMPLEOS_CONTENT_CHECKSUM
     );
-    let destpath = fixture.path.join("exampleos-export.tar");
-    let mut outf = std::io::BufWriter::new(std::fs::File::create(&destpath)?);
+    let path = "exampleos-export.tar";
+    let mut outf = std::io::BufWriter::new(fixture.dir.create(path)?);
     let options = ostree_ext::tar::ExportOptions {
         format_version: fixture.format_version,
         ..Default::default()
     };
     ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut outf, Some(options))?;
     outf.flush()?;
-    Ok(destpath)
+    Ok(path.into())
 }
 
 #[tokio::test]
@@ -90,10 +90,10 @@ async fn test_tar_export_reproducible() -> Result<()> {
 #[tokio::test]
 async fn test_tar_import_signed() -> Result<()> {
     let fixture = Fixture::new()?;
-    let test_tar = &initial_export(&fixture)?;
+    let test_tar = initial_export(&fixture)?;
 
     // Verify we fail with an unknown remote.
-    let src_tar = tokio::fs::File::open(test_tar).await?;
+    let src_tar = tokio::fs::File::from_std(fixture.dir.open(test_tar)?.into_std());
     let r = ostree_ext::tar::import_tar(
         &fixture.destrepo,
         src_tar,
@@ -111,7 +111,7 @@ async fn test_tar_import_signed() -> Result<()> {
     fixture
         .destrepo
         .remote_add("myremote", None, Some(&opts.end()), gio::NONE_CANCELLABLE)?;
-    let src_tar = tokio::fs::File::open(test_tar).await?;
+    let src_tar = tokio::fs::File::from_std(fixture.dir.open(test_tar)?.into_std());
     let r = ostree_ext::tar::import_tar(
         &fixture.destrepo,
         src_tar,
@@ -123,12 +123,10 @@ async fn test_tar_import_signed() -> Result<()> {
     assert_err_contains(r, r#"Can't check signature: public key not found"#);
 
     // And signed correctly
-    bash!(
-        "ostree --repo=${repo} remote gpg-import --stdin myremote < ${p}/gpghome/key1.asc >/dev/null",
-        repo = fixture.destrepo_path.as_str(),
-        p = fixture.srcdir.as_str()
+    bash_in!(&fixture.dir,
+        "ostree --repo=dest/repo remote gpg-import --stdin myremote < src/gpghome/key1.asc >/dev/null",
     )?;
-    let src_tar = tokio::fs::File::open(test_tar).await?;
+    let src_tar = tokio::fs::File::from_std(fixture.dir.open(test_tar)?.into_std());
     let imported = ostree_ext::tar::import_tar(
         &fixture.destrepo,
         src_tar,
@@ -217,7 +215,7 @@ fn test_tar_export_structure() -> Result<()> {
 
     let mut fixture = Fixture::new()?;
     let src_tar = initial_export(&fixture)?;
-    let src_tar = std::io::BufReader::new(std::fs::File::open(&src_tar)?);
+    let src_tar = std::io::BufReader::new(fixture.dir.open(src_tar)?);
     let mut src_tar = tar::Archive::new(src_tar);
     let mut entries = src_tar.entries()?;
     // The first entry should be the root directory.
@@ -256,7 +254,7 @@ fn test_tar_export_structure() -> Result<()> {
     // Validate format version 1
     fixture.format_version = 1;
     let src_tar = initial_export(&fixture)?;
-    let src_tar = std::io::BufReader::new(std::fs::File::open(&src_tar)?);
+    let src_tar = std::io::BufReader::new(fixture.dir.open(src_tar)?);
     let mut src_tar = tar::Archive::new(src_tar);
     let expected = [
         ("sysroot/ostree/repo", Directory, 0o755),
@@ -287,8 +285,8 @@ fn test_tar_export_structure() -> Result<()> {
 #[tokio::test]
 async fn test_tar_import_export() -> Result<()> {
     let fixture = Fixture::new()?;
-    let p = &initial_export(&fixture)?;
-    let src_tar = tokio::fs::File::open(p).await?;
+    let p = initial_export(&fixture)?;
+    let src_tar = tokio::fs::File::from_std(fixture.dir.open(p)?.into_std());
 
     let imported_commit: String =
         ostree_ext::tar::import_tar(&fixture.destrepo, src_tar, None).await?;
@@ -299,13 +297,13 @@ async fn test_tar_import_export() -> Result<()> {
             .unwrap()
             .as_str()
     );
-    bash!(
+    bash_in!(
+        &fixture.dir,
         r#"
-         ostree --repo=${destrepodir} ls -R ${imported_commit} >/dev/null
-         val=$(ostree --repo=${destrepodir} show --print-detached-metadata-key=my-detached-key ${imported_commit})
+         ostree --repo=dest/repo ls -R ${imported_commit} >/dev/null
+         val=$(ostree --repo=dest/repo show --print-detached-metadata-key=my-detached-key ${imported_commit})
          test "${val}" = "'my-detached-value'"
         "#,
-        destrepodir = fixture.destrepo_path.as_str(),
         imported_commit = imported_commit.as_str()
     )?;
     Ok(())
@@ -315,26 +313,24 @@ async fn test_tar_import_export() -> Result<()> {
 async fn test_tar_write() -> Result<()> {
     let fixture = Fixture::new()?;
     // Test translating /etc to /usr/etc
-    let tmpetc = fixture.path.join("tmproot/etc");
-    std::fs::create_dir_all(&tmpetc)?;
-    std::fs::write(tmpetc.join("someconfig.conf"), b"")?;
-    let tmproot = tmpetc.parent().unwrap();
-    let tmpvarlib = &tmproot.join("var/lib");
-    std::fs::create_dir_all(tmpvarlib)?;
-    std::fs::write(tmpvarlib.join("foo.log"), "foolog")?;
-    std::fs::write(tmpvarlib.join("bar.log"), "barlog")?;
-    std::fs::create_dir_all(tmproot.join("boot"))?;
-    let tmptar = fixture.path.join("testlayer.tar");
-    bash!(
-        "tar cf ${tmptar} -C ${tmproot} .",
-        tmptar = tmptar.as_str(),
-        tmproot = tmproot.as_str()
-    )?;
-    let src = tokio::fs::File::open(&tmptar).await?;
+    fixture.dir.create_dir_all("tmproot/etc")?;
+    let tmproot = &fixture.dir.open_dir("tmproot")?;
+    let tmpetc = tmproot.open_dir("etc")?;
+    tmpetc.write("someconfig.conf", b"some config")?;
+    tmproot.create_dir_all("var/log")?;
+    let tmpvarlog = tmproot.open_dir("var/log")?;
+    tmpvarlog.write("foo.log", "foolog")?;
+    tmpvarlog.write("bar.log", "barlog")?;
+    tmproot.create_dir("boot")?;
+    let tmptar = "testlayer.tar";
+    bash_in!(fixture.dir, "tar cf ${tmptar} -C tmproot .", tmptar)?;
+    let src = fixture.dir.open(tmptar)?;
+    fixture.dir.remove_file(tmptar)?;
+    let src = tokio::fs::File::from_std(src.into_std());
     let r = ostree_ext::tar::write_tar(&fixture.destrepo, src, "layer", None).await?;
-    bash!(
-        "ostree --repo=${repo} ls ${layer_commit} /usr/etc/someconfig.conf >/dev/null",
-        repo = fixture.destrepo_path.as_str(),
+    bash_in!(
+        &fixture.dir,
+        "ostree --repo=dest/repo ls ${layer_commit} /usr/etc/someconfig.conf >/dev/null",
         layer_commit = r.commit.as_str()
     )?;
     assert_eq!(r.filtered.len(), 2);
@@ -445,10 +441,9 @@ async fn test_container_import_export() -> Result<()> {
     fixture
         .destrepo
         .remote_add("myremote", None, Some(&opts.end()), gio::NONE_CANCELLABLE)?;
-    bash!(
-        "ostree --repo=${repo} remote gpg-import --stdin myremote < ${p}/gpghome/key1.asc",
-        repo = fixture.destrepo_path.as_str(),
-        p = fixture.srcdir.as_str()
+    bash_in!(
+        &fixture.dir,
+        "ostree --repo=dest/repo remote gpg-import --stdin myremote < src/gpghome/key1.asc",
     )?;
 
     // No remote matching
@@ -596,9 +591,9 @@ async fn test_container_write_derive() -> Result<()> {
     }
 
     // Parse the commit and verify we pulled the derived content.
-    bash!(
-        "ostree --repo=${repo} ls ${r} /usr/bin/newderivedfile >/dev/null",
-        repo = fixture.destrepo_path.as_str(),
+    bash_in!(
+        &fixture.dir,
+        "ostree --repo=dest/repo ls ${r} /usr/bin/newderivedfile >/dev/null",
         r = import.merge_commit.as_str()
     )?;
 
@@ -646,15 +641,15 @@ async fn test_container_write_derive() -> Result<()> {
     assert_eq!(images.len(), 1);
 
     // Verify we have the new file and *not* the old one
-    bash!(
+    bash_in!(
+        &fixture.dir,
         r#"set -x;
-         ostree --repo=${repo} ls ${r} /usr/bin/newderivedfile2 >/dev/null
-         test "$(ostree --repo=${repo} cat ${r} /usr/bin/newderivedfile)" = "newderivedfile v1"
-         if ostree --repo=${repo} ls ${r} /usr/bin/newderivedfile3 2>/dev/null; then
+         ostree --repo=dest/repo ls ${r} /usr/bin/newderivedfile2 >/dev/null
+         test "$(ostree --repo=dest/repo cat ${r} /usr/bin/newderivedfile)" = "newderivedfile v1"
+         if ostree --repo=dest/repo ls ${r} /usr/bin/newderivedfile3 2>/dev/null; then
            echo oops; exit 1
          fi
         "#,
-        repo = fixture.destrepo_path.as_str(),
         r = import.merge_commit.as_str()
     )?;
 
