@@ -42,23 +42,24 @@ async fn test_tar_import_empty() -> Result<()> {
 
 #[tokio::test]
 async fn test_tar_export_reproducible() -> Result<()> {
-    let fixture = Fixture::new()?;
-    let (_, rev) = fixture
-        .srcrepo
-        .read_commit(fixture.testref(), gio::NONE_CANCELLABLE)?;
-    let export1 = {
-        let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
-        ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut h, None)?;
-        h.finish()?
-    };
-    // Artificial delay to flush out mtimes (one second granularity baseline, plus another 100ms for good measure).
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-    let export2 = {
-        let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
-        ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut h, None)?;
-        h.finish()?
-    };
-    assert_eq!(*export1, *export2);
+    for fixture in [Fixture::new()?, Fixture::new_v1()?] {
+        let (_, rev) = fixture
+            .srcrepo
+            .read_commit(fixture.testref(), gio::NONE_CANCELLABLE)?;
+        let export1 = {
+            let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
+            ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut h, None)?;
+            h.finish()?
+        };
+        // Artificial delay to flush out mtimes (one second granularity baseline, plus another 100ms for good measure).
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let export2 = {
+            let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
+            ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut h, None)?;
+            h.finish()?
+        };
+        assert_eq!(*export1, *export2);
+    }
     Ok(())
 }
 
