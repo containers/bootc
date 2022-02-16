@@ -258,6 +258,7 @@ enum TestingOpts {
     DetectEnv,
     /// Execute integration tests, assuming mutable environment
     Run,
+    FilterTar,
 }
 
 /// Toplevel options for extended ostree functionality.
@@ -497,6 +498,9 @@ fn testing(opts: &TestingOpts) -> Result<()> {
             Ok(())
         }
         TestingOpts::Run => crate::integrationtest::run_tests(),
+        TestingOpts::FilterTar => {
+            crate::tar::filter_tar(std::io::stdin(), std::io::stdout()).map(|_| {})
+        }
     }
 }
 

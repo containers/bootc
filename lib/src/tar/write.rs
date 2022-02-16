@@ -127,7 +127,10 @@ fn normalize_validate_path(path: &Utf8Path) -> Result<NormalizedPathResult<'_>> 
 /// Remember that we're parsing this while we're downloading it, and in order
 /// to verify integrity we rely on the total sha256 of the blob, so all content
 /// written before then must be considered untrusted.
-fn filter_tar(src: impl std::io::Read, dest: impl std::io::Write) -> Result<BTreeMap<String, u32>> {
+pub(crate) fn filter_tar(
+    src: impl std::io::Read,
+    dest: impl std::io::Write,
+) -> Result<BTreeMap<String, u32>> {
     let src = std::io::BufReader::new(src);
     let mut src = tar::Archive::new(src);
     let dest = BufWriter::new(dest);
