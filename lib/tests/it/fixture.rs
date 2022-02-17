@@ -234,8 +234,8 @@ pub(crate) struct Fixture {
     _tempdir: tempfile::TempDir,
     pub(crate) dir: Arc<Dir>,
     pub(crate) path: Utf8PathBuf,
-    pub(crate) srcrepo: ostree::Repo,
-    pub(crate) destrepo: ostree::Repo,
+    srcrepo: ostree::Repo,
+    destrepo: ostree::Repo,
 
     pub(crate) format_version: u32,
     pub(crate) selinux: bool,
@@ -305,6 +305,14 @@ impl Fixture {
         ).context("Writing commit")?;
         r.dir.remove_file(tarname)?;
         Ok(r)
+    }
+
+    pub(crate) fn srcrepo(&self) -> &ostree::Repo {
+        &self.srcrepo
+    }
+
+    pub(crate) fn destrepo(&self) -> &ostree::Repo {
+        &self.destrepo
     }
 
     pub(crate) fn write_filedef(&self, root: &ostree::MutableTree, def: &FileDef) -> Result<()> {
