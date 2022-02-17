@@ -2,7 +2,6 @@ mod fixture;
 
 use anyhow::{Context, Result};
 use camino::Utf8Path;
-use fn_error_context::context;
 use once_cell::sync::Lazy;
 use ostree_ext::container::store::PrepareResult;
 use ostree_ext::container::{
@@ -12,7 +11,7 @@ use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
 use sh_inline::bash_in;
 use std::collections::HashMap;
-use std::{io::Write, process::Command};
+use std::process::Command;
 
 use fixture::Fixture;
 
@@ -32,30 +31,6 @@ static TEST_REGISTRY: Lazy<String> = Lazy::new(|| match std::env::var_os("TEST_R
     Some(t) => t.to_str().unwrap().to_owned(),
     None => TEST_REGISTRY_DEFAULT.to_string(),
 });
-
-#[context("Generating test tarball")]
-fn initial_export(fixture: &Fixture) -> Result<&'static Utf8Path> {
-    let cancellable = gio::NONE_CANCELLABLE;
-    let (_, rev) = fixture
-        .srcrepo
-        .read_commit(fixture.testref(), cancellable)?;
-    let (commitv, _) = fixture.srcrepo.load_commit(rev.as_str())?;
-    assert_eq!(
-        ostree::commit_get_content_checksum(&commitv)
-            .unwrap()
-            .as_str(),
-        EXAMPLEOS_CONTENT_CHECKSUM
-    );
-    let path = "exampleos-export.tar";
-    let mut outf = std::io::BufWriter::new(fixture.dir.create(path)?);
-    let options = ostree_ext::tar::ExportOptions {
-        format_version: fixture.format_version,
-        ..Default::default()
-    };
-    ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut outf, Some(options))?;
-    outf.flush()?;
-    Ok(path.into())
-}
 
 #[tokio::test]
 async fn test_tar_import_empty() -> Result<()> {
@@ -90,7 +65,16 @@ async fn test_tar_export_reproducible() -> Result<()> {
 #[tokio::test]
 async fn test_tar_import_signed() -> Result<()> {
     let fixture = Fixture::new()?;
-    let test_tar = initial_export(&fixture)?;
+    let test_tar = fixture.export_tar()?;
+
+    let rev = fixture.srcrepo.require_rev(fixture.testref())?;
+    let (commitv, _) = fixture.srcrepo.load_commit(rev.as_str())?;
+    assert_eq!(
+        ostree::commit_get_content_checksum(&commitv)
+            .unwrap()
+            .as_str(),
+        EXAMPLEOS_CONTENT_CHECKSUM
+    );
 
     // Verify we fail with an unknown remote.
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(test_tar)?.into_std());
@@ -214,7 +198,7 @@ fn test_tar_export_structure() -> Result<()> {
     use tar::EntryType::{Directory, Regular};
 
     let mut fixture = Fixture::new()?;
-    let src_tar = initial_export(&fixture)?;
+    let src_tar = fixture.export_tar()?;
     let src_tar = std::io::BufReader::new(fixture.dir.open(src_tar)?);
     let mut src_tar = tar::Archive::new(src_tar);
     let mut entries = src_tar.entries()?;
@@ -253,7 +237,7 @@ fn test_tar_export_structure() -> Result<()> {
 
     // Validate format version 1
     fixture.format_version = 1;
-    let src_tar = initial_export(&fixture)?;
+    let src_tar = fixture.export_tar()?;
     let src_tar = std::io::BufReader::new(fixture.dir.open(src_tar)?);
     let mut src_tar = tar::Archive::new(src_tar);
     let expected = [
@@ -285,7 +269,7 @@ fn test_tar_export_structure() -> Result<()> {
 #[tokio::test]
 async fn test_tar_import_export() -> Result<()> {
     let fixture = Fixture::new()?;
-    let p = initial_export(&fixture)?;
+    let p = fixture.export_tar()?;
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(p)?.into_std());
 
     let imported_commit: String =
