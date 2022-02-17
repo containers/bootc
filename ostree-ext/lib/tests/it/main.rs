@@ -35,31 +35,30 @@ static TEST_REGISTRY: Lazy<String> = Lazy::new(|| match std::env::var_os("TEST_R
 #[tokio::test]
 async fn test_tar_import_empty() -> Result<()> {
     let fixture = Fixture::new()?;
-    let r = ostree_ext::tar::import_tar(&fixture.destrepo, tokio::io::empty(), None).await;
+    let r = ostree_ext::tar::import_tar(fixture.destrepo(), tokio::io::empty(), None).await;
     assert_err_contains(r, "Commit object not found");
     Ok(())
 }
 
 #[tokio::test]
 async fn test_tar_export_reproducible() -> Result<()> {
-    for fixture in [Fixture::new()?, Fixture::new_v1()?] {
-        let (_, rev) = fixture
-            .srcrepo
-            .read_commit(fixture.testref(), gio::NONE_CANCELLABLE)?;
-        let export1 = {
-            let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
-            ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut h, None)?;
-            h.finish()?
-        };
-        // Artificial delay to flush out mtimes (one second granularity baseline, plus another 100ms for good measure).
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-        let export2 = {
-            let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
-            ostree_ext::tar::export_commit(&fixture.srcrepo, rev.as_str(), &mut h, None)?;
-            h.finish()?
-        };
-        assert_eq!(*export1, *export2);
-    }
+    let fixture = Fixture::new_v1()?;
+    let (_, rev) = fixture
+        .srcrepo()
+        .read_commit(fixture.testref(), gio::NONE_CANCELLABLE)?;
+    let export1 = {
+        let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
+        ostree_ext::tar::export_commit(fixture.srcrepo(), rev.as_str(), &mut h, None)?;
+        h.finish()?
+    };
+    // Artificial delay to flush out mtimes (one second granularity baseline, plus another 100ms for good measure).
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let export2 = {
+        let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
+        ostree_ext::tar::export_commit(fixture.srcrepo(), rev.as_str(), &mut h, None)?;
+        h.finish()?
+    };
+    assert_eq!(*export1, *export2);
     Ok(())
 }
 
@@ -68,8 +67,8 @@ async fn test_tar_import_signed() -> Result<()> {
     let fixture = Fixture::new()?;
     let test_tar = fixture.export_tar()?;
 
-    let rev = fixture.srcrepo.require_rev(fixture.testref())?;
-    let (commitv, _) = fixture.srcrepo.load_commit(rev.as_str())?;
+    let rev = fixture.srcrepo().require_rev(fixture.testref())?;
+    let (commitv, _) = fixture.srcrepo().load_commit(rev.as_str())?;
     assert_eq!(
         ostree::commit_get_content_checksum(&commitv)
             .unwrap()
@@ -80,7 +79,7 @@ async fn test_tar_import_signed() -> Result<()> {
     // Verify we fail with an unknown remote.
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(test_tar)?.into_std());
     let r = ostree_ext::tar::import_tar(
-        &fixture.destrepo,
+        fixture.destrepo(),
         src_tar,
         Some(TarImportOptions {
             remote: Some("nosuchremote".to_string()),
@@ -94,11 +93,11 @@ async fn test_tar_import_signed() -> Result<()> {
     opts.insert("gpg-verify", &true);
     opts.insert("custom-backend", &"ostree-rs-ext");
     fixture
-        .destrepo
+        .destrepo()
         .remote_add("myremote", None, Some(&opts.end()), gio::NONE_CANCELLABLE)?;
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(test_tar)?.into_std());
     let r = ostree_ext::tar::import_tar(
-        &fixture.destrepo,
+        fixture.destrepo(),
         src_tar,
         Some(TarImportOptions {
             remote: Some("myremote".to_string()),
@@ -113,14 +112,14 @@ async fn test_tar_import_signed() -> Result<()> {
     )?;
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(test_tar)?.into_std());
     let imported = ostree_ext::tar::import_tar(
-        &fixture.destrepo,
+        fixture.destrepo(),
         src_tar,
         Some(TarImportOptions {
             remote: Some("myremote".to_string()),
         }),
     )
     .await?;
-    let (commitdata, state) = fixture.destrepo.load_commit(&imported)?;
+    let (commitdata, state) = fixture.destrepo().load_commit(&imported)?;
     assert_eq!(
         EXAMPLEOS_CONTENT_CHECKSUM,
         ostree::commit_get_content_checksum(&commitdata)
@@ -274,8 +273,8 @@ async fn test_tar_import_export() -> Result<()> {
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(p)?.into_std());
 
     let imported_commit: String =
-        ostree_ext::tar::import_tar(&fixture.destrepo, src_tar, None).await?;
-    let (commitdata, _) = fixture.destrepo.load_commit(&imported_commit)?;
+        ostree_ext::tar::import_tar(fixture.destrepo(), src_tar, None).await?;
+    let (commitdata, _) = fixture.destrepo().load_commit(&imported_commit)?;
     assert_eq!(
         EXAMPLEOS_CONTENT_CHECKSUM,
         ostree::commit_get_content_checksum(&commitdata)
@@ -312,7 +311,7 @@ async fn test_tar_write() -> Result<()> {
     let src = fixture.dir.open(tmptar)?;
     fixture.dir.remove_file(tmptar)?;
     let src = tokio::fs::File::from_std(src.into_std());
-    let r = ostree_ext::tar::write_tar(&fixture.destrepo, src, "layer", None).await?;
+    let r = ostree_ext::tar::write_tar(fixture.destrepo(), src, "layer", None).await?;
     bash_in!(
         &fixture.dir,
         "ostree --repo=dest/repo ls ${layer_commit} /usr/etc/someconfig.conf >/dev/null",
@@ -345,7 +344,7 @@ fn skopeo_inspect_config(imgref: &str) -> Result<oci_spec::image::ImageConfigura
 async fn test_container_import_export() -> Result<()> {
     let fixture = Fixture::new()?;
     let testrev = fixture
-        .srcrepo
+        .srcrepo()
         .require_rev(fixture.testref())
         .context("Failed to resolve ref")?;
 
@@ -368,7 +367,7 @@ async fn test_container_import_export() -> Result<()> {
         ..Default::default()
     };
     let digest = ostree_ext::container::encapsulate(
-        &fixture.srcrepo,
+        fixture.srcrepo(),
         fixture.testref(),
         &config,
         Some(opts),
@@ -414,7 +413,7 @@ async fn test_container_import_export() -> Result<()> {
         sigverify: SignatureSource::OstreeRemote("unknownremote".to_string()),
         imgref: srcoci_imgref.clone(),
     };
-    let r = ostree_ext::container::unencapsulate(&fixture.destrepo, &srcoci_unknownremote, None)
+    let r = ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_unknownremote, None)
         .await
         .context("importing");
     assert_err_contains(r, r#"Remote "unknownremote" not found"#);
@@ -424,7 +423,7 @@ async fn test_container_import_export() -> Result<()> {
     opts.insert("gpg-verify", &true);
     opts.insert("custom-backend", &"ostree-rs-ext");
     fixture
-        .destrepo
+        .destrepo()
         .remote_add("myremote", None, Some(&opts.end()), gio::NONE_CANCELLABLE)?;
     bash_in!(
         &fixture.dir,
@@ -436,7 +435,7 @@ async fn test_container_import_export() -> Result<()> {
         sigverify: SignatureSource::OstreeRemote("myremote".to_string()),
         imgref: srcoci_imgref.clone(),
     };
-    let import = ostree_ext::container::unencapsulate(&fixture.destrepo, &srcoci_verified, None)
+    let import = ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_verified, None)
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
@@ -446,7 +445,7 @@ async fn test_container_import_export() -> Result<()> {
     {
         let fixture = Fixture::new()?;
         let import =
-            ostree_ext::container::unencapsulate(&fixture.destrepo, &srcoci_unverified, None)
+            ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_unverified, None)
                 .await
                 .context("importing")?;
         assert_eq!(import.ostree_commit, testrev.as_str());
@@ -478,7 +477,7 @@ async fn test_container_write_derive() -> Result<()> {
     let fixture = Fixture::new()?;
     let base_oci_path = &fixture.path.join("exampleos.oci");
     let _digest = ostree_ext::container::encapsulate(
-        &fixture.srcrepo,
+        fixture.srcrepo(),
         fixture.testref(),
         &Config {
             cmd: Some(vec!["/bin/bash".to_string()]),
@@ -525,16 +524,16 @@ async fn test_container_write_derive() -> Result<()> {
         },
     };
     // There shouldn't be any container images stored yet.
-    let images = ostree_ext::container::store::list_images(&fixture.destrepo)?;
+    let images = ostree_ext::container::store::list_images(fixture.destrepo())?;
     assert!(images.is_empty());
 
     // Verify importing a derive dimage fails
-    let r = ostree_ext::container::unencapsulate(&fixture.destrepo, &derived_ref, None).await;
+    let r = ostree_ext::container::unencapsulate(fixture.destrepo(), &derived_ref, None).await;
     assert_err_contains(r, "Expected 1 layer, found 2");
 
     // Pull a derived image - two layers, new base plus one layer.
     let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
-        &fixture.destrepo,
+        fixture.destrepo(),
         &derived_ref,
         Default::default(),
     )
@@ -551,12 +550,12 @@ async fn test_container_write_derive() -> Result<()> {
     }
     let import = imp.import(prep).await?;
     // We should have exactly one image stored.
-    let images = ostree_ext::container::store::list_images(&fixture.destrepo)?;
+    let images = ostree_ext::container::store::list_images(fixture.destrepo())?;
     assert_eq!(images.len(), 1);
     assert_eq!(images[0], derived_ref.imgref.to_string());
 
     let imported_commit = &fixture
-        .destrepo
+        .destrepo()
         .load_commit(import.merge_commit.as_str())?
         .0;
     let digest = ostree_ext::container::store::manifest_digest_from_commit(imported_commit)?;
@@ -584,7 +583,7 @@ async fn test_container_write_derive() -> Result<()> {
 
     // Import again, but there should be no changes.
     let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
-        &fixture.destrepo,
+        fixture.destrepo(),
         &derived_ref,
         Default::default(),
     )
@@ -601,7 +600,7 @@ async fn test_container_write_derive() -> Result<()> {
     std::fs::remove_dir_all(derived_path)?;
     std::fs::rename(derived2_path, derived_path)?;
     let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
-        &fixture.destrepo,
+        fixture.destrepo(),
         &derived_ref,
         Default::default(),
     )
@@ -621,7 +620,7 @@ async fn test_container_write_derive() -> Result<()> {
     // New commit.
     assert_ne!(import.merge_commit, already_present.merge_commit);
     // We should still have exactly one image stored.
-    let images = ostree_ext::container::store::list_images(&fixture.destrepo)?;
+    let images = ostree_ext::container::store::list_images(fixture.destrepo())?;
     assert_eq!(images[0], derived_ref.imgref.to_string());
     assert_eq!(images.len(), 1);
 
@@ -640,7 +639,7 @@ async fn test_container_write_derive() -> Result<()> {
 
     // And there should be no changes on upgrade again.
     let mut imp = ostree_ext::container::store::LayeredImageImporter::new(
-        &fixture.destrepo,
+        fixture.destrepo(),
         &derived_ref,
         Default::default(),
     )
@@ -661,7 +660,7 @@ async fn test_container_write_derive() -> Result<()> {
         None,
         gio::NONE_CANCELLABLE,
     )?;
-    ostree_ext::container::store::copy(&fixture.destrepo, &destrepo2, &derived_ref).await?;
+    ostree_ext::container::store::copy(fixture.destrepo(), &destrepo2, &derived_ref).await?;
 
     let images = ostree_ext::container::store::list_images(&destrepo2)?;
     assert_eq!(images.len(), 1);
@@ -683,7 +682,7 @@ async fn test_container_import_export_registry() -> Result<()> {
     let fixture = Fixture::new()?;
     let testref = fixture.testref();
     let testrev = fixture
-        .srcrepo
+        .srcrepo()
         .require_rev(testref)
         .context("Failed to resolve ref")?;
     let src_imgref = ImageReference {
@@ -695,7 +694,7 @@ async fn test_container_import_export_registry() -> Result<()> {
         ..Default::default()
     };
     let digest =
-        ostree_ext::container::encapsulate(&fixture.srcrepo, testref, &config, None, &src_imgref)
+        ostree_ext::container::encapsulate(fixture.srcrepo(), testref, &config, None, &src_imgref)
             .await
             .context("exporting to registry")?;
     let mut digested_imgref = src_imgref.clone();
@@ -705,7 +704,7 @@ async fn test_container_import_export_registry() -> Result<()> {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref: digested_imgref,
     };
-    let import = ostree_ext::container::unencapsulate(&fixture.destrepo, &import_ref, None)
+    let import = ostree_ext::container::unencapsulate(fixture.destrepo(), &import_ref, None)
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
@@ -717,7 +716,7 @@ fn test_diff() -> Result<()> {
     let mut fixture = Fixture::new()?;
     fixture.update()?;
     let from = &format!("{}^", fixture.testref());
-    let repo = &fixture.srcrepo;
+    let repo = fixture.srcrepo();
     let subdir: Option<&str> = None;
     let diff = ostree_ext::diff::diff(repo, from, fixture.testref(), subdir)?;
     assert!(diff.subdir.is_none());
