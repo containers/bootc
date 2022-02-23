@@ -184,25 +184,19 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             let path: Utf8PathBuf = format!("{}/{:02x}", objdir, d).into();
             self.append_default_dir(&path)?;
         }
-        // Extensions subdirectory
-        {
-            let path: Utf8PathBuf = format!("{}/repo/extensions", OSTREEDIR).into();
-            self.append_default_dir(&path)?;
-        }
-
-        // Tmp subdirectories
-        for d in ["tmp", "tmp/cache"] {
+        // Standard repo subdirectories.
+        let subdirs = [
+            "extensions",
+            "refs",
+            "refs/heads",
+            "refs/mirrors",
+            "refs/remotes",
+            "state",
+            "tmp",
+            "tmp/cache",
+        ];
+        for d in subdirs {
             let path: Utf8PathBuf = format!("{}/repo/{}", OSTREEDIR, d).into();
-            self.append_default_dir(&path)?;
-        }
-        // Refs subdirectories
-        for d in ["refs", "refs/heads", "refs/mirrors", "refs/remotes"] {
-            let path: Utf8PathBuf = format!("{}/repo/{}", OSTREEDIR, d).into();
-            self.append_default_dir(&path)?;
-        }
-        // State subdirectory
-        {
-            let path: Utf8PathBuf = format!("{}/repo/state", OSTREEDIR).into();
             self.append_default_dir(&path)?;
         }
 
