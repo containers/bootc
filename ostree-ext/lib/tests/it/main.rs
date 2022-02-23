@@ -331,7 +331,7 @@ async fn test_tar_write_tar_layer() -> Result<()> {
     let uncompressed_tar = tokio::io::BufReader::new(
         async_compression::tokio::bufread::GzipDecoder::new(EXAMPLE_TAR_LAYER),
     );
-    ostree_ext::tar::write_tar(&fixture.destrepo, uncompressed_tar, "test", None).await?;
+    ostree_ext::tar::write_tar(&fixture.destrepo(), uncompressed_tar, "test", None).await?;
     Ok(())
 }
 
