@@ -215,6 +215,7 @@ fn test_tar_export_structure() -> Result<()> {
     let expected = [
         ("sysroot/config", Regular, 0o644),
         ("sysroot/ostree/repo", Directory, 0o755),
+        ("sysroot/ostree/repo/extensions", Directory, 0o755),
         ("sysroot/ostree/repo/objects/00", Directory, 0o755),
         ("sysroot/ostree/repo/objects/23", Directory, 0o755),
         ("sysroot/ostree/repo/objects/77", Directory, 0o755),
@@ -225,6 +226,7 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/refs/heads", Directory, 0o755),
         ("sysroot/ostree/repo/refs/mirrors", Directory, 0o755),
         ("sysroot/ostree/repo/refs/remotes", Directory, 0o755),
+        ("sysroot/ostree/repo/state", Directory, 0o755),
         ("sysroot/ostree/repo/tmp", Directory, 0o755),
         ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
         ("sysroot/ostree/repo/xattrs", Directory, 0o755),
@@ -244,6 +246,7 @@ fn test_tar_export_structure() -> Result<()> {
     let expected = [
         ("sysroot/ostree/repo", Directory, 0o755),
         ("sysroot/ostree/repo/config", Regular, 0o644),
+        ("sysroot/ostree/repo/extensions", Directory, 0o755),
         ("sysroot/ostree/repo/objects/00", Directory, 0o755),
         ("sysroot/ostree/repo/objects/23", Directory, 0o755),
         ("sysroot/ostree/repo/objects/77", Directory, 0o755),
@@ -254,6 +257,7 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/refs/heads", Directory, 0o755),
         ("sysroot/ostree/repo/refs/mirrors", Directory, 0o755),
         ("sysroot/ostree/repo/refs/remotes", Directory, 0o755),
+        ("sysroot/ostree/repo/state", Directory, 0o755),
         ("sysroot/ostree/repo/tmp", Directory, 0o755),
         ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
         ("usr", Directory, 0o755),
@@ -331,7 +335,7 @@ async fn test_tar_write_tar_layer() -> Result<()> {
     let uncompressed_tar = tokio::io::BufReader::new(
         async_compression::tokio::bufread::GzipDecoder::new(EXAMPLE_TAR_LAYER),
     );
-    ostree_ext::tar::write_tar(&fixture.destrepo, uncompressed_tar, "test", None).await?;
+    ostree_ext::tar::write_tar(&fixture.destrepo(), uncompressed_tar, "test", None).await?;
     Ok(())
 }
 
