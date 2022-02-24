@@ -301,15 +301,15 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
 
         let xattrs_checksum = {
             let digest = openssl::hash::hash(openssl::hash::MessageDigest::sha256(), xattrs_data)?;
-            &hex::encode(digest)
+            hex::encode(digest)
         };
 
         if self.options.format_version == 0 {
-            let path = v0_xattrs_path(xattrs_checksum);
+            let path = v0_xattrs_path(&xattrs_checksum);
 
             // Write xattrs content into a separate directory.
-            if !self.wrote_xattrs.contains(xattrs_checksum) {
-                let inserted = self.wrote_xattrs.insert(checksum.to_string());
+            if !self.wrote_xattrs.contains(&xattrs_checksum) {
+                let inserted = self.wrote_xattrs.insert(xattrs_checksum);
                 debug_assert!(inserted);
                 self.append_default_data(&path, xattrs_data)?;
             }
@@ -319,11 +319,11 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                 self.append_default_hardlink(&objpath, &path)?;
             }
         } else if self.options.format_version == 1 {
-            let path = v1_xattrs_object_path(xattrs_checksum);
+            let path = v1_xattrs_object_path(&xattrs_checksum);
 
             // Write xattrs content into a separate `.file-xattrs` object.
-            if !self.wrote_xattrs.contains(xattrs_checksum) {
-                let inserted = self.wrote_xattrs.insert(checksum.to_string());
+            if !self.wrote_xattrs.contains(&xattrs_checksum) {
+                let inserted = self.wrote_xattrs.insert(xattrs_checksum);
                 debug_assert!(inserted);
                 self.append_default_data(&path, xattrs_data)?;
             }

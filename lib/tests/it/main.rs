@@ -10,7 +10,7 @@ use ostree_ext::container::{
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
 use sh_inline::bash_in;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 use fixture::Fixture;
@@ -156,11 +156,16 @@ fn validate_tar_expected<T: std::io::Read>(
     let mut expected: HashMap<&'static str, TarExpected> =
         expected.into_iter().map(|exp| (exp.path, exp)).collect();
     let entries = t.map(|e| e.unwrap());
+    let mut seen_paths = HashSet::new();
     // Verify we're injecting directories, fixes the absence of `/tmp` in our
     // images for example.
     for entry in entries {
         let header = entry.header();
         let entry_path = entry.path().unwrap().to_string_lossy().into_owned();
+        if seen_paths.contains(&entry_path) {
+            anyhow::bail!("Duplicate path: {}", entry_path);
+        }
+        seen_paths.insert(entry_path.clone());
         if let Some(exp) = expected.remove(entry_path.as_str()) {
             assert_eq!(header.entry_type(), exp.etype, "{}", entry_path);
             let is_old_object = format_version == 0;
@@ -230,6 +235,7 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/tmp", Directory, 0o755),
         ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
         ("sysroot/ostree/repo/xattrs", Directory, 0o755),
+        ("sysroot/ostree/repo/xattrs/44299b6a1738aab86de5966507fbe369af2ab421e1c6eb6e797054831430d92c", Regular, 0o644),
         ("usr", Directory, 0o755),
     ];
     validate_tar_expected(
