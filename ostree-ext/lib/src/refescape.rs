@@ -129,8 +129,7 @@ fn unescape_for_ref(s: &str) -> Result<String> {
 pub fn unprefix_unescape_ref(prefix: &str, ostree_ref: &str) -> Result<String> {
     let rest = ostree_ref
         .strip_prefix(prefix)
-        .map(|s| s.strip_prefix('/'))
-        .flatten()
+        .and_then(|s| s.strip_prefix('/'))
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "ref does not match expected prefix {}/: {}",
