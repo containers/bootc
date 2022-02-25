@@ -114,8 +114,7 @@ fn parse_object_entry_path(path: &Utf8Path) -> Result<(&str, &Utf8Path, &str)> {
     // The "sharded" commit directory.
     let parentname = path
         .parent()
-        .map(|p| p.file_name())
-        .flatten()
+        .and_then(|p| p.file_name())
         .ok_or_else(|| anyhow!("Invalid path (no parent) {}", path))?;
     if parentname.len() != 2 {
         return Err(anyhow!("Invalid checksum parent {}", parentname));
@@ -420,21 +419,18 @@ impl Importer {
 
         // Extract the xattrs checksum from the link target or from the content (v1).
         // Later, it will be used as the key for a lookup into the `self.xattrs` cache.
-        let xattrs_checksum;
-        match entry.header().entry_type() {
+        let xattrs_checksum = match entry.header().entry_type() {
             Link => {
                 let link_target = entry
                     .link_name()?
                     .ok_or_else(|| anyhow!("No xattrs link content for {}", checksum))?;
                 let xattr_target = Utf8Path::from_path(&*link_target)
                     .ok_or_else(|| anyhow!("Invalid non-UTF8 xattrs link {}", checksum))?;
-                xattrs_checksum = parse_xattrs_link_target(xattr_target)?;
+                parse_xattrs_link_target(xattr_target)?
             }
-            Regular => {
-                xattrs_checksum = self.cache_xattrs_content(entry, None)?;
-            }
+            Regular => self.cache_xattrs_content(entry, None)?,
             x => bail!("Unexpected xattrs type '{:?}' found for {}", x, checksum),
-        }
+        };
 
         // Now xattrs are properly cached for the next content object in the stream,
         // which should match `checksum`.
