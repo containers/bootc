@@ -118,7 +118,7 @@ fn build_oci(
 
     labels.insert(OSTREE_COMMIT_LABEL.into(), commit.into());
 
-    for (k, v) in config.labels.iter().map(|k| k.iter()).flatten() {
+    for (k, v) in config.labels.iter().flat_map(|k| k.iter()) {
         labels.insert(k.into(), v.into());
     }
     // Lookup the cmd embedded in commit metadata
