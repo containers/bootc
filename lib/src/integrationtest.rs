@@ -23,7 +23,6 @@ pub(crate) fn detectenv() -> &'static str {
 
 /// Using `src` as a base, take append `dir` into OCI image.
 /// Should only be enabled for testing.
-#[cfg(feature = "internal-testing-api")]
 #[context("Generating derived oci")]
 pub fn generate_derived_oci(src: impl AsRef<Utf8Path>, dir: impl AsRef<Utf8Path>) -> Result<()> {
     use std::rc::Rc;

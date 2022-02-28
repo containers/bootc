@@ -1,5 +1,3 @@
-mod fixture;
-
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use once_cell::sync::Lazy;
@@ -10,10 +8,11 @@ use ostree_ext::container::{
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
 use sh_inline::bash_in;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
-use fixture::Fixture;
+use ostree_ext::fixture::{FileDef, Fixture};
 
 const EXAMPLE_TAR_LAYER: &[u8] = include_bytes!("fixtures/hlinks.tar.gz");
 const EXAMPLEOS_CONTENT_CHECKSUM: &str =
@@ -734,8 +733,17 @@ async fn test_container_import_export_registry() -> Result<()> {
 
 #[test]
 fn test_diff() -> Result<()> {
-    let mut fixture = Fixture::new()?;
-    fixture.update()?;
+    let mut fixture = Fixture::new_v1()?;
+    const ADDITIONS: &str = indoc::indoc! { "
+r /usr/bin/newbin some-new-binary
+d /usr/share
+"};
+    fixture
+        .update(
+            FileDef::iter_from(ADDITIONS),
+            IntoIterator::into_iter([Cow::Borrowed("/usr/bin/bash".into())]),
+        )
+        .context("Failed to update")?;
     let from = &format!("{}^", fixture.testref());
     let repo = fixture.srcrepo();
     let subdir: Option<&str> = None;
@@ -746,7 +754,7 @@ fn test_diff() -> Result<()> {
     assert_eq!(diff.added_files.len(), 1);
     assert_eq!(diff.added_files.iter().next().unwrap(), "/usr/bin/newbin");
     assert_eq!(diff.removed_files.len(), 1);
-    assert_eq!(diff.removed_files.iter().next().unwrap(), "/usr/bin/foo");
+    assert_eq!(diff.removed_files.iter().next().unwrap(), "/usr/bin/bash");
     let diff = ostree_ext::diff::diff(repo, from, fixture.testref(), Some("/usr"))?;
     assert_eq!(diff.subdir.as_ref().unwrap(), "/usr");
     assert_eq!(diff.added_dirs.len(), 1);
@@ -754,6 +762,6 @@ fn test_diff() -> Result<()> {
     assert_eq!(diff.added_files.len(), 1);
     assert_eq!(diff.added_files.iter().next().unwrap(), "/bin/newbin");
     assert_eq!(diff.removed_files.len(), 1);
-    assert_eq!(diff.removed_files.iter().next().unwrap(), "/bin/foo");
+    assert_eq!(diff.removed_files.iter().next().unwrap(), "/bin/bash");
     Ok(())
 }
