@@ -45,4 +45,6 @@ pub mod prelude {
 }
 
 #[cfg(feature = "internal-testing-api")]
+pub mod fixture;
+#[cfg(feature = "internal-testing-api")]
 pub mod integrationtest;

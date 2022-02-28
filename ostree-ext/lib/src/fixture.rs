@@ -1,15 +1,21 @@
+//! Test suite fixture.  Should only be used by this library.
+
+#![allow(missing_docs)]
+
+use crate::prelude::*;
+use crate::{gio, glib};
 use anyhow::{anyhow, Context, Result};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use cap_std::fs::Dir;
 use cap_std_ext::prelude::CapStdExtCommandExt;
+use chrono::TimeZone;
 use fn_error_context::context;
 use ostree::cap_std;
-use ostree_ext::prelude::*;
-use ostree_ext::{gio, glib};
 use sh_inline::bash_in;
 use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
 use std::io::Write;
+use std::ops::Add;
 use std::process::Stdio;
 use std::sync::Arc;
 
@@ -17,8 +23,7 @@ const OSTREE_GPG_HOME: &[u8] = include_bytes!("fixtures/ostree-gpg-test-home.tar
 const TEST_GPG_KEYID_1: &str = "7FCA23D8472CDAFA";
 #[allow(dead_code)]
 const TEST_GPG_KEYFPR_1: &str = "5E65DE75AB1C501862D476347FCA23D8472CDAFA";
-pub(crate) const EXAMPLEOS_V0: &[u8] = include_bytes!("fixtures/exampleos.tar.zst");
-pub(crate) const EXAMPLEOS_V1: &[u8] = include_bytes!("fixtures/exampleos-v1.tar.zst");
+pub const EXAMPLEOS_V0: &[u8] = include_bytes!("fixtures/exampleos.tar.zst");
 const TESTREF: &str = "exampleos/x86_64/stable";
 
 #[derive(Debug)]
@@ -29,7 +34,7 @@ enum FileDefType {
 }
 
 #[derive(Debug)]
-pub(crate) struct FileDef {
+pub struct FileDef {
     uid: u32,
     gid: u32,
     mode: u32,
@@ -41,7 +46,7 @@ impl TryFrom<&'static str> for FileDef {
     type Error = anyhow::Error;
 
     fn try_from(value: &'static str) -> Result<Self, Self::Error> {
-        let mut parts = value.split(" ");
+        let mut parts = value.split(' ');
         let tydef = parts
             .next()
             .ok_or_else(|| anyhow!("Missing type definition"))?;
@@ -68,7 +73,7 @@ impl TryFrom<&'static str> for FileDef {
 }
 
 fn parse_mode(line: &str) -> Result<(u32, u32, u32)> {
-    let mut parts = line.split(" ").skip(1);
+    let mut parts = line.split(' ').skip(1);
     // An empty mode resets to defaults
     let uid = if let Some(u) = parts.next() {
         u
@@ -85,14 +90,14 @@ fn parse_mode(line: &str) -> Result<(u32, u32, u32)> {
 
 impl FileDef {
     /// Parse a list of newline-separated file definitions.
-    fn iter_from(defs: &'static str) -> impl Iterator<Item = Result<FileDef>> {
+    pub fn iter_from(defs: &'static str) -> impl Iterator<Item = Result<FileDef>> {
         let mut uid = 0;
         let mut gid = 0;
         let mut mode = 0o644;
         defs.lines()
-            .filter(|v| !(v.is_empty() || v.starts_with("#")))
+            .filter(|v| !(v.is_empty() || v.starts_with('#')))
             .filter_map(move |line| {
-                if line.starts_with("m") {
+                if line.starts_with('m') {
                     match parse_mode(line) {
                         Ok(r) => {
                             uid = r.0;
@@ -145,7 +150,7 @@ enum SeLabel {
 }
 
 impl SeLabel {
-    pub(crate) fn from_path(p: &Utf8Path) -> Self {
+    pub fn from_path(p: &Utf8Path) -> Self {
         let rootdir = p.components().find_map(|v| {
             if let Utf8Component::Normal(name) = v {
                 Some(name)
@@ -177,7 +182,7 @@ impl SeLabel {
         }
     }
 
-    pub(crate) fn to_str(&self) -> &'static str {
+    pub fn to_str(&self) -> &'static str {
         match self {
             SeLabel::Root => "system_u:object_r:root_t:s0",
             SeLabel::Usr => "system_u:object_r:usr_t:s0",
@@ -188,13 +193,13 @@ impl SeLabel {
         }
     }
 
-    pub(crate) fn new_xattrs(&self) -> glib::Variant {
-        vec![(b"security.selinux".as_slice(), self.to_str().as_bytes())].to_variant()
+    pub fn new_xattrs(&self) -> glib::Variant {
+        vec![("security.selinux".as_bytes(), self.to_str().as_bytes())].to_variant()
     }
 }
 
 /// Generate directory metadata variant for root/root 0755 directory with an optional SELinux label
-pub(crate) fn create_dirmeta(path: &Utf8Path, selinux: bool) -> glib::Variant {
+pub fn create_dirmeta(path: &Utf8Path, selinux: bool) -> glib::Variant {
     let finfo = gio::FileInfo::new();
     finfo.set_attribute_uint32("unix::uid", 0);
     finfo.set_attribute_uint32("unix::gid", 0);
@@ -209,11 +214,7 @@ pub(crate) fn create_dirmeta(path: &Utf8Path, selinux: bool) -> glib::Variant {
 }
 
 /// Wraps [`create_dirmeta`] and commits it.
-pub(crate) fn require_dirmeta(
-    repo: &ostree::Repo,
-    path: &Utf8Path,
-    selinux: bool,
-) -> Result<String> {
+pub fn require_dirmeta(repo: &ostree::Repo, path: &Utf8Path, selinux: bool) -> Result<String> {
     let v = create_dirmeta(path, selinux);
     let r = repo.write_metadata(ostree::ObjectType::DirMeta, None, &v, gio::NONE_CANCELLABLE)?;
     Ok(r.to_hex())
@@ -224,26 +225,34 @@ fn ensure_parent_dirs(
     path: &Utf8Path,
     metadata_checksum: &str,
 ) -> Result<ostree::MutableTree> {
-    let parts = path.components().map(|s| s.as_str()).collect::<Vec<_>>();
+    let parts = relative_path_components(path)
+        .map(|s| s.as_str())
+        .collect::<Vec<_>>();
     mt.ensure_parent_dirs(&parts, metadata_checksum)
         .map_err(Into::into)
 }
 
-pub(crate) struct Fixture {
+fn relative_path_components(p: &Utf8Path) -> impl Iterator<Item = Utf8Component> {
+    p.components()
+        .filter(|p| matches!(p, Utf8Component::Normal(_)))
+}
+
+#[derive(Debug)]
+pub struct Fixture {
     // Just holds a reference
     _tempdir: tempfile::TempDir,
-    pub(crate) dir: Arc<Dir>,
-    pub(crate) path: Utf8PathBuf,
+    pub dir: Arc<Dir>,
+    pub path: Utf8PathBuf,
     srcrepo: ostree::Repo,
     destrepo: ostree::Repo,
 
-    pub(crate) format_version: u32,
-    pub(crate) selinux: bool,
+    pub format_version: u32,
+    pub selinux: bool,
 }
 
 impl Fixture {
     #[context("Initializing fixture")]
-    pub(crate) fn new_base() -> Result<Self> {
+    pub fn new_base() -> Result<Self> {
         // Basic setup, allocate a tempdir
         let tempdir = tempfile::tempdir_in("/var/tmp")?;
         let dir = Arc::new(cap_std::fs::Dir::open_ambient_dir(
@@ -289,7 +298,7 @@ impl Fixture {
         })
     }
 
-    pub(crate) fn new() -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let r = Self::new_base()?;
         let tarname = "exampleos.tar.zst";
         r.dir.write(tarname, EXAMPLEOS_V0)?;
@@ -307,15 +316,15 @@ impl Fixture {
         Ok(r)
     }
 
-    pub(crate) fn srcrepo(&self) -> &ostree::Repo {
+    pub fn srcrepo(&self) -> &ostree::Repo {
         &self.srcrepo
     }
 
-    pub(crate) fn destrepo(&self) -> &ostree::Repo {
+    pub fn destrepo(&self) -> &ostree::Repo {
         &self.destrepo
     }
 
-    pub(crate) fn write_filedef(&self, root: &ostree::MutableTree, def: &FileDef) -> Result<()> {
+    pub fn write_filedef(&self, root: &ostree::MutableTree, def: &FileDef) -> Result<()> {
         let parent_path = def.path.parent();
         let parent = if let Some(parent_path) = parent_path {
             let meta = require_dirmeta(&self.srcrepo, parent_path, self.selinux)?;
@@ -361,10 +370,7 @@ impl Fixture {
         Ok(())
     }
 
-    pub(crate) fn commit_filedefs<'a>(
-        &self,
-        defs: impl IntoIterator<Item = Result<FileDef>>,
-    ) -> Result<()> {
+    pub fn commit_filedefs(&self, defs: impl IntoIterator<Item = Result<FileDef>>) -> Result<()> {
         let root = ostree::MutableTree::new();
         let cancellable = gio::NONE_CANCELLABLE;
         let tx = self.srcrepo.auto_transaction(cancellable)?;
@@ -391,42 +397,76 @@ impl Fixture {
         Ok(())
     }
 
-    pub(crate) fn new_v1() -> Result<Self> {
+    pub fn new_v1() -> Result<Self> {
         let r = Self::new_base()?;
         r.commit_filedefs(FileDef::iter_from(CONTENTS_V0))?;
         Ok(r)
     }
 
-    pub(crate) fn testref(&self) -> &'static str {
+    pub fn testref(&self) -> &'static str {
         TESTREF
     }
 
     #[context("Updating test repo")]
-    pub(crate) fn update(&mut self) -> Result<()> {
-        let tmptarpath = "src/repo/tmp/exampleos-v1.tar.zst";
-        self.dir.write(tmptarpath, EXAMPLEOS_V1)?;
-        let testref = TESTREF;
-        bash_in!(
-            &self.dir,
-            "ostree --repo=src/repo commit -b ${testref} --no-bindings --tree=tar=${tmptarpath}",
-            testref,
-            tmptarpath
-        )?;
-        self.dir.remove_file(tmptarpath)?;
+    pub fn update(
+        &mut self,
+        additions: impl Iterator<Item = Result<FileDef>>,
+        removals: impl Iterator<Item = Cow<'static, Utf8Path>>,
+    ) -> Result<()> {
+        let cancellable = gio::NONE_CANCELLABLE;
+
+        // Load our base commit
+        let rev = &self.srcrepo().require_rev(self.testref())?;
+        let (commit, _) = self.srcrepo.load_commit(rev)?;
+        let root = ostree::MutableTree::from_commit(self.srcrepo(), rev)?;
+        // Bump the commit timestamp by one day
+        let ts = chrono::Utc.timestamp(ostree::commit_get_timestamp(&commit) as i64, 0);
+        let new_ts = ts.add(chrono::Duration::days(1)).timestamp() as u64;
+
+        // Prepare a transaction
+        let tx = self.srcrepo.auto_transaction(cancellable)?;
+        for def in additions {
+            let def = def?;
+            self.write_filedef(&root, &def)?;
+        }
+        for removal in removals {
+            let filename = removal
+                .file_name()
+                .ok_or_else(|| anyhow!("Invalid path {}", removal))?;
+            // Notice that we're traversing the whole path, because that's how the walk() API works.
+            let p = relative_path_components(&removal);
+            let parts = p.map(|s| s.as_str()).collect::<Vec<_>>();
+            let parent = &root.walk(&parts, 0)?;
+            parent.remove(filename, false)?;
+            self.srcrepo.write_mtree(parent, cancellable)?;
+        }
+        let root = self
+            .srcrepo
+            .write_mtree(&root, cancellable)
+            .context("Writing mtree")?;
+        let root = root.downcast_ref::<ostree::RepoFile>().unwrap();
+        let commit = self
+            .srcrepo
+            .write_commit_with_time(Some(rev), None, None, None, root, new_ts, cancellable)
+            .context("Writing commit")?;
+        self.srcrepo
+            .transaction_set_ref(None, self.testref(), Some(commit.as_str()));
+        tx.commit(cancellable)?;
         Ok(())
     }
 
     #[context("Exporting tar")]
-    pub(crate) fn export_tar(&self) -> Result<&'static Utf8Path> {
+    pub fn export_tar(&self) -> Result<&'static Utf8Path> {
         let cancellable = gio::NONE_CANCELLABLE;
         let (_, rev) = self.srcrepo.read_commit(self.testref(), cancellable)?;
         let path = "exampleos-export.tar";
         let mut outf = std::io::BufWriter::new(self.dir.create(path)?);
-        let options = ostree_ext::tar::ExportOptions {
+        #[allow(clippy::needless_update)]
+        let options = crate::tar::ExportOptions {
             format_version: self.format_version,
             ..Default::default()
         };
-        ostree_ext::tar::export_commit(&self.srcrepo, rev.as_str(), &mut outf, Some(options))?;
+        crate::tar::export_commit(&self.srcrepo, rev.as_str(), &mut outf, Some(options))?;
         outf.flush()?;
         Ok(path.into())
     }
