@@ -1,12 +1,6 @@
 #!/bin/bash
 set -xeuo pipefail
 
-# Always pull ostree from updates-testing to avoid the bodhi wait
-dnf -y --enablerepo=updates-testing update ostree-devel
-
-# Our tests depend on this
-dnf -y install skopeo
-
 # For some reason dnf copr enable -y says there are no builds?
 cat >/etc/yum.repos.d/coreos-continuous.repo << 'EOF'
 [copr:copr.fedorainfracloud.org:group_CoreOS:continuous]
@@ -21,5 +15,11 @@ enabled=1
 enabled_metadata=1
 EOF
 
-# For now pull ostree from git
-dnf update -y ostree
+# Pull skopeo and ostree from updates-testing, since we depend on new features in our git main
+dnf config-manager --set-enabled updates-testing
+
+# Our tests depend on this
+dnf -y install skopeo
+
+# Always pull ostree from updates-testing to avoid the bodhi wait
+dnf -y update ostree
