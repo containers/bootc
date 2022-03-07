@@ -124,6 +124,9 @@ fn build_oci(
     // Lookup the cmd embedded in commit metadata
     let cmd = commit_meta.lookup::<Vec<String>>(ostree::COMMIT_META_CONTAINER_CMD)?;
     // But support it being overridden by CLI options
+
+    // https://github.com/rust-lang/rust-clippy/pull/7639#issuecomment-1050340564
+    #[allow(clippy::unnecessary_lazy_evaluations)]
     let cmd = config.cmd.as_ref().or_else(|| cmd.as_ref());
     if let Some(cmd) = cmd {
         ctrcfg.set_cmd(Some(cmd.clone()));
