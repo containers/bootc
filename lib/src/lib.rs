@@ -26,6 +26,7 @@ type Result<T> = anyhow::Result<T>;
 // Import global functions.
 mod globals;
 
+pub mod bootabletree;
 pub mod cli;
 pub mod container;
 pub mod container_utils;
