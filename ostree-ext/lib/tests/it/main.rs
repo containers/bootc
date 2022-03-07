@@ -5,6 +5,7 @@ use ostree_ext::container::store::PrepareResult;
 use ostree_ext::container::{
     Config, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
+use ostree_ext::prelude::FileExt;
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
 use sh_inline::bash_in;
@@ -300,6 +301,17 @@ async fn test_tar_import_export() -> Result<()> {
         "#,
         imported_commit = imported_commit.as_str()
     )?;
+
+    let (root, _) = fixture
+        .destrepo()
+        .read_commit(&imported_commit, gio::NONE_CANCELLABLE)?;
+    let kdir = ostree_ext::bootabletree::find_kernel_dir(&root, gio::NONE_CANCELLABLE)?;
+    let kdir = kdir.unwrap();
+    assert_eq!(
+        kdir.basename().unwrap().to_str().unwrap(),
+        "5.10.18-200.x86_64"
+    );
+
     Ok(())
 }
 
