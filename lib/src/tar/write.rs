@@ -193,7 +193,7 @@ async fn filter_tar_async(
     let copier = tokio::io::copy(&mut rx_buf, &mut dest);
     let (r, v) = tokio::join!(tar_transformer, copier);
     let _v: u64 = v?;
-    Ok(r??)
+    r?
 }
 
 /// Write the contents of a tarball as an ostree commit.
