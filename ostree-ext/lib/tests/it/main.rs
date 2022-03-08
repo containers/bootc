@@ -16,8 +16,6 @@ use std::process::Command;
 use ostree_ext::fixture::{FileDef, Fixture, CONTENTS_CHECKSUM_V0};
 
 const EXAMPLE_TAR_LAYER: &[u8] = include_bytes!("fixtures/hlinks.tar.gz");
-const EXAMPLEOS_CONTENT_CHECKSUM: &str =
-    "0ef7461f9db15e1d8bd8921abf20694225fbaa4462cadf7deed8ea0e43162120";
 const TEST_REGISTRY_DEFAULT: &str = "localhost:5000";
 
 fn assert_err_contains<T>(r: Result<T>, s: impl AsRef<str>) {
@@ -203,7 +201,7 @@ fn validate_tar_expected<T: std::io::Read>(
 fn test_tar_export_structure() -> Result<()> {
     use tar::EntryType::{Directory, Regular};
 
-    let mut fixture = Fixture::new()?;
+    let mut fixture = Fixture::new_v1()?;
     let src_tar = fixture.export_tar()?;
     let src_tar = std::io::BufReader::new(fixture.dir.open(src_tar)?);
     let mut src_tar = tar::Archive::new(src_tar);
@@ -235,7 +233,7 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/tmp", Directory, 0o755),
         ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
         ("sysroot/ostree/repo/xattrs", Directory, 0o755),
-        ("sysroot/ostree/repo/xattrs/44299b6a1738aab86de5966507fbe369af2ab421e1c6eb6e797054831430d92c", Regular, 0o644),
+        ("sysroot/ostree/repo/xattrs/d67db507c5a6e7bfd078f0f3ded0a5669479a902e812931fc65c6f5e01831ef5", Regular, 0o644),
         ("usr", Directory, 0o755),
     ];
     validate_tar_expected(
@@ -279,7 +277,7 @@ fn test_tar_export_structure() -> Result<()> {
 
 #[tokio::test]
 async fn test_tar_import_export() -> Result<()> {
-    let fixture = Fixture::new()?;
+    let fixture = Fixture::new_v1()?;
     let p = fixture.export_tar()?;
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(p)?.into_std());
 
@@ -287,7 +285,7 @@ async fn test_tar_import_export() -> Result<()> {
         ostree_ext::tar::import_tar(fixture.destrepo(), src_tar, None).await?;
     let (commitdata, _) = fixture.destrepo().load_commit(&imported_commit)?;
     assert_eq!(
-        EXAMPLEOS_CONTENT_CHECKSUM,
+        CONTENTS_CHECKSUM_V0,
         ostree::commit_get_content_checksum(&commitdata)
             .unwrap()
             .as_str()
