@@ -315,7 +315,7 @@ async fn test_tar_import_export() -> Result<()> {
 
 #[tokio::test]
 async fn test_tar_write() -> Result<()> {
-    let fixture = Fixture::new()?;
+    let fixture = Fixture::new_v1()?;
     // Test translating /etc to /usr/etc
     fixture.dir.create_dir_all("tmproot/etc")?;
     let tmproot = &fixture.dir.open_dir("tmproot")?;
@@ -346,7 +346,7 @@ async fn test_tar_write() -> Result<()> {
 
 #[tokio::test]
 async fn test_tar_write_tar_layer() -> Result<()> {
-    let fixture = Fixture::new()?;
+    let fixture = Fixture::new_v1()?;
     let uncompressed_tar = tokio::io::BufReader::new(
         async_compression::tokio::bufread::GzipDecoder::new(EXAMPLE_TAR_LAYER),
     );
