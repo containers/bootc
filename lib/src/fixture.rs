@@ -138,6 +138,8 @@ d run
 m 0 0 1755
 d tmp
 "## };
+pub const CONTENTS_CHECKSUM_V0: &str =
+    "76f0d5ec8814bc2a1d7868dbe8d3783535dc0cc9c7dcfdf37fa3512f8e276f6c";
 
 #[derive(Debug, PartialEq, Eq)]
 enum SeLabel {
@@ -393,6 +395,14 @@ impl Fixture {
         self.srcrepo
             .transaction_set_ref(None, self.testref(), Some(commit.as_str()));
         tx.commit(cancellable)?;
+
+        let gpghome = self.path.join("src/gpghome");
+        self.srcrepo.sign_commit(
+            &commit,
+            TEST_GPG_KEYID_1,
+            Some(gpghome.as_str()),
+            gio::NONE_CANCELLABLE,
+        )?;
 
         Ok(())
     }
