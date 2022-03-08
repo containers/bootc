@@ -11,7 +11,6 @@ use cap_std_ext::prelude::CapStdExtCommandExt;
 use chrono::TimeZone;
 use fn_error_context::context;
 use ostree::cap_std;
-use sh_inline::bash_in;
 use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
 use std::io::Write;
@@ -23,7 +22,6 @@ const OSTREE_GPG_HOME: &[u8] = include_bytes!("fixtures/ostree-gpg-test-home.tar
 const TEST_GPG_KEYID_1: &str = "7FCA23D8472CDAFA";
 #[allow(dead_code)]
 const TEST_GPG_KEYFPR_1: &str = "5E65DE75AB1C501862D476347FCA23D8472CDAFA";
-pub const EXAMPLEOS_V0: &[u8] = include_bytes!("fixtures/exampleos.tar.zst");
 const TESTREF: &str = "exampleos/x86_64/stable";
 
 #[derive(Debug)]
@@ -298,24 +296,6 @@ impl Fixture {
             format_version: 0,
             selinux: true,
         })
-    }
-
-    pub fn new() -> Result<Self> {
-        let r = Self::new_base()?;
-        let tarname = "exampleos.tar.zst";
-        r.dir.write(tarname, EXAMPLEOS_V0)?;
-        bash_in!(
-            r.dir,
-            "ostree --repo=src/repo commit -b ${testref} --bootable --no-bindings --add-metadata=ostree.container-cmd='[\"/usr/bin/bash\"]' \
-              --add-metadata-string=version=42.0 --add-metadata-string=buildsys.checksum=41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3 \
-              --gpg-homedir=src/gpghome --gpg-sign=${keyid} \
-              --add-detached-metadata-string=my-detached-key=my-detached-value --tree=tar=exampleos.tar.zst >/dev/null && \
-             ostree --repo=src/repo show ${testref} >/dev/null",
-            testref = r.testref(),
-            keyid = TEST_GPG_KEYID_1
-        ).context("Writing commit")?;
-        r.dir.remove_file(tarname)?;
-        Ok(r)
     }
 
     pub fn srcrepo(&self) -> &ostree::Repo {
