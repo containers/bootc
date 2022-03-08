@@ -372,7 +372,7 @@ fn skopeo_inspect_config(imgref: &str) -> Result<oci_spec::image::ImageConfigura
 
 #[tokio::test]
 async fn test_container_import_export() -> Result<()> {
-    let fixture = Fixture::new()?;
+    let fixture = Fixture::new_v1()?;
     let testrev = fixture
         .srcrepo()
         .require_rev(fixture.testref())
@@ -473,7 +473,7 @@ async fn test_container_import_export() -> Result<()> {
     // Test without signature verification
     // Create a new repo
     {
-        let fixture = Fixture::new()?;
+        let fixture = Fixture::new_v1()?;
         let import =
             ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_unverified, None)
                 .await
@@ -504,7 +504,7 @@ async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Res
 /// But layers work via the container::write module.
 #[tokio::test]
 async fn test_container_write_derive() -> Result<()> {
-    let fixture = Fixture::new()?;
+    let fixture = Fixture::new_v1()?;
     let base_oci_path = &fixture.path.join("exampleos.oci");
     let _digest = ostree_ext::container::encapsulate(
         fixture.srcrepo(),
@@ -709,7 +709,7 @@ async fn test_container_write_derive() -> Result<()> {
 // Then you can run this test via `env TEST_REGISTRY=quay.io/$myuser cargo test -- --ignored`.
 async fn test_container_import_export_registry() -> Result<()> {
     let tr = &*TEST_REGISTRY;
-    let fixture = Fixture::new()?;
+    let fixture = Fixture::new_v1()?;
     let testref = fixture.testref();
     let testrev = fixture
         .srcrepo()
