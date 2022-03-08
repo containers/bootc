@@ -13,7 +13,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
-use ostree_ext::fixture::{FileDef, Fixture};
+use ostree_ext::fixture::{FileDef, Fixture, CONTENTS_CHECKSUM_V0};
 
 const EXAMPLE_TAR_LAYER: &[u8] = include_bytes!("fixtures/hlinks.tar.gz");
 const EXAMPLEOS_CONTENT_CHECKSUM: &str =
@@ -35,7 +35,7 @@ static TEST_REGISTRY: Lazy<String> = Lazy::new(|| match std::env::var_os("TEST_R
 
 #[tokio::test]
 async fn test_tar_import_empty() -> Result<()> {
-    let fixture = Fixture::new()?;
+    let fixture = Fixture::new_v1()?;
     let r = ostree_ext::tar::import_tar(fixture.destrepo(), tokio::io::empty(), None).await;
     assert_err_contains(r, "Commit object not found");
     Ok(())
@@ -65,7 +65,7 @@ async fn test_tar_export_reproducible() -> Result<()> {
 
 #[tokio::test]
 async fn test_tar_import_signed() -> Result<()> {
-    let fixture = Fixture::new()?;
+    let fixture = Fixture::new_v1()?;
     let test_tar = fixture.export_tar()?;
 
     let rev = fixture.srcrepo().require_rev(fixture.testref())?;
@@ -74,7 +74,7 @@ async fn test_tar_import_signed() -> Result<()> {
         ostree::commit_get_content_checksum(&commitv)
             .unwrap()
             .as_str(),
-        EXAMPLEOS_CONTENT_CHECKSUM
+        CONTENTS_CHECKSUM_V0
     );
 
     // Verify we fail with an unknown remote.
@@ -122,7 +122,7 @@ async fn test_tar_import_signed() -> Result<()> {
     .await?;
     let (commitdata, state) = fixture.destrepo().load_commit(&imported)?;
     assert_eq!(
-        EXAMPLEOS_CONTENT_CHECKSUM,
+        CONTENTS_CHECKSUM_V0,
         ostree::commit_get_content_checksum(&commitdata)
             .unwrap()
             .as_str()
