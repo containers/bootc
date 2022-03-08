@@ -396,6 +396,15 @@ impl Fixture {
             .transaction_set_ref(None, self.testref(), Some(commit.as_str()));
         tx.commit(cancellable)?;
 
+        let detached = glib::VariantDict::new(None);
+        detached.insert("my-detached-key", &"my-detached-value");
+        let detached = detached.to_variant();
+        self.srcrepo.write_commit_detached_metadata(
+            commit.as_str(),
+            Some(&detached),
+            gio::NONE_CANCELLABLE,
+        )?;
+
         let gpghome = self.path.join("src/gpghome");
         self.srcrepo.sign_commit(
             &commit,
