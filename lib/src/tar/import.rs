@@ -573,18 +573,18 @@ impl Importer {
         let (next_checksum, next_objtype) = Self::parse_metadata_entry(&nextent_path)?;
 
         if let Some(remote) = self.remote.as_deref() {
-            if next_checksum != checksum {
-                return Err(anyhow!(
-                    "Expected commitmeta checksum {}, found {}",
-                    checksum,
-                    next_checksum
-                ));
-            }
             if next_objtype != ostree::ObjectType::CommitMeta {
                 return Err(anyhow!(
                     "Using remote {} for verification; Expected commitmeta object, not {:?}",
                     remote,
                     objtype
+                ));
+            }
+            if next_checksum != checksum {
+                return Err(anyhow!(
+                    "Expected commitmeta checksum {}, found {}",
+                    checksum,
+                    next_checksum
                 ));
             }
             let commitmeta = entry_to_variant::<_, std::collections::HashMap<String, glib::Variant>>(
