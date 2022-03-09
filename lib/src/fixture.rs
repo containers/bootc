@@ -382,12 +382,22 @@ impl Fixture {
         }
         let root = self.srcrepo.write_mtree(&root, cancellable)?;
         let root = root.downcast_ref::<ostree::RepoFile>().unwrap();
+        // You win internet points if you understand this date reference
         let ts = chrono::DateTime::parse_from_rfc2822("Fri, 29 Aug 1997 10:30:42 PST")?.timestamp();
+        // Some default metadata fixtures
+        let metadata = glib::VariantDict::new(None);
+        metadata.insert(
+            "buildsys.checksum",
+            &"41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3",
+        );
+        metadata.insert("ostree.container-cmd", &vec!["/usr/bin/bash"]);
+        metadata.insert("version", &"42.0");
+        let metadata = metadata.to_variant();
         let commit = self.srcrepo.write_commit_with_time(
             None,
             None,
             None,
-            None,
+            Some(&metadata),
             root,
             ts as u64,
             cancellable,
@@ -396,6 +406,7 @@ impl Fixture {
             .transaction_set_ref(None, self.testref(), Some(commit.as_str()));
         tx.commit(cancellable)?;
 
+        // Add detached metadata so we can verify it makes it through
         let detached = glib::VariantDict::new(None);
         detached.insert("my-detached-key", &"my-detached-value");
         let detached = detached.to_variant();
