@@ -202,6 +202,9 @@ fn test_tar_export_structure() -> Result<()> {
     use tar::EntryType::{Directory, Regular};
 
     let mut fixture = Fixture::new_v1()?;
+    // Just test that we can retrieve ownership for all objects
+    let _objmeta = fixture.get_object_meta()?;
+
     let src_tar = fixture.export_tar()?;
     let src_tar = std::io::BufReader::new(fixture.dir.open(src_tar)?);
     let mut src_tar = tar::Archive::new(src_tar);

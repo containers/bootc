@@ -2,6 +2,7 @@
 
 #![allow(missing_docs)]
 
+use crate::objectsource::{ObjectMeta, ObjectSourceMeta};
 use crate::prelude::*;
 use crate::{gio, glib};
 use anyhow::{anyhow, Context, Result};
@@ -10,12 +11,15 @@ use cap_std::fs::Dir;
 use cap_std_ext::prelude::CapStdExtCommandExt;
 use chrono::TimeZone;
 use fn_error_context::context;
+use once_cell::sync::Lazy;
 use ostree::cap_std;
+use regex::Regex;
 use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
 use std::io::Write;
 use std::ops::Add;
 use std::process::Stdio;
+use std::rc::Rc;
 use std::sync::Arc;
 
 const OSTREE_GPG_HOME: &[u8] = include_bytes!("fixtures/ostree-gpg-test-home.tar.gz");
@@ -116,6 +120,21 @@ impl FileDef {
             })
     }
 }
+
+/// This is like a package database, mapping our test fixture files to package names
+static OWNERS: Lazy<Vec<(Regex, &str)>> = Lazy::new(|| {
+    [
+        ("usr/lib/modules/.*/initramfs", "initramfs"),
+        ("usr/lib/modules", "kernel"),
+        ("usr/bin/(ba)?sh", "bash"),
+        ("usr/bin/hardlink.*", "testlink"),
+        ("usr/etc/someconfig.conf", "someconfig"),
+        ("usr/etc/polkit.conf", "a-polkit-config"),
+    ]
+    .iter()
+    .map(|(k, v)| (Regex::new(k).unwrap(), *v))
+    .collect()
+});
 
 static CONTENTS_V0: &str = indoc::indoc! { r##"
 r usr/lib/modules/5.10.18-200.x86_64/vmlinuz this-is-a-kernel
@@ -235,6 +254,81 @@ fn ensure_parent_dirs(
 fn relative_path_components(p: &Utf8Path) -> impl Iterator<Item = Utf8Component> {
     p.components()
         .filter(|p| matches!(p, Utf8Component::Normal(_)))
+}
+
+/// Walk over the whole filesystem, and generate mappings from content object checksums
+/// to the package that owns them.  
+///
+/// In the future, we could compute this much more efficiently by walking that
+/// instead.  But this design is currently oriented towards accepting a single ostree
+/// commit as input.
+fn build_mapping_recurse(
+    path: &mut Utf8PathBuf,
+    dir: &gio::File,
+    ret: &mut ObjectMeta,
+) -> Result<()> {
+    use std::collections::btree_map::Entry;
+    let cancellable = gio::NONE_CANCELLABLE;
+    let e = dir.enumerate_children(
+        "standard::name,standard::type",
+        gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+        cancellable,
+    )?;
+    for child in e {
+        let childi = child?;
+        let name: Utf8PathBuf = childi.name().try_into()?;
+        let child = dir.child(&name);
+        path.push(&name);
+        match childi.file_type() {
+            gio::FileType::Regular | gio::FileType::SymbolicLink => {
+                let child = child.downcast::<ostree::RepoFile>().unwrap();
+
+                let owner = OWNERS
+                    .iter()
+                    .find_map(|(r, owner)| {
+                        if r.is_match(path.as_str()) {
+                            Some(Rc::from(*owner))
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or_else(|| anyhow!("Unowned path {}", path))?;
+
+                if !ret.set.contains(&*owner) {
+                    ret.set.insert(ObjectSourceMeta {
+                        identifier: Rc::clone(&owner),
+                        name: Rc::clone(&owner),
+                        srcid: Rc::clone(&owner),
+                        change_time_offset: u32::MAX,
+                    });
+                }
+
+                let checksum = child.checksum().unwrap().to_string();
+                match ret.map.entry(checksum) {
+                    Entry::Vacant(v) => {
+                        v.insert(owner);
+                    }
+                    Entry::Occupied(v) => {
+                        let prev_owner = v.get();
+                        if **prev_owner != *owner {
+                            anyhow::bail!(
+                                "Duplicate object ownership {} ({} and {})",
+                                path.as_str(),
+                                prev_owner,
+                                owner
+                            );
+                        }
+                    }
+                }
+            }
+            gio::FileType::Directory => {
+                build_mapping_recurse(path, &child, ret)?;
+            }
+            o => anyhow::bail!("Unhandled file type: {}", o),
+        }
+        path.pop();
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -463,6 +557,19 @@ impl Fixture {
             .transaction_set_ref(None, self.testref(), Some(commit.as_str()));
         tx.commit(cancellable)?;
         Ok(())
+    }
+
+    /// Gather object metadata for the current commit.
+    pub fn get_object_meta(&self) -> Result<crate::objectsource::ObjectMeta> {
+        let cancellable = gio::NONE_CANCELLABLE;
+
+        // Load our base commit
+        let root = self.srcrepo.read_commit(self.testref(), cancellable)?.0;
+
+        let mut ret = ObjectMeta::default();
+        build_mapping_recurse(&mut Utf8PathBuf::from("/"), &root, &mut ret)?;
+
+        Ok(ret)
     }
 
     #[context("Exporting tar")]
