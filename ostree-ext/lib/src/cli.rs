@@ -21,15 +21,18 @@ use crate::container::store::{LayeredImageImporter, PrepareResult};
 use crate::container::{self as ostree_container, UnencapsulationProgress};
 use crate::container::{Config, ImageReference, OstreeImageReference, UnencapsulateOptions};
 
-fn parse_imgref(s: &str) -> Result<OstreeImageReference> {
+/// Parse an [`OstreeImageReference`] from a CLI arguemnt.
+pub fn parse_imgref(s: &str) -> Result<OstreeImageReference> {
     OstreeImageReference::try_from(s)
 }
 
-fn parse_base_imgref(s: &str) -> Result<ImageReference> {
+/// Parse a base [`ImageReference`] from a CLI arguemnt.
+pub fn parse_base_imgref(s: &str) -> Result<ImageReference> {
     ImageReference::try_from(s)
 }
 
-fn parse_repo(s: &str) -> Result<ostree::Repo> {
+/// Parse an [`ostree::Repo`] from a CLI arguemnt.
+pub fn parse_repo(s: &str) -> Result<ostree::Repo> {
     let repofd = cap_std::fs::Dir::open_ambient_dir(s, cap_std::ambient_authority())?;
     Ok(ostree::Repo::open_at_dir(&repofd, ".")?)
 }
