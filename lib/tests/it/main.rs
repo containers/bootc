@@ -31,6 +31,24 @@ static TEST_REGISTRY: Lazy<String> = Lazy::new(|| match std::env::var_os("TEST_R
     None => TEST_REGISTRY_DEFAULT.to_string(),
 });
 
+// This is mostly just sanity checking these functions are publicly accessible
+#[test]
+fn test_cli_fns() -> Result<()> {
+    let fixture = Fixture::new_v1()?;
+    let srcpath = fixture.path.join("src/repo");
+    let srcrepo_parsed = ostree_ext::cli::parse_repo(srcpath.as_str()).unwrap();
+    assert_eq!(srcrepo_parsed.mode(), fixture.srcrepo().mode());
+
+    let ir =
+        ostree_ext::cli::parse_imgref("ostree-unverified-registry:quay.io/examplens/exampleos")
+            .unwrap();
+    assert_eq!(ir.imgref.transport, Transport::Registry);
+
+    let ir = ostree_ext::cli::parse_base_imgref("docker://quay.io/examplens/exampleos").unwrap();
+    assert_eq!(ir.transport, Transport::Registry);
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_tar_import_empty() -> Result<()> {
     let fixture = Fixture::new_v1()?;
