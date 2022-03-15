@@ -83,7 +83,7 @@ dependencies = [
  "libc",
  "libsystemd",
  "log",
- "nix 0.23.1",
+ "nix",
  "openat",
  "openat-ext",
  "openssl",
@@ -318,7 +318,7 @@ dependencies = [
  "hmac",
  "libc",
  "log",
- "nix 0.23.1",
+ "nix",
  "nom",
  "once_cell",
  "serde",
@@ -356,19 +356,6 @@ name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
-
-[[package]]
-name = "nix"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf1e25ee6b412c2a1e3fcb6a4499a5c1bfe7f43e014bdce9a6b6666e5aa2d187"
-dependencies = [
- "bitflags",
- "cc",
- "cfg-if",
- "libc",
- "memoffset",
-]
 
 [[package]]
 name = "nix"
@@ -430,12 +417,12 @@ dependencies = [
 
 [[package]]
 name = "openat-ext"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08ebe55c8d6ada962ca7ddaef14f020dae1af91748bea3d36e8c941036b5d85b"
+checksum = "2cf3e4baa7f516441f58373f58aaf6e91a5dfa2e2b50e68a0d313b082014c61d"
 dependencies = [
  "libc",
- "nix 0.22.0",
+ "nix",
  "openat",
  "rand",
 ]
