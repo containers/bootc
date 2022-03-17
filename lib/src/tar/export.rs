@@ -415,6 +415,20 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         Ok(())
     }
 
+    /// Given a source object (in e.g. ostree/repo/objects/...), write a hardlink to it
+    /// in its expected target path (e.g. `usr/bin/bash`).
+    fn append_content_hardlink(
+        &mut self,
+        srcpath: &Utf8Path,
+        mut h: tar::Header,
+        dest: &Utf8Path,
+    ) -> Result<()> {
+        h.set_entry_type(tar::EntryType::Link);
+        h.set_link_name(srcpath)?;
+        self.out.append_data(&mut h, dest, &mut std::io::empty())?;
+        Ok(())
+    }
+
     /// Write a dirtree object.
     fn append_dirtree<C: IsA<gio::Cancellable>>(
         &mut self,
@@ -441,13 +455,10 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             let (name, csum) = file.to_tuple();
             let name = name.to_str();
             let checksum = &hex::encode(csum);
-            let (objpath, mut h) = self.append_content(checksum)?;
-            h.set_entry_type(tar::EntryType::Link);
-            h.set_link_name(&objpath)?;
+            let (objpath, h) = self.append_content(checksum)?;
             let subpath = &dirpath.join(name);
             let subpath = map_path(subpath);
-            self.out
-                .append_data(&mut h, &*subpath, &mut std::io::empty())?;
+            self.append_content_hardlink(&objpath, h, &*subpath)?;
         }
 
         for item in dirs {
