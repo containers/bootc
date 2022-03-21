@@ -93,9 +93,9 @@ async fn fetch_manifest_impl(
     imgref: &OstreeImageReference,
 ) -> Result<(oci_spec::image::ImageManifest, String)> {
     let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
-    let (digest, raw_manifest) = proxy.fetch_manifest(oi).await?;
+    let (digest, manifest) = proxy.fetch_manifest(oi).await?;
     proxy.close_image(oi).await?;
-    Ok((serde_json::from_slice(&raw_manifest)?, digest))
+    Ok((manifest, digest))
 }
 
 /// Download the manifest for a target image and its sha256 digest.
@@ -182,8 +182,7 @@ pub async fn unencapsulate(
 ) -> Result<Import> {
     let mut proxy = ImageProxy::new().await?;
     let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
-    let (image_digest, raw_manifest) = proxy.fetch_manifest(oi).await?;
-    let manifest = serde_json::from_slice(&raw_manifest)?;
+    let (image_digest, manifest) = proxy.fetch_manifest(oi).await?;
     let ostree_commit =
         unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, oi, &manifest, options, false)
             .await?;
