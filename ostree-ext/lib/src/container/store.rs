@@ -218,9 +218,7 @@ impl LayeredImageImporter {
             _ => {}
         }
 
-        let (manifest_digest, manifest_bytes) = self.proxy.fetch_manifest(&self.proxy_img).await?;
-        let manifest: oci_image::ImageManifest =
-            serde_json::from_slice(&manifest_bytes).context("Parsing image manifest")?;
+        let (manifest_digest, manifest) = self.proxy.fetch_manifest(&self.proxy_img).await?;
         let new_imageid = manifest.config().digest().as_str();
 
         // Query for previous stored state
