@@ -17,9 +17,10 @@ use structopt::StructOpt;
 use tokio_stream::StreamExt;
 
 use crate::commit::container_commit;
-use crate::container::store::{LayeredImageImporter, PrepareResult};
-use crate::container::{self as ostree_container, UnencapsulationProgress};
+use crate::container as ostree_container;
 use crate::container::{Config, ImageReference, OstreeImageReference, UnencapsulateOptions};
+use ostree_container::store::{ImageImporter, PrepareResult};
+use ostree_container::UnencapsulationProgress;
 
 /// Parse an [`OstreeImageReference`] from a CLI arguemnt.
 pub fn parse_imgref(s: &str) -> Result<OstreeImageReference> {
@@ -257,7 +258,7 @@ struct ImaSignOpts {
 /// Options for internal testing
 #[derive(Debug, StructOpt)]
 enum TestingOpts {
-    // Detect the current environment
+    /// Detect the current environment
     DetectEnv,
     /// Execute integration tests, assuming mutable environment
     Run,
@@ -413,7 +414,8 @@ async fn container_export(
         copy_meta_keys,
         ..Default::default()
     };
-    let pushed = crate::container::encapsulate(repo, rev, &config, Some(opts), imgref).await?;
+    let pushed =
+        crate::container::encapsulate(repo, rev, &config, Some(opts), None, imgref).await?;
     println!("{}", pushed);
     Ok(())
 }
@@ -431,7 +433,7 @@ async fn container_store(
     imgref: &OstreeImageReference,
     proxyopts: ContainerProxyOpts,
 ) -> Result<()> {
-    let mut imp = LayeredImageImporter::new(repo, imgref, proxyopts.into()).await?;
+    let mut imp = ImageImporter::new(repo, imgref, proxyopts.into()).await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
             println!("No changes in {} => {}", imgref, c.merge_commit);
@@ -439,17 +441,7 @@ async fn container_store(
         }
         PrepareResult::Ready(r) => r,
     };
-    if prep.base_layer.commit.is_none() {
-        let size = crate::glib::format_size(prep.base_layer.size());
-        println!(
-            "Downloading base layer: {} ({})",
-            prep.base_layer.digest(),
-            size
-        );
-    } else {
-        println!("Using base: {}", prep.base_layer.digest());
-    }
-    for layer in prep.layers.iter() {
+    for layer in prep.all_layers() {
         if layer.commit.is_some() {
             println!("Using layer: {}", layer.digest());
         } else {

@@ -1,5 +1,7 @@
 //! APIs for creating container images from OSTree commits
 
+use crate::chunking;
+use crate::chunking::Chunking;
 use crate::objgv::*;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -9,6 +11,7 @@ use gio::prelude::*;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{Marker, Structure};
 use ostree::gio;
+use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::io::BufReader;
@@ -523,6 +526,73 @@ pub fn export_commit(
     let options = options.unwrap_or_default();
     impl_export(repo, commit.as_str(), &mut tar, options)?;
     tar.finish()?;
+    Ok(())
+}
+
+/// Output a chunk.
+pub(crate) fn export_chunk<W: std::io::Write>(
+    repo: &ostree::Repo,
+    chunk: &chunking::Chunk,
+    out: &mut tar::Builder<W>,
+) -> Result<()> {
+    let writer = &mut OstreeTarWriter::new(repo, out, ExportOptions::default());
+    writer.write_repo_structure()?;
+    for (checksum, (_size, paths)) in chunk.content.iter() {
+        let (objpath, h) = writer.append_content(checksum.borrow())?;
+        for path in paths.iter() {
+            let path = path.strip_prefix("/").unwrap_or(path);
+            let h = h.clone();
+            writer.append_content_hardlink(&objpath, h, path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Output the last chunk in a chunking.
+#[context("Exporting final chunk")]
+pub(crate) fn export_final_chunk<W: std::io::Write>(
+    repo: &ostree::Repo,
+    chunking: &Chunking,
+    out: &mut tar::Builder<W>,
+) -> Result<()> {
+    let cancellable = gio::NONE_CANCELLABLE;
+    // For chunking, we default to format version 1
+    #[allow(clippy::needless_update)]
+    let options = ExportOptions {
+        format_version: 1,
+        ..Default::default()
+    };
+    let writer = &mut OstreeTarWriter::new(repo, out, options);
+    writer.write_repo_structure()?;
+
+    let (commit_v, _) = repo.load_commit(&chunking.commit)?;
+    let commit_v = &commit_v;
+    writer.append(ostree::ObjectType::Commit, &chunking.commit, commit_v)?;
+    if let Some(commitmeta) = repo.read_commit_detached_metadata(&chunking.commit, cancellable)? {
+        writer.append(
+            ostree::ObjectType::CommitMeta,
+            &chunking.commit,
+            &commitmeta,
+        )?;
+    }
+
+    // In the chunked case, the final layer has all ostree metadata objects.
+    for meta in &chunking.meta {
+        let objtype = meta.objtype();
+        let checksum = meta.checksum();
+        let v = repo.load_variant(objtype, checksum)?;
+        writer.append(objtype, checksum, &v)?;
+    }
+
+    for (checksum, (_size, paths)) in chunking.remainder.content.iter() {
+        let (objpath, h) = writer.append_content(checksum.borrow())?;
+        for path in paths.iter() {
+            let path = path.strip_prefix("/").unwrap_or(path);
+            let h = h.clone();
+            writer.append_content_hardlink(&objpath, h, path)?;
+        }
+    }
+
     Ok(())
 }
 
