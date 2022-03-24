@@ -2,6 +2,8 @@
 
 #![allow(missing_docs)]
 
+use crate::chunking::ObjectMetaSized;
+use crate::container::{Config, ExportOpts, ImageReference, Transport};
 use crate::objectsource::{ObjectMeta, ObjectSourceMeta};
 use crate::prelude::*;
 use crate::{gio, glib};
@@ -586,5 +588,43 @@ impl Fixture {
         crate::tar::export_commit(&self.srcrepo, rev.as_str(), &mut outf, Some(options))?;
         outf.flush()?;
         Ok(path.into())
+    }
+
+    /// Export the current ref as a container image.
+    /// This defaults to using chunking.
+    #[context("Exporting container")]
+    pub async fn export_container(&self) -> Result<(ImageReference, String)> {
+        let container_path = &self.path.join("oci");
+        if container_path.exists() {
+            std::fs::remove_dir_all(container_path)?;
+        }
+        let imgref = ImageReference {
+            transport: Transport::OciDir,
+            name: container_path.as_str().to_string(),
+        };
+        let config = Config {
+            labels: Some(
+                [("foo", "bar"), ("test", "value")]
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            ),
+            ..Default::default()
+        };
+        let contentmeta = self.get_object_meta().context("Computing object meta")?;
+        let contentmeta = ObjectMetaSized::compute_sizes(self.srcrepo(), contentmeta)
+            .context("Computing sizes")?;
+        let opts = ExportOpts::default();
+        let digest = crate::container::encapsulate(
+            self.srcrepo(),
+            self.testref(),
+            &config,
+            Some(opts),
+            Some(contentmeta),
+            &imgref,
+        )
+        .await
+        .context("exporting")?;
+        Ok((imgref, digest))
     }
 }

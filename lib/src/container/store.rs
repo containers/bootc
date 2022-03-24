@@ -10,11 +10,12 @@ use crate::refescape;
 use anyhow::{anyhow, Context};
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
-use oci_spec::image::{self as oci_image, ImageManifest};
+use oci_spec::image::{self as oci_image, Descriptor, History, ImageConfiguration, ImageManifest};
 use ostree::prelude::{Cast, ToVariant};
 use ostree::{gio, glib};
 use std::collections::HashMap;
 use std::iter::FromIterator;
+use std::sync::{Arc, Mutex};
 
 /// Configuration for the proxy.
 ///
@@ -84,12 +85,12 @@ impl LayeredImageState {
 
 /// Context for importing a container image.
 #[derive(Debug)]
-pub struct LayeredImageImporter {
+pub struct ImageImporter {
     repo: ostree::Repo,
-    proxy: ImageProxy,
+    pub(crate) proxy: ImageProxy,
     imgref: OstreeImageReference,
     target_imgref: Option<OstreeImageReference>,
-    proxy_img: OpenedImage,
+    pub(crate) proxy_img: OpenedImage,
 }
 
 /// Result of invoking [`LayeredImageImporter::prepare`].
@@ -104,7 +105,7 @@ pub enum PrepareResult {
 /// A container image layer with associated downloaded-or-not state.
 #[derive(Debug)]
 pub struct ManifestLayerState {
-    layer: oci_image::Descriptor,
+    pub(crate) layer: oci_image::Descriptor,
     /// The ostree ref name for this layer.
     pub ostree_ref: String,
     /// The ostree commit that caches this layer, if present.
@@ -131,19 +132,60 @@ pub struct PreparedImport {
     /// The deserialized manifest.
     pub manifest: oci_image::ImageManifest,
     /// The deserialized configuration.
-    pub config: Option<oci_image::ImageConfiguration>,
+    pub config: oci_image::ImageConfiguration,
     /// The previously stored manifest digest.
     pub previous_manifest_digest: Option<String>,
     /// The previously stored image ID.
     pub previous_imageid: Option<String>,
-    /// The required base layer.
-    pub base_layer: ManifestLayerState,
-    /// Any further layers.
+    /// The layers containing split objects
+    pub ostree_layers: Vec<ManifestLayerState>,
+    /// The layer for the ostree commit.
+    pub ostree_commit_layer: ManifestLayerState,
+    /// Any further non-ostree (derived) layers.
     pub layers: Vec<ManifestLayerState>,
 }
 
+impl PreparedImport {
+    /// Iterate over all layers; the ostree split object layers, the commit layer, and any non-ostree layers.
+    pub fn all_layers(&self) -> impl Iterator<Item = &ManifestLayerState> {
+        self.ostree_layers
+            .iter()
+            .chain(std::iter::once(&self.ostree_commit_layer))
+            .chain(self.layers.iter())
+    }
+
+    /// Iterate over all layers paired with their history entry.
+    /// An error will be returned if the history does not cover all entries.
+    pub fn layers_with_history(
+        &self,
+    ) -> impl Iterator<Item = Result<(&ManifestLayerState, &History)>> {
+        // FIXME use .filter(|h| h.empty_layer.unwrap_or_default()) after https://github.com/containers/oci-spec-rs/pull/100 lands.
+        let truncated = std::iter::once(Err(anyhow::anyhow!("Truncated history")));
+        let history = self.config.history().iter().map(Ok).chain(truncated);
+        self.all_layers()
+            .zip(history)
+            .map(|(s, h)| h.map(|h| (s, h)))
+    }
+
+    /// Iterate over all layers that are not present, along with their history description.
+    pub fn layers_to_fetch(&self) -> impl Iterator<Item = Result<(&ManifestLayerState, &str)>> {
+        self.layers_with_history().filter_map(|r| {
+            r.map(|(l, h)| {
+                l.commit.is_none().then(|| {
+                    let comment = h.created_by().as_deref().unwrap_or("");
+                    (l, comment)
+                })
+            })
+            .transpose()
+        })
+    }
+}
+
 // Given a manifest, compute its ostree ref name and cached ostree commit
-fn query_layer(repo: &ostree::Repo, layer: oci_image::Descriptor) -> Result<ManifestLayerState> {
+pub(crate) fn query_layer(
+    repo: &ostree::Repo,
+    layer: oci_image::Descriptor,
+) -> Result<ManifestLayerState> {
     let ostree_ref = ref_for_layer(&layer)?;
     let commit = repo.resolve_rev(&ostree_ref, true)?.map(|s| s.to_string());
     Ok(ManifestLayerState {
@@ -177,7 +219,30 @@ pub fn manifest_digest_from_commit(commit: &glib::Variant) -> Result<String> {
     Ok(manifest_data_from_commitmeta(commit_meta)?.1)
 }
 
-impl LayeredImageImporter {
+/// Given a target diffid, return its corresponding layer.  In our current model,
+/// we require a 1-to-1 mapping between the two up until the ostree level.
+/// For a bit more information on this, see https://github.com/opencontainers/image-spec/blob/main/config.md
+fn layer_from_diffid<'a>(
+    manifest: &'a ImageManifest,
+    config: &ImageConfiguration,
+    diffid: &str,
+) -> Result<&'a Descriptor> {
+    let idx = config
+        .rootfs()
+        .diff_ids()
+        .iter()
+        .position(|x| x.as_str() == diffid)
+        .ok_or_else(|| anyhow!("Missing {} {}", OSTREE_DIFFID_LABEL, diffid))?;
+    manifest.layers().get(idx).ok_or_else(|| {
+        anyhow!(
+            "diffid position {} exceeds layer count {}",
+            idx,
+            manifest.layers().len()
+        )
+    })
+}
+
+impl ImageImporter {
     /// Create a new importer.
     pub async fn new(
         repo: &ostree::Repo,
@@ -189,7 +254,7 @@ impl LayeredImageImporter {
         let proxy = ImageProxy::new_with_config(config).await?;
         let proxy_img = proxy.open_image(&imgref.imgref.to_string()).await?;
         let repo = repo.clone();
-        Ok(LayeredImageImporter {
+        Ok(ImageImporter {
             repo,
             proxy,
             proxy_img,
@@ -202,15 +267,19 @@ impl LayeredImageImporter {
     pub fn set_target(&mut self, target: &OstreeImageReference) {
         self.target_imgref = Some(target.clone())
     }
+    /// Determine if there is a new manifest, and if so return its digest.
+    pub async fn prepare(&mut self) -> Result<PrepareResult> {
+        self.prepare_internal(false).await
+    }
 
     /// Determine if there is a new manifest, and if so return its digest.
     #[context("Fetching manifest")]
-    pub async fn prepare(&mut self) -> Result<PrepareResult> {
+    pub(crate) async fn prepare_internal(&mut self, verify_layers: bool) -> Result<PrepareResult> {
         match &self.imgref.sigverify {
             SignatureSource::ContainerPolicy if skopeo::container_policy_is_default_insecure()? => {
                 return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
             }
-            SignatureSource::OstreeRemote(_) => {
+            SignatureSource::OstreeRemote(_) if verify_layers => {
                 return Err(anyhow!(
                     "Cannot currently verify layered containers via ostree remote"
                 ));
@@ -244,25 +313,46 @@ impl LayeredImageImporter {
                 (None, None)
             };
 
-        #[cfg(feature = "proxy_v0_2_3")]
-        let config = {
-            let config_bytes = self.proxy.fetch_config(&self.proxy_img).await?;
-            let config: oci_image::ImageConfiguration =
-                serde_json::from_slice(&config_bytes).context("Parsing image configuration")?;
-            Some(config)
+        let config = self.proxy.fetch_config(&self.proxy_img).await?;
+
+        let label = crate::container::OSTREE_DIFFID_LABEL;
+        let config_labels = config.config().as_ref().and_then(|c| c.labels().as_ref());
+        // For backwards compatibility, if there's only 1 layer, don't require the label.
+        // This can be dropped when we drop format version 0 support.
+        let commit_layer_digest = if config.rootfs().diff_ids().len() == 1 {
+            manifest.layers()[0].digest()
+        } else {
+            let diffid = config_labels
+                .and_then(|labels| labels.get(label))
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Missing annotation {} (not an ostree-exported container?)",
+                        label
+                    )
+                })?;
+
+            let layer = layer_from_diffid(&manifest, &config, diffid.as_str())?;
+            layer.digest()
         };
-        #[cfg(not(feature = "proxy_v0_2_3"))]
-        let config = None;
-
-        let mut layers = manifest.layers().iter().cloned();
-        // We require a base layer.
-        let base_layer = layers.next().ok_or_else(|| anyhow!("No layers found"))?;
-        let base_layer = query_layer(&self.repo, base_layer)?;
-
-        let layers: Result<Vec<_>> = layers
-            .map(|layer| -> Result<_> { query_layer(&self.repo, layer) })
-            .collect();
-        let layers = layers?;
+        let mut component_layers = Vec::new();
+        let mut commit_layer = None;
+        let mut remaining_layers = Vec::new();
+        let query = |l: &Descriptor| query_layer(&self.repo, l.clone());
+        for layer in manifest.layers() {
+            if layer.digest() == commit_layer_digest {
+                commit_layer = Some(query(layer)?);
+            } else if commit_layer.is_none() {
+                component_layers.push(query(layer)?);
+            } else {
+                remaining_layers.push(query(layer)?);
+            }
+        }
+        let commit_layer = commit_layer.ok_or_else(|| {
+            anyhow!(
+                "Image does not contain ostree-exported layer {}",
+                commit_layer_digest
+            )
+        })?;
 
         let imp = PreparedImport {
             manifest,
@@ -270,43 +360,132 @@ impl LayeredImageImporter {
             config,
             previous_manifest_digest,
             previous_imageid,
-            base_layer,
-            layers,
+            ostree_layers: component_layers,
+            ostree_commit_layer: commit_layer,
+            layers: remaining_layers,
         };
         Ok(PrepareResult::Ready(Box::new(imp)))
     }
 
-    /// Import a layered container image
-    pub async fn import(self, import: Box<PreparedImport>) -> Result<LayeredImageState> {
-        let mut proxy = self.proxy;
-        let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
+    /// Extract the base ostree commit.
+    pub(crate) async fn unencapsulate_base(
+        &mut self,
+        import: &mut store::PreparedImport,
+        options: Option<UnencapsulateOptions>,
+        write_refs: bool,
+    ) -> Result<()> {
+        tracing::debug!("Fetching base");
+        if matches!(self.imgref.sigverify, SignatureSource::ContainerPolicy)
+            && skopeo::container_policy_is_default_insecure()?
+        {
+            return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
+        }
+        let options = options.unwrap_or_default();
+        let remote = match &self.imgref.sigverify {
+            SignatureSource::OstreeRemote(remote) => Some(remote.clone()),
+            SignatureSource::ContainerPolicy | SignatureSource::ContainerPolicyAllowInsecure => {
+                None
+            }
+        };
 
-        // First download the base image (if necessary) - we need the SELinux policy
-        // there to label all following layers.
-        let base_layer = import.base_layer;
-        let base_commit = if let Some(c) = base_layer.commit {
-            c
-        } else {
-            let base_commit = super::unencapsulate_from_manifest_impl(
-                &self.repo,
-                &mut proxy,
-                target_imgref,
+        let progress = options.progress.map(|v| Arc::new(Mutex::new(v)));
+        for layer in import.ostree_layers.iter_mut() {
+            if layer.commit.is_some() {
+                continue;
+            }
+            let (blob, driver) =
+                fetch_layer_decompress(&mut self.proxy, &self.proxy_img, &layer.layer).await?;
+            let blob = super::unencapsulate::ProgressReader {
+                reader: blob,
+                progress: progress.as_ref().map(Arc::clone),
+            };
+            let repo = self.repo.clone();
+            let target_ref = layer.ostree_ref.clone();
+            let import_task =
+                crate::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| {
+                    let txn = repo.auto_transaction(Some(cancellable))?;
+                    let mut importer = crate::tar::Importer::new_for_object_set(&repo);
+                    let blob = tokio_util::io::SyncIoBridge::new(blob);
+                    let mut archive = tar::Archive::new(blob);
+                    importer.import_objects(&mut archive, Some(cancellable))?;
+                    let commit = if write_refs {
+                        let commit = importer.finish_import_object_set()?;
+                        repo.transaction_set_ref(None, &target_ref, Some(commit.as_str()));
+                        tracing::debug!("Wrote {} => {}", target_ref, commit);
+                        Some(commit)
+                    } else {
+                        None
+                    };
+                    txn.commit(Some(cancellable))?;
+                    Ok::<_, anyhow::Error>(commit)
+                });
+            let commit = super::unencapsulate::join_fetch(import_task, driver).await?;
+            layer.commit = commit;
+        }
+        if import.ostree_commit_layer.commit.is_none() {
+            let (blob, driver) = fetch_layer_decompress(
+                &mut self.proxy,
                 &self.proxy_img,
-                &import.manifest,
-                None,
-                true,
+                &import.ostree_commit_layer.layer,
             )
             .await?;
-            // Write the ostree ref for that single layer; TODO
-            // handle this as part of the overall transaction.
-            self.repo.set_ref_immediate(
-                None,
-                base_layer.ostree_ref.as_str(),
-                Some(base_commit.as_str()),
-                gio::NONE_CANCELLABLE,
-            )?;
-            base_commit
+            let blob = ProgressReader {
+                reader: blob,
+                progress: progress.as_ref().map(Arc::clone),
+            };
+            let repo = self.repo.clone();
+            let target_ref = import.ostree_commit_layer.ostree_ref.clone();
+            let import_task =
+                crate::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| {
+                    let txn = repo.auto_transaction(Some(cancellable))?;
+                    let mut importer = crate::tar::Importer::new_for_commit(&repo, remote);
+                    let blob = tokio_util::io::SyncIoBridge::new(blob);
+                    let mut archive = tar::Archive::new(blob);
+                    importer.import_commit(&mut archive, Some(cancellable))?;
+                    let commit = importer.finish_import_commit();
+                    if write_refs {
+                        repo.transaction_set_ref(None, &target_ref, Some(commit.as_str()));
+                        tracing::debug!("Wrote {} => {}", target_ref, commit);
+                    }
+                    repo.mark_commit_partial(&commit, false)?;
+                    txn.commit(Some(cancellable))?;
+                    Ok::<_, anyhow::Error>(commit)
+                });
+            let commit = super::unencapsulate::join_fetch(import_task, driver).await?;
+            import.ostree_commit_layer.commit = Some(commit);
         };
+        Ok(())
+    }
+
+    /// Retrieve an inner ostree commit.
+    ///
+    /// This does not write cached references for each blob, and errors out if
+    /// the image has any non-ostree layers.
+    pub async fn unencapsulate(
+        mut self,
+        mut import: Box<PreparedImport>,
+        options: Option<UnencapsulateOptions>,
+    ) -> Result<Import> {
+        if !import.layers.is_empty() {
+            anyhow::bail!("Image has {} non-ostree layers", import.layers.len());
+        }
+        self.unencapsulate_base(&mut import, options, false).await?;
+        let ostree_commit = import.ostree_commit_layer.commit.unwrap();
+        let image_digest = import.manifest_digest;
+        Ok(Import {
+            ostree_commit,
+            image_digest,
+        })
+    }
+
+    /// Import a layered container image
+    pub async fn import(mut self, mut import: Box<PreparedImport>) -> Result<LayeredImageState> {
+        // First download all layers for the base image (if necessary) - we need the SELinux policy
+        // there to label all following layers.
+        self.unencapsulate_base(&mut import, None, true).await?;
+        let mut proxy = self.proxy;
+        let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
+        let base_commit = import.ostree_commit_layer.commit.clone().unwrap();
 
         let ostree_ref = ref_for_image(&target_imgref.imgref)?;
 
@@ -329,9 +508,9 @@ impl LayeredImageImporter {
                     base: Some(base_commit.clone()),
                     selinux: true,
                 };
-                let w =
+                let r =
                     crate::tar::write_tar(&self.repo, blob, layer.ostree_ref.as_str(), Some(opts));
-                let r = super::unencapsulate::join_fetch(w, driver)
+                let r = super::unencapsulate::join_fetch(r, driver)
                     .await
                     .with_context(|| format!("Parsing layer blob {}", layer.digest()))?;
                 layer_commits.push(r.commit);

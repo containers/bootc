@@ -32,13 +32,13 @@
 // which is exactly what is exported by the [`crate::tar::export`] process.
 
 use super::*;
-use anyhow::{anyhow, Context};
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
 use futures_util::Future;
 use oci_spec::image as oci_image;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufRead, AsyncRead};
-use tracing::{event, instrument, Level};
+use tracing::instrument;
 
 /// The result of an import operation
 #[derive(Copy, Clone, Debug, Default)]
@@ -52,11 +52,11 @@ type Progress = tokio::sync::watch::Sender<UnencapsulationProgress>;
 /// A read wrapper that updates the download progress.
 #[pin_project::pin_project]
 #[derive(Debug)]
-struct ProgressReader<T> {
+pub(crate) struct ProgressReader<T> {
     #[pin]
-    reader: T,
+    pub(crate) reader: T,
     #[pin]
-    progress: Option<Progress>,
+    pub(crate) progress: Option<Arc<Mutex<Progress>>>,
 }
 
 impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
@@ -70,6 +70,7 @@ impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
         match this.reader.poll_read(cx, buf) {
             v @ std::task::Poll::Ready(Ok(_)) => {
                 if let Some(progress) = this.progress.as_ref().get_ref() {
+                    let progress = progress.lock().unwrap();
                     let state = {
                         let mut state = *progress.borrow();
                         let newlen = buf.filled().len();
@@ -114,20 +115,6 @@ pub struct Import {
     pub ostree_commit: String,
     /// The image digest retrieved
     pub image_digest: String,
-}
-
-fn require_one_layer_blob(manifest: &oci_image::ImageManifest) -> Result<&oci_image::Descriptor> {
-    let n = manifest.layers().len();
-    if let Some(layer) = manifest.layers().get(0) {
-        if n > 1 {
-            Err(anyhow!("Expected 1 layer, found {}", n))
-        } else {
-            Ok(layer)
-        }
-    } else {
-        // Validated by find_layer_blobids()
-        unreachable!()
-    }
 }
 
 /// Use this to process potential errors from a worker and a driver.
@@ -180,17 +167,17 @@ pub async fn unencapsulate(
     imgref: &OstreeImageReference,
     options: Option<UnencapsulateOptions>,
 ) -> Result<Import> {
-    let mut proxy = ImageProxy::new().await?;
-    let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
-    let (image_digest, manifest) = proxy.fetch_manifest(oi).await?;
-    let ostree_commit =
-        unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, oi, &manifest, options, false)
-            .await?;
-    proxy.close_image(oi).await?;
-    Ok(Import {
-        ostree_commit,
-        image_digest,
-    })
+    let mut importer = super::store::ImageImporter::new(repo, imgref, Default::default()).await?;
+    let prep = match importer.prepare().await? {
+        store::PrepareResult::AlreadyPresent(r) => {
+            return Ok(Import {
+                ostree_commit: r.base_commit,
+                image_digest: r.manifest_digest,
+            });
+        }
+        store::PrepareResult::Ready(r) => r,
+    };
+    importer.unencapsulate(prep, options).await
 }
 
 /// Create a decompressor for this MIME type, given a stream of input.
@@ -223,72 +210,4 @@ pub(crate) async fn fetch_layer_decompress<'a>(
         .await?;
     let blob = new_async_decompressor(layer.media_type(), blob)?;
     Ok((blob, driver))
-}
-
-pub(crate) async fn unencapsulate_from_manifest_impl(
-    repo: &ostree::Repo,
-    proxy: &mut ImageProxy,
-    imgref: &OstreeImageReference,
-    oi: &containers_image_proxy::OpenedImage,
-    manifest: &oci_spec::image::ImageManifest,
-    options: Option<UnencapsulateOptions>,
-    ignore_layered: bool,
-) -> Result<String> {
-    if matches!(imgref.sigverify, SignatureSource::ContainerPolicy)
-        && skopeo::container_policy_is_default_insecure()?
-    {
-        return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
-    }
-    let options = options.unwrap_or_default();
-    let layer = if ignore_layered {
-        manifest
-            .layers()
-            .get(0)
-            .ok_or_else(|| anyhow!("No layers in image"))?
-    } else {
-        require_one_layer_blob(manifest)?
-    };
-    event!(
-        Level::DEBUG,
-        "target blob digest:{} size: {}",
-        layer.digest().as_str(),
-        layer.size()
-    );
-    let (blob, driver) = fetch_layer_decompress(proxy, oi, layer).await?;
-    let blob = ProgressReader {
-        reader: blob,
-        progress: options.progress,
-    };
-    let mut taropts: crate::tar::TarImportOptions = Default::default();
-    match &imgref.sigverify {
-        SignatureSource::OstreeRemote(remote) => taropts.remote = Some(remote.clone()),
-        SignatureSource::ContainerPolicy | SignatureSource::ContainerPolicyAllowInsecure => {}
-    }
-    let import = crate::tar::import_tar(repo, blob, Some(taropts));
-    let ostree_commit = join_fetch(import, driver)
-        .await
-        .with_context(|| format!("Parsing blob {}", layer.digest()))?;
-
-    event!(Level::DEBUG, "created commit {}", ostree_commit);
-    Ok(ostree_commit)
-}
-
-/// Fetch a container image using an in-memory manifest and import its embedded OSTree commit.
-#[context("Importing {}", imgref)]
-#[instrument(skip(repo, options, manifest))]
-pub async fn unencapsulate_from_manifest(
-    repo: &ostree::Repo,
-    imgref: &OstreeImageReference,
-    manifest: &oci_spec::image::ImageManifest,
-    options: Option<UnencapsulateOptions>,
-) -> Result<String> {
-    let mut proxy = ImageProxy::new().await?;
-    let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
-    let r =
-        unencapsulate_from_manifest_impl(repo, &mut proxy, imgref, oi, manifest, options, false)
-            .await?;
-    proxy.close_image(oi).await?;
-    // FIXME write ostree commit after proxy finalization
-    proxy.finalize().await?;
-    Ok(r)
 }
