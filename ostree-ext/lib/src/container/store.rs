@@ -101,7 +101,7 @@ pub struct ImageImporter {
 #[derive(Debug)]
 pub enum PrepareResult {
     /// The image reference is already present; the contained string is the OSTree commit.
-    AlreadyPresent(LayeredImageState),
+    AlreadyPresent(Box<LayeredImageState>),
     /// The image needs to be downloaded
     Ready(Box<PreparedImport>),
 }
@@ -491,7 +491,10 @@ impl ImageImporter {
     }
 
     /// Import a layered container image
-    pub async fn import(mut self, mut import: Box<PreparedImport>) -> Result<LayeredImageState> {
+    pub async fn import(
+        mut self,
+        mut import: Box<PreparedImport>,
+    ) -> Result<Box<LayeredImageState>> {
         // First download all layers for the base image (if necessary) - we need the SELinux policy
         // there to label all following layers.
         self.unencapsulate_base(&mut import, None, true).await?;
@@ -555,7 +558,7 @@ impl ImageImporter {
         let repo = self.repo;
         let imgref = self.target_imgref.unwrap_or(self.imgref);
         let state = crate::tokio_util::spawn_blocking_cancellable_flatten(
-            move |cancellable| -> Result<LayeredImageState> {
+            move |cancellable| -> Result<Box<LayeredImageState>> {
                 let cancellable = Some(cancellable);
                 let repo = &repo;
                 let txn = repo.auto_transaction(cancellable)?;
@@ -614,7 +617,7 @@ pub fn list_images(repo: &ostree::Repo) -> Result<Vec<String>> {
 pub fn query_image(
     repo: &ostree::Repo,
     imgref: &OstreeImageReference,
-) -> Result<Option<LayeredImageState>> {
+) -> Result<Option<Box<LayeredImageState>>> {
     let ostree_ref = &ref_for_image(&imgref.imgref)?;
     let merge_rev = repo.resolve_rev(ostree_ref, true)?;
     let (merge_commit, merge_commit_obj) = if let Some(r) = merge_rev {
@@ -635,14 +638,14 @@ pub fn query_image(
         .ok_or_else(|| anyhow!("Missing base image ref"))?;
     // If there are more layers after the base, then we're layered.
     let is_layered = layers.count() > 0;
-    let state = LayeredImageState {
+    let state = Box::new(LayeredImageState {
         base_commit,
         merge_commit,
         is_layered,
         manifest_digest,
         manifest,
         configuration,
-    };
+    });
     tracing::debug!(state = ?state);
     Ok(Some(state))
 }
