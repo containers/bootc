@@ -188,6 +188,17 @@ enum ContainerImageOpts {
         proxyopts: ContainerProxyOpts,
     },
 
+    /// Pull (or update) a container image.
+    History {
+        /// Path to the repository
+        #[structopt(long, parse(try_from_str = parse_repo))]
+        repo: ostree::Repo,
+
+        /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
+        #[structopt(parse(try_from_str = parse_imgref))]
+        imgref: OstreeImageReference,
+    },
+
     /// Copy a pulled container image from one repo to another.
     Copy {
         /// Path to the source repository
@@ -467,6 +478,61 @@ async fn container_store(
     Ok(())
 }
 
+fn print_column(s: &str, clen: usize, remaining: &mut usize) {
+    let l = s.len().min(*remaining);
+    print!("{}", &s[0..l]);
+    if clen > 0 {
+        // We always want two trailing spaces
+        let pad = clen.saturating_sub(l) + 2;
+        for _ in 0..pad {
+            print!(" ");
+        }
+        *remaining = remaining.checked_sub(l + pad).unwrap();
+    }
+}
+
+/// Output the container image history
+async fn container_history(repo: &ostree::Repo, imgref: &OstreeImageReference) -> Result<()> {
+    let img = crate::container::store::query_image(repo, imgref)?
+        .ok_or_else(|| anyhow::anyhow!("No such image: {}", imgref))?;
+    let columns = [("ID", 20), ("SIZE", 10), ("CREATED BY", 0usize)];
+    let width = term_size::dimensions().map(|x| x.0).unwrap_or(80);
+    if let Some(config) = img.configuration.as_ref() {
+        {
+            let mut remaining = width;
+            for (name, width) in columns.iter() {
+                print_column(name, *width as usize, &mut remaining);
+            }
+            println!();
+        }
+
+        let mut history = config.history().iter();
+        let layers = img.manifest.layers().iter();
+        for layer in layers {
+            let histent = history.next();
+            let created_by = histent
+                .and_then(|s| s.created_by().as_deref())
+                .unwrap_or("");
+
+            let mut remaining = width;
+
+            let digest = layer.digest().as_str();
+            // Verify it's OK to slice, this should all be ASCII
+            assert!(digest.chars().all(|c| c.is_ascii()));
+            let digest_max = columns[0].1;
+            let digest = &digest[0..digest_max];
+            print_column(digest, digest_max, &mut remaining);
+            let size = glib::format_size(layer.size() as u64);
+            print_column(size.as_str(), columns[1].1, &mut remaining);
+            print_column(created_by, columns[2].1, &mut remaining);
+            println!();
+        }
+        Ok(())
+    } else {
+        anyhow::bail!("v0 image does not have fetched configuration");
+    }
+}
+
 /// Add IMA signatures to an ostree commit, generating a new commit.
 fn ima_sign(cmdopts: &ImaSignOpts) -> Result<()> {
     let signopts = crate::ima::ImaOpts {
@@ -550,6 +616,9 @@ where
                     imgref,
                     proxyopts,
                 } => container_store(&repo, &imgref, proxyopts).await,
+                ContainerImageOpts::History { repo, imgref } => {
+                    container_history(&repo, &imgref).await
+                }
                 ContainerImageOpts::Copy {
                     src_repo,
                     dest_repo,
