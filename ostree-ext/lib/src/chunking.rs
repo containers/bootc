@@ -342,7 +342,7 @@ impl Chunking {
                     );
                     Cow::Owned(r)
                 }
-                n => Cow::Owned(format!("{} components", n)),
+                n => Cow::Owned(format!("{n} components")),
             };
             let mut chunk = Chunk::new(&*name);
             for szmeta in bin {
