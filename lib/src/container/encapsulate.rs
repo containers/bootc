@@ -92,7 +92,7 @@ fn export_chunked(
         .map(|(i, chunk)| -> Result<_> {
             let mut w = ociw.create_layer(compression)?;
             ostree_tar::export_chunk(repo, &chunk, &mut w)
-                .with_context(|| format!("Exporting chunk {}", i))?;
+                .with_context(|| format!("Exporting chunk {i}"))?;
             let w = w.into_inner()?;
             Ok((w.complete()?, chunk.name))
         })

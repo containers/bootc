@@ -89,7 +89,7 @@ fn diff_recurse(
         let from_child = from_iter.child(&from_info);
         let name = from_info.name();
         let name = name.to_str().expect("UTF-8 ostree name");
-        let path = format!("{}{}", prefix, name);
+        let path = format!("{prefix}{name}");
         let to_child = to.child(&name);
         let to_info = query_info_optional(&to_child, queryattrs, queryflags)
             .context("querying optional to")?;
@@ -132,7 +132,7 @@ fn diff_recurse(
     while let Some(to_info) = to_iter.next_file(cancellable)? {
         let name = to_info.name();
         let name = name.to_str().expect("UTF-8 ostree name");
-        let path = format!("{}{}", prefix, name);
+        let path = format!("{prefix}{name}");
         let from_child = from.child(name);
         let from_info = query_info_optional(&from_child, queryattrs, queryflags)
             .context("querying optional from")?;
