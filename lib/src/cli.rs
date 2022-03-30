@@ -136,6 +136,8 @@ enum ContainerOpts {
     },
 
     #[structopt(alias = "commit")]
+    /// Perform build-time checking and canonicalization.
+    /// This is presently an optional command, but may become required in the future.
     Commit,
 
     /// Commands for working with (possibly layered, non-encapsulated) container images.
@@ -288,6 +290,7 @@ enum Opt {
     Container(ContainerOpts),
     /// IMA signatures
     ImaSign(ImaSignOpts),
+    /// Internal integration testing helpers.
     #[structopt(setting(structopt::clap::AppSettings::Hidden))]
     #[cfg(feature = "internal-testing-api")]
     InternalOnlyForTesting(TestingOpts),
