@@ -289,7 +289,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         let data = v.data_as_bytes();
         let data = data.as_ref();
         self.append_default_data(&object_path(objtype, checksum), data)
-            .with_context(|| format!("Writing object {}", checksum))?;
+            .with_context(|| format!("Writing object {checksum}"))?;
         Ok(())
     }
 
