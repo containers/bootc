@@ -152,7 +152,7 @@ impl TryFrom<&str> for OstreeImageReference {
             // Shorthand for ostree-unverified-image:registry:
             "ostree-unverified-registry" => (
                 SignatureSource::ContainerPolicyAllowInsecure,
-                Cow::Owned(format!("registry:{}", second)),
+                Cow::Owned(format!("registry:{second}")),
             ),
             // This is a shorthand for ostree-remote-image with registry:
             "ostree-remote-registry" => {
@@ -161,7 +161,7 @@ impl TryFrom<&str> for OstreeImageReference {
                     .ok_or_else(|| anyhow!("Missing second ':' in {}", value))?;
                 (
                     SignatureSource::OstreeRemote(remote.to_string()),
-                    Cow::Owned(format!("registry:{}", rest)),
+                    Cow::Owned(format!("registry:{rest}")),
                 )
             }
             "ostree-remote-image" => {

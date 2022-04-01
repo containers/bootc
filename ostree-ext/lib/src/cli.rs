@@ -136,6 +136,8 @@ enum ContainerOpts {
     },
 
     #[structopt(alias = "commit")]
+    /// Perform build-time checking and canonicalization.
+    /// This is presently an optional command, but may become required in the future.
     Commit,
 
     /// Commands for working with (possibly layered, non-encapsulated) container images.
@@ -288,6 +290,7 @@ enum Opt {
     Container(ContainerOpts),
     /// IMA signatures
     ImaSign(ImaSignOpts),
+    /// Internal integration testing helpers.
     #[structopt(setting(structopt::clap::AppSettings::Hidden))]
     #[cfg(feature = "internal-testing-api")]
     InternalOnlyForTesting(TestingOpts),
@@ -350,16 +353,14 @@ async fn container_import(
     let (tx_progress, rx_progress) = tokio::sync::watch::channel(Default::default());
     let target = indicatif::ProgressDrawTarget::stdout();
     let style = indicatif::ProgressStyle::default_bar();
-    let pb = if !quiet {
+    let pb = (!quiet).then(|| {
         let pb = indicatif::ProgressBar::new_spinner();
         pb.set_draw_target(target);
         pb.set_style(style.template("{spinner} {prefix} {msg}"));
         pb.enable_steady_tick(200);
         pb.set_message("Downloading...");
-        Some(pb)
-    } else {
-        None
-    };
+        pb
+    });
     let opts = UnencapsulateOptions {
         progress: Some(tx_progress),
     };
