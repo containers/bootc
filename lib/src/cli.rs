@@ -5,7 +5,8 @@
 //! also exported as a library too, so that projects
 //! such as `rpm-ostree` can directly reuse it.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use camino::Utf8PathBuf;
 use futures_util::FutureExt;
 use ostree::{cap_std, gio, glib};
 use std::borrow::Borrow;
@@ -247,6 +248,10 @@ enum ContainerImageOpts {
         #[structopt(long)]
         /// Add a kernel argument
         karg: Option<Vec<String>>,
+
+        /// Write the deployed checksum to this file
+        #[structopt(long)]
+        write_commitid_to: Option<Utf8PathBuf>,
     },
 }
 
@@ -632,6 +637,7 @@ where
                     target_imgref,
                     karg,
                     proxyopts,
+                    write_commitid_to,
                 } => {
                     let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
                     sysroot.load(gio::NONE_CANCELLABLE)?;
@@ -645,8 +651,18 @@ where
                         target_imgref: target_imgref.as_ref(),
                         proxy_cfg: Some(proxyopts.into()),
                     };
-                    crate::container::deploy::deploy(sysroot, &stateroot, &imgref, Some(options))
-                        .await
+                    let state = crate::container::deploy::deploy(
+                        sysroot,
+                        &stateroot,
+                        &imgref,
+                        Some(options),
+                    )
+                    .await?;
+                    if let Some(p) = write_commitid_to {
+                        std::fs::write(&p, state.merge_commit.as_bytes())
+                            .with_context(|| format!("Failed to write commitid to {}", p))?;
+                    }
+                    Ok(())
                 }
             },
         },

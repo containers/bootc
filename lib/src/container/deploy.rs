@@ -1,5 +1,6 @@
 //! Perform initial setup for a container image based system root
 
+use super::store::LayeredImageState;
 use super::OstreeImageReference;
 use crate::container::store::PrepareResult;
 use anyhow::Result;
@@ -37,7 +38,7 @@ pub async fn deploy(
     stateroot: &str,
     imgref: &OstreeImageReference,
     options: Option<DeployOpts<'_>>,
-) -> Result<()> {
+) -> Result<Box<LayeredImageState>> {
     let cancellable = ostree::gio::NONE_CANCELLABLE;
     let options = options.unwrap_or_default();
     let repo = &sysroot.repo().unwrap();
@@ -66,5 +67,6 @@ pub async fn deploy(
     let flags = ostree::SysrootSimpleWriteDeploymentFlags::NONE;
     sysroot.simple_write_deployment(Some(stateroot), deployment, None, flags, cancellable)?;
     sysroot.cleanup(cancellable)?;
-    Ok(())
+
+    Ok(state)
 }
