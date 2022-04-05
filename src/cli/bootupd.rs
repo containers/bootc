@@ -1,18 +1,18 @@
 use crate::bootupd;
 use anyhow::{Context, Result};
+use clap::Parser;
 use log::LevelFilter;
-use structopt::StructOpt;
 
 /// `bootupd` sub-commands.
-#[derive(Debug, StructOpt)]
-#[structopt(name = "bootupd", about = "Bootupd backend commands")]
+#[derive(Debug, Parser)]
+#[clap(name = "bootupd", about = "Bootupd backend commands")]
 pub struct DCommand {
     /// Verbosity level (higher is more verbose).
-    #[structopt(short = "v", parse(from_occurrences), global = true)]
+    #[clap(short = 'v', parse(from_occurrences), global = true)]
     verbosity: u8,
 
     /// CLI sub-command.
-    #[structopt(subcommand)]
+    #[clap(subcommand)]
     pub cmd: DVerb,
 }
 
@@ -29,26 +29,26 @@ impl DCommand {
 }
 
 /// CLI sub-commands.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub enum DVerb {
-    #[structopt(name = "daemon", about = "Run service logic")]
+    #[clap(name = "daemon", about = "Run service logic")]
     Daemon,
-    #[structopt(name = "generate-update-metadata", about = "Generate metadata")]
+    #[clap(name = "generate-update-metadata", about = "Generate metadata")]
     GenerateUpdateMetadata(GenerateOpts),
-    #[structopt(name = "install", about = "Install components")]
+    #[clap(name = "install", about = "Install components")]
     Install(InstallOpts),
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct InstallOpts {
     /// Source root
-    #[structopt(long, default_value = "/")]
+    #[clap(long, default_value = "/")]
     src_root: String,
     /// Target root
     dest_root: String,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct GenerateOpts {
     /// Physical root mountpoint
     sysroot: String,
