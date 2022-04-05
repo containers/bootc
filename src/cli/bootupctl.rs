@@ -2,16 +2,15 @@ use crate::bootupd;
 use crate::ipc::ClientToDaemonConnection;
 use crate::model::Status;
 use anyhow::Result;
+use clap::{AppSettings, StructOpt};
 use log::LevelFilter;
-use structopt::clap::AppSettings;
-use structopt::StructOpt;
 
 /// `bootupctl` sub-commands.
 #[derive(Debug, StructOpt)]
 #[structopt(name = "bootupctl", about = "Bootupd client application")]
 pub struct CtlCommand {
     /// Verbosity level (higher is more verbose).
-    #[structopt(short = "v", parse(from_occurrences), global = true)]
+    #[structopt(short = 'v', parse(from_occurrences), global = true)]
     verbosity: u8,
 
     /// CLI sub-command.
@@ -37,6 +36,7 @@ pub enum CtlVerb {
     // FIXME(lucab): drop this after refreshing
     // https://github.com/coreos/fedora-coreos-config/pull/595
     #[structopt(name = "backend", setting = AppSettings::Hidden)]
+    #[clap(subcommand)]
     Backend(CtlBackend),
     #[structopt(name = "status", about = "Show components status")]
     Status(StatusOpts),

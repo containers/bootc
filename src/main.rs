@@ -29,7 +29,7 @@ mod ostreeutil;
 mod sha512string;
 mod util;
 
-use structopt::clap::crate_name;
+use clap::crate_name;
 
 /// Binary entrypoint, for both daemon and client logic.
 fn main() {

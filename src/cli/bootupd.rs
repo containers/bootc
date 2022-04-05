@@ -1,14 +1,14 @@
 use crate::bootupd;
 use anyhow::{Context, Result};
+use clap::StructOpt;
 use log::LevelFilter;
-use structopt::StructOpt;
 
 /// `bootupd` sub-commands.
 #[derive(Debug, StructOpt)]
 #[structopt(name = "bootupd", about = "Bootupd backend commands")]
 pub struct DCommand {
     /// Verbosity level (higher is more verbose).
-    #[structopt(short = "v", parse(from_occurrences), global = true)]
+    #[structopt(short = 'v', parse(from_occurrences), global = true)]
     verbosity: u8,
 
     /// CLI sub-command.

@@ -1,8 +1,8 @@
 //! Command-line interface (CLI) logic.
 
 use anyhow::Result;
+use clap::StructOpt;
 use log::LevelFilter;
-use structopt::StructOpt;
 
 mod bootupctl;
 mod bootupd;
