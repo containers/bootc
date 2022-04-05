@@ -2,19 +2,19 @@ use crate::bootupd;
 use crate::ipc::ClientToDaemonConnection;
 use crate::model::Status;
 use anyhow::Result;
-use clap::{AppSettings, StructOpt};
+use clap::{AppSettings, Parser};
 use log::LevelFilter;
 
 /// `bootupctl` sub-commands.
-#[derive(Debug, StructOpt)]
-#[structopt(name = "bootupctl", about = "Bootupd client application")]
+#[derive(Debug, Parser)]
+#[clap(name = "bootupctl", about = "Bootupd client application")]
 pub struct CtlCommand {
     /// Verbosity level (higher is more verbose).
-    #[structopt(short = 'v', parse(from_occurrences), global = true)]
+    #[clap(short = 'v', parse(from_occurrences), global = true)]
     verbosity: u8,
 
     /// CLI sub-command.
-    #[structopt(subcommand)]
+    #[clap(subcommand)]
     pub cmd: CtlVerb,
 }
 
@@ -31,41 +31,40 @@ impl CtlCommand {
 }
 
 /// CLI sub-commands.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub enum CtlVerb {
     // FIXME(lucab): drop this after refreshing
     // https://github.com/coreos/fedora-coreos-config/pull/595
-    #[structopt(name = "backend", setting = AppSettings::Hidden)]
-    #[clap(subcommand)]
+    #[clap(name = "backend", setting = AppSettings::Hidden, subcommand)]
     Backend(CtlBackend),
-    #[structopt(name = "status", about = "Show components status")]
+    #[clap(name = "status", about = "Show components status")]
     Status(StatusOpts),
-    #[structopt(name = "update", about = "Update all components")]
+    #[clap(name = "update", about = "Update all components")]
     Update,
-    #[structopt(name = "adopt-and-update", about = "Update all adoptable components")]
+    #[clap(name = "adopt-and-update", about = "Update all adoptable components")]
     AdoptAndUpdate,
-    #[structopt(name = "validate", about = "Validate system state")]
+    #[clap(name = "validate", about = "Validate system state")]
     Validate,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub enum CtlBackend {
-    #[structopt(name = "generate-update-metadata", setting = AppSettings::Hidden)]
+    #[clap(name = "generate-update-metadata", setting = AppSettings::Hidden)]
     Generate(super::bootupd::GenerateOpts),
-    #[structopt(name = "install", setting = AppSettings::Hidden)]
+    #[clap(name = "install", setting = AppSettings::Hidden)]
     Install(super::bootupd::InstallOpts),
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct StatusOpts {
     /// If there are updates available, output `Updates available: ` to standard output;
     /// otherwise output nothing.  Avoid parsing this, just check whether or not
     /// the output is empty.
-    #[structopt(long)]
+    #[clap(long)]
     print_if_available: bool,
 
     /// Output JSON
-    #[structopt(long)]
+    #[clap(long)]
     json: bool,
 }
 
