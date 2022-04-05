@@ -53,6 +53,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn clap_apps() {
+        use clap::CommandFactory;
+        bootupctl::CtlCommand::command().debug_assert();
+        bootupd::DCommand::command().debug_assert();
+    }
+
+    #[test]
     fn test_multicall_dispatch() {
         {
             let d_argv = vec!["/usr/bin/bootupd".to_string(), "daemon".to_string()];
