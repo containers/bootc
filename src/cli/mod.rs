@@ -27,8 +27,8 @@ impl MultiCall {
         };
         #[allow(clippy::wildcard_in_or_patterns)]
         match exe_name.as_bytes() {
-            b"bootupctl" => MultiCall::Ctl(bootupctl::CtlCommand::from_iter(args)),
-            b"bootupd" | _ => MultiCall::D(bootupd::DCommand::from_iter(args)),
+            b"bootupctl" => MultiCall::Ctl(bootupctl::CtlCommand::parse_from(args)),
+            b"bootupd" | _ => MultiCall::D(bootupd::DCommand::parse_from(args)),
         }
     }
 

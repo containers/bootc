@@ -2,7 +2,7 @@ use crate::bootupd;
 use crate::ipc::ClientToDaemonConnection;
 use crate::model::Status;
 use anyhow::Result;
-use clap::{AppSettings, Parser};
+use clap::Parser;
 use log::LevelFilter;
 
 /// `bootupctl` sub-commands.
@@ -35,7 +35,7 @@ impl CtlCommand {
 pub enum CtlVerb {
     // FIXME(lucab): drop this after refreshing
     // https://github.com/coreos/fedora-coreos-config/pull/595
-    #[clap(name = "backend", setting = AppSettings::Hidden, subcommand)]
+    #[clap(name = "backend", hide = true, subcommand)]
     Backend(CtlBackend),
     #[clap(name = "status", about = "Show components status")]
     Status(StatusOpts),
@@ -49,9 +49,9 @@ pub enum CtlVerb {
 
 #[derive(Debug, Parser)]
 pub enum CtlBackend {
-    #[clap(name = "generate-update-metadata", setting = AppSettings::Hidden)]
+    #[clap(name = "generate-update-metadata", hide = true)]
     Generate(super::bootupd::GenerateOpts),
-    #[clap(name = "install", setting = AppSettings::Hidden)]
+    #[clap(name = "install", hide = true)]
     Install(super::bootupd::InstallOpts),
 }
 
