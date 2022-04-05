@@ -191,11 +191,7 @@ pub(crate) fn status() -> Result<Status> {
                 .remove(name.as_str())
                 .ok_or_else(|| anyhow!("Unknown component installed: {}", name))?;
             let component = component.as_ref();
-            let interrupted = state
-                .pending
-                .as_ref()
-                .map(|p| p.get(name.as_str()))
-                .flatten();
+            let interrupted = state.pending.as_ref().and_then(|p| p.get(name.as_str()));
             let update = component.query_update(&sysroot)?;
             let updatable = ComponentUpdatable::from_metadata(&ic.meta, update.as_ref());
             let adopted_from = ic.adopted_from.clone();
