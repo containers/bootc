@@ -15,10 +15,12 @@ use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use structopt::StructOpt;
+use tokio::sync::mpsc::Receiver;
 use tokio_stream::StreamExt;
 
 use crate::commit::container_commit;
 use crate::container as ostree_container;
+use crate::container::store::{ImportProgress, PreparedImport};
 use crate::container::{Config, ImageReference, OstreeImageReference, UnencapsulateOptions};
 use ostree_container::store::{ImageImporter, PrepareResult};
 use ostree_container::UnencapsulationProgress;
@@ -348,6 +350,46 @@ enum ProgressOrFinish {
     Finished(Result<ostree_container::Import>),
 }
 
+/// Render an import progress notification as a string.
+pub fn layer_progress_format(p: &ImportProgress) -> String {
+    let (starting, s, layer) = match p {
+        ImportProgress::OstreeChunkStarted(v) => (true, "ostree chunk", v),
+        ImportProgress::OstreeChunkCompleted(v) => (false, "ostree chunk", v),
+        ImportProgress::DerivedLayerStarted(v) => (true, "layer", v),
+        ImportProgress::DerivedLayerCompleted(v) => (false, "layer", v),
+    };
+    // podman outputs 12 characters of digest, let's add 7 for `sha256:`.
+    let short_digest = layer.digest().chars().take(12 + 7).collect::<String>();
+    if starting {
+        let size = glib::format_size(layer.size() as u64);
+        format!("Fetching {s} {short_digest} ({size})")
+    } else {
+        format!("Fetched {s} {short_digest}")
+    }
+}
+
+async fn handle_layer_progress_print(mut r: Receiver<ImportProgress>) {
+    while let Some(v) = r.recv().await {
+        println!("{}", layer_progress_format(&v));
+    }
+}
+
+fn print_layer_status(prep: &PreparedImport) {
+    let (stored, to_fetch, to_fetch_size) =
+        prep.all_layers()
+            .fold((0u32, 0u32, 0u64), |(stored, to_fetch, sz), v| {
+                if v.commit.is_some() {
+                    (stored + 1, to_fetch, sz)
+                } else {
+                    (stored, to_fetch + 1, sz + v.size())
+                }
+            });
+    if to_fetch > 0 {
+        let size = crate::glib::format_size(to_fetch_size);
+        println!("layers stored: {stored} needed: {to_fetch} ({size})");
+    }
+}
+
 /// Import a container image with an encapsulated ostree commit.
 async fn container_import(
     repo: &ostree::Repo,
@@ -451,6 +493,7 @@ async fn container_store(
     proxyopts: ContainerProxyOpts,
 ) -> Result<()> {
     let mut imp = ImageImporter::new(repo, imgref, proxyopts.into()).await?;
+    let layer_progress = imp.request_progress();
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
             println!("No changes in {} => {}", imgref, c.merge_commit);
@@ -458,15 +501,12 @@ async fn container_store(
         }
         PrepareResult::Ready(r) => r,
     };
-    for layer in prep.all_layers() {
-        if layer.commit.is_some() {
-            println!("Using layer: {}", layer.digest());
-        } else {
-            let size = crate::glib::format_size(layer.size());
-            println!("Downloading layer: {} ({})", layer.digest(), size);
-        }
-    }
-    let import = imp.import(prep).await?;
+    print_layer_status(&prep);
+    let progress_printer =
+        tokio::task::spawn(async move { handle_layer_progress_print(layer_progress).await });
+    let import = imp.import(prep).await;
+    let _ = progress_printer.await;
+    let import = import?;
     let commit = &repo.load_commit(&import.merge_commit)?.0;
     let commit_meta = &glib::VariantDict::new(Some(&commit.child_value(0)));
     let filtered = commit_meta.lookup::<ostree_container::store::MetaFilteredData>(
