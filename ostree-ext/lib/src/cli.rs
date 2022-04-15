@@ -7,23 +7,19 @@
 
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
-use futures_util::FutureExt;
 use ostree::{cap_std, gio, glib};
-use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use structopt::StructOpt;
 use tokio::sync::mpsc::Receiver;
-use tokio_stream::StreamExt;
 
 use crate::commit::container_commit;
-use crate::container as ostree_container;
 use crate::container::store::{ImportProgress, PreparedImport};
-use crate::container::{Config, ImageReference, OstreeImageReference, UnencapsulateOptions};
+use crate::container::{self as ostree_container};
+use crate::container::{Config, ImageReference, OstreeImageReference};
 use ostree_container::store::{ImageImporter, PrepareResult};
-use ostree_container::UnencapsulationProgress;
 
 /// Parse an [`OstreeImageReference`] from a CLI arguemnt.
 pub fn parse_imgref(s: &str) -> Result<OstreeImageReference> {
@@ -384,11 +380,6 @@ fn tar_export(opts: &ExportOpts) -> Result<()> {
     Ok(())
 }
 
-enum ProgressOrFinish {
-    Progress(UnencapsulationProgress),
-    Finished(Result<ostree_container::Import>),
-}
-
 /// Render an import progress notification as a string.
 pub fn layer_progress_format(p: &ImportProgress) -> String {
     let (starting, s, layer) = match p {
@@ -436,7 +427,6 @@ async fn container_import(
     write_ref: Option<&str>,
     quiet: bool,
 ) -> Result<()> {
-    let (tx_progress, rx_progress) = tokio::sync::watch::channel(Default::default());
     let target = indicatif::ProgressDrawTarget::stdout();
     let style = indicatif::ProgressStyle::default_bar();
     let pb = (!quiet).then(|| {
@@ -447,30 +437,8 @@ async fn container_import(
         pb.set_message("Downloading...");
         pb
     });
-    let opts = UnencapsulateOptions {
-        progress: Some(tx_progress),
-    };
-    let rx_progress_stream =
-        tokio_stream::wrappers::WatchStream::new(rx_progress).map(ProgressOrFinish::Progress);
-    let import = crate::container::unencapsulate(repo, imgref, Some(opts))
-        .into_stream()
-        .map(ProgressOrFinish::Finished);
-    let stream = rx_progress_stream.merge(import);
-    tokio::pin!(stream);
-    let mut import_result = None;
-    while let Some(value) = stream.next().await {
-        match value {
-            ProgressOrFinish::Progress(progress) => {
-                let n = progress.borrow().processed_bytes;
-                if let Some(pb) = pb.as_ref() {
-                    pb.set_message(format!("Processed: {}", indicatif::HumanBytes(n)));
-                }
-            }
-            ProgressOrFinish::Finished(import) => {
-                import_result = Some(import?);
-            }
-        }
-    }
+    let importer = ImageImporter::new(repo, imgref, Default::default()).await?;
+    let import_result = importer.unencapsulate().await;
     if let Some(pb) = pb.as_ref() {
         pb.finish();
     }

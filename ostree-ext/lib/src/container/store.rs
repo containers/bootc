@@ -15,7 +15,6 @@ use ostree::prelude::{Cast, ToVariant};
 use ostree::{gio, glib};
 use std::collections::{BTreeSet, HashMap};
 use std::iter::FromIterator;
-use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Configuration for the proxy.
@@ -315,6 +314,7 @@ impl ImageImporter {
     pub fn set_target(&mut self, target: &OstreeImageReference) {
         self.target_imgref = Some(target.clone())
     }
+
     /// Determine if there is a new manifest, and if so return its digest.
     pub async fn prepare(&mut self) -> Result<PrepareResult> {
         self.prepare_internal(false).await
@@ -408,7 +408,6 @@ impl ImageImporter {
     pub(crate) async fn unencapsulate_base(
         &mut self,
         import: &mut store::PreparedImport,
-        options: Option<UnencapsulateOptions>,
         write_refs: bool,
     ) -> Result<()> {
         tracing::debug!("Fetching base");
@@ -417,7 +416,6 @@ impl ImageImporter {
         {
             return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
         }
-        let options = options.unwrap_or_default();
         let remote = match &self.imgref.sigverify {
             SignatureSource::OstreeRemote(remote) => Some(remote.clone()),
             SignatureSource::ContainerPolicy | SignatureSource::ContainerPolicyAllowInsecure => {
@@ -425,7 +423,6 @@ impl ImageImporter {
             }
         };
 
-        let progress = options.progress.map(|v| Arc::new(Mutex::new(v)));
         for layer in import.ostree_layers.iter_mut() {
             if layer.commit.is_some() {
                 continue;
@@ -436,10 +433,6 @@ impl ImageImporter {
             }
             let (blob, driver) =
                 fetch_layer_decompress(&mut self.proxy, &self.proxy_img, &layer.layer).await?;
-            let blob = super::unencapsulate::ProgressReader {
-                reader: blob,
-                progress: progress.as_ref().map(Arc::clone),
-            };
             let repo = self.repo.clone();
             let target_ref = layer.ostree_ref.clone();
             let import_task =
@@ -480,10 +473,6 @@ impl ImageImporter {
                 &import.ostree_commit_layer.layer,
             )
             .await?;
-            let blob = ProgressReader {
-                reader: blob,
-                progress: progress.as_ref().map(Arc::clone),
-            };
             let repo = self.repo.clone();
             let target_ref = import.ostree_commit_layer.ostree_ref.clone();
             let import_task =
@@ -518,17 +507,19 @@ impl ImageImporter {
     ///
     /// This does not write cached references for each blob, and errors out if
     /// the image has any non-ostree layers.
-    pub async fn unencapsulate(
-        mut self,
-        mut import: Box<PreparedImport>,
-        options: Option<UnencapsulateOptions>,
-    ) -> Result<Import> {
-        if !import.layers.is_empty() {
-            anyhow::bail!("Image has {} non-ostree layers", import.layers.len());
+    pub async fn unencapsulate(mut self) -> Result<Import> {
+        let mut prep = match self.prepare_internal(false).await? {
+            PrepareResult::AlreadyPresent(_) => {
+                panic!("Should not have image present for unencapsulation")
+            }
+            PrepareResult::Ready(r) => r,
+        };
+        if !prep.layers.is_empty() {
+            anyhow::bail!("Image has {} non-ostree layers", prep.layers.len());
         }
-        self.unencapsulate_base(&mut import, options, false).await?;
-        let ostree_commit = import.ostree_commit_layer.commit.unwrap();
-        let image_digest = import.manifest_digest;
+        self.unencapsulate_base(&mut prep, false).await?;
+        let ostree_commit = prep.ostree_commit_layer.commit.unwrap();
+        let image_digest = prep.manifest_digest;
         Ok(Import {
             ostree_commit,
             image_digest,
@@ -542,7 +533,7 @@ impl ImageImporter {
     ) -> Result<Box<LayeredImageState>> {
         // First download all layers for the base image (if necessary) - we need the SELinux policy
         // there to label all following layers.
-        self.unencapsulate_base(&mut import, None, true).await?;
+        self.unencapsulate_base(&mut import, true).await?;
         let mut proxy = self.proxy;
         let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
         let base_commit = import.ostree_commit_layer.commit.clone().unwrap();
