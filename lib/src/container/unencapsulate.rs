@@ -40,14 +40,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufRead, AsyncRead};
 use tracing::instrument;
 
-/// The result of an import operation
-#[derive(Copy, Clone, Debug, Default)]
-pub struct UnencapsulationProgress {
-    /// Number of bytes downloaded (approximate)
-    pub processed_bytes: u64,
-}
-
-type Progress = tokio::sync::watch::Sender<UnencapsulationProgress>;
+type Progress = tokio::sync::watch::Sender<u64>;
 
 /// A read wrapper that updates the download progress.
 #[pin_project::pin_project]
@@ -76,7 +69,7 @@ impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
                         let newlen = buf.filled().len();
                         debug_assert!(newlen >= len);
                         let read = (newlen - len) as u64;
-                        state.processed_bytes += read;
+                        state += read;
                         state
                     };
                     // Ignore errors, if the caller disconnected from progress that's OK.
@@ -152,32 +145,12 @@ pub(crate) async fn join_fetch<T: std::fmt::Debug>(
     }
 }
 
-/// Configuration for container fetches.
-#[derive(Debug, Default)]
-pub struct UnencapsulateOptions {
-    /// Channel which will receive progress updates
-    pub progress: Option<tokio::sync::watch::Sender<UnencapsulationProgress>>,
-}
-
 /// Fetch a container image and import its embedded OSTree commit.
 #[context("Importing {}", imgref)]
-#[instrument(skip(repo, options))]
-pub async fn unencapsulate(
-    repo: &ostree::Repo,
-    imgref: &OstreeImageReference,
-    options: Option<UnencapsulateOptions>,
-) -> Result<Import> {
-    let mut importer = super::store::ImageImporter::new(repo, imgref, Default::default()).await?;
-    let prep = match importer.prepare().await? {
-        store::PrepareResult::AlreadyPresent(r) => {
-            return Ok(Import {
-                ostree_commit: r.base_commit,
-                image_digest: r.manifest_digest,
-            });
-        }
-        store::PrepareResult::Ready(r) => r,
-    };
-    importer.unencapsulate(prep, options).await
+#[instrument(skip(repo))]
+pub async fn unencapsulate(repo: &ostree::Repo, imgref: &OstreeImageReference) -> Result<Import> {
+    let importer = super::store::ImageImporter::new(repo, imgref, Default::default()).await?;
+    importer.unencapsulate().await
 }
 
 /// Create a decompressor for this MIME type, given a stream of input.
