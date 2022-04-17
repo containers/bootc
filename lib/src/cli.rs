@@ -270,7 +270,7 @@ struct ImaSignOpts {
     /// Digest algorithm
     algorithm: String,
     /// Path to IMA key
-    key: String,
+    key: Utf8PathBuf,
 }
 
 /// Options for internal testing
