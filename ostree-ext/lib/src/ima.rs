@@ -294,6 +294,9 @@ impl<'a> CommitRewriter<'a> {
 ///
 /// The generated commit object will inherit all metadata from the existing commit object
 /// such as version, etc.
+///
+/// This function does not create an ostree transaction; it's recommended to use outside the call
+/// to this function.
 pub fn ima_sign(repo: &ostree::Repo, ostree_ref: &str, opts: &ImaOpts) -> Result<String> {
     let writer = &mut CommitRewriter::new(repo, opts)?;
     writer.map_commit(ostree_ref)
