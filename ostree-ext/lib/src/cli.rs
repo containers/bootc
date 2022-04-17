@@ -271,6 +271,10 @@ struct ImaSignOpts {
     algorithm: String,
     /// Path to IMA key
     key: Utf8PathBuf,
+
+    #[structopt(long)]
+    /// Overwrite any existing signatures
+    overwrite: bool,
 }
 
 /// Options for internal testing
@@ -544,6 +548,7 @@ fn ima_sign(cmdopts: &ImaSignOpts) -> Result<()> {
     let signopts = crate::ima::ImaOpts {
         algorithm: cmdopts.algorithm.clone(),
         key: cmdopts.key.clone(),
+        overwrite: cmdopts.overwrite,
     };
     let signed_commit = crate::ima::ima_sign(&cmdopts.repo, cmdopts.src_rev.as_str(), &signopts)?;
     cmdopts.repo.set_ref_immediate(

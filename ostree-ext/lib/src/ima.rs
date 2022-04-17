@@ -26,6 +26,7 @@ use std::{convert::TryInto, io::Seek};
 
 /// Extended attribute keys used for IMA.
 const IMA_XATTR: &str = "security.ima";
+const IMA_XATTR_C: &[u8] = b"security.ima\0";
 
 /// Attributes to configure IMA signatures.
 #[derive(Debug, Clone)]
@@ -35,6 +36,9 @@ pub struct ImaOpts {
 
     /// Path to IMA key
     pub key: Utf8PathBuf,
+
+    /// Replace any existing IMA signatures.
+    pub overwrite: bool,
 }
 
 /// Convert a GVariant of type `a(ayay)` to a mutable map
@@ -172,6 +176,13 @@ impl<'a> CommitRewriter<'a> {
         };
         let meta = meta.unwrap();
         let mut xattrs = xattrs_to_map(&xattrs.unwrap());
+        let existing_sig = xattrs.remove(IMA_XATTR_C);
+        if existing_sig.is_some() && !self.ima.overwrite {
+            let r: Rc<str> = checksum.into();
+            self.rewritten_files
+                .insert(checksum.to_string(), Rc::clone(&r));
+            return Ok(r);
+        }
 
         // Now inject the IMA xattr
         let xattrs = {
