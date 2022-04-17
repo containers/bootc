@@ -4,6 +4,7 @@
 
 use crate::objgv::*;
 use anyhow::{Context, Result};
+use camino::Utf8PathBuf;
 use cap_std_ext::rustix::fd::BorrowedFd;
 use fn_error_context::context;
 use gio::glib;
@@ -34,7 +35,7 @@ pub struct ImaOpts {
     pub algorithm: String,
 
     /// Path to IMA key
-    pub key: String,
+    pub key: Utf8PathBuf,
 }
 
 /// Convert a GVariant of type `a(ayay)` to a mutable map
