@@ -25,8 +25,7 @@ use std::rc::Rc;
 use std::{convert::TryInto, io::Seek};
 
 /// Extended attribute keys used for IMA.
-const IMA_XATTRS: &[&str] = &["security.ima", "security.evm"];
-const SELINUX_XATTR: &[u8] = b"security.selinux\0";
+const IMA_XATTR: &str = "security.ima";
 
 /// Attributes to configure IMA signatures.
 #[derive(Debug, Clone)]
@@ -114,12 +113,8 @@ impl<'a> CommitRewriter<'a> {
     /// evmctl can write a separate file but it picks the name...so
     /// we do this hacky dance of `--xattr-user` instead.
     #[allow(unsafe_code)]
-    #[context("Invoking evmctl")]
-    fn ima_sign(
-        &self,
-        instream: &gio::InputStream,
-        selinux: Option<&Vec<u8>>,
-    ) -> Result<HashMap<Vec<u8>, Vec<u8>>> {
+    #[context("IMA signing object")]
+    fn ima_sign(&self, instream: &gio::InputStream) -> Result<HashMap<Vec<u8>, Vec<u8>>> {
         let mut tempf = tempfile::NamedTempFile::new_in(self.tempdir.path())?;
         // If we're operating on a bare repo, we can clone the file (copy_file_range) directly.
         if let Ok(instream) = instream.clone().downcast::<gio::UnixInputStream>() {
@@ -137,26 +132,11 @@ impl<'a> CommitRewriter<'a> {
 
         let mut proc = Command::new("evmctl");
         proc.current_dir(self.tempdir.path())
-            .args(&[
-                "sign",
-                "--portable",
-                "--xattr-user",
-                "--key",
-                self.ima.key.as_str(),
-            ])
-            .args(&["--hashalgo", self.ima.algorithm.as_str()]);
-        if let Some(selinux) = selinux {
-            let selinux = std::str::from_utf8(selinux)
-                .context("Non-UTF8 selinux value")?
-                .trim_end_matches('\0');
-            proc.args(&["--selinux", selinux]);
-        }
-
-        let proc = proc
-            .arg("--imasig")
-            .arg(tempf.path().file_name().unwrap())
             .stdout(Stdio::null())
-            .stderr(Stdio::piped());
+            .stderr(Stdio::piped())
+            .args(&["ima_sign", "--xattr-user", "--key", self.ima.key.as_str()])
+            .args(&["--hashalgo", self.ima.algorithm.as_str()])
+            .arg(tempf.path().file_name().unwrap());
         let status = proc.output().context("Spawning evmctl")?;
         if !status.status.success() {
             return Err(anyhow::anyhow!(
@@ -166,13 +146,11 @@ impl<'a> CommitRewriter<'a> {
             ));
         }
         let mut r = HashMap::new();
-        for &k in IMA_XATTRS {
-            let user_k = k.replace("security.", "user.");
-            let v = steal_xattr(tempf.as_file(), user_k.as_str())?;
-            // NUL terminate the key
-            let k = CString::new(k)?.into_bytes_with_nul();
-            r.insert(k, v);
-        }
+        let user_k = IMA_XATTR.replace("security.", "user.");
+        let v = steal_xattr(tempf.as_file(), user_k.as_str())?;
+        // NUL terminate the key
+        let k = CString::new(IMA_XATTR)?.into_bytes_with_nul();
+        r.insert(k, v);
         Ok(r)
     }
 
@@ -195,11 +173,9 @@ impl<'a> CommitRewriter<'a> {
         let meta = meta.unwrap();
         let mut xattrs = xattrs_to_map(&xattrs.unwrap());
 
-        let selinux = xattrs.get(SELINUX_XATTR);
-
         // Now inject the IMA xattr
         let xattrs = {
-            let signed = self.ima_sign(&instream, selinux)?;
+            let signed = self.ima_sign(&instream)?;
             xattrs.extend(signed);
             new_variant_a_ayay(&xattrs)
         };
