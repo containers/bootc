@@ -21,7 +21,6 @@ use std::fs::File;
 use std::ops::DerefMut;
 use std::os::unix::io::AsRawFd;
 use std::process::{Command, Stdio};
-use std::rc::Rc;
 use std::{convert::TryInto, io::Seek};
 
 /// Extended attribute keys used for IMA.
@@ -73,8 +72,8 @@ struct CommitRewriter<'a> {
     repo: &'a ostree::Repo,
     ima: &'a ImaOpts,
     tempdir: tempfile::TempDir,
-    /// Files that we already changed
-    rewritten_files: HashMap<String, Rc<str>>,
+    /// Maps content object sha256 hex string to a signed object sha256 hex string
+    rewritten_files: HashMap<String, String>,
 }
 
 #[allow(unsafe_code)]
@@ -159,29 +158,19 @@ impl<'a> CommitRewriter<'a> {
     }
 
     #[context("Content object {}", checksum)]
-    fn map_file(&mut self, checksum: &str) -> Result<Rc<str>> {
-        if let Some(r) = self.rewritten_files.get(checksum) {
-            return Ok(Rc::clone(r));
-        }
+    fn map_file(&mut self, checksum: &str) -> Result<Option<String>> {
         let cancellable = gio::NONE_CANCELLABLE;
         let (instream, meta, xattrs) = self.repo.load_file(checksum, cancellable)?;
         let instream = if let Some(i) = instream {
             i
         } else {
-            // If there's no input stream, it must be a symlink.  Skip it.
-            let r: Rc<str> = checksum.into();
-            self.rewritten_files
-                .insert(checksum.to_string(), Rc::clone(&r));
-            return Ok(r);
+            return Ok(None);
         };
         let meta = meta.unwrap();
         let mut xattrs = xattrs_to_map(&xattrs.unwrap());
         let existing_sig = xattrs.remove(IMA_XATTR_C);
         if existing_sig.is_some() && !self.ima.overwrite {
-            let r: Rc<str> = checksum.into();
-            self.rewritten_files
-                .insert(checksum.to_string(), Rc::clone(&r));
-            return Ok(r);
+            return Ok(None);
         }
 
         // Now inject the IMA xattr
@@ -200,10 +189,7 @@ impl<'a> CommitRewriter<'a> {
             .write_content(None, &ostream, size, cancellable)?
             .to_hex();
 
-        let r: Rc<str> = new_checksum.into();
-        self.rewritten_files
-            .insert(checksum.to_string(), Rc::clone(&r));
-        Ok(r)
+        Ok(Some(new_checksum))
     }
 
     /// Write a dirtree object.
@@ -225,9 +211,15 @@ impl<'a> CommitRewriter<'a> {
             let name = name.to_str();
             hex::encode_to_slice(csum, &mut hexbuf)?;
             let checksum = std::str::from_utf8(&hexbuf)?;
-            let mapped = self.map_file(checksum)?;
-            let mapped = hex::decode(&*mapped)?;
-            new_files.push((name, mapped));
+            if let Some(mapped) = self.rewritten_files.get(checksum) {
+                new_files.push((name, hex::decode(mapped)?));
+            } else if let Some(mapped) = self.map_file(checksum)? {
+                let mapped_bytes = hex::decode(&mapped)?;
+                self.rewritten_files.insert(checksum.into(), mapped);
+                new_files.push((name, mapped_bytes));
+            } else {
+                new_files.push((name, Vec::from(csum)));
+            }
         }
 
         let mut new_dirs = Vec::new();
