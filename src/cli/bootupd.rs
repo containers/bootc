@@ -5,7 +5,7 @@ use log::LevelFilter;
 
 /// `bootupd` sub-commands.
 #[derive(Debug, Parser)]
-#[clap(name = "bootupd", about = "Bootupd backend commands")]
+#[clap(name = "bootupd", about = "Bootupd backend commands", version)]
 pub struct DCommand {
     /// Verbosity level (higher is more verbose).
     #[clap(short = 'v', parse(from_occurrences), global = true)]

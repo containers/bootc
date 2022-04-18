@@ -7,7 +7,7 @@ use log::LevelFilter;
 
 /// `bootupctl` sub-commands.
 #[derive(Debug, Parser)]
-#[clap(name = "bootupctl", about = "Bootupd client application")]
+#[clap(name = "bootupctl", about = "Bootupd client application", version)]
 pub struct CtlCommand {
     /// Verbosity level (higher is more verbose).
     #[clap(short = 'v', parse(from_occurrences), global = true)]
