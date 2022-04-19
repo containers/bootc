@@ -96,3 +96,21 @@ jobs:
         run: install ostree-ext-cli /usr/bin && rm -v ostree-ext-cli
       - name: Integration tests
         run: ./ci/integration.sh
+  privtest:
+    name: "Privileged testing"
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/coreos-assembler/fcos:testing-devel
+      options: "--privileged -v /:/run/host"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Download
+        uses: actions/download-artifact@v2
+        with:
+          name: ostree-ext-cli
+      - name: Install
+        run: install ostree-ext-cli /usr/bin && rm -v ostree-ext-cli
+      - name: Integration tests
+        run: ./ci/priv-integration.sh
