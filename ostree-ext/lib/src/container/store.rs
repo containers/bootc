@@ -329,22 +329,14 @@ impl ImageImporter {
 
         let label = crate::container::OSTREE_DIFFID_LABEL;
         let config_labels = config.config().as_ref().and_then(|c| c.labels().as_ref());
+        let diffid = config_labels.and_then(|labels| labels.get(label));
         // For backwards compatibility, if there's only 1 layer, don't require the label.
         // This can be dropped when we drop format version 0 support.
-        let commit_layer_digest = if config.rootfs().diff_ids().len() == 1 {
-            manifest.layers()[0].digest()
-        } else {
-            let diffid = config_labels
-                .and_then(|labels| labels.get(label))
-                .ok_or_else(|| {
-                    anyhow!(
-                        "Missing annotation {} (not an ostree-exported container?)",
-                        label
-                    )
-                })?;
-
+        let commit_layer_digest = if let Some(diffid) = diffid {
             let layer = layer_from_diffid(&manifest, &config, diffid.as_str())?;
             layer.digest()
+        } else {
+            manifest.layers()[0].digest()
         };
         let mut component_layers = Vec::new();
         let mut commit_layer = None;
