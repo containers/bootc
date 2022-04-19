@@ -16,6 +16,7 @@ use ostree::{gio, glib};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Configuration for the proxy.
 ///
@@ -52,6 +53,19 @@ fn ref_for_layer(l: &oci_image::Descriptor) -> Result<String> {
 /// Convert e.g. sha256:12345... into `/ostree/container/blob/sha256_2B12345...`.
 fn ref_for_image(l: &ImageReference) -> Result<String> {
     refescape::prefix_escape_for_ref(IMAGE_PREFIX, &l.to_string())
+}
+
+/// Sent across a channel to track start and end of a container fetch.
+#[derive(Debug)]
+pub enum ImportProgress {
+    /// Started fetching this layer.
+    OstreeChunkStarted(Descriptor),
+    /// Successfully completed the fetch of this layer.
+    OstreeChunkCompleted(Descriptor),
+    /// Started fetching this layer.
+    DerivedLayerStarted(Descriptor),
+    /// Successfully completed the fetch of this layer.
+    DerivedLayerCompleted(Descriptor),
 }
 
 /// State of an already pulled layered image.
@@ -95,6 +109,8 @@ pub struct ImageImporter {
     imgref: OstreeImageReference,
     target_imgref: Option<OstreeImageReference>,
     pub(crate) proxy_img: OpenedImage,
+
+    layer_progress: Option<Sender<ImportProgress>>,
 }
 
 /// Result of invoking [`LayeredImageImporter::prepare`].
@@ -274,6 +290,7 @@ impl ImageImporter {
             proxy_img,
             target_imgref: None,
             imgref: imgref.clone(),
+            layer_progress: None,
         })
     }
 
@@ -284,6 +301,14 @@ impl ImageImporter {
     /// Determine if there is a new manifest, and if so return its digest.
     pub async fn prepare(&mut self) -> Result<PrepareResult> {
         self.prepare_internal(false).await
+    }
+
+    /// Create a channel receiver that will get notifications for layer fetches.
+    pub fn request_progress(&mut self) -> Receiver<ImportProgress> {
+        assert!(self.layer_progress.is_none());
+        let (s, r) = tokio::sync::mpsc::channel(2);
+        self.layer_progress = Some(s);
+        r
     }
 
     /// Determine if there is a new manifest, and if so return its digest.
@@ -397,6 +422,10 @@ impl ImageImporter {
             if layer.commit.is_some() {
                 continue;
             }
+            if let Some(p) = self.layer_progress.as_ref() {
+                p.send(ImportProgress::OstreeChunkStarted(layer.layer.clone()))
+                    .await?;
+            }
             let (blob, driver) =
                 fetch_layer_decompress(&mut self.proxy, &self.proxy_img, &layer.layer).await?;
             let blob = super::unencapsulate::ProgressReader {
@@ -425,8 +454,18 @@ impl ImageImporter {
                 });
             let commit = super::unencapsulate::join_fetch(import_task, driver).await?;
             layer.commit = commit;
+            if let Some(p) = self.layer_progress.as_ref() {
+                p.send(ImportProgress::OstreeChunkCompleted(layer.layer.clone()))
+                    .await?;
+            }
         }
         if import.ostree_commit_layer.commit.is_none() {
+            if let Some(p) = self.layer_progress.as_ref() {
+                p.send(ImportProgress::OstreeChunkStarted(
+                    import.ostree_commit_layer.layer.clone(),
+                ))
+                .await?;
+            }
             let (blob, driver) = fetch_layer_decompress(
                 &mut self.proxy,
                 &self.proxy_img,
@@ -457,6 +496,12 @@ impl ImageImporter {
                 });
             let commit = super::unencapsulate::join_fetch(import_task, driver).await?;
             import.ostree_commit_layer.commit = Some(commit);
+            if let Some(p) = self.layer_progress.as_ref() {
+                p.send(ImportProgress::OstreeChunkCompleted(
+                    import.ostree_commit_layer.layer.clone(),
+                ))
+                .await?;
+            }
         };
         Ok(())
     }
@@ -503,6 +548,10 @@ impl ImageImporter {
                 tracing::debug!("Reusing fetched commit {}", c);
                 layer_commits.push(c.to_string());
             } else {
+                if let Some(p) = self.layer_progress.as_ref() {
+                    p.send(ImportProgress::DerivedLayerStarted(layer.layer.clone()))
+                        .await?;
+                }
                 let (blob, driver) = super::unencapsulate::fetch_layer_decompress(
                     &mut proxy,
                     &self.proxy_img,
@@ -524,6 +573,10 @@ impl ImageImporter {
                 if !r.filtered.is_empty() {
                     let filtered = HashMap::from_iter(r.filtered.into_iter());
                     layer_filtered_content.insert(layer.digest().to_string(), filtered);
+                }
+                if let Some(p) = self.layer_progress.as_ref() {
+                    p.send(ImportProgress::DerivedLayerCompleted(layer.layer.clone()))
+                        .await?;
                 }
             }
         }
