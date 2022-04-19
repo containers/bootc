@@ -529,14 +529,12 @@ pub fn export_commit(
     Ok(())
 }
 
-/// Output a chunk.
-pub(crate) fn export_chunk<W: std::io::Write>(
-    repo: &ostree::Repo,
+/// Implementation of chunk writing, assumes that the preliminary structure
+/// has been written to the tar stream.
+fn write_chunk<W: std::io::Write>(
+    writer: &mut OstreeTarWriter<W>,
     chunk: &chunking::Chunk,
-    out: &mut tar::Builder<W>,
 ) -> Result<()> {
-    let writer = &mut OstreeTarWriter::new(repo, out, ExportOptions::default());
-    writer.write_repo_structure()?;
     for (checksum, (_size, paths)) in chunk.content.iter() {
         let (objpath, h) = writer.append_content(checksum.borrow())?;
         for path in paths.iter() {
@@ -546,6 +544,17 @@ pub(crate) fn export_chunk<W: std::io::Write>(
         }
     }
     Ok(())
+}
+
+/// Output a chunk to a tar stream.
+pub(crate) fn export_chunk<W: std::io::Write>(
+    repo: &ostree::Repo,
+    chunk: &chunking::Chunk,
+    out: &mut tar::Builder<W>,
+) -> Result<()> {
+    let writer = &mut OstreeTarWriter::new(repo, out, ExportOptions::default());
+    writer.write_repo_structure()?;
+    write_chunk(writer, chunk)
 }
 
 /// Output the last chunk in a chunking.
@@ -584,16 +593,7 @@ pub(crate) fn export_final_chunk<W: std::io::Write>(
         writer.append(objtype, checksum, &v)?;
     }
 
-    for (checksum, (_size, paths)) in chunking.remainder.content.iter() {
-        let (objpath, h) = writer.append_content(checksum.borrow())?;
-        for path in paths.iter() {
-            let path = path.strip_prefix("/").unwrap_or(path);
-            let h = h.clone();
-            writer.append_content_hardlink(&objpath, h, path)?;
-        }
-    }
-
-    Ok(())
+    write_chunk(writer, &chunking.remainder)
 }
 
 #[cfg(test)]
