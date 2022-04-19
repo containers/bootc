@@ -270,7 +270,11 @@ struct ImaSignOpts {
     /// Digest algorithm
     algorithm: String,
     /// Path to IMA key
-    key: String,
+    key: Utf8PathBuf,
+
+    #[structopt(long)]
+    /// Overwrite any existing signatures
+    overwrite: bool,
 }
 
 /// Options for internal testing
@@ -541,17 +545,20 @@ async fn container_history(repo: &ostree::Repo, imgref: &OstreeImageReference) -
 
 /// Add IMA signatures to an ostree commit, generating a new commit.
 fn ima_sign(cmdopts: &ImaSignOpts) -> Result<()> {
+    let cancellable = gio::NONE_CANCELLABLE;
     let signopts = crate::ima::ImaOpts {
         algorithm: cmdopts.algorithm.clone(),
         key: cmdopts.key.clone(),
+        overwrite: cmdopts.overwrite,
     };
+    let tx = cmdopts.repo.auto_transaction(cancellable)?;
     let signed_commit = crate::ima::ima_sign(&cmdopts.repo, cmdopts.src_rev.as_str(), &signopts)?;
-    cmdopts.repo.set_ref_immediate(
+    cmdopts.repo.transaction_set_ref(
         None,
         cmdopts.target_ref.as_str(),
         Some(signed_commit.as_str()),
-        gio::NONE_CANCELLABLE,
-    )?;
+    );
+    let _stats = tx.commit(cancellable)?;
     println!("{} => {}", cmdopts.target_ref, signed_commit);
     Ok(())
 }

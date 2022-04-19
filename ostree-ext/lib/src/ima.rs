@@ -4,6 +4,7 @@
 
 use crate::objgv::*;
 use anyhow::{Context, Result};
+use camino::Utf8PathBuf;
 use cap_std_ext::rustix::fd::BorrowedFd;
 use fn_error_context::context;
 use gio::glib;
@@ -20,12 +21,11 @@ use std::fs::File;
 use std::ops::DerefMut;
 use std::os::unix::io::AsRawFd;
 use std::process::{Command, Stdio};
-use std::rc::Rc;
 use std::{convert::TryInto, io::Seek};
 
 /// Extended attribute keys used for IMA.
-const IMA_XATTRS: &[&str] = &["security.ima", "security.evm"];
-const SELINUX_XATTR: &[u8] = b"security.selinux\0";
+const IMA_XATTR: &str = "security.ima";
+const IMA_XATTR_C: &[u8] = b"security.ima\0";
 
 /// Attributes to configure IMA signatures.
 #[derive(Debug, Clone)]
@@ -34,7 +34,10 @@ pub struct ImaOpts {
     pub algorithm: String,
 
     /// Path to IMA key
-    pub key: String,
+    pub key: Utf8PathBuf,
+
+    /// Replace any existing IMA signatures.
+    pub overwrite: bool,
 }
 
 /// Convert a GVariant of type `a(ayay)` to a mutable map
@@ -69,8 +72,8 @@ struct CommitRewriter<'a> {
     repo: &'a ostree::Repo,
     ima: &'a ImaOpts,
     tempdir: tempfile::TempDir,
-    /// Files that we already changed
-    rewritten_files: HashMap<String, Rc<str>>,
+    /// Maps content object sha256 hex string to a signed object sha256 hex string
+    rewritten_files: HashMap<String, String>,
 }
 
 #[allow(unsafe_code)]
@@ -113,12 +116,8 @@ impl<'a> CommitRewriter<'a> {
     /// evmctl can write a separate file but it picks the name...so
     /// we do this hacky dance of `--xattr-user` instead.
     #[allow(unsafe_code)]
-    #[context("Invoking evmctl")]
-    fn ima_sign(
-        &self,
-        instream: &gio::InputStream,
-        selinux: Option<&Vec<u8>>,
-    ) -> Result<HashMap<Vec<u8>, Vec<u8>>> {
+    #[context("IMA signing object")]
+    fn ima_sign(&self, instream: &gio::InputStream) -> Result<HashMap<Vec<u8>, Vec<u8>>> {
         let mut tempf = tempfile::NamedTempFile::new_in(self.tempdir.path())?;
         // If we're operating on a bare repo, we can clone the file (copy_file_range) directly.
         if let Ok(instream) = instream.clone().downcast::<gio::UnixInputStream>() {
@@ -136,26 +135,11 @@ impl<'a> CommitRewriter<'a> {
 
         let mut proc = Command::new("evmctl");
         proc.current_dir(self.tempdir.path())
-            .args(&[
-                "sign",
-                "--portable",
-                "--xattr-user",
-                "--key",
-                self.ima.key.as_str(),
-            ])
-            .args(&["--hashalgo", self.ima.algorithm.as_str()]);
-        if let Some(selinux) = selinux {
-            let selinux = std::str::from_utf8(selinux)
-                .context("Non-UTF8 selinux value")?
-                .trim_end_matches('\0');
-            proc.args(&["--selinux", selinux]);
-        }
-
-        let proc = proc
-            .arg("--imasig")
-            .arg(tempf.path().file_name().unwrap())
             .stdout(Stdio::null())
-            .stderr(Stdio::piped());
+            .stderr(Stdio::piped())
+            .args(&["ima_sign", "--xattr-user", "--key", self.ima.key.as_str()])
+            .args(&["--hashalgo", self.ima.algorithm.as_str()])
+            .arg(tempf.path().file_name().unwrap());
         let status = proc.output().context("Spawning evmctl")?;
         if !status.status.success() {
             return Err(anyhow::anyhow!(
@@ -165,40 +149,33 @@ impl<'a> CommitRewriter<'a> {
             ));
         }
         let mut r = HashMap::new();
-        for &k in IMA_XATTRS {
-            let user_k = k.replace("security.", "user.");
-            let v = steal_xattr(tempf.as_file(), user_k.as_str())?;
-            // NUL terminate the key
-            let k = CString::new(k)?.into_bytes_with_nul();
-            r.insert(k, v);
-        }
+        let user_k = IMA_XATTR.replace("security.", "user.");
+        let v = steal_xattr(tempf.as_file(), user_k.as_str())?;
+        // NUL terminate the key
+        let k = CString::new(IMA_XATTR)?.into_bytes_with_nul();
+        r.insert(k, v);
         Ok(r)
     }
 
     #[context("Content object {}", checksum)]
-    fn map_file(&mut self, checksum: &str) -> Result<Rc<str>> {
-        if let Some(r) = self.rewritten_files.get(checksum) {
-            return Ok(Rc::clone(r));
-        }
+    fn map_file(&mut self, checksum: &str) -> Result<Option<String>> {
         let cancellable = gio::NONE_CANCELLABLE;
         let (instream, meta, xattrs) = self.repo.load_file(checksum, cancellable)?;
         let instream = if let Some(i) = instream {
             i
         } else {
-            // If there's no input stream, it must be a symlink.  Skip it.
-            let r: Rc<str> = checksum.into();
-            self.rewritten_files
-                .insert(checksum.to_string(), Rc::clone(&r));
-            return Ok(r);
+            return Ok(None);
         };
         let meta = meta.unwrap();
         let mut xattrs = xattrs_to_map(&xattrs.unwrap());
-
-        let selinux = xattrs.get(SELINUX_XATTR);
+        let existing_sig = xattrs.remove(IMA_XATTR_C);
+        if existing_sig.is_some() && !self.ima.overwrite {
+            return Ok(None);
+        }
 
         // Now inject the IMA xattr
         let xattrs = {
-            let signed = self.ima_sign(&instream, selinux)?;
+            let signed = self.ima_sign(&instream)?;
             xattrs.extend(signed);
             new_variant_a_ayay(&xattrs)
         };
@@ -212,10 +189,7 @@ impl<'a> CommitRewriter<'a> {
             .write_content(None, &ostream, size, cancellable)?
             .to_hex();
 
-        let r: Rc<str> = new_checksum.into();
-        self.rewritten_files
-            .insert(checksum.to_string(), Rc::clone(&r));
-        Ok(r)
+        Ok(Some(new_checksum))
     }
 
     /// Write a dirtree object.
@@ -237,9 +211,15 @@ impl<'a> CommitRewriter<'a> {
             let name = name.to_str();
             hex::encode_to_slice(csum, &mut hexbuf)?;
             let checksum = std::str::from_utf8(&hexbuf)?;
-            let mapped = self.map_file(checksum)?;
-            let mapped = hex::decode(&*mapped)?;
-            new_files.push((name, mapped));
+            if let Some(mapped) = self.rewritten_files.get(checksum) {
+                new_files.push((name, hex::decode(mapped)?));
+            } else if let Some(mapped) = self.map_file(checksum)? {
+                let mapped_bytes = hex::decode(&mapped)?;
+                self.rewritten_files.insert(checksum.into(), mapped);
+                new_files.push((name, mapped_bytes));
+            } else {
+                new_files.push((name, Vec::from(csum)));
+            }
         }
 
         let mut new_dirs = Vec::new();
@@ -306,6 +286,9 @@ impl<'a> CommitRewriter<'a> {
 ///
 /// The generated commit object will inherit all metadata from the existing commit object
 /// such as version, etc.
+///
+/// This function does not create an ostree transaction; it's recommended to use outside the call
+/// to this function.
 pub fn ima_sign(repo: &ostree::Repo, ostree_ref: &str, opts: &ImaOpts) -> Result<String> {
     let writer = &mut CommitRewriter::new(repo, opts)?;
     writer.map_commit(ostree_ref)
