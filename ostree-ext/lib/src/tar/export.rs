@@ -24,6 +24,13 @@ const SYSROOT: &str = "sysroot";
 // This way the default ostree -> sysroot/ostree symlink works.
 const OSTREEDIR: &str = "sysroot/ostree";
 
+/// In v0 format, we use this relative path prefix.  I think I chose this by looking
+/// at the current Fedora base image tar stream.  However, several others don't do
+/// this and have paths be relative by simply omitting `./`, i.e. the tar stream
+/// contains `usr/bin/bash` and not `./usr/bin/bash`.  The former looks cleaner
+/// to me, so in v1 we drop it.
+const TAR_PATH_PREFIX_V0: &str = "./";
+
 /// The base repository configuration that identifies this is a tar export.
 // See https://github.com/ostreedev/ostree/issues/2499
 const REPO_CONFIG: &str = r#"[core]
@@ -40,6 +47,16 @@ fn map_path(p: &Utf8Path) -> std::borrow::Cow<Utf8Path> {
     match p.strip_prefix("./usr/etc") {
         Ok(r) => Cow::Owned(Utf8Path::new("./etc").join(r)),
         _ => Cow::Borrowed(p),
+    }
+}
+
+/// Convert usr/etc back to etc for the tar stream.
+fn map_path_v1(p: &Utf8Path) -> &Utf8Path {
+    debug_assert!(!p.starts_with("/") && !p.starts_with("."));
+    if p.starts_with("usr/etc") {
+        p.strip_prefix("usr/").unwrap()
+    } else {
+        p
     }
 }
 
@@ -241,7 +258,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             .load_variant(ostree::ObjectType::DirMeta, metadata_checksum)?;
         // Safety: We passed the correct variant type just above
         let metadata = &ostree::DirMetaParsed::from_variant(&metadata_v).unwrap();
-        let rootpath = Utf8Path::new("./");
+        let rootpath = Utf8Path::new(TAR_PATH_PREFIX_V0);
 
         // We need to write the root directory, before we write any objects.  This should be the very
         // first thing.
@@ -262,7 +279,12 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         self.append(ostree::ObjectType::DirMeta, metadata_checksum, &metadata_v)?;
 
         // Recurse and write everything else.
-        self.append_dirtree(Utf8Path::new("./"), contents, true, cancellable)?;
+        self.append_dirtree(
+            Utf8Path::new(TAR_PATH_PREFIX_V0),
+            contents,
+            true,
+            cancellable,
+        )?;
         Ok(())
     }
 
@@ -529,7 +551,30 @@ pub fn export_commit(
     Ok(())
 }
 
-/// Output a chunk.
+/// Chunked (or version 1) tar streams don't have a leading `./`.
+fn path_for_tar_v1(p: &Utf8Path) -> &Utf8Path {
+    debug_assert!(!p.starts_with("."));
+    map_path_v1(p.strip_prefix("/").unwrap_or(p))
+}
+
+/// Implementation of chunk writing, assumes that the preliminary structure
+/// has been written to the tar stream.
+fn write_chunk<W: std::io::Write>(
+    writer: &mut OstreeTarWriter<W>,
+    chunk: &chunking::Chunk,
+) -> Result<()> {
+    for (checksum, (_size, paths)) in chunk.content.iter() {
+        let (objpath, h) = writer.append_content(checksum.borrow())?;
+        for path in paths.iter() {
+            let path = path_for_tar_v1(path);
+            let h = h.clone();
+            writer.append_content_hardlink(&objpath, h, path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Output a chunk to a tar stream.
 pub(crate) fn export_chunk<W: std::io::Write>(
     repo: &ostree::Repo,
     chunk: &chunking::Chunk,
@@ -537,15 +582,7 @@ pub(crate) fn export_chunk<W: std::io::Write>(
 ) -> Result<()> {
     let writer = &mut OstreeTarWriter::new(repo, out, ExportOptions::default());
     writer.write_repo_structure()?;
-    for (checksum, (_size, paths)) in chunk.content.iter() {
-        let (objpath, h) = writer.append_content(checksum.borrow())?;
-        for path in paths.iter() {
-            let path = path.strip_prefix("/").unwrap_or(path);
-            let h = h.clone();
-            writer.append_content_hardlink(&objpath, h, path)?;
-        }
-    }
-    Ok(())
+    write_chunk(writer, chunk)
 }
 
 /// Output the last chunk in a chunking.
@@ -584,16 +621,7 @@ pub(crate) fn export_final_chunk<W: std::io::Write>(
         writer.append(objtype, checksum, &v)?;
     }
 
-    for (checksum, (_size, paths)) in chunking.remainder.content.iter() {
-        let (objpath, h) = writer.append_content(checksum.borrow())?;
-        for path in paths.iter() {
-            let path = path.strip_prefix("/").unwrap_or(path);
-            let h = h.clone();
-            writer.append_content_hardlink(&objpath, h, path)?;
-        }
-    }
-
-    Ok(())
+    write_chunk(writer, &chunking.remainder)
 }
 
 #[cfg(test)]
@@ -606,6 +634,15 @@ mod tests {
         assert_eq!(
             map_path("./usr/etc/blah".into()),
             Utf8Path::new("./etc/blah")
+        );
+        for unchanged in ["boot", "usr/bin", "usr/lib/foo"].iter().map(Utf8Path::new) {
+            assert_eq!(unchanged, map_path_v1(unchanged));
+        }
+
+        assert_eq!(Utf8Path::new("etc"), map_path_v1(Utf8Path::new("usr/etc")));
+        assert_eq!(
+            Utf8Path::new("etc/foo"),
+            map_path_v1(Utf8Path::new("usr/etc/foo"))
         );
     }
 
