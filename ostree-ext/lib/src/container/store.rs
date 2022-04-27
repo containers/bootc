@@ -659,11 +659,11 @@ pub fn list_images(repo: &ostree::Repo) -> Result<Vec<String>> {
 }
 
 /// Query metadata for a pulled image.
-pub fn query_image(
+pub fn query_image_ref(
     repo: &ostree::Repo,
-    imgref: &OstreeImageReference,
+    imgref: &ImageReference,
 ) -> Result<Option<Box<LayeredImageState>>> {
-    let ostree_ref = &ref_for_image(&imgref.imgref)?;
+    let ostree_ref = &ref_for_image(imgref)?;
     let merge_rev = repo.resolve_rev(ostree_ref, true)?;
     let (merge_commit, merge_commit_obj) = if let Some(r) = merge_rev {
         (r.to_string(), repo.load_commit(r.as_str())?.0)
@@ -693,6 +693,17 @@ pub fn query_image(
     });
     tracing::debug!(state = ?state);
     Ok(Some(state))
+}
+
+/// Query metadata for a pulled image.
+///
+/// This is a thin wrapper for [`query_image_ref`] and should
+/// be considered deprecated.
+pub fn query_image(
+    repo: &ostree::Repo,
+    imgref: &OstreeImageReference,
+) -> Result<Option<Box<LayeredImageState>>> {
+    query_image_ref(repo, &imgref.imgref)
 }
 
 /// Copy a downloaded image from one repository to another.
