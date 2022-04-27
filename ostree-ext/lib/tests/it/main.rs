@@ -4,7 +4,7 @@ use cap_std::fs::{Dir, DirBuilder};
 use once_cell::sync::Lazy;
 use ostree::cap_std;
 use ostree_ext::chunking::ObjectMetaSized;
-use ostree_ext::container::store::PrepareResult;
+use ostree_ext::container::store;
 use ostree_ext::container::{
     Config, ExportOpts, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
@@ -529,15 +529,11 @@ async fn impl_test_container_chunked() -> Result<()> {
         imgref: imgref,
     };
 
-    let mut imp = ostree_ext::container::store::ImageImporter::new(
-        fixture.destrepo(),
-        &imgref,
-        Default::default(),
-    )
-    .await?;
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &imgref, Default::default()).await?;
     let prep = match imp.prepare().await.context("Init prep derived")? {
-        PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
-        PrepareResult::Ready(r) => r,
+        store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        store::PrepareResult::Ready(r) => r,
     };
     let digest = prep.manifest_digest.clone();
     assert!(prep.ostree_commit_layer.commit.is_none());
@@ -559,15 +555,11 @@ r usr/bin/bash bash-v0
     let expected_digest = fixture.export_container().await.unwrap().1;
     assert_ne!(digest, expected_digest);
 
-    let mut imp = ostree_ext::container::store::ImageImporter::new(
-        fixture.destrepo(),
-        &imgref,
-        Default::default(),
-    )
-    .await?;
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &imgref, Default::default()).await?;
     let prep = match imp.prepare().await.context("Init prep derived")? {
-        PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
-        PrepareResult::Ready(r) => r,
+        store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        store::PrepareResult::Ready(r) => r,
     };
     let to_fetch = prep.layers_to_fetch().collect::<Result<Vec<_>>>()?;
     assert_eq!(to_fetch.len(), 2);
@@ -608,15 +600,11 @@ r usr/bin/bash bash-v0
             name: derived_path.to_string(),
         },
     };
-    let mut imp = ostree_ext::container::store::ImageImporter::new(
-        fixture.destrepo(),
-        &derived_imgref,
-        Default::default(),
-    )
-    .await?;
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &derived_imgref, Default::default()).await?;
     let prep = match imp.prepare().await.unwrap() {
-        PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
-        PrepareResult::Ready(r) => r,
+        store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        store::PrepareResult::Ready(r) => r,
     };
     let to_fetch = prep.layers_to_fetch().collect::<Result<Vec<_>>>()?;
     assert_eq!(to_fetch.len(), 1);
@@ -706,7 +694,7 @@ async fn test_container_write_derive() -> Result<()> {
         },
     };
     // There shouldn't be any container images stored yet.
-    let images = ostree_ext::container::store::list_images(fixture.destrepo())?;
+    let images = store::list_images(fixture.destrepo())?;
     assert!(images.is_empty());
 
     // Verify importing a derived image fails
@@ -714,15 +702,11 @@ async fn test_container_write_derive() -> Result<()> {
     assert_err_contains(r, "Image has 1 non-ostree layers");
 
     // Pull a derived image - two layers, new base plus one layer.
-    let mut imp = ostree_ext::container::store::ImageImporter::new(
-        fixture.destrepo(),
-        &derived_ref,
-        Default::default(),
-    )
-    .await?;
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &derived_ref, Default::default()).await?;
     let prep = match imp.prepare().await.context("Init prep derived")? {
-        PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
-        PrepareResult::Ready(r) => r,
+        store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        store::PrepareResult::Ready(r) => r,
     };
     let expected_digest = prep.manifest_digest.clone();
     assert!(prep.ostree_commit_layer.commit.is_none());
@@ -732,7 +716,7 @@ async fn test_container_write_derive() -> Result<()> {
     }
     let import = imp.import(prep).await.context("Init pull derived")?;
     // We should have exactly one image stored.
-    let images = ostree_ext::container::store::list_images(fixture.destrepo())?;
+    let images = store::list_images(fixture.destrepo())?;
     assert_eq!(images.len(), 1);
     assert_eq!(images[0], derived_ref.imgref.to_string());
 
@@ -740,7 +724,7 @@ async fn test_container_write_derive() -> Result<()> {
         .destrepo()
         .load_commit(import.merge_commit.as_str())?
         .0;
-    let digest = ostree_ext::container::store::manifest_digest_from_commit(imported_commit)?;
+    let digest = store::manifest_digest_from_commit(imported_commit)?;
     assert!(digest.starts_with("sha256:"));
     assert_eq!(digest, expected_digest);
 
@@ -760,15 +744,11 @@ async fn test_container_write_derive() -> Result<()> {
     )?;
 
     // Import again, but there should be no changes.
-    let mut imp = ostree_ext::container::store::ImageImporter::new(
-        fixture.destrepo(),
-        &derived_ref,
-        Default::default(),
-    )
-    .await?;
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &derived_ref, Default::default()).await?;
     let already_present = match imp.prepare().await? {
-        PrepareResult::AlreadyPresent(c) => c,
-        PrepareResult::Ready(_) => {
+        store::PrepareResult::AlreadyPresent(c) => c,
+        store::PrepareResult::Ready(_) => {
             panic!("Should have already imported {}", &derived_ref)
         }
     };
@@ -777,15 +757,11 @@ async fn test_container_write_derive() -> Result<()> {
     // Test upgrades; replace the oci-archive with new content.
     std::fs::remove_dir_all(derived_path)?;
     std::fs::rename(derived2_path, derived_path)?;
-    let mut imp = ostree_ext::container::store::ImageImporter::new(
-        fixture.destrepo(),
-        &derived_ref,
-        Default::default(),
-    )
-    .await?;
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &derived_ref, Default::default()).await?;
     let prep = match imp.prepare().await? {
-        PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
-        PrepareResult::Ready(r) => r,
+        store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        store::PrepareResult::Ready(r) => r,
     };
     // We *should* already have the base layer.
     assert!(prep.ostree_commit_layer.commit.is_some());
@@ -798,7 +774,7 @@ async fn test_container_write_derive() -> Result<()> {
     // New commit.
     assert_ne!(import.merge_commit, already_present.merge_commit);
     // We should still have exactly one image stored.
-    let images = ostree_ext::container::store::list_images(fixture.destrepo())?;
+    let images = store::list_images(fixture.destrepo())?;
     assert_eq!(images[0], derived_ref.imgref.to_string());
     assert_eq!(images.len(), 1);
 
@@ -816,15 +792,11 @@ async fn test_container_write_derive() -> Result<()> {
     )?;
 
     // And there should be no changes on upgrade again.
-    let mut imp = ostree_ext::container::store::ImageImporter::new(
-        fixture.destrepo(),
-        &derived_ref,
-        Default::default(),
-    )
-    .await?;
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &derived_ref, Default::default()).await?;
     let already_present = match imp.prepare().await? {
-        PrepareResult::AlreadyPresent(c) => c,
-        PrepareResult::Ready(_) => {
+        store::PrepareResult::AlreadyPresent(c) => c,
+        store::PrepareResult::Ready(_) => {
             panic!("Should have already imported {}", &derived_ref)
         }
     };
@@ -838,9 +810,9 @@ async fn test_container_write_derive() -> Result<()> {
         None,
         gio::NONE_CANCELLABLE,
     )?;
-    ostree_ext::container::store::copy(fixture.destrepo(), &destrepo2, &derived_ref).await?;
+    store::copy(fixture.destrepo(), &destrepo2, &derived_ref).await?;
 
-    let images = ostree_ext::container::store::list_images(&destrepo2)?;
+    let images = store::list_images(&destrepo2)?;
     assert_eq!(images.len(), 1);
     assert_eq!(images[0], derived_ref.imgref.to_string());
 
