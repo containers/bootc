@@ -545,6 +545,8 @@ async fn impl_test_container_chunked() -> Result<()> {
     assert_eq!(digest, expected_digest);
     let _import = imp.import(prep).await.context("Init pull derived").unwrap();
 
+    assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
+
     const ADDITIONS: &str = indoc::indoc! { "
 r usr/bin/bash bash-v0
 "};
@@ -573,6 +575,14 @@ r usr/bin/bash bash-v0
     assert!(second.0.commit.is_none());
 
     let _import = imp.import(prep).await.unwrap();
+
+    assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
+
+    let n_removed = store::gc_image_layers(&fixture.destrepo())?;
+    assert_eq!(n_removed, 2);
+    fixture
+        .destrepo()
+        .prune(ostree::RepoPruneFlags::REFS_ONLY, 0, gio::NONE_CANCELLABLE)?;
 
     // Build a derived image
     let derived_path = &fixture.path.join("derived.oci");
@@ -612,6 +622,30 @@ r usr/bin/bash bash-v0
     assert_eq!(prep.ostree_layers.len(), nlayers as usize);
 
     let _import = imp.import(prep).await.unwrap();
+    assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 2);
+
+    // Should only be new layers
+    let n_removed = store::gc_image_layers(&fixture.destrepo())?;
+    assert_eq!(n_removed, 0);
+    store::remove_images(fixture.destrepo(), [&imgref.imgref]).unwrap();
+    assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
+    // Still no removed layers after removing the base image
+    let n_removed = store::gc_image_layers(&fixture.destrepo())?;
+    assert_eq!(n_removed, 0);
+    store::remove_images(fixture.destrepo(), [&derived_imgref.imgref]).unwrap();
+    assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 0);
+    let n_removed = store::gc_image_layers(&fixture.destrepo())?;
+    assert_eq!(n_removed, 8);
+
+    // Repo should be clean now
+    assert_eq!(
+        fixture
+            .destrepo()
+            .list_refs(None, gio::NONE_CANCELLABLE)
+            .unwrap()
+            .len(),
+        0
+    );
 
     Ok(())
 }

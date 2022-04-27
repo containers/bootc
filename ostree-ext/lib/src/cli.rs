@@ -221,6 +221,22 @@ enum ContainerImageOpts {
         imgref: OstreeImageReference,
     },
 
+    /// Unreference one or more pulled container images and perform a garbage collection.
+    Remove {
+        /// Path to the repository
+        #[structopt(long)]
+        #[structopt(parse(try_from_str = parse_repo))]
+        repo: ostree::Repo,
+
+        /// Image reference, e.g. quay.io/exampleos/exampleos:latest
+        #[structopt(parse(try_from_str = parse_base_imgref))]
+        imgrefs: Vec<ImageReference>,
+
+        /// Do not garbage collect unused layers
+        #[structopt(long)]
+        skip_gc: bool,
+    },
+
     /// Perform initial deployment for a container image
     Deploy {
         /// Path to the system root
@@ -671,6 +687,21 @@ where
                 } => container_store(&repo, &imgref, proxyopts).await,
                 ContainerImageOpts::History { repo, imgref } => {
                     container_history(&repo, &imgref).await
+                }
+                ContainerImageOpts::Remove {
+                    repo,
+                    imgrefs,
+                    skip_gc,
+                } => {
+                    let nimgs = imgrefs.len();
+                    crate::container::store::remove_images(&repo, imgrefs.iter())?;
+                    if !skip_gc {
+                        let nlayers = crate::container::store::gc_image_layers(&repo)?;
+                        println!("Removed images: {nimgs} layers: {nlayers}");
+                    } else {
+                        println!("Removed images: {nimgs}");
+                    }
+                    Ok(())
                 }
                 ContainerImageOpts::Copy {
                     src_repo,
