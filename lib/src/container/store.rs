@@ -13,7 +13,7 @@ use fn_error_context::context;
 use oci_spec::image::{self as oci_image, Descriptor, History, ImageConfiguration, ImageManifest};
 use ostree::prelude::{Cast, ToVariant};
 use ostree::{gio, glib};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::iter::FromIterator;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -706,6 +706,14 @@ pub fn query_image(
     query_image_ref(repo, &imgref.imgref)
 }
 
+fn manifest_for_image(repo: &ostree::Repo, imgref: &ImageReference) -> Result<ImageManifest> {
+    let ostree_ref = ref_for_image(imgref)?;
+    let rev = repo.require_rev(&ostree_ref)?;
+    let (commit_obj, _) = repo.load_commit(rev.as_str())?;
+    let commit_meta = &glib::VariantDict::new(Some(&commit_obj.child_value(0)));
+    Ok(manifest_data_from_commitmeta(commit_meta)?.0)
+}
+
 /// Copy a downloaded image from one repository to another.
 pub async fn copy(
     src_repo: &ostree::Repo,
@@ -713,10 +721,7 @@ pub async fn copy(
     imgref: &OstreeImageReference,
 ) -> Result<()> {
     let ostree_ref = ref_for_image(&imgref.imgref)?;
-    let rev = src_repo.require_rev(&ostree_ref)?;
-    let (commit_obj, _) = src_repo.load_commit(rev.as_str())?;
-    let commit_meta = &glib::VariantDict::new(Some(&commit_obj.child_value(0)));
-    let (manifest, _) = manifest_data_from_commitmeta(commit_meta)?;
+    let manifest = manifest_for_image(src_repo, &imgref.imgref)?;
     // Create a task to copy each layer, plus the final ref
     let layer_refs = manifest
         .layers()
@@ -746,11 +751,69 @@ pub async fn copy(
     Ok(())
 }
 
-/// Remove the specified images and their corresponding blobs.
-pub fn prune_images(_repo: &ostree::Repo, _imgs: &[&str]) -> Result<()> {
-    // Most robust approach is to iterate over all known images, load the
-    // manifest and build the set of reachable blobs, then compute the set
-    // Set(unreachable) = Set(all) - Set(reachable)
-    // And remove the unreachable ones.
-    unimplemented!()
+/// Garbage collect unused image layer references.
+///
+/// This function assumes no transaction is active on the repository.
+/// The underlying objects are *not* pruned; that requires a separate invocation
+/// of [`ostree::Repo::prune`].
+pub fn gc_image_layers(repo: &ostree::Repo) -> Result<u32> {
+    let cancellable = gio::NONE_CANCELLABLE;
+    let all_images = list_images(repo)?;
+    let all_manifests = all_images
+        .into_iter()
+        .map(|img| {
+            ImageReference::try_from(img.as_str()).and_then(|ir| manifest_for_image(repo, &ir))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut referenced_layers = BTreeSet::new();
+    for m in all_manifests.iter() {
+        for layer in m.layers() {
+            referenced_layers.insert(layer.digest().as_str());
+        }
+    }
+    let found_layers = repo
+        .list_refs_ext(
+            Some(LAYER_PREFIX),
+            ostree::RepoListRefsExtFlags::empty(),
+            cancellable,
+        )?
+        .into_iter()
+        .map(|v| v.0);
+    let mut pruned = 0u32;
+    for layer_ref in found_layers {
+        let layer_digest = refescape::unprefix_unescape_ref(LAYER_PREFIX, &layer_ref)?;
+        if referenced_layers.remove(layer_digest.as_str()) {
+            continue;
+        }
+        pruned += 1;
+        repo.set_ref_immediate(None, layer_ref.as_str(), None, cancellable)?;
+    }
+
+    Ok(pruned)
+}
+
+#[context("Pruning {}", image)]
+fn prune_image(repo: &ostree::Repo, image: &ImageReference) -> Result<()> {
+    let ostree_ref = &ref_for_image(image)?;
+
+    if repo.resolve_rev(ostree_ref, true)?.is_none() {
+        anyhow::bail!("No such image");
+    }
+    repo.set_ref_immediate(None, ostree_ref, None, gio::NONE_CANCELLABLE)?;
+    Ok(())
+}
+
+/// Remove the specified image references.
+///
+/// This function assumes no transaction is active on the repository.
+/// The underlying layers are *not* pruned; that requires a separate invocation
+/// of [`gc_image_layers`].
+pub fn remove_images<'a>(
+    repo: &ostree::Repo,
+    imgs: impl IntoIterator<Item = &'a ImageReference>,
+) -> Result<()> {
+    for img in imgs.into_iter() {
+        prune_image(repo, img)?;
+    }
+    Ok(())
 }
