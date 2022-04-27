@@ -193,15 +193,15 @@ enum ContainerImageOpts {
         proxyopts: ContainerProxyOpts,
     },
 
-    /// Pull (or update) a container image.
+    /// Output metadata about an already stored container image.
     History {
         /// Path to the repository
         #[structopt(long, parse(try_from_str = parse_repo))]
         repo: ostree::Repo,
 
-        /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
-        #[structopt(parse(try_from_str = parse_imgref))]
-        imgref: OstreeImageReference,
+        /// Container image reference, e.g. registry:quay.io/exampleos/exampleos:latest
+        #[structopt(parse(try_from_str = parse_base_imgref))]
+        imgref: ImageReference,
     },
 
     /// Copy a pulled container image from one repo to another.
@@ -542,8 +542,8 @@ fn print_column(s: &str, clen: usize, remaining: &mut usize) {
 }
 
 /// Output the container image history
-async fn container_history(repo: &ostree::Repo, imgref: &OstreeImageReference) -> Result<()> {
-    let img = crate::container::store::query_image(repo, imgref)?
+async fn container_history(repo: &ostree::Repo, imgref: &ImageReference) -> Result<()> {
+    let img = crate::container::store::query_image_ref(repo, imgref)?
         .ok_or_else(|| anyhow::anyhow!("No such image: {}", imgref))?;
     let columns = [("ID", 20), ("SIZE", 10), ("CREATED BY", 0usize)];
     let width = term_size::dimensions().map(|x| x.0).unwrap_or(80);
