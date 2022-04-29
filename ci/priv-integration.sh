@@ -18,10 +18,22 @@ if test '!' -e "${sysroot}/ostree"; then
     ostree admin init-fs --modern "${sysroot}"
     ostree config --repo $sysroot/ostree/repo set sysroot.bootloader none
 fi
-ostree admin os-init "${stateroot}" --sysroot "${sysroot}"
+if test '!' -d "${sysroot}/ostree/deploy/${stateroot}"; then
+    ostree admin os-init "${stateroot}" --sysroot "${sysroot}"
+fi
 ostree-ext-cli container image deploy --sysroot "${sysroot}" \
     --stateroot "${stateroot}" --imgref "${imgref}"
 ostree admin --sysroot="${sysroot}" status
 ostree-ext-cli container image deploy --sysroot "${sysroot}" \
     --stateroot "${stateroot}" --imgref ostree-unverified-registry:"${chunked_image}"
 ostree admin --sysroot="${sysroot}" status
+ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"${image}" registry:"${chunked_image}"
+ostree admin --sysroot="${sysroot}" undeploy 0
+ostree --repo="${sysroot}/ostree/repo" refs > refs.txt
+if test "$(wc -l < refs.txt)" -ne 0; then
+    echo "found refs"
+    cat refs.txt
+    exit 1
+fi
+
+echo ok privileged integration
