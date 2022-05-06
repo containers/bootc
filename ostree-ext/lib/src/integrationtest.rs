@@ -6,7 +6,9 @@ use crate::container::ocidir;
 use anyhow::Result;
 use camino::Utf8Path;
 use fn_error_context::context;
+use gio::prelude::*;
 use oci_spec::image as oci_image;
+use ostree::gio;
 
 fn has_ostree() -> bool {
     std::path::Path::new("/sysroot/ostree/repo").exists()
@@ -85,6 +87,72 @@ fn test_proxy_auth() -> Result<()> {
     let mut c = ImageProxyConfig::default();
     merge(&mut c)?;
     assert_eq!(c.authfile, None);
+    Ok(())
+}
+
+pub(crate) fn test_ima() -> Result<()> {
+    use gvariant::aligned_bytes::TryAsAligned;
+    use gvariant::{gv, Marker, Structure};
+
+    let cancellable = gio::NONE_CANCELLABLE;
+    let fixture = crate::fixture::Fixture::new_v1()?;
+
+    let config = indoc::indoc! { r#"
+    [ req ]
+    default_bits = 3048
+    distinguished_name = req_distinguished_name
+    prompt = no
+    string_mask = utf8only
+    x509_extensions = myexts
+    [ req_distinguished_name ]
+    O = Test
+    CN = Test key
+    emailAddress = example@example.com
+    [ myexts ]
+    basicConstraints=critical,CA:FALSE
+    keyUsage=digitalSignature
+    subjectKeyIdentifier=hash
+    authorityKeyIdentifier=keyid
+    "#};
+    std::fs::write(fixture.path.join("genkey.config"), config)?;
+    sh_inline::bash_in!(
+        &fixture.dir,
+        "openssl req -new -nodes -utf8 -sha256 -days 36500 -batch \
+        -x509 -config genkey.config \
+        -outform DER -out ima.der -keyout privkey_ima.pem &>/dev/null"
+    )?;
+
+    let imaopts = crate::ima::ImaOpts {
+        algorithm: "sha256".into(),
+        key: fixture.path.join("privkey_ima.pem"),
+        overwrite: false,
+    };
+    let rewritten_commit =
+        crate::ima::ima_sign(fixture.srcrepo(), fixture.testref(), &imaopts).unwrap();
+
+    let root = fixture
+        .srcrepo()
+        .read_commit(&rewritten_commit, cancellable)?
+        .0;
+    let bash = root.resolve_relative_path("/usr/bin/bash");
+    let bash = bash.downcast_ref::<ostree::RepoFile>().unwrap();
+    let xattrs = bash.xattrs(cancellable).unwrap();
+    let v = xattrs.data_as_bytes();
+    let v = v.try_as_aligned().unwrap();
+    let v = gv!("a(ayay)").cast(v);
+    let mut found_ima = false;
+    for xattr in v.iter() {
+        let k = xattr.to_tuple().0;
+        if k != b"security.ima" {
+            continue;
+        }
+        found_ima = true;
+        break;
+    }
+    if !found_ima {
+        anyhow::bail!("Failed to find IMA xattr");
+    }
+    println!("ok IMA");
     Ok(())
 }
 
