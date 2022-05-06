@@ -76,6 +76,14 @@ jobs:
           key: "min"
       - name: cargo check
         run: cargo check
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        log-level: warn
+        command: check bans sources licenses
   linting:
     name: "Lints, pinned toolchain"
     runs-on: ubuntu-latest
