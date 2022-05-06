@@ -25,7 +25,6 @@ use std::{convert::TryInto, io::Seek};
 
 /// Extended attribute keys used for IMA.
 const IMA_XATTR: &str = "security.ima";
-const IMA_XATTR_C: &[u8] = b"security.ima\0";
 
 /// Attributes to configure IMA signatures.
 #[derive(Debug, Clone)]
@@ -151,9 +150,7 @@ impl<'a> CommitRewriter<'a> {
         let mut r = HashMap::new();
         let user_k = IMA_XATTR.replace("security.", "user.");
         let v = steal_xattr(tempf.as_file(), user_k.as_str())?;
-        // NUL terminate the key
-        let k = CString::new(IMA_XATTR)?.into_bytes_with_nul();
-        r.insert(k, v);
+        r.insert(Vec::from(IMA_XATTR.as_bytes()), v);
         Ok(r)
     }
 
@@ -168,7 +165,7 @@ impl<'a> CommitRewriter<'a> {
         };
         let meta = meta.unwrap();
         let mut xattrs = xattrs_to_map(&xattrs.unwrap());
-        let existing_sig = xattrs.remove(IMA_XATTR_C);
+        let existing_sig = xattrs.remove(IMA_XATTR.as_bytes());
         if existing_sig.is_some() && !self.ima.overwrite {
             return Ok(None);
         }
