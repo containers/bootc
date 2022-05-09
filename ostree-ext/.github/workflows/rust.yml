@@ -121,6 +121,22 @@ jobs:
         run: install ostree-ext-cli /usr/bin && rm -v ostree-ext-cli
       - name: Integration tests
         run: ./ci/integration.sh
+  ima:
+    name: "Integration (IMA)"
+    needs: build
+    runs-on: ubuntu-latest
+    container: quay.io/coreos-assembler/fcos:testing-devel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Download ostree-ext-cli
+        uses: actions/download-artifact@v2
+        with:
+          name: ostree-ext-cli
+      - name: Install
+        run: install ostree-ext-cli /usr/bin && rm -v ostree-ext-cli
+      - name: Integration tests
+        run: ./ci/ima.sh
   privtest:
     name: "Privileged testing"
     needs: build
