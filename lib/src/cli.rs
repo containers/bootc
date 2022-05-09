@@ -302,6 +302,8 @@ enum TestingOpts {
     DetectEnv,
     /// Execute integration tests, assuming mutable environment
     Run,
+    /// Execute IMA tests
+    RunIMA,
     FilterTar,
 }
 
@@ -628,6 +630,7 @@ fn testing(opts: &TestingOpts) -> Result<()> {
             Ok(())
         }
         TestingOpts::Run => crate::integrationtest::run_tests(),
+        TestingOpts::RunIMA => crate::integrationtest::test_ima(),
         TestingOpts::FilterTar => {
             crate::tar::filter_tar(std::io::stdin(), std::io::stdout()).map(|_| {})
         }
