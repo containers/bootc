@@ -243,6 +243,8 @@ pub use unencapsulate::*;
 pub(crate) mod ocidir;
 mod skopeo;
 pub mod store;
+mod update_detachedmeta;
+pub use update_detachedmeta::*;
 
 #[cfg(test)]
 mod tests {

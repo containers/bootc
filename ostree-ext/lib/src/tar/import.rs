@@ -214,7 +214,7 @@ impl Importer {
         }
     }
 
-    fn parse_metadata_entry(path: &Utf8Path) -> Result<(String, ostree::ObjectType)> {
+    pub(crate) fn parse_metadata_entry(path: &Utf8Path) -> Result<(String, ostree::ObjectType)> {
         let (parentname, name, objtype) = parse_object_entry_path(path)?;
         let checksum = parse_checksum(parentname, name)?;
         let objtype = objtype_from_string(objtype)

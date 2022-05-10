@@ -221,6 +221,23 @@ enum ContainerImageOpts {
         imgref: OstreeImageReference,
     },
 
+    /// Replace the detached metadata (e.g. to add a signature)
+    ReplaceDetachedMetadata {
+        /// Path to the source repository
+        #[structopt(long)]
+        #[structopt(parse(try_from_str = parse_base_imgref))]
+        src: ImageReference,
+
+        /// Target image
+        #[structopt(long)]
+        #[structopt(parse(try_from_str = parse_base_imgref))]
+        dest: ImageReference,
+
+        /// Path to file containing new detached metadata; if not provided,
+        /// any existing detached metadata will be deleted.
+        contents: Option<Utf8PathBuf>,
+    },
+
     /// Unreference one or more pulled container images and perform a garbage collection.
     Remove {
         /// Path to the repository
@@ -711,6 +728,21 @@ where
                     dest_repo,
                     imgref,
                 } => crate::container::store::copy(&src_repo, &dest_repo, &imgref).await,
+                ContainerImageOpts::ReplaceDetachedMetadata {
+                    src,
+                    dest,
+                    contents,
+                } => {
+                    let contents = contents.map(std::fs::read).transpose()?;
+                    let digest = crate::container::update_detached_metadata(
+                        &src,
+                        &dest,
+                        contents.as_deref(),
+                    )
+                    .await?;
+                    println!("Pushed: {}", digest);
+                    Ok(())
+                }
                 ContainerImageOpts::Deploy {
                     sysroot,
                     stateroot,
