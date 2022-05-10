@@ -14,6 +14,7 @@ use ostree_ext::{gio, glib};
 use sh_inline::bash_in;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::io::{BufReader, BufWriter};
 use std::os::unix::fs::DirBuilderExt;
 use std::process::Command;
 
@@ -148,6 +149,62 @@ async fn test_tar_import_signed() -> Result<()> {
             .as_str()
     );
     assert_eq!(state, ostree::RepoCommitState::NORMAL);
+
+    // Drop the commit metadata, and verify that import fails
+    fixture.clear_destrepo()?;
+    let nometa = "test-no-commitmeta.tar";
+    let srcf = fixture.dir.open(test_tar)?;
+    let destf = fixture.dir.create(nometa)?;
+    tokio::task::spawn_blocking(move || -> Result<_> {
+        let src = BufReader::new(srcf);
+        let f = BufWriter::new(destf);
+        ostree_ext::tar::update_detached_metadata(src, f, None, gio::NONE_CANCELLABLE).unwrap();
+        Ok(())
+    })
+    .await??;
+    let src_tar = tokio::fs::File::from_std(fixture.dir.open(nometa)?.into_std());
+    let r = ostree_ext::tar::import_tar(
+        fixture.destrepo(),
+        src_tar,
+        Some(TarImportOptions {
+            remote: Some("myremote".to_string()),
+        }),
+    )
+    .await;
+    assert_err_contains(r, "Expected commitmeta object");
+
+    // Now inject garbage into the commitmeta by flipping some bits in the signature
+    let rev = fixture.srcrepo().require_rev(fixture.testref())?;
+    let commitmeta = fixture
+        .srcrepo()
+        .read_commit_detached_metadata(&rev, gio::NONE_CANCELLABLE)?
+        .unwrap();
+    let mut commitmeta = Vec::from(&*commitmeta.data_as_bytes());
+    let len = commitmeta.len() / 2;
+    let last = commitmeta.get_mut(len).unwrap();
+    (*last) = last.wrapping_add(1);
+
+    let srcf = fixture.dir.open(test_tar)?;
+    let destf = fixture.dir.create(nometa)?;
+    tokio::task::spawn_blocking(move || -> Result<_> {
+        let src = BufReader::new(srcf);
+        let f = BufWriter::new(destf);
+        ostree_ext::tar::update_detached_metadata(src, f, Some(&commitmeta), gio::NONE_CANCELLABLE)
+            .unwrap();
+        Ok(())
+    })
+    .await??;
+    let src_tar = tokio::fs::File::from_std(fixture.dir.open(nometa)?.into_std());
+    let r = ostree_ext::tar::import_tar(
+        fixture.destrepo(),
+        src_tar,
+        Some(TarImportOptions {
+            remote: Some("myremote".to_string()),
+        }),
+    )
+    .await;
+    assert_err_contains(r, "BAD signature");
+
     Ok(())
 }
 
@@ -514,8 +571,6 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
         &fixture.dir,
         "ostree --repo=dest/repo remote gpg-import --stdin myremote < src/gpghome/key1.asc",
     )?;
-
-    // No remote matching
     let srcoci_verified = OstreeImageReference {
         sigverify: SignatureSource::OstreeRemote("myremote".to_string()),
         imgref: srcoci_imgref.clone(),
@@ -524,6 +579,22 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
+
+    let temp_unsigned = ImageReference {
+        transport: Transport::OciDir,
+        name: fixture.path.join("unsigned.ocidir").to_string(),
+    };
+    let _: String =
+        ostree_ext::container::update_detached_metadata(&srcoci_imgref, &temp_unsigned, None)
+            .await
+            .unwrap();
+    let temp_unsigned = OstreeImageReference {
+        sigverify: SignatureSource::OstreeRemote("myremote".to_string()),
+        imgref: temp_unsigned,
+    };
+    fixture.clear_destrepo()?;
+    let r = ostree_ext::container::unencapsulate(fixture.destrepo(), &temp_unsigned, None).await;
+    assert_err_contains(r, "Expected commitmeta object");
 
     // Test without signature verification
     // Create a new repo
@@ -690,8 +761,8 @@ async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Res
 
 #[tokio::test]
 async fn test_container_import_export() -> Result<()> {
-    impl_test_container_import_export(false).await?;
-    impl_test_container_import_export(true).await?;
+    impl_test_container_import_export(false).await.unwrap();
+    impl_test_container_import_export(true).await.unwrap();
     Ok(())
 }
 
