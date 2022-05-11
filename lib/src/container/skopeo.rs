@@ -1,7 +1,9 @@
 //! Fork skopeo as a subprocess
 
+use super::ImageReference;
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use std::io::Read;
 use std::process::Stdio;
 use tokio::process::Command;
 
@@ -53,6 +55,26 @@ pub(crate) fn new_cmd() -> tokio::process::Command {
 pub(crate) fn spawn(mut cmd: Command) -> Result<tokio::process::Child> {
     let cmd = cmd.stdin(Stdio::null()).stderr(Stdio::piped());
     cmd.spawn().context("Failed to exec skopeo")
+}
+
+/// Use skopeo to copy a container image.
+pub(crate) async fn copy(src: &ImageReference, dest: &ImageReference) -> Result<String> {
+    let digestfile = tempfile::NamedTempFile::new()?;
+    let mut cmd = new_cmd();
+    cmd.stdout(std::process::Stdio::null()).arg("copy");
+    cmd.arg("--digestfile");
+    cmd.arg(digestfile.path());
+    cmd.args(&[src.to_string(), dest.to_string()]);
+    let proc = super::skopeo::spawn(cmd)?;
+    let output = proc.wait_with_output().await?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!("skopeo failed: {}\n", stderr));
+    }
+    let mut digestfile = digestfile.into_file();
+    let mut r = String::new();
+    digestfile.read_to_string(&mut r)?;
+    Ok(r.trim().to_string())
 }
 
 #[cfg(test)]
