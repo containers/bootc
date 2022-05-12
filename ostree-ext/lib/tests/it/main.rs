@@ -464,6 +464,27 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
     assert_eq!(cfg.rootfs().diff_ids().len(), n_chunks);
     assert_eq!(cfg.history().len(), n_chunks);
 
+    // Verify exporting to ociarchive
+    {
+        let archivepath = &fixture.path.join("export.ociarchive");
+        let ociarchive_dest = ImageReference {
+            transport: Transport::OciArchive,
+            name: archivepath.as_str().to_string(),
+        };
+        let _: String = ostree_ext::container::encapsulate(
+            fixture.srcrepo(),
+            fixture.testref(),
+            &config,
+            None,
+            None,
+            &ociarchive_dest,
+        )
+        .await
+        .context("exporting to ociarchive")
+        .unwrap();
+        assert!(archivepath.is_file());
+    }
+
     let srcoci_unverified = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref: srcoci_imgref.clone(),
