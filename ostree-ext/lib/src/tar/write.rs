@@ -24,6 +24,33 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tracing::instrument;
 
+/// Copy a tar entry to a new tar archive, optionally using a different filesystem path.
+pub(crate) fn copy_entry(
+    entry: tar::Entry<impl std::io::Read>,
+    dest: &mut tar::Builder<impl std::io::Write>,
+    path: Option<&Path>,
+) -> Result<()> {
+    // Make copies of both the header and path, since that's required for the append APIs
+    let path = if let Some(path) = path {
+        path.to_owned()
+    } else {
+        (&*entry.path()?).to_owned()
+    };
+    let mut header = entry.header().clone();
+
+    // Need to use the entry.link_name() not the header.link_name()
+    // api as the header api does not handle long paths:
+    // https://github.com/alexcrichton/tar-rs/issues/192
+    match entry.header().entry_type() {
+        tar::EntryType::Link | tar::EntryType::Symlink => {
+            let target = entry.link_name()?.ok_or_else(|| anyhow!("Invalid link"))?;
+            dest.append_link(&mut header, path, target)
+        }
+        _ => dest.append_data(&mut header, path, entry),
+    }
+    .map_err(Into::into)
+}
+
 /// Configuration for tar layer commits.
 #[derive(Debug, Default)]
 pub struct WriteTarOptions {
@@ -155,24 +182,7 @@ pub(crate) fn filter_tar(
             NormalizedPathResult::Normal(path) => path,
         };
 
-        let mut header = entry.header().clone();
-
-        // Need to use the entry.link_name() not the header.link_name()
-        // api as the header api does not handle long paths:
-        // https://github.com/alexcrichton/tar-rs/issues/192
-        match entry.header().entry_type() {
-            tar::EntryType::Link | tar::EntryType::Symlink => {
-                let target = entry.link_name()?.ok_or_else(|| anyhow!("Invalid link"))?;
-                let target = target
-                    .as_os_str()
-                    .to_str()
-                    .ok_or_else(|| anyhow!("Non-utf8 link"))?;
-                dest.append_link(&mut header, &normalized, target)?;
-            }
-            _ => {
-                dest.append_data(&mut header, normalized, entry)?;
-            }
-        }
+        copy_entry(entry, &mut dest, Some(normalized.as_std_path()))?;
     }
     dest.into_inner()?.flush()?;
     Ok(filtered)
