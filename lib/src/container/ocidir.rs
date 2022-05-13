@@ -6,12 +6,13 @@ use camino::Utf8Path;
 use flate2::write::GzEncoder;
 use fn_error_context::context;
 use oci_image::MediaType;
-use oci_spec::image as oci_image;
+use oci_spec::image::{self as oci_image, Descriptor};
 use openat_ext::*;
 use openssl::hash::{Hasher, MessageDigest};
 use std::collections::HashMap;
-use std::io::prelude::*;
-use std::path::Path;
+use std::fs::File;
+use std::io::{prelude::*, BufReader};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 /// Path inside an OCI directory to the blobs
@@ -78,16 +79,6 @@ pub(crate) fn write_json_blob<S: serde::Serialize>(
     cjson::to_writer(&mut w, v).map_err(|e| anyhow!("{:?}", e))?;
     let blob = w.complete()?;
     Ok(blob.descriptor().media_type(media_type))
-}
-
-fn deserialize_json_path<T: serde::de::DeserializeOwned + Send + 'static>(
-    d: &openat::Dir,
-    p: impl AsRef<Path>,
-) -> Result<T> {
-    let p = p.as_ref();
-    let ctx = || format!("Parsing {:?}", p);
-    let f = std::io::BufReader::new(d.open_file(p).with_context(ctx)?);
-    serde_json::from_reader(f).with_context(ctx)
 }
 
 // Parse a filename from a string; this will ignore any directory components, and error out on `/` and `..` for example.
@@ -205,11 +196,7 @@ impl OciDir {
         config.history_mut().push(h);
     }
 
-    /// Read a JSON blob.
-    pub(crate) fn read_json_blob<T: serde::de::DeserializeOwned + Send + 'static>(
-        &self,
-        desc: &oci_spec::image::Descriptor,
-    ) -> Result<T> {
+    fn parse_descriptor_to_path(desc: &oci_spec::image::Descriptor) -> Result<PathBuf> {
         let (alg, hash) = desc
             .digest()
             .split_once(':')
@@ -219,7 +206,21 @@ impl OciDir {
             anyhow::bail!("Unsupported digest algorithm {}", desc.digest());
         }
         let hash = parse_one_filename(hash)?;
-        deserialize_json_path(&self.dir, Path::new(BLOBDIR).join(hash))
+        Ok(Path::new(BLOBDIR).join(hash))
+    }
+
+    pub(crate) fn read_blob(&self, desc: &oci_spec::image::Descriptor) -> Result<File> {
+        let path = Self::parse_descriptor_to_path(desc)?;
+        self.dir.open_file(&path).map_err(Into::into)
+    }
+
+    /// Read a JSON blob.
+    pub(crate) fn read_json_blob<T: serde::de::DeserializeOwned + Send + 'static>(
+        &self,
+        desc: &oci_spec::image::Descriptor,
+    ) -> Result<T> {
+        let blob = BufReader::new(self.read_blob(desc)?);
+        serde_json::from_reader(blob).with_context(|| format!("Parsing object {}", desc.digest()))
     }
 
     /// Write a configuration blob.
@@ -258,13 +259,24 @@ impl OciDir {
 
     /// If this OCI directory has a single manifest, return it.  Otherwise, an error is returned.
     pub(crate) fn read_manifest(&self) -> Result<oci_image::ImageManifest> {
-        let idx: oci_image::ImageIndex = deserialize_json_path(&self.dir, "index.json")?;
+        self.read_manifest_and_descriptor().map(|r| r.0)
+    }
+
+    /// If this OCI directory has a single manifest, return it.  Otherwise, an error is returned.
+    pub(crate) fn read_manifest_and_descriptor(
+        &self,
+    ) -> Result<(oci_image::ImageManifest, Descriptor)> {
+        let f = self
+            .dir
+            .open_file("index.json")
+            .context("Failed to open index.json")?;
+        let idx: oci_image::ImageIndex = serde_json::from_reader(BufReader::new(f))?;
         let desc = match idx.manifests().as_slice() {
             [] => anyhow::bail!("No manifests found"),
-            [desc] => desc,
+            [desc] => desc.clone(),
             manifests => anyhow::bail!("Expected exactly 1 manifest, found {}", manifests.len()),
         };
-        self.read_json_blob(desc)
+        Ok((self.read_json_blob(&desc)?, desc))
     }
 }
 
