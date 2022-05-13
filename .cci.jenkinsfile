@@ -56,7 +56,10 @@ cosaPod(runAsUser: 0, memory: "3072Mi", cpu: "4") {
   try {
     // Now a test that upgrades using bootupd
     stage("e2e upgrade test") {
-    shwrap("env COSA_DIR=${env.WORKSPACE} ./tests/e2e-update/e2e-update.sh")
+      shwrap("""
+        git config --global --add safe.directory "\$(pwd)"
+        env COSA_DIR=${env.WORKSPACE} ./tests/e2e-update/e2e-update.sh
+      """)
     }
     stage("Kola testing") {
       // The previous e2e leaves things only having built an ostree update
