@@ -71,7 +71,7 @@ struct OstreeTarWriter<'a, W: std::io::Write> {
     wrote_xattrs: HashSet<String>,
 }
 
-fn object_path(objtype: ostree::ObjectType, checksum: &str) -> Utf8PathBuf {
+pub(crate) fn object_path(objtype: ostree::ObjectType, checksum: &str) -> Utf8PathBuf {
     let suffix = match objtype {
         ostree::ObjectType::Commit => "commit",
         ostree::ObjectType::CommitMeta => "commitmeta",
@@ -118,6 +118,20 @@ fn symlink_is_denormal(target: &str) -> bool {
     target.contains("//")
 }
 
+pub(crate) fn tar_append_default_data(
+    out: &mut tar::Builder<impl std::io::Write>,
+    path: &Utf8Path,
+    buf: &[u8],
+) -> Result<()> {
+    let mut h = tar::Header::new_gnu();
+    h.set_entry_type(tar::EntryType::Regular);
+    h.set_uid(0);
+    h.set_gid(0);
+    h.set_mode(0o644);
+    h.set_size(buf.len() as u64);
+    out.append_data(&mut h, path, buf).map_err(Into::into)
+}
+
 impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     fn new(repo: &'a ostree::Repo, out: &'a mut tar::Builder<W>, options: ExportOptions) -> Self {
         Self {
@@ -156,15 +170,8 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     }
 
     /// Add a regular file entry with default permissions (root/root 0644)
-    fn append_default_data(&mut self, path: &Utf8Path, data: &[u8]) -> Result<()> {
-        let mut h = tar::Header::new_gnu();
-        h.set_entry_type(tar::EntryType::Regular);
-        h.set_uid(0);
-        h.set_gid(0);
-        h.set_mode(0o644);
-        h.set_size(data.len() as u64);
-        self.out.append_data(&mut h, &path, data)?;
-        Ok(())
+    fn append_default_data(&mut self, path: &Utf8Path, buf: &[u8]) -> Result<()> {
+        tar_append_default_data(self.out, path, buf)
     }
 
     /// Add an hardlink entry with default permissions (root/root 0644)
