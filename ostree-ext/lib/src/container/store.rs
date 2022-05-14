@@ -272,6 +272,23 @@ fn layer_from_diffid<'a>(
     })
 }
 
+pub(crate) fn ostree_layer<'a>(
+    manifest: &'a ImageManifest,
+    config: &ImageConfiguration,
+) -> Result<&'a Descriptor> {
+    let label = crate::container::OSTREE_DIFFID_LABEL;
+    let config_labels = config.config().as_ref().and_then(|c| c.labels().as_ref());
+    let diffid = config_labels.and_then(|labels| labels.get(label));
+    // For backwards compatibility, if there's only 1 layer, don't require the label.
+    // This can be dropped when we drop format version 0 support.
+    let r = if let Some(diffid) = diffid {
+        layer_from_diffid(manifest, config, diffid.as_str())?
+    } else {
+        &manifest.layers()[0]
+    };
+    Ok(r)
+}
+
 impl ImageImporter {
     /// Create a new importer.
     pub async fn new(
@@ -352,17 +369,8 @@ impl ImageImporter {
 
         let config = self.proxy.fetch_config(&self.proxy_img).await?;
 
-        let label = crate::container::OSTREE_DIFFID_LABEL;
-        let config_labels = config.config().as_ref().and_then(|c| c.labels().as_ref());
-        let diffid = config_labels.and_then(|labels| labels.get(label));
-        // For backwards compatibility, if there's only 1 layer, don't require the label.
-        // This can be dropped when we drop format version 0 support.
-        let commit_layer_digest = if let Some(diffid) = diffid {
-            let layer = layer_from_diffid(&manifest, &config, diffid.as_str())?;
-            layer.digest()
-        } else {
-            manifest.layers()[0].digest()
-        };
+        let commit_layer_digest = ostree_layer(&manifest, &config)?.digest();
+
         let mut component_layers = Vec::new();
         let mut commit_layer = None;
         let mut remaining_layers = Vec::new();
