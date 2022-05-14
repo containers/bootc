@@ -654,7 +654,7 @@ impl Importer {
                 return Err(anyhow!(
                     "Using remote {} for verification; Expected commitmeta object, not {:?}",
                     remote,
-                    objtype
+                    next_objtype
                 ));
             }
             if next_checksum != checksum {
