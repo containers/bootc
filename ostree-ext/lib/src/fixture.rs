@@ -402,6 +402,15 @@ impl Fixture {
         &self.destrepo
     }
 
+    // Delete all objects in the destrepo
+    pub fn clear_destrepo(&self) -> Result<()> {
+        self.destrepo()
+            .set_ref_immediate(None, self.testref(), None, gio::NONE_CANCELLABLE)?;
+        self.destrepo()
+            .prune(ostree::RepoPruneFlags::REFS_ONLY, 0, gio::NONE_CANCELLABLE)?;
+        Ok(())
+    }
+
     pub fn write_filedef(&self, root: &ostree::MutableTree, def: &FileDef) -> Result<()> {
         let parent_path = def.path.parent();
         let parent = if let Some(parent_path) = parent_path {
