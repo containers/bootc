@@ -67,6 +67,29 @@ pub enum ImportProgress {
     DerivedLayerCompleted(Descriptor),
 }
 
+impl ImportProgress {
+    /// Returns `true` if this message signifies the start of a new layer being fetched.
+    pub fn is_starting(&self) -> bool {
+        match self {
+            ImportProgress::OstreeChunkStarted(_) => true,
+            ImportProgress::OstreeChunkCompleted(_) => false,
+            ImportProgress::DerivedLayerStarted(_) => true,
+            ImportProgress::DerivedLayerCompleted(_) => false,
+        }
+    }
+}
+
+/// Sent across a channel to track the byte-level progress of a layer fetch.
+#[derive(Debug)]
+pub struct LayerProgress {
+    /// Index of the layer in the manifest
+    pub layer_index: usize,
+    /// Number of bytes downloaded
+    pub fetched: u64,
+    /// Total number of bytes outstanding
+    pub total: u64,
+}
+
 /// State of an already pulled layered image.
 #[derive(Debug, PartialEq, Eq)]
 pub struct LayeredImageState {
@@ -110,6 +133,7 @@ pub struct ImageImporter {
     pub(crate) proxy_img: OpenedImage,
 
     layer_progress: Option<Sender<ImportProgress>>,
+    layer_byte_progress: Option<tokio::sync::watch::Sender<Option<LayerProgress>>>,
 }
 
 /// Result of invoking [`LayeredImageImporter::prepare`].
@@ -307,6 +331,7 @@ impl ImageImporter {
             target_imgref: None,
             imgref: imgref.clone(),
             layer_progress: None,
+            layer_byte_progress: None,
         })
     }
 
@@ -325,6 +350,16 @@ impl ImageImporter {
         assert!(self.layer_progress.is_none());
         let (s, r) = tokio::sync::mpsc::channel(2);
         self.layer_progress = Some(s);
+        r
+    }
+
+    /// Create a channel receiver that will get notifications for byte-level progress of layer fetches.
+    pub fn request_layer_progress(
+        &mut self,
+    ) -> tokio::sync::watch::Receiver<Option<LayerProgress>> {
+        assert!(self.layer_byte_progress.is_none());
+        let (s, r) = tokio::sync::watch::channel(None);
+        self.layer_byte_progress = Some(s);
         r
     }
 
@@ -431,8 +466,14 @@ impl ImageImporter {
                 p.send(ImportProgress::OstreeChunkStarted(layer.layer.clone()))
                     .await?;
             }
-            let (blob, driver) =
-                fetch_layer_decompress(&mut self.proxy, &self.proxy_img, &layer.layer).await?;
+            let (blob, driver) = fetch_layer_decompress(
+                &mut self.proxy,
+                &self.proxy_img,
+                &import.manifest,
+                &layer.layer,
+                self.layer_byte_progress.as_ref(),
+            )
+            .await?;
             let repo = self.repo.clone();
             let target_ref = layer.ostree_ref.clone();
             let import_task =
@@ -470,7 +511,9 @@ impl ImageImporter {
             let (blob, driver) = fetch_layer_decompress(
                 &mut self.proxy,
                 &self.proxy_img,
+                &import.manifest,
                 &import.ostree_commit_layer.layer,
+                self.layer_byte_progress.as_ref(),
             )
             .await?;
             let repo = self.repo.clone();
@@ -554,7 +597,9 @@ impl ImageImporter {
                 let (blob, driver) = super::unencapsulate::fetch_layer_decompress(
                     &mut proxy,
                     &self.proxy_img,
+                    &import.manifest,
                     &layer.layer,
+                    self.layer_byte_progress.as_ref(),
                 )
                 .await?;
                 // An important aspect of this is that we SELinux label the derived layers using
