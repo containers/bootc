@@ -31,13 +31,18 @@
 // Once we have the manifest, we expect it to point to a single `application/vnd.oci.image.layer.v1.tar+gzip` layer,
 // which is exactly what is exported by the [`crate::tar::export`] process.
 
+use crate::container::store::LayerProgress;
+
 use super::*;
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
-use futures_util::Future;
+use futures_util::{Future, FutureExt};
 use oci_spec::image as oci_image;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncBufRead, AsyncRead};
+use tokio::{
+    io::{AsyncBufRead, AsyncRead},
+    sync::watch::{Receiver, Sender},
+};
 use tracing::instrument;
 
 type Progress = tokio::sync::watch::Sender<u64>;
@@ -49,7 +54,15 @@ pub(crate) struct ProgressReader<T> {
     #[pin]
     pub(crate) reader: T,
     #[pin]
-    pub(crate) progress: Option<Arc<Mutex<Progress>>>,
+    pub(crate) progress: Arc<Mutex<Progress>>,
+}
+
+impl<T: AsyncRead> ProgressReader<T> {
+    pub(crate) fn new(reader: T) -> (Self, Receiver<u64>) {
+        let (progress, r) = tokio::sync::watch::channel(1);
+        let progress = Arc::new(Mutex::new(progress));
+        (ProgressReader { reader, progress }, r)
+    }
 }
 
 impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
@@ -62,19 +75,17 @@ impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
         let len = buf.filled().len();
         match this.reader.poll_read(cx, buf) {
             v @ std::task::Poll::Ready(Ok(_)) => {
-                if let Some(progress) = this.progress.as_ref().get_ref() {
-                    let progress = progress.lock().unwrap();
-                    let state = {
-                        let mut state = *progress.borrow();
-                        let newlen = buf.filled().len();
-                        debug_assert!(newlen >= len);
-                        let read = (newlen - len) as u64;
-                        state += read;
-                        state
-                    };
-                    // Ignore errors, if the caller disconnected from progress that's OK.
-                    let _ = progress.send(state);
-                }
+                let progress = this.progress.lock().unwrap();
+                let state = {
+                    let mut state = *progress.borrow();
+                    let newlen = buf.filled().len();
+                    debug_assert!(newlen >= len);
+                    let read = (newlen - len) as u64;
+                    state += read;
+                    state
+                };
+                // Ignore errors, if the caller disconnected from progress that's OK.
+                let _ = progress.send(state);
                 v
             }
             o => o,
@@ -168,19 +179,43 @@ fn new_async_decompressor<'a>(
 }
 
 /// A wrapper for [`get_blob`] which fetches a layer and decompresses it.
-#[instrument(skip(proxy, img, layer))]
+//#[instrument(skip(proxy, img, layer))]
 pub(crate) async fn fetch_layer_decompress<'a>(
     proxy: &'a mut ImageProxy,
     img: &OpenedImage,
-    layer: &oci_image::Descriptor,
+    manifest: &oci_image::ImageManifest,
+    layer: &'a oci_image::Descriptor,
+    progress: Option<&'a Sender<Option<store::LayerProgress>>>,
 ) -> Result<(
     Box<dyn AsyncBufRead + Send + Unpin>,
     impl Future<Output = Result<()>> + 'a,
 )> {
+    use futures_util::future::Either;
     tracing::debug!("fetching {}", layer.digest());
+    let layer_index = manifest.layers().iter().position(|x| x == layer).unwrap();
+
     let (blob, driver) = proxy
         .get_blob(img, layer.digest().as_str(), layer.size() as u64)
         .await?;
-    let blob = new_async_decompressor(layer.media_type(), blob)?;
-    Ok((blob, driver))
+    if let Some(progress) = progress {
+        let (readprogress, mut readwatch) = ProgressReader::new(blob);
+        let readprogress = tokio::io::BufReader::new(readprogress);
+        let readproxy = async move {
+            while let Ok(()) = readwatch.changed().await {
+                let fetched = readwatch.borrow_and_update();
+                let status = LayerProgress {
+                    layer_index,
+                    fetched: *fetched,
+                    total: layer.size() as u64,
+                };
+                progress.send_replace(Some(status));
+            }
+        };
+        let reader = new_async_decompressor(layer.media_type(), readprogress)?;
+        let driver = futures_util::future::join(readproxy, driver).map(|r| r.1);
+        Ok((reader, Either::Left(driver)))
+    } else {
+        let blob = new_async_decompressor(layer.media_type(), blob)?;
+        Ok((blob, Either::Right(driver)))
+    }
 }
