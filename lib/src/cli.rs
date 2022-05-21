@@ -16,7 +16,7 @@ use structopt::StructOpt;
 use tokio::sync::mpsc::Receiver;
 
 use crate::commit::container_commit;
-use crate::container::store::{ImportProgress, PreparedImport};
+use crate::container::store::{ImportProgress, LayerProgress, PreparedImport};
 use crate::container::{self as ostree_container};
 use crate::container::{Config, ImageReference, OstreeImageReference};
 use ostree_container::store::{ImageImporter, PrepareResult};
@@ -187,6 +187,10 @@ enum ContainerImageOpts {
 
         #[structopt(flatten)]
         proxyopts: ContainerProxyOpts,
+
+        /// Don't display progress
+        #[structopt(long)]
+        quiet: bool,
     },
 
     /// Output metadata about an already stored container image.
@@ -398,9 +402,43 @@ pub fn layer_progress_format(p: &ImportProgress) -> String {
     }
 }
 
-async fn handle_layer_progress_print(mut r: Receiver<ImportProgress>) {
-    while let Some(v) = r.recv().await {
-        println!("{}", layer_progress_format(&v));
+async fn handle_layer_progress_print(
+    mut layers: Receiver<ImportProgress>,
+    mut layer_bytes: tokio::sync::watch::Receiver<Option<LayerProgress>>,
+) {
+    let style = indicatif::ProgressStyle::default_bar();
+    let pb = indicatif::ProgressBar::new(100);
+    pb.set_style(style.template("{prefix} {bytes} [{bar:20}] ({eta}) {msg}"));
+    loop {
+        tokio::select! {
+            // Always handle layer changes first.
+            biased;
+            layer = layers.recv() => {
+                if let Some(l) = layer {
+                    if l.is_starting() {
+                        pb.set_position(0);
+                    } else {
+                        pb.finish();
+                    }
+                    pb.set_message(layer_progress_format(&l));
+                } else {
+                    // If the receiver is disconnected, then we're done
+                    break
+                };
+            },
+            r = layer_bytes.changed() => {
+                if r.is_err() {
+                    // If the receiver is disconnected, then we're done
+                    break
+                }
+                let bytes = layer_bytes.borrow();
+                if let Some(bytes) = &*bytes {
+                    pb.set_length(bytes.total);
+                    pb.set_position(bytes.fetched);
+                }
+            }
+
+        }
     }
 }
 
@@ -498,9 +536,9 @@ async fn container_store(
     repo: &ostree::Repo,
     imgref: &OstreeImageReference,
     proxyopts: ContainerProxyOpts,
+    quiet: bool,
 ) -> Result<()> {
     let mut imp = ImageImporter::new(repo, imgref, proxyopts.into()).await?;
-    let layer_progress = imp.request_progress();
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
             println!("No changes in {} => {}", imgref, c.merge_commit);
@@ -509,10 +547,17 @@ async fn container_store(
         PrepareResult::Ready(r) => r,
     };
     print_layer_status(&prep);
-    let progress_printer =
-        tokio::task::spawn(async move { handle_layer_progress_print(layer_progress).await });
+    let printer = (!quiet).then(|| {
+        let layer_progress = imp.request_progress();
+        let layer_byte_progress = imp.request_layer_progress();
+        tokio::task::spawn(async move {
+            handle_layer_progress_print(layer_progress, layer_byte_progress).await
+        })
+    });
     let import = imp.import(prep).await;
-    let _ = progress_printer.await;
+    if let Some(printer) = printer {
+        let _ = printer.await;
+    }
     let import = import?;
     let commit = &repo.load_commit(&import.merge_commit)?.0;
     let commit_meta = &glib::VariantDict::new(Some(&commit.child_value(0)));
@@ -672,7 +717,8 @@ where
                     repo,
                     imgref,
                     proxyopts,
-                } => container_store(&repo, &imgref, proxyopts).await,
+                    quiet,
+                } => container_store(&repo, &imgref, proxyopts, quiet).await,
                 ContainerImageOpts::History { repo, imgref } => {
                     container_history(&repo, &imgref).await
                 }
