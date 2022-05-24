@@ -555,7 +555,7 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
         sigverify: SignatureSource::OstreeRemote("unknownremote".to_string()),
         imgref: srcoci_imgref.clone(),
     };
-    let r = ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_unknownremote, None)
+    let r = ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_unknownremote)
         .await
         .context("importing");
     assert_err_contains(r, r#"Remote "unknownremote" not found"#);
@@ -575,7 +575,7 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
         sigverify: SignatureSource::OstreeRemote("myremote".to_string()),
         imgref: srcoci_imgref.clone(),
     };
-    let import = ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_verified, None)
+    let import = ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_verified)
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
@@ -593,17 +593,16 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
         imgref: temp_unsigned,
     };
     fixture.clear_destrepo()?;
-    let r = ostree_ext::container::unencapsulate(fixture.destrepo(), &temp_unsigned, None).await;
+    let r = ostree_ext::container::unencapsulate(fixture.destrepo(), &temp_unsigned).await;
     assert_err_contains(r, "Expected commitmeta object");
 
     // Test without signature verification
     // Create a new repo
     {
         let fixture = Fixture::new_v1()?;
-        let import =
-            ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_unverified, None)
-                .await
-                .context("importing")?;
+        let import = ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_unverified)
+            .await
+            .context("importing")?;
         assert_eq!(import.ostree_commit, testrev.as_str());
     }
 
@@ -824,7 +823,7 @@ async fn test_container_write_derive() -> Result<()> {
     assert!(images.is_empty());
 
     // Verify importing a derived image fails
-    let r = ostree_ext::container::unencapsulate(fixture.destrepo(), &derived_ref, None).await;
+    let r = ostree_ext::container::unencapsulate(fixture.destrepo(), &derived_ref).await;
     assert_err_contains(r, "Image has 1 non-ostree layers");
 
     // Pull a derived image - two layers, new base plus one layer.
@@ -986,7 +985,7 @@ async fn test_container_import_export_registry() -> Result<()> {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref: digested_imgref,
     };
-    let import = ostree_ext::container::unencapsulate(fixture.destrepo(), &import_ref, None)
+    let import = ostree_ext::container::unencapsulate(fixture.destrepo(), &import_ref)
         .await
         .context("importing")?;
     assert_eq!(import.ostree_commit, testrev.as_str());
