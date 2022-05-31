@@ -17,7 +17,6 @@ use once_cell::sync::Lazy;
 use ostree::cap_std;
 use regex::Regex;
 use std::borrow::Cow;
-use std::convert::{TryFrom, TryInto};
 use std::io::Write;
 use std::ops::Add;
 use std::process::Stdio;

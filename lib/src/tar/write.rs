@@ -16,7 +16,6 @@ use ostree::gio;
 use ostree::prelude::FileExt;
 use rustix::fd::FromFd;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::process::Stdio;

@@ -27,7 +27,6 @@
 
 use anyhow::anyhow;
 use std::borrow::Cow;
-use std::convert::{TryFrom, TryInto};
 use std::ops::Deref;
 
 /// The label injected into a container image that contains the ostree commit SHA-256.
