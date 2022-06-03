@@ -18,10 +18,10 @@ use ostree::gio;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::CString;
 use std::fs::File;
+use std::io::Seek;
 use std::ops::DerefMut;
 use std::os::unix::io::AsRawFd;
 use std::process::{Command, Stdio};
-use std::{convert::TryInto, io::Seek};
 
 /// Extended attribute keys used for IMA.
 const IMA_XATTR: &str = "security.ima";

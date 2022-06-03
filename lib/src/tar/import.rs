@@ -11,7 +11,6 @@ use glib::Variant;
 use ostree::gio;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::io::prelude::*;
 use tracing::{event, instrument, Level};
 

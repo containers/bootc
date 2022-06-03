@@ -10,7 +10,6 @@
 //! Because the empty path is not valid, `//` is escaped as `/_2F_` (i.e. the second `/` is escaped).
 
 use anyhow::Result;
-use std::convert::TryInto;
 use std::fmt::Write;
 
 /// Escape a single string; this is a backend of [`prefix_escape_for_ref`].

@@ -9,7 +9,6 @@ use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use ostree::{cap_std, gio, glib};
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use structopt::StructOpt;

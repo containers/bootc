@@ -4,7 +4,6 @@
 
 use std::borrow::{Borrow, Cow};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::convert::TryInto;
 use std::fmt::Write;
 use std::num::NonZeroU32;
 use std::rc::Rc;
