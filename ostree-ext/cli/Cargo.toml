@@ -2,7 +2,7 @@
 name = "ostree-ext-cli"
 version = "0.1.4"
 authors = ["Colin Walters <walters@verbum.org>"]
-edition = "2018"
+edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ostreedev/ostree-rs-ext"
 readme = "README.md"

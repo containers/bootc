@@ -1002,7 +1002,7 @@ d /usr/share
     fixture
         .update(
             FileDef::iter_from(ADDITIONS),
-            IntoIterator::into_iter([Cow::Borrowed("/usr/bin/bash".into())]),
+            [Cow::Borrowed("/usr/bin/bash".into())].into_iter(),
         )
         .context("Failed to update")?;
     let from = &format!("{}^", fixture.testref());
