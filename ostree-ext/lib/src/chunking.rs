@@ -83,8 +83,7 @@ impl ObjectMetaSized {
         let mut sizes = HashMap::<&str, u64>::new();
         // Populate two mappings above, iterating over the object -> contentid mapping
         for (checksum, contentid) in map.iter() {
-            let (_, finfo, _) = repo.load_file(checksum, cancellable)?;
-            let finfo = finfo.unwrap();
+            let finfo = repo.query_file(checksum, cancellable)?.0;
             let sz = sizes.entry(contentid).or_default();
             *sz += finfo.size() as u64;
         }
