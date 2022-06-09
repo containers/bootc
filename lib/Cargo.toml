@@ -31,7 +31,7 @@ oci-spec = "0.5.4"
 openat = "0.1.20"
 openat-ext = "0.2.0"
 openssl = "0.10.33"
-ostree = { features = ["v2021_5", "cap-std-apis"], version = "0.13.5" }
+ostree = { features = ["v2021_5", "cap-std-apis"], version = "0.14.0" }
 pin-project = "1.0"
 regex = "1.5.4"
 serde = { features = ["derive"], version = "1.0.125" }
