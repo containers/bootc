@@ -174,10 +174,7 @@ fn generate_chunking_recurse(
         let fpath = gen.path.join(name.to_str());
         hex::encode_to_slice(csum, &mut hexbuf)?;
         let checksum = std::str::from_utf8(&hexbuf)?;
-        let (_, meta, _) = repo.load_file(checksum, gio::NONE_CANCELLABLE)?;
-        // SAFETY: We know this API returns this value; it only has a return nullable because the
-        // caller can pass NULL to skip it.
-        let meta = meta.unwrap();
+        let meta = repo.query_file(checksum, gio::NONE_CANCELLABLE)?.0;
         let size = meta.size() as u64;
         let entry = chunk.content.entry(RcStr::from(checksum)).or_default();
         entry.0 = size;
