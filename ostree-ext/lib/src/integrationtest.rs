@@ -90,6 +90,22 @@ fn test_proxy_auth() -> Result<()> {
     Ok(())
 }
 
+/// Create a test fixture in the same way our unit tests does, and print
+/// the location of the temporary directory.  Also export a chunked image.
+/// Useful for debugging things interactively.
+pub(crate) fn create_fixture() -> Result<()> {
+    let fixture = crate::fixture::Fixture::new_v1()?;
+    let imgref = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current()
+            .block_on(fixture.export_container())
+            .map(|v| v.0)
+    })?;
+    println!("Wrote: {:?}", imgref);
+    let path = fixture.into_tempdir().into_path();
+    println!("Wrote: {:?}", path);
+    Ok(())
+}
+
 pub(crate) fn test_ima() -> Result<()> {
     use gvariant::aligned_bytes::TryAsAligned;
     use gvariant::{gv, Marker, Structure};
