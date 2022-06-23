@@ -156,11 +156,8 @@ fn build_oci(
         .map(|meta| crate::chunking::Chunking::from_mapping(repo, commit, meta, opts.max_layers))
         .transpose()?;
 
-    if let Some(version) =
-        commit_meta.lookup_value("version", Some(glib::VariantTy::new("s").unwrap()))
-    {
-        let version = version.str().unwrap();
-        labels.insert("version".into(), version.into());
+    if let Some(version) = commit_meta.lookup::<String>("version")? {
+        labels.insert("version".into(), version);
     }
     labels.insert(OSTREE_COMMIT_LABEL.into(), commit.into());
 
