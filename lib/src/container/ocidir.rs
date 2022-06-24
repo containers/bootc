@@ -3,17 +3,19 @@
 
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
+use cap_std::fs::Dir;
+use cap_std_ext::cap_std;
+use cap_std_ext::dirext::CapStdExtDirExt;
 use flate2::write::GzEncoder;
 use fn_error_context::context;
 use oci_image::MediaType;
 use oci_spec::image::{self as oci_image, Descriptor};
-use openat_ext::*;
 use openssl::hash::{Hasher, MessageDigest};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{prelude::*, BufReader};
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 /// Path inside an OCI directory to the blobs
 const BLOBDIR: &str = "blobs/sha256";
@@ -53,7 +55,7 @@ impl Layer {
 /// Create an OCI blob.
 pub(crate) struct BlobWriter<'a> {
     pub(crate) hash: Hasher,
-    pub(crate) target: Option<FileWriter<'a>>,
+    pub(crate) target: Option<cap_tempfile::TempFile<'a>>,
     size: u64,
 }
 
@@ -65,13 +67,13 @@ pub(crate) struct RawLayerWriter<'a> {
 }
 
 pub(crate) struct OciDir {
-    pub(crate) dir: Rc<openat::Dir>,
+    pub(crate) dir: std::sync::Arc<Dir>,
 }
 
 /// Write a serializable data (JSON) as an OCI blob
 #[context("Writing json blob")]
 pub(crate) fn write_json_blob<S: serde::Serialize>(
-    ocidir: &openat::Dir,
+    ocidir: &Dir,
     v: &S,
     media_type: oci_image::MediaType,
 ) -> Result<oci_image::DescriptorBuilder> {
@@ -111,29 +113,33 @@ pub(crate) fn new_empty_manifest() -> oci_image::ImageManifestBuilder {
 
 impl OciDir {
     /// Create a new, empty OCI directory at the target path, which should be empty.
-    pub(crate) fn create(dir: impl Into<Rc<openat::Dir>>) -> Result<Self> {
-        let dir = dir.into();
-        dir.ensure_dir_all(BLOBDIR, 0o755)?;
-        dir.write_file_contents("oci-layout", 0o644, r#"{"imageLayoutVersion":"1.0.0"}"#)?;
+    pub(crate) fn create(dir: &Dir) -> Result<Self> {
+        let mut db = cap_std::fs::DirBuilder::new();
+        db.recursive(true).mode(0o755);
+        dir.ensure_dir_with(BLOBDIR, &db)?;
+        dir.atomic_write("oci-layout", r#"{"imageLayoutVersion":"1.0.0"}"#)?;
         Self::open(dir)
     }
 
     /// Clone an OCI directory, using reflinks for blobs.
-    pub(crate) fn clone_to(&self, destdir: &openat::Dir, p: impl AsRef<Path>) -> Result<Self> {
+    pub(crate) fn clone_to(&self, destdir: &Dir, p: impl AsRef<Path>) -> Result<Self> {
         let p = p.as_ref();
-        destdir.ensure_dir(p, 0o755)?;
-        let cloned = Self::create(destdir.sub_dir(p)?)?;
-        for blob in self.dir.list_dir(BLOBDIR)? {
+        destdir.create_dir(p)?;
+        let cloned = Self::create(&destdir.open_dir(p)?)?;
+        for blob in self.dir.read_dir(BLOBDIR)? {
             let blob = blob?;
             let path = Path::new(BLOBDIR).join(blob.file_name());
-            self.dir.copy_file_at(&path, destdir, &path)?;
+            let mut src = self.dir.open(&path).map(BufReader::new)?;
+            self.dir
+                .atomic_replace_with(&path, |w| std::io::copy(&mut src, w))?;
         }
         Ok(cloned)
     }
 
     /// Open an existing OCI directory.
-    pub(crate) fn open(dir: impl Into<Rc<openat::Dir>>) -> Result<Self> {
-        Ok(Self { dir: dir.into() })
+    pub(crate) fn open(dir: &Dir) -> Result<Self> {
+        let dir = std::sync::Arc::new(dir.try_clone()?);
+        Ok(Self { dir })
     }
 
     /// Create a writer for a new blob (expected to be a tar stream)
@@ -211,7 +217,10 @@ impl OciDir {
 
     pub(crate) fn read_blob(&self, desc: &oci_spec::image::Descriptor) -> Result<File> {
         let path = Self::parse_descriptor_to_path(desc)?;
-        self.dir.open_file(&path).map_err(Into::into)
+        self.dir
+            .open(&path)
+            .map_err(Into::into)
+            .map(|f| f.into_std())
     }
 
     /// Read a JSON blob.
@@ -250,7 +259,7 @@ impl OciDir {
             .build()
             .unwrap();
         self.dir
-            .write_file_with("index.json", 0o644, |w| -> Result<()> {
+            .atomic_replace_with("index.json", |w| -> Result<()> {
                 cjson::to_writer(w, &index_data).map_err(|e| anyhow::anyhow!("{:?}", e))?;
                 Ok(())
             })?;
@@ -268,7 +277,7 @@ impl OciDir {
     ) -> Result<(oci_image::ImageManifest, Descriptor)> {
         let f = self
             .dir
-            .open_file("index.json")
+            .open("index.json")
             .context("Failed to open index.json")?;
         let idx: oci_image::ImageIndex = serde_json::from_reader(BufReader::new(f))?;
         let desc = match idx.manifests().as_slice() {
@@ -282,11 +291,11 @@ impl OciDir {
 
 impl<'a> BlobWriter<'a> {
     #[context("Creating blob writer")]
-    fn new(ocidir: &'a openat::Dir) -> Result<Self> {
+    fn new(ocidir: &'a Dir) -> Result<Self> {
         Ok(Self {
             hash: Hasher::new(MessageDigest::sha256())?,
             // FIXME add ability to choose filename after completion
-            target: Some(ocidir.new_file_writer(0o644)?),
+            target: Some(cap_tempfile::TempFile::new(ocidir)?),
             size: 0,
         })
     }
@@ -295,8 +304,9 @@ impl<'a> BlobWriter<'a> {
     /// Finish writing this blob object.
     pub(crate) fn complete(mut self) -> Result<Blob> {
         let sha256 = hex::encode(self.hash.finish()?);
-        let target = &format!("{}/{}", BLOBDIR, sha256);
-        self.target.take().unwrap().complete(target)?;
+        let destname = &format!("{}/{}", BLOBDIR, sha256);
+        let target = self.target.take().unwrap();
+        target.replace(destname)?;
         Ok(Blob {
             sha256,
             size: self.size,
@@ -307,7 +317,11 @@ impl<'a> BlobWriter<'a> {
 impl<'a> std::io::Write for BlobWriter<'a> {
     fn write(&mut self, srcbuf: &[u8]) -> std::io::Result<usize> {
         self.hash.update(srcbuf)?;
-        self.target.as_mut().unwrap().writer.write_all(srcbuf)?;
+        self.target
+            .as_mut()
+            .unwrap()
+            .as_file_mut()
+            .write_all(srcbuf)?;
         self.size += srcbuf.len() as u64;
         Ok(srcbuf.len())
     }
@@ -319,7 +333,7 @@ impl<'a> std::io::Write for BlobWriter<'a> {
 
 impl<'a> RawLayerWriter<'a> {
     /// Create a writer for a gzip compressed layer blob.
-    fn new(ocidir: &'a openat::Dir, c: Option<flate2::Compression>) -> Result<Self> {
+    fn new(ocidir: &'a Dir, c: Option<flate2::Compression>) -> Result<Self> {
         let bw = BlobWriter::new(ocidir)?;
         Ok(Self {
             bw,
@@ -400,9 +414,8 @@ mod tests {
 
     #[test]
     fn test_build() -> Result<()> {
-        let td = tempfile::tempdir()?;
-        let td = openat::Dir::open(td.path())?;
-        let w = OciDir::create(td)?;
+        let td = cap_tempfile::tempdir(cap_std::ambient_authority())?;
+        let w = OciDir::create(&td)?;
         let mut layerw = w.create_raw_layer(None)?;
         layerw.write_all(b"pretend this is a tarball")?;
         let root_layer = layerw.complete()?;

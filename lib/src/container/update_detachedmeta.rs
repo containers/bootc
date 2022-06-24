@@ -3,8 +3,9 @@ use crate::container::{ocidir, skopeo};
 use crate::container::{store as container_store, Transport};
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
+use cap_std::fs::Dir;
+use cap_std_ext::cap_std;
 use std::io::{BufReader, BufWriter};
-use std::rc::Rc;
 
 /// Given an OSTree container image reference, update the detached metadata (e.g. GPG signature)
 /// while preserving all other container image metadata.
@@ -37,8 +38,9 @@ pub async fn update_detached_metadata(
     // Fork a thread to do the heavy lifting of filtering the tar stream, rewriting the manifest/config.
     crate::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| {
         // Open the temporary OCI directory.
-        let tempsrc = Rc::new(openat::Dir::open(tempsrc_ref_path).context("Opening src")?);
-        let tempsrc = ocidir::OciDir::open(tempsrc)?;
+        let tempsrc = Dir::open_ambient_dir(tempsrc_ref_path, cap_std::ambient_authority())
+            .context("Opening src")?;
+        let tempsrc = ocidir::OciDir::open(&tempsrc)?;
 
         // Load the manifest, platform, and config
         let (mut manifest, manifest_descriptor) = tempsrc
