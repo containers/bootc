@@ -62,6 +62,7 @@ fn map_path_v1(p: &Utf8Path) -> &Utf8Path {
 
 struct OstreeTarWriter<'a, W: std::io::Write> {
     repo: &'a ostree::Repo,
+    commit_checksum: &'a str,
     out: &'a mut tar::Builder<W>,
     options: ExportOptions,
     wrote_initdirs: bool,
@@ -133,9 +134,15 @@ pub(crate) fn tar_append_default_data(
 }
 
 impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
-    fn new(repo: &'a ostree::Repo, out: &'a mut tar::Builder<W>, options: ExportOptions) -> Self {
+    fn new(
+        repo: &'a ostree::Repo,
+        commit_checksum: &'a str,
+        out: &'a mut tar::Builder<W>,
+        options: ExportOptions,
+    ) -> Self {
         Self {
             repo,
+            commit_checksum,
             out,
             options,
             wrote_initdirs: false,
@@ -248,9 +255,10 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     }
 
     /// Recursively serialize a commit object to the target tar stream.
-    fn write_commit(&mut self, checksum: &str) -> Result<()> {
+    fn write_commit(&mut self) -> Result<()> {
         let cancellable = gio::NONE_CANCELLABLE;
 
+        let checksum = self.commit_checksum;
         let (commit_v, _) = self.repo.load_commit(checksum)?;
         let commit_v = &commit_v;
 
@@ -530,8 +538,8 @@ fn impl_export<W: std::io::Write>(
     out: &mut tar::Builder<W>,
     options: ExportOptions,
 ) -> Result<()> {
-    let writer = &mut OstreeTarWriter::new(repo, out, options);
-    writer.write_commit(commit_checksum)?;
+    let writer = &mut OstreeTarWriter::new(repo, commit_checksum, out, options);
+    writer.write_commit()?;
     Ok(())
 }
 
@@ -584,10 +592,11 @@ fn write_chunk<W: std::io::Write>(
 /// Output a chunk to a tar stream.
 pub(crate) fn export_chunk<W: std::io::Write>(
     repo: &ostree::Repo,
+    commit: &str,
     chunk: &chunking::Chunk,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
-    let writer = &mut OstreeTarWriter::new(repo, out, ExportOptions::default());
+    let writer = &mut OstreeTarWriter::new(repo, commit, out, ExportOptions::default());
     writer.write_repo_structure()?;
     write_chunk(writer, chunk)
 }
@@ -596,6 +605,7 @@ pub(crate) fn export_chunk<W: std::io::Write>(
 #[context("Exporting final chunk")]
 pub(crate) fn export_final_chunk<W: std::io::Write>(
     repo: &ostree::Repo,
+    commit_checksum: &str,
     chunking: &Chunking,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
@@ -606,7 +616,7 @@ pub(crate) fn export_final_chunk<W: std::io::Write>(
         format_version: 1,
         ..Default::default()
     };
-    let writer = &mut OstreeTarWriter::new(repo, out, options);
+    let writer = &mut OstreeTarWriter::new(repo, commit_checksum, out, options);
     writer.write_repo_structure()?;
 
     let (commit_v, _) = repo.load_commit(&chunking.commit)?;
