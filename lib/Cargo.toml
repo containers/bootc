@@ -17,7 +17,7 @@ bitflags = "1"
 camino = "1.0.4"
 chrono = "0.4.19"
 cjson = "0.1.1"
-cap-std-ext = ">= 0.24, <= 0.25"
+cap-std-ext = ">= 0.25"
 cap-tempfile = "0.24"
 flate2 = { features = ["zlib"], default_features = false, version = "1.0.20" }
 fn-error-context = "0.2.0"
@@ -39,7 +39,7 @@ structopt = "0.3.21"
 tar = "0.4.38"
 tempfile = "3.2.0"
 term_size = "0.3.2"
-tokio = { features = ["full"], version = "1" }
+tokio = { features = ["full"], version = ">= 1.13.0" }
 tokio-util = { features = ["io-util"], version = "0.6.9" }
 tokio-stream = { features = ["sync"], version = "0.1.8" }
 tracing = "0.1"
