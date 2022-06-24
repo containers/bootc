@@ -7,6 +7,8 @@ use crate::chunking::{Chunking, ObjectMetaSized};
 use crate::container::skopeo;
 use crate::tar as ostree_tar;
 use anyhow::{anyhow, Context, Result};
+use cap_std::fs::Dir;
+use cap_std_ext::cap_std;
 use fn_error_context::context;
 use gio::glib;
 use oci_spec::image as oci_image;
@@ -15,7 +17,6 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 use std::path::Path;
-use std::rc::Rc;
 use tracing::instrument;
 
 /// Annotation injected into the layer to say that this is an ostree commit.
@@ -124,8 +125,8 @@ fn build_oci(
 ) -> Result<ImageReference> {
     // Explicitly error if the target exists
     std::fs::create_dir(ocidir_path).context("Creating OCI dir")?;
-    let ocidir = Rc::new(openat::Dir::open(ocidir_path)?);
-    let mut writer = ocidir::OciDir::create(ocidir)?;
+    let ocidir = Dir::open_ambient_dir(ocidir_path, cap_std::ambient_authority())?;
+    let mut writer = ocidir::OciDir::create(&ocidir)?;
 
     let commit = repo.require_rev(rev)?;
     let commit = commit.as_str();
