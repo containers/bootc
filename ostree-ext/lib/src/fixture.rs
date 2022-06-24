@@ -335,7 +335,7 @@ fn build_mapping_recurse(
 #[derive(Debug)]
 pub struct Fixture {
     // Just holds a reference
-    _tempdir: tempfile::TempDir,
+    tempdir: tempfile::TempDir,
     pub dir: Arc<Dir>,
     pub path: Utf8PathBuf,
     srcrepo: ostree::Repo,
@@ -383,7 +383,7 @@ impl Fixture {
         let destrepo =
             ostree::Repo::create_at_dir(&dir, "dest/repo", ostree::RepoMode::BareUser, None)?;
         Ok(Self {
-            _tempdir: tempdir,
+            tempdir,
             dir,
             path,
             srcrepo,
@@ -580,6 +580,11 @@ impl Fixture {
         build_mapping_recurse(&mut Utf8PathBuf::from("/"), &root, &mut ret)?;
 
         Ok(ret)
+    }
+
+    /// Unload all in-memory data, and return the underlying temporary directory without deleting it.
+    pub fn into_tempdir(self) -> tempfile::TempDir {
+        self.tempdir
     }
 
     #[context("Exporting tar")]

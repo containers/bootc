@@ -316,6 +316,8 @@ struct ImaSignOpts {
 enum TestingOpts {
     /// Detect the current environment
     DetectEnv,
+    /// Generate a test fixture
+    CreateFixture,
     /// Execute integration tests, assuming mutable environment
     Run,
     /// Execute IMA tests
@@ -658,6 +660,7 @@ fn testing(opts: &TestingOpts) -> Result<()> {
             println!("{}", s);
             Ok(())
         }
+        TestingOpts::CreateFixture => crate::integrationtest::create_fixture(),
         TestingOpts::Run => crate::integrationtest::run_tests(),
         TestingOpts::RunIMA => crate::integrationtest::test_ima(),
         TestingOpts::FilterTar => {
