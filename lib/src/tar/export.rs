@@ -261,8 +261,6 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     fn write_commit(&mut self) -> Result<()> {
         let cancellable = gio::NONE_CANCELLABLE;
 
-        let checksum = self.commit_checksum;
-
         let commit_bytes = self.commit_object.data_as_bytes();
         let commit_bytes = commit_bytes.try_as_aligned()?;
         let commit = gv_commit!().cast(commit_bytes);
@@ -283,17 +281,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         // Now, we create sysroot/ and everything under it
         self.write_repo_structure()?;
 
-        self.append(
-            ostree::ObjectType::Commit,
-            checksum,
-            &self.commit_object.clone(),
-        )?;
-        if let Some(commitmeta) = self
-            .repo
-            .read_commit_detached_metadata(checksum, cancellable)?
-        {
-            self.append(ostree::ObjectType::CommitMeta, checksum, &commitmeta)?;
-        }
+        self.append_commit_object()?;
 
         // The ostree dirmeta object for the root.
         self.append(ostree::ObjectType::DirMeta, metadata_checksum, &metadata_v)?;
@@ -305,6 +293,25 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             true,
             cancellable,
         )?;
+        Ok(())
+    }
+
+    fn append_commit_object(&mut self) -> Result<()> {
+        self.append(
+            ostree::ObjectType::Commit,
+            self.commit_checksum,
+            &self.commit_object.clone(),
+        )?;
+        if let Some(commitmeta) = self
+            .repo
+            .read_commit_detached_metadata(self.commit_checksum, gio::NONE_CANCELLABLE)?
+        {
+            self.append(
+                ostree::ObjectType::CommitMeta,
+                self.commit_checksum,
+                &commitmeta,
+            )?;
+        }
         Ok(())
     }
 
@@ -614,7 +621,6 @@ pub(crate) fn export_final_chunk<W: std::io::Write>(
     chunking: chunking::Chunking,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
-    let cancellable = gio::NONE_CANCELLABLE;
     // For chunking, we default to format version 1
     #[allow(clippy::needless_update)]
     let options = ExportOptions {
@@ -624,16 +630,8 @@ pub(crate) fn export_final_chunk<W: std::io::Write>(
     let writer = &mut OstreeTarWriter::new(repo, commit_checksum, out, options)?;
     writer.write_repo_structure()?;
 
-    let (commit_v, _) = repo.load_commit(&chunking.commit)?;
-    let commit_v = &commit_v;
-    writer.append(ostree::ObjectType::Commit, &chunking.commit, commit_v)?;
-    if let Some(commitmeta) = repo.read_commit_detached_metadata(&chunking.commit, cancellable)? {
-        writer.append(
-            ostree::ObjectType::CommitMeta,
-            &chunking.commit,
-            &commitmeta,
-        )?;
-    }
+    // Write the commit
+    writer.append_commit_object()?;
 
     // In the chunked case, the final layer has all ostree metadata objects.
     for meta in &chunking.meta {
