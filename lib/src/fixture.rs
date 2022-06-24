@@ -3,7 +3,7 @@
 #![allow(missing_docs)]
 
 use crate::chunking::ObjectMetaSized;
-use crate::container::{Config, ExportOpts, ImageReference, Transport};
+use crate::container::{Config, ExportLayout, ExportOpts, ImageReference, Transport};
 use crate::objectsource::{ObjectMeta, ObjectSourceMeta};
 use crate::prelude::*;
 use crate::{gio, glib};
@@ -606,8 +606,16 @@ impl Fixture {
     /// Export the current ref as a container image.
     /// This defaults to using chunking.
     #[context("Exporting container")]
-    pub async fn export_container(&self) -> Result<(ImageReference, String)> {
-        let container_path = &self.path.join("oci");
+    pub async fn export_container(
+        &self,
+        export_format: ExportLayout,
+    ) -> Result<(ImageReference, String)> {
+        let name = match export_format {
+            ExportLayout::SingleLayer => "oci-single",
+            ExportLayout::ChunkedV0 => "oci-chunked-v0",
+            ExportLayout::ChunkedV1 => "oci-chunked-v1",
+        };
+        let container_path = &self.path.join(name);
         if container_path.exists() {
             std::fs::remove_dir_all(container_path)?;
         }
@@ -627,7 +635,10 @@ impl Fixture {
         let contentmeta = self.get_object_meta().context("Computing object meta")?;
         let contentmeta = ObjectMetaSized::compute_sizes(self.srcrepo(), contentmeta)
             .context("Computing sizes")?;
-        let opts = ExportOpts::default();
+        let opts = ExportOpts {
+            format: export_format,
+            ..Default::default()
+        };
         let digest = crate::container::encapsulate(
             self.srcrepo(),
             self.testref(),

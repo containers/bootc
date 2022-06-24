@@ -4,7 +4,7 @@ use cap_std::fs::{Dir, DirBuilder};
 use once_cell::sync::Lazy;
 use ostree::cap_std;
 use ostree_ext::chunking::ObjectMetaSized;
-use ostree_ext::container::store;
+use ostree_ext::container::{store, ExportLayout};
 use ostree_ext::container::{
     Config, ExportOpts, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
@@ -459,7 +459,7 @@ fn skopeo_inspect_config(imgref: &str) -> Result<oci_spec::image::ImageConfigura
     Ok(serde_json::from_slice(&out.stdout)?)
 }
 
-async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
+async fn impl_test_container_import_export(export_format: ExportLayout) -> Result<()> {
     let fixture = Fixture::new_v1()?;
     let testrev = fixture
         .srcrepo()
@@ -481,6 +481,10 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
         ..Default::default()
     };
     // If chunking is requested, compute object ownership and size mappings
+    let chunked = matches!(
+        export_format,
+        ExportLayout::ChunkedV0 | ExportLayout::ChunkedV1
+    );
     let contentmeta = chunked
         .then(|| {
             let meta = fixture.get_object_meta().context("Computing object meta")?;
@@ -489,6 +493,7 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
         .transpose()?;
     let opts = ExportOpts {
         copy_meta_keys: vec!["buildsys.checksum".to_string()],
+        format: export_format,
         ..Default::default()
     };
     let digest = ostree_ext::container::encapsulate(
@@ -619,11 +624,15 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
 }
 
 /// Parse a chunked container image and validate its structure; particularly
-fn validate_chunked_structure(oci_path: &Utf8Path) -> Result<()> {
+fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Result<()> {
     let d = Dir::open_ambient_dir(oci_path, cap_std::ambient_authority())?;
     let d = ocidir::OciDir::open(&d)?;
     let manifest = d.read_manifest()?;
-    let ostree_layer = manifest.layers().last().unwrap();
+    let ostree_layer = match format {
+        ExportLayout::SingleLayer | ExportLayout::ChunkedV0 => manifest.layers().last(),
+        ExportLayout::ChunkedV1 => manifest.layers().first(),
+    }
+    .unwrap();
     let ostree_layer_blob = d
         .read_blob(ostree_layer)
         .map(BufReader::new)
@@ -633,11 +642,20 @@ fn validate_chunked_structure(oci_path: &Utf8Path) -> Result<()> {
 }
 
 #[tokio::test]
-async fn impl_test_container_chunked() -> Result<()> {
+async fn test_container_chunked_v0() -> Result<()> {
+    impl_test_container_chunked(ExportLayout::ChunkedV0).await
+}
+
+#[tokio::test]
+async fn test_container_chunked_v1() -> Result<()> {
+    impl_test_container_chunked(ExportLayout::ChunkedV1).await
+}
+
+async fn impl_test_container_chunked(format: ExportLayout) -> Result<()> {
     let nlayers = 6u32;
     let mut fixture = Fixture::new_v1()?;
 
-    let (imgref, expected_digest) = fixture.export_container().await.unwrap();
+    let (imgref, expected_digest) = fixture.export_container(format).await.unwrap();
     let imgref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref: imgref,
@@ -647,7 +665,7 @@ async fn impl_test_container_chunked() -> Result<()> {
         ImageReference {
             transport: Transport::OciDir,
             name,
-        } => validate_chunked_structure(Utf8Path::new(name)).unwrap(),
+        } => validate_chunked_structure(Utf8Path::new(name), format).unwrap(),
         _ => unreachable!(),
     };
 
@@ -676,7 +694,7 @@ r usr/bin/bash bash-v0
         .update(FileDef::iter_from(ADDITIONS), std::iter::empty())
         .context("Failed to update")?;
 
-    let expected_digest = fixture.export_container().await.unwrap().1;
+    let expected_digest = fixture.export_container(format).await.unwrap().1;
     assert_ne!(digest, expected_digest);
 
     let mut imp =
@@ -691,10 +709,22 @@ r usr/bin/bash bash-v0
     assert!(prep.ostree_commit_layer.commit.is_none());
     assert_eq!(prep.ostree_layers.len(), nlayers as usize);
     let (first, second) = (to_fetch[0], to_fetch[1]);
-    assert_eq!(first.1, "bash");
     assert!(first.0.commit.is_none());
-    assert!(second.1.starts_with("ostree export of commit"));
     assert!(second.0.commit.is_none());
+    match format {
+        ExportLayout::SingleLayer | ExportLayout::ChunkedV0 => {
+            assert_eq!(first.1, "bash");
+            assert!(
+                second.1.starts_with("ostree export of commit"),
+                "{}",
+                second.1
+            );
+        }
+        ExportLayout::ChunkedV1 => {
+            assert_eq!(first.1, "testlink");
+            assert_eq!(second.1, "bash");
+        }
+    }
 
     let _import = imp.import(prep).await.unwrap();
 
@@ -790,10 +820,24 @@ async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Res
 }
 
 #[tokio::test]
-async fn test_container_import_export() -> Result<()> {
-    impl_test_container_import_export(false).await.unwrap();
-    impl_test_container_import_export(true).await.unwrap();
-    Ok(())
+async fn test_container_import_export_single_layer() {
+    impl_test_container_import_export(ExportLayout::SingleLayer)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn test_container_import_export_chunked_v0() {
+    impl_test_container_import_export(ExportLayout::ChunkedV0)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn test_container_import_export_chunked_v1() {
+    impl_test_container_import_export(ExportLayout::ChunkedV1)
+        .await
+        .unwrap()
 }
 
 /// But layers work via the container::write module.

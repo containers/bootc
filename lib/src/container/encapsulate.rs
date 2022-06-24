@@ -1,9 +1,9 @@
 //! APIs for creating container images from OSTree commits
 
-use super::ocidir::OciDir;
+use super::ocidir::{Layer, OciDir};
 use super::{ocidir, OstreeImageReference, Transport};
 use super::{ImageReference, SignatureSource, OSTREE_COMMIT_LABEL};
-use crate::chunking::{Chunking, ObjectMetaSized};
+use crate::chunking::{Chunk, Chunking, ObjectMetaSized};
 use crate::container::skopeo;
 use crate::tar as ostree_tar;
 use anyhow::{anyhow, Context, Result};
@@ -19,6 +19,23 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 use std::path::Path;
 use tracing::instrument;
+
+/// Type of container image generated
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ExportLayout {
+    /// The original, very simplistic "export into single tarball"
+    SingleLayer,
+    /// The first attempt at chunked images, which has some bugs
+    ChunkedV0,
+    /// The second and hopefully final chunked image format
+    ChunkedV1,
+}
+
+impl Default for ExportLayout {
+    fn default() -> Self {
+        Self::SingleLayer
+    }
+}
 
 /// Annotation injected into the layer to say that this is an ostree commit.
 /// However, because this gets lost when converted to D2S2 https://docs.docker.com/registry/spec/manifest-v2-2/
@@ -74,6 +91,26 @@ fn commit_meta_to_labels<'a>(
     Ok(())
 }
 
+fn export_chunks(
+    repo: &ostree::Repo,
+    commit: &str,
+    ociw: &mut OciDir,
+    chunks: Vec<Chunk>,
+    opts: &ExportOpts,
+) -> Result<Vec<(Layer, String)>> {
+    chunks
+        .into_iter()
+        .enumerate()
+        .map(|(i, chunk)| -> Result<_> {
+            let mut w = ociw.create_layer(Some(opts.compression()))?;
+            ostree_tar::export_chunk(repo, commit, chunk.content, &mut w)
+                .with_context(|| format!("Exporting chunk {i}"))?;
+            let w = w.into_inner()?;
+            Ok((w.complete()?, chunk.name))
+        })
+        .collect()
+}
+
 /// Write an ostree commit to an OCI blob
 #[context("Writing ostree root to blob")]
 #[allow(clippy::too_many_arguments)]
@@ -88,31 +125,59 @@ fn export_chunked(
     opts: &ExportOpts,
     description: &str,
 ) -> Result<()> {
-    let layers: Result<Vec<_>> = chunking
-        .take_chunks()
-        .into_iter()
-        .enumerate()
-        .map(|(i, chunk)| -> Result<_> {
-            let mut w = ociw.create_layer(Some(opts.compression()))?;
-            ostree_tar::export_chunk(repo, commit, chunk.content, &mut w)
-                .with_context(|| format!("Exporting chunk {i}"))?;
+    let layers = export_chunks(repo, commit, ociw, chunking.take_chunks(), opts)?;
+    let compression = Some(opts.compression());
+
+    match opts.format {
+        ExportLayout::SingleLayer => unreachable!(),
+        ExportLayout::ChunkedV0 => {
+            // In ChunkedV0, the component/content chunks come first.
+            for (layer, name) in layers {
+                ociw.push_layer(manifest, imgcfg, layer, name.as_str());
+            }
+            // Then, export the final layer
+            let mut w = ociw.create_layer(compression)?;
+            ostree_tar::export_final_chunk(repo, commit, chunking.remainder, &mut w)?;
             let w = w.into_inner()?;
-            Ok((w.complete()?, chunk.name))
-        })
-        .collect();
-    for (layer, name) in layers? {
-        ociw.push_layer(manifest, imgcfg, layer, &name);
+            let final_layer = w.complete()?;
+            labels.insert(
+                crate::container::OSTREE_DIFFID_LABEL.into(),
+                format!("sha256:{}", final_layer.uncompressed_sha256),
+            );
+            ociw.push_layer(manifest, imgcfg, final_layer, description);
+            Ok(())
+        }
+        ExportLayout::ChunkedV1 => {
+            // In ChunkedV1, the ostree layer comes first
+            let mut w = ociw.create_layer(compression)?;
+            ostree_tar::export_final_chunk(repo, commit, chunking.remainder, &mut w)?;
+            let w = w.into_inner()?;
+            let ostree_layer = w.complete()?;
+
+            // Then, we have a label that points to the last chunk.
+            // Note in the pathological case of a single layer chunked v1 image, this could be the ostree layer.
+            let last_digest = layers
+                .last()
+                .map(|v| &v.0)
+                .unwrap_or(&ostree_layer)
+                .uncompressed_sha256
+                .clone();
+
+            // Add the ostree layer
+            ociw.push_layer(manifest, imgcfg, ostree_layer, description);
+            // Add the component/content layers
+            for (layer, name) in layers {
+                ociw.push_layer(manifest, imgcfg, layer, name.as_str());
+            }
+            // This label (mentioned above) points to the last layer that is part of
+            // the ostree commit.
+            labels.insert(
+                crate::container::OSTREE_FINAL_LAYER_LABEL.into(),
+                format!("sha256:{}", last_digest),
+            );
+            Ok(())
+        }
     }
-    let mut w = ociw.create_layer(Some(opts.compression()))?;
-    ostree_tar::export_final_chunk(repo, commit, chunking, &mut w)?;
-    let w = w.into_inner()?;
-    let final_layer = w.complete()?;
-    labels.insert(
-        crate::container::OSTREE_DIFFID_LABEL.into(),
-        format!("sha256:{}", final_layer.uncompressed_sha256),
-    );
-    ociw.push_layer(manifest, imgcfg, final_layer, description);
-    Ok(())
 }
 
 /// Generate an OCI image from a given ostree root
@@ -176,31 +241,48 @@ fn build_oci(
         Cow::Borrowed(commit_subject)
     };
 
-    if let Some(chunking) = chunking {
-        export_chunked(
-            repo,
-            commit,
-            &mut writer,
-            &mut manifest,
-            &mut imgcfg,
-            labels,
-            chunking,
-            &opts,
-            &description,
-        )?;
-    } else {
-        let rootfs_blob = export_ostree_ref(repo, commit, &mut writer, &opts)?;
-        labels.insert(
-            crate::container::OSTREE_DIFFID_LABEL.into(),
-            format!("sha256:{}", rootfs_blob.uncompressed_sha256),
-        );
-        writer.push_layer_annotated(
-            &mut manifest,
-            &mut imgcfg,
-            rootfs_blob,
-            Some(annos),
-            &description,
-        );
+    match (&opts.format, chunking) {
+        (ExportLayout::SingleLayer, Some(_)) => {
+            anyhow::bail!("Chunking cannot be used with (legacy) single layer images")
+        }
+        (ExportLayout::ChunkedV0 | ExportLayout::ChunkedV1, None) => {
+            anyhow::bail!("Chunked layout requires object ownership metadata")
+        }
+        (ExportLayout::SingleLayer, None) => {
+            let rootfs_blob = export_ostree_ref(repo, commit, &mut writer, &opts)?;
+            // In the legacy single layer case, insert both the diffid and final
+            // layer labels, becuase they mean the same thing.
+            let label_index_keys = [
+                crate::container::OSTREE_DIFFID_LABEL,
+                crate::container::OSTREE_FINAL_LAYER_LABEL,
+            ];
+            for v in label_index_keys {
+                labels.insert(
+                    v.into(),
+                    format!("sha256:{}", rootfs_blob.uncompressed_sha256),
+                );
+            }
+            writer.push_layer_annotated(
+                &mut manifest,
+                &mut imgcfg,
+                rootfs_blob,
+                Some(annos),
+                &description,
+            );
+        }
+        (ExportLayout::ChunkedV0 | ExportLayout::ChunkedV1, Some(chunking)) => {
+            export_chunked(
+                repo,
+                commit,
+                &mut writer,
+                &mut manifest,
+                &mut imgcfg,
+                labels,
+                chunking,
+                &opts,
+                &description,
+            )?;
+        }
     }
 
     // Lookup the cmd embedded in commit metadata
@@ -235,7 +317,19 @@ async fn build_impl(
     contentmeta: Option<ObjectMetaSized>,
     dest: &ImageReference,
 ) -> Result<String> {
-    let mut opts = opts.unwrap_or_default();
+    let mut opts = opts.unwrap_or_else(|| {
+        // For backwards compatibility, if content meta is specified
+        // but no options, assume v0 chunked.
+        let format = if contentmeta.is_some() {
+            ExportLayout::ChunkedV0
+        } else {
+            ExportLayout::default()
+        };
+        ExportOpts {
+            format,
+            ..Default::default()
+        }
+    });
     if dest.transport == Transport::ContainerStorage {
         opts.skip_compression = true;
     }
@@ -289,6 +383,8 @@ pub struct ExportOpts {
     pub copy_meta_keys: Vec<String>,
     /// Maximum number of layers to use
     pub max_layers: Option<NonZeroU32>,
+    /// The container image layout
+    pub format: ExportLayout,
 }
 
 impl ExportOpts {
