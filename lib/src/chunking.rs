@@ -107,8 +107,6 @@ impl ObjectMetaSized {
 #[derive(Debug, Default)]
 pub struct Chunking {
     pub(crate) metadata_size: u64,
-    #[allow(dead_code)]
-    pub(crate) commit: Box<str>,
     pub(crate) meta: Vec<Meta>,
     pub(crate) remainder: Chunk,
     pub(crate) chunks: Vec<Chunk>,
@@ -259,7 +257,6 @@ impl Chunking {
         generate_chunking_recurse(repo, &mut gen, &mut chunk, &contents_v)?;
 
         let chunking = Chunking {
-            commit: Box::from(rev.as_str()),
             metadata_size: gen.metadata_size,
             meta: gen.meta,
             remainder: chunk,
