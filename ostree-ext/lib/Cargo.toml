@@ -17,7 +17,7 @@ bitflags = "1"
 camino = "1.0.4"
 chrono = "0.4.19"
 cjson = "0.1.1"
-cap-std-ext = ">= 0.24, <= 0.25"
+cap-std-ext = ">= 0.25"
 cap-tempfile = "0.24"
 flate2 = { features = ["zlib"], default_features = false, version = "1.0.20" }
 fn-error-context = "0.2.0"
