@@ -107,6 +107,7 @@ impl ObjectMetaSized {
 #[derive(Debug, Default)]
 pub struct Chunking {
     pub(crate) metadata_size: u64,
+    #[allow(dead_code)]
     pub(crate) commit: Box<str>,
     pub(crate) meta: Vec<Meta>,
     pub(crate) remainder: Chunk,
