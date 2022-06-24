@@ -23,11 +23,12 @@ use serde::{Deserialize, Serialize};
 pub(crate) const MAX_CHUNKS: u32 = 64;
 
 type RcStr = Rc<str>;
+pub(crate) type ChunkMapping = BTreeMap<RcStr, (u64, Vec<Utf8PathBuf>)>;
 
 #[derive(Debug, Default)]
 pub(crate) struct Chunk {
     pub(crate) name: String,
-    pub(crate) content: BTreeMap<RcStr, (u64, Vec<Utf8PathBuf>)>,
+    pub(crate) content: ChunkMapping,
     pub(crate) size: u64,
 }
 
@@ -106,7 +107,6 @@ impl ObjectMetaSized {
 #[derive(Debug, Default)]
 pub struct Chunking {
     pub(crate) metadata_size: u64,
-    pub(crate) commit: Box<str>,
     pub(crate) meta: Vec<Meta>,
     pub(crate) remainder: Chunk,
     pub(crate) chunks: Vec<Chunk>,
@@ -257,7 +257,6 @@ impl Chunking {
         generate_chunking_recurse(repo, &mut gen, &mut chunk, &contents_v)?;
 
         let chunking = Chunking {
-            commit: Box::from(rev.as_str()),
             metadata_size: gen.metadata_size,
             meta: gen.meta,
             remainder: chunk,

@@ -1,7 +1,6 @@
 //! APIs for creating container images from OSTree commits
 
 use crate::chunking;
-use crate::chunking::Chunking;
 use crate::objgv::*;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -62,6 +61,8 @@ fn map_path_v1(p: &Utf8Path) -> &Utf8Path {
 
 struct OstreeTarWriter<'a, W: std::io::Write> {
     repo: &'a ostree::Repo,
+    commit_checksum: &'a str,
+    commit_object: glib::Variant,
     out: &'a mut tar::Builder<W>,
     options: ExportOptions,
     wrote_initdirs: bool,
@@ -133,9 +134,17 @@ pub(crate) fn tar_append_default_data(
 }
 
 impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
-    fn new(repo: &'a ostree::Repo, out: &'a mut tar::Builder<W>, options: ExportOptions) -> Self {
-        Self {
+    fn new(
+        repo: &'a ostree::Repo,
+        commit_checksum: &'a str,
+        out: &'a mut tar::Builder<W>,
+        options: ExportOptions,
+    ) -> Result<Self> {
+        let commit_object = repo.load_commit(commit_checksum)?.0;
+        let r = Self {
             repo,
+            commit_checksum,
+            commit_object,
             out,
             options,
             wrote_initdirs: false,
@@ -143,7 +152,8 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             wrote_dirtree: HashSet::new(),
             wrote_content: HashSet::new(),
             wrote_xattrs: HashSet::new(),
-        }
+        };
+        Ok(r)
     }
 
     /// Convert the ostree mode to tar mode.
@@ -248,13 +258,10 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     }
 
     /// Recursively serialize a commit object to the target tar stream.
-    fn write_commit(&mut self, checksum: &str) -> Result<()> {
+    fn write_commit(&mut self) -> Result<()> {
         let cancellable = gio::NONE_CANCELLABLE;
 
-        let (commit_v, _) = self.repo.load_commit(checksum)?;
-        let commit_v = &commit_v;
-
-        let commit_bytes = commit_v.data_as_bytes();
+        let commit_bytes = self.commit_object.data_as_bytes();
         let commit_bytes = commit_bytes.try_as_aligned()?;
         let commit = gv_commit!().cast(commit_bytes);
         let commit = commit.to_tuple();
@@ -274,13 +281,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         // Now, we create sysroot/ and everything under it
         self.write_repo_structure()?;
 
-        self.append(ostree::ObjectType::Commit, checksum, commit_v)?;
-        if let Some(commitmeta) = self
-            .repo
-            .read_commit_detached_metadata(checksum, cancellable)?
-        {
-            self.append(ostree::ObjectType::CommitMeta, checksum, &commitmeta)?;
-        }
+        self.append_commit_object()?;
 
         // The ostree dirmeta object for the root.
         self.append(ostree::ObjectType::DirMeta, metadata_checksum, &metadata_v)?;
@@ -292,6 +293,25 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             true,
             cancellable,
         )?;
+        Ok(())
+    }
+
+    fn append_commit_object(&mut self) -> Result<()> {
+        self.append(
+            ostree::ObjectType::Commit,
+            self.commit_checksum,
+            &self.commit_object.clone(),
+        )?;
+        if let Some(commitmeta) = self
+            .repo
+            .read_commit_detached_metadata(self.commit_checksum, gio::NONE_CANCELLABLE)?
+        {
+            self.append(
+                ostree::ObjectType::CommitMeta,
+                self.commit_checksum,
+                &commitmeta,
+            )?;
+        }
         Ok(())
     }
 
@@ -530,8 +550,8 @@ fn impl_export<W: std::io::Write>(
     out: &mut tar::Builder<W>,
     options: ExportOptions,
 ) -> Result<()> {
-    let writer = &mut OstreeTarWriter::new(repo, out, options);
-    writer.write_commit(commit_checksum)?;
+    let writer = &mut OstreeTarWriter::new(repo, commit_checksum, out, options)?;
+    writer.write_commit()?;
     Ok(())
 }
 
@@ -568,9 +588,9 @@ fn path_for_tar_v1(p: &Utf8Path) -> &Utf8Path {
 /// has been written to the tar stream.
 fn write_chunk<W: std::io::Write>(
     writer: &mut OstreeTarWriter<W>,
-    chunk: &chunking::Chunk,
+    chunk: chunking::ChunkMapping,
 ) -> Result<()> {
-    for (checksum, (_size, paths)) in chunk.content.iter() {
+    for (checksum, (_size, paths)) in chunk.into_iter() {
         let (objpath, h) = writer.append_content(checksum.borrow())?;
         for path in paths.iter() {
             let path = path_for_tar_v1(path);
@@ -584,10 +604,11 @@ fn write_chunk<W: std::io::Write>(
 /// Output a chunk to a tar stream.
 pub(crate) fn export_chunk<W: std::io::Write>(
     repo: &ostree::Repo,
-    chunk: &chunking::Chunk,
+    commit: &str,
+    chunk: chunking::ChunkMapping,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
-    let writer = &mut OstreeTarWriter::new(repo, out, ExportOptions::default());
+    let writer = &mut OstreeTarWriter::new(repo, commit, out, ExportOptions::default())?;
     writer.write_repo_structure()?;
     write_chunk(writer, chunk)
 }
@@ -596,29 +617,21 @@ pub(crate) fn export_chunk<W: std::io::Write>(
 #[context("Exporting final chunk")]
 pub(crate) fn export_final_chunk<W: std::io::Write>(
     repo: &ostree::Repo,
-    chunking: &Chunking,
+    commit_checksum: &str,
+    chunking: chunking::Chunking,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
-    let cancellable = gio::NONE_CANCELLABLE;
     // For chunking, we default to format version 1
     #[allow(clippy::needless_update)]
     let options = ExportOptions {
         format_version: 1,
         ..Default::default()
     };
-    let writer = &mut OstreeTarWriter::new(repo, out, options);
+    let writer = &mut OstreeTarWriter::new(repo, commit_checksum, out, options)?;
     writer.write_repo_structure()?;
 
-    let (commit_v, _) = repo.load_commit(&chunking.commit)?;
-    let commit_v = &commit_v;
-    writer.append(ostree::ObjectType::Commit, &chunking.commit, commit_v)?;
-    if let Some(commitmeta) = repo.read_commit_detached_metadata(&chunking.commit, cancellable)? {
-        writer.append(
-            ostree::ObjectType::CommitMeta,
-            &chunking.commit,
-            &commitmeta,
-        )?;
-    }
+    // Write the commit
+    writer.append_commit_object()?;
 
     // In the chunked case, the final layer has all ostree metadata objects.
     for meta in &chunking.meta {
@@ -628,7 +641,7 @@ pub(crate) fn export_final_chunk<W: std::io::Write>(
         writer.append(objtype, checksum, &v)?;
     }
 
-    write_chunk(writer, &chunking.remainder)
+    write_chunk(writer, chunking.remainder.content)
 }
 
 /// Process an exported tar stream, and update the detached metadata.

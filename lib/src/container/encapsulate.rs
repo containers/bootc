@@ -77,6 +77,7 @@ fn commit_meta_to_labels<'a>(
 #[allow(clippy::too_many_arguments)]
 fn export_chunked(
     repo: &ostree::Repo,
+    commit: &str,
     ociw: &mut OciDir,
     manifest: &mut oci_image::ImageManifest,
     imgcfg: &mut oci_image::ImageConfiguration,
@@ -91,7 +92,7 @@ fn export_chunked(
         .enumerate()
         .map(|(i, chunk)| -> Result<_> {
             let mut w = ociw.create_layer(compression)?;
-            ostree_tar::export_chunk(repo, &chunk, &mut w)
+            ostree_tar::export_chunk(repo, commit, chunk.content, &mut w)
                 .with_context(|| format!("Exporting chunk {i}"))?;
             let w = w.into_inner()?;
             Ok((w.complete()?, chunk.name))
@@ -101,7 +102,7 @@ fn export_chunked(
         ociw.push_layer(manifest, imgcfg, layer, &name);
     }
     let mut w = ociw.create_layer(compression)?;
-    ostree_tar::export_final_chunk(repo, &chunking, &mut w)?;
+    ostree_tar::export_final_chunk(repo, commit, chunking, &mut w)?;
     let w = w.into_inner()?;
     let final_layer = w.complete()?;
     labels.insert(
@@ -182,6 +183,7 @@ fn build_oci(
     if let Some(chunking) = chunking {
         export_chunked(
             repo,
+            commit,
             &mut writer,
             &mut manifest,
             &mut imgcfg,
