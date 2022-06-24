@@ -9,6 +9,7 @@ use crate::tar as ostree_tar;
 use anyhow::{anyhow, Context, Result};
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
+use flate2::Compression;
 use fn_error_context::context;
 use gio::glib;
 use oci_spec::image as oci_image;
@@ -39,10 +40,10 @@ fn export_ostree_ref(
     repo: &ostree::Repo,
     rev: &str,
     writer: &mut OciDir,
-    compression: Option<flate2::Compression>,
+    opts: &ExportOpts,
 ) -> Result<ocidir::Layer> {
     let commit = repo.require_rev(rev)?;
-    let mut w = writer.create_raw_layer(compression)?;
+    let mut w = writer.create_raw_layer(Some(opts.compression()))?;
     ostree_tar::export_commit(repo, commit.as_str(), &mut w, None)?;
     w.complete()
 }
@@ -84,7 +85,7 @@ fn export_chunked(
     imgcfg: &mut oci_image::ImageConfiguration,
     labels: &mut HashMap<String, String>,
     mut chunking: Chunking,
-    compression: Option<flate2::Compression>,
+    opts: &ExportOpts,
     description: &str,
 ) -> Result<()> {
     let layers: Result<Vec<_>> = chunking
@@ -92,7 +93,7 @@ fn export_chunked(
         .into_iter()
         .enumerate()
         .map(|(i, chunk)| -> Result<_> {
-            let mut w = ociw.create_layer(compression)?;
+            let mut w = ociw.create_layer(Some(opts.compression()))?;
             ostree_tar::export_chunk(repo, commit, chunk.content, &mut w)
                 .with_context(|| format!("Exporting chunk {i}"))?;
             let w = w.into_inner()?;
@@ -102,7 +103,7 @@ fn export_chunked(
     for (layer, name) in layers? {
         ociw.push_layer(manifest, imgcfg, layer, &name);
     }
-    let mut w = ociw.create_layer(compression)?;
+    let mut w = ociw.create_layer(Some(opts.compression()))?;
     ostree_tar::export_final_chunk(repo, commit, chunking, &mut w)?;
     let w = w.into_inner()?;
     let final_layer = w.complete()?;
@@ -167,12 +168,6 @@ fn build_oci(
         labels.insert(k.into(), v.into());
     }
 
-    let compression = if opts.compress {
-        flate2::Compression::default()
-    } else {
-        flate2::Compression::none()
-    };
-
     let mut annos = HashMap::new();
     annos.insert(BLOB_OSTREE_ANNOTATION.to_string(), "true".to_string());
     let description = if commit_subject.is_empty() {
@@ -190,11 +185,11 @@ fn build_oci(
             &mut imgcfg,
             labels,
             chunking,
-            Some(compression),
+            &opts,
             &description,
         )?;
     } else {
-        let rootfs_blob = export_ostree_ref(repo, commit, &mut writer, Some(compression))?;
+        let rootfs_blob = export_ostree_ref(repo, commit, &mut writer, &opts)?;
         labels.insert(
             crate::container::OSTREE_DIFFID_LABEL.into(),
             format!("sha256:{}", rootfs_blob.uncompressed_sha256),
@@ -294,6 +289,17 @@ pub struct ExportOpts {
     pub copy_meta_keys: Vec<String>,
     /// Maximum number of layers to use
     pub max_layers: Option<NonZeroU32>,
+}
+
+impl ExportOpts {
+    /// Return the gzip compression level to use, as configured by the export options.
+    fn compression(&self) -> Compression {
+        if self.compress {
+            Compression::default()
+        } else {
+            Compression::none()
+        }
+    }
 }
 
 /// Given an OSTree repository and ref, generate a container image.
