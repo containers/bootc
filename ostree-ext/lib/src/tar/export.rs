@@ -1,7 +1,6 @@
 //! APIs for creating container images from OSTree commits
 
 use crate::chunking;
-use crate::chunking::Chunking;
 use crate::objgv::*;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -612,7 +611,7 @@ pub(crate) fn export_chunk<W: std::io::Write>(
 pub(crate) fn export_final_chunk<W: std::io::Write>(
     repo: &ostree::Repo,
     commit_checksum: &str,
-    chunking: Chunking,
+    chunking: chunking::Chunking,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
     let cancellable = gio::NONE_CANCELLABLE;
