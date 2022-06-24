@@ -139,8 +139,8 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         commit_checksum: &'a str,
         out: &'a mut tar::Builder<W>,
         options: ExportOptions,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let r = Self {
             repo,
             commit_checksum,
             out,
@@ -150,7 +150,8 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             wrote_dirtree: HashSet::new(),
             wrote_content: HashSet::new(),
             wrote_xattrs: HashSet::new(),
-        }
+        };
+        Ok(r)
     }
 
     /// Convert the ostree mode to tar mode.
@@ -538,7 +539,7 @@ fn impl_export<W: std::io::Write>(
     out: &mut tar::Builder<W>,
     options: ExportOptions,
 ) -> Result<()> {
-    let writer = &mut OstreeTarWriter::new(repo, commit_checksum, out, options);
+    let writer = &mut OstreeTarWriter::new(repo, commit_checksum, out, options)?;
     writer.write_commit()?;
     Ok(())
 }
@@ -596,7 +597,7 @@ pub(crate) fn export_chunk<W: std::io::Write>(
     chunk: chunking::ChunkMapping,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
-    let writer = &mut OstreeTarWriter::new(repo, commit, out, ExportOptions::default());
+    let writer = &mut OstreeTarWriter::new(repo, commit, out, ExportOptions::default())?;
     writer.write_repo_structure()?;
     write_chunk(writer, chunk)
 }
@@ -616,7 +617,7 @@ pub(crate) fn export_final_chunk<W: std::io::Write>(
         format_version: 1,
         ..Default::default()
     };
-    let writer = &mut OstreeTarWriter::new(repo, commit_checksum, out, options);
+    let writer = &mut OstreeTarWriter::new(repo, commit_checksum, out, options)?;
     writer.write_repo_structure()?;
 
     let (commit_v, _) = repo.load_commit(&chunking.commit)?;
