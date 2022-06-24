@@ -63,6 +63,7 @@ fn map_path_v1(p: &Utf8Path) -> &Utf8Path {
 struct OstreeTarWriter<'a, W: std::io::Write> {
     repo: &'a ostree::Repo,
     commit_checksum: &'a str,
+    commit_object: glib::Variant,
     out: &'a mut tar::Builder<W>,
     options: ExportOptions,
     wrote_initdirs: bool,
@@ -140,9 +141,11 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         out: &'a mut tar::Builder<W>,
         options: ExportOptions,
     ) -> Result<Self> {
+        let commit_object = repo.load_commit(commit_checksum)?.0;
         let r = Self {
             repo,
             commit_checksum,
+            commit_object,
             out,
             options,
             wrote_initdirs: false,
@@ -260,10 +263,8 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         let cancellable = gio::NONE_CANCELLABLE;
 
         let checksum = self.commit_checksum;
-        let (commit_v, _) = self.repo.load_commit(checksum)?;
-        let commit_v = &commit_v;
 
-        let commit_bytes = commit_v.data_as_bytes();
+        let commit_bytes = self.commit_object.data_as_bytes();
         let commit_bytes = commit_bytes.try_as_aligned()?;
         let commit = gv_commit!().cast(commit_bytes);
         let commit = commit.to_tuple();
@@ -283,7 +284,11 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         // Now, we create sysroot/ and everything under it
         self.write_repo_structure()?;
 
-        self.append(ostree::ObjectType::Commit, checksum, commit_v)?;
+        self.append(
+            ostree::ObjectType::Commit,
+            checksum,
+            &self.commit_object.clone(),
+        )?;
         if let Some(commitmeta) = self
             .repo
             .read_commit_detached_metadata(checksum, cancellable)?
