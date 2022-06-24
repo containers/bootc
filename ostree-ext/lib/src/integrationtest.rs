@@ -5,6 +5,8 @@ use std::path::Path;
 use crate::container::ocidir;
 use anyhow::Result;
 use camino::Utf8Path;
+use cap_std::fs::Dir;
+use cap_std_ext::cap_std;
 use fn_error_context::context;
 use gio::prelude::*;
 use oci_spec::image as oci_image;
@@ -27,10 +29,9 @@ pub(crate) fn detectenv() -> &'static str {
 /// Should only be enabled for testing.
 #[context("Generating derived oci")]
 pub fn generate_derived_oci(src: impl AsRef<Utf8Path>, dir: impl AsRef<Utf8Path>) -> Result<()> {
-    use std::rc::Rc;
     let src = src.as_ref();
-    let src = Rc::new(openat::Dir::open(src.as_std_path())?);
-    let src = ocidir::OciDir::open(src)?;
+    let src = Dir::open_ambient_dir(src, cap_std::ambient_authority())?;
+    let src = ocidir::OciDir::open(&src)?;
     let dir = dir.as_ref();
     let mut manifest = src.read_manifest()?;
     let mut config: oci_spec::image::ImageConfiguration = src.read_json_blob(manifest.config())?;
