@@ -9,6 +9,7 @@ sysroot=/run/host
 image=quay.io/coreos-assembler/fcos:testing-devel
 # My hand-uploaded chunked images
 chunked_image=quay.io/cgwalters/fcos-chunked:latest
+chunked_image_v1=quay.io/cgwalters/fcos-chunked:v1
 imgref=ostree-unverified-registry:${image}
 stateroot=testos
 
@@ -24,16 +25,19 @@ fi
 ostree-ext-cli container image deploy --sysroot "${sysroot}" \
     --stateroot "${stateroot}" --imgref "${imgref}"
 ostree admin --sysroot="${sysroot}" status
-ostree-ext-cli container image deploy --sysroot "${sysroot}" \
-    --stateroot "${stateroot}" --imgref ostree-unverified-registry:"${chunked_image}"
-ostree admin --sysroot="${sysroot}" status
-ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"${image}" registry:"${chunked_image}"
-ostree admin --sysroot="${sysroot}" undeploy 0
-ostree --repo="${sysroot}/ostree/repo" refs > refs.txt
-if test "$(wc -l < refs.txt)" -ne 0; then
-    echo "found refs"
-    cat refs.txt
-    exit 1
-fi
+ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"${image}"
+for img in "${chunked_image}" "${chunked_image_v1}"; do
+    ostree-ext-cli container image deploy --sysroot "${sysroot}" \
+        --stateroot "${stateroot}" --imgref ostree-unverified-registry:"${img}"
+    ostree admin --sysroot="${sysroot}" status
+    ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"${img}"
+    ostree admin --sysroot="${sysroot}" undeploy 0
+    ostree --repo="${sysroot}/ostree/repo" refs > refs.txt
+    if test "$(wc -l < refs.txt)" -ne 0; then
+        echo "found refs"
+        cat refs.txt
+        exit 1
+    fi
+done
 
 echo ok privileged integration

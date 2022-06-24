@@ -626,7 +626,7 @@ pub(crate) fn export_chunk<W: std::io::Write>(
 pub(crate) fn export_final_chunk<W: std::io::Write>(
     repo: &ostree::Repo,
     commit_checksum: &str,
-    chunking: chunking::Chunking,
+    remainder: chunking::Chunk,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
     // For chunking, we default to format version 1
@@ -641,7 +641,7 @@ pub(crate) fn export_final_chunk<W: std::io::Write>(
     writer.structure_only = true;
     writer.write_commit()?;
     writer.structure_only = false;
-    write_chunk(writer, chunking.remainder.content)
+    write_chunk(writer, remainder.content)
 }
 
 /// Process an exported tar stream, and update the detached metadata.

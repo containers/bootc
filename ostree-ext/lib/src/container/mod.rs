@@ -31,8 +31,10 @@ use std::ops::Deref;
 
 /// The label injected into a container image that contains the ostree commit SHA-256.
 pub const OSTREE_COMMIT_LABEL: &str = "ostree.commit";
-/// The label/annotation which contains the sha256 of the final commit.
+/// The label/annotation which contains the sha256 of the final commit in chunked v1 format.
 const OSTREE_DIFFID_LABEL: &str = "ostree.diffid";
+/// The label/annotation which contains the sha256 of the final layer in chunked v2 format.
+const OSTREE_FINAL_LAYER_LABEL: &str = "ostree.final-diffid";
 
 /// Our generic catchall fatal error, expected to be converted
 /// to a string to output to a terminal or logs.

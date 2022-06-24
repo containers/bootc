@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::container::ocidir;
+use crate::container::{ocidir, ExportLayout};
 use anyhow::Result;
 use camino::Utf8Path;
 use cap_std::fs::Dir;
@@ -96,8 +96,10 @@ fn test_proxy_auth() -> Result<()> {
 /// Useful for debugging things interactively.
 pub(crate) async fn create_fixture() -> Result<()> {
     let fixture = crate::fixture::Fixture::new_v1()?;
-    let imgref = fixture.export_container().await?.0;
-    println!("Wrote: {:?}", imgref);
+    for format in [ExportLayout::ChunkedV0, ExportLayout::ChunkedV1] {
+        let imgref = fixture.export_container(format).await?.0;
+        println!("Wrote: {:?}", imgref);
+    }
     let path = fixture.into_tempdir().into_path();
     println!("Wrote: {:?}", path);
     Ok(())
