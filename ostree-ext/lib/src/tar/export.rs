@@ -576,9 +576,9 @@ fn path_for_tar_v1(p: &Utf8Path) -> &Utf8Path {
 /// has been written to the tar stream.
 fn write_chunk<W: std::io::Write>(
     writer: &mut OstreeTarWriter<W>,
-    chunk: &chunking::Chunk,
+    chunk: chunking::ChunkMapping,
 ) -> Result<()> {
-    for (checksum, (_size, paths)) in chunk.content.iter() {
+    for (checksum, (_size, paths)) in chunk.into_iter() {
         let (objpath, h) = writer.append_content(checksum.borrow())?;
         for path in paths.iter() {
             let path = path_for_tar_v1(path);
@@ -593,7 +593,7 @@ fn write_chunk<W: std::io::Write>(
 pub(crate) fn export_chunk<W: std::io::Write>(
     repo: &ostree::Repo,
     commit: &str,
-    chunk: &chunking::Chunk,
+    chunk: chunking::ChunkMapping,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
     let writer = &mut OstreeTarWriter::new(repo, commit, out, ExportOptions::default());
@@ -606,7 +606,7 @@ pub(crate) fn export_chunk<W: std::io::Write>(
 pub(crate) fn export_final_chunk<W: std::io::Write>(
     repo: &ostree::Repo,
     commit_checksum: &str,
-    chunking: &Chunking,
+    chunking: Chunking,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
     let cancellable = gio::NONE_CANCELLABLE;
@@ -638,7 +638,7 @@ pub(crate) fn export_final_chunk<W: std::io::Write>(
         writer.append(objtype, checksum, &v)?;
     }
 
-    write_chunk(writer, &chunking.remainder)
+    write_chunk(writer, chunking.remainder.content)
 }
 
 /// Process an exported tar stream, and update the detached metadata.

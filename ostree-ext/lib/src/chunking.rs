@@ -23,11 +23,12 @@ use serde::{Deserialize, Serialize};
 pub(crate) const MAX_CHUNKS: u32 = 64;
 
 type RcStr = Rc<str>;
+pub(crate) type ChunkMapping = BTreeMap<RcStr, (u64, Vec<Utf8PathBuf>)>;
 
 #[derive(Debug, Default)]
 pub(crate) struct Chunk {
     pub(crate) name: String,
-    pub(crate) content: BTreeMap<RcStr, (u64, Vec<Utf8PathBuf>)>,
+    pub(crate) content: ChunkMapping,
     pub(crate) size: u64,
 }
 
