@@ -136,7 +136,7 @@ pub struct ImageImporter {
     layer_byte_progress: Option<tokio::sync::watch::Sender<Option<LayerProgress>>>,
 }
 
-/// Result of invoking [`LayeredImageImporter::prepare`].
+/// Result of invoking [`ImageImporter::prepare`].
 #[derive(Debug)]
 pub enum PrepareResult {
     /// The image reference is already present; the contained string is the OSTree commit.

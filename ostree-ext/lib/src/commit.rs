@@ -1,6 +1,6 @@
 //! This module contains the functions to implement the commit
 //! procedures as part of building an ostree container image.
-//! https://github.com/ostreedev/ostree-rs-ext/issues/159
+//! <https://github.com/ostreedev/ostree-rs-ext/issues/159>
 
 use crate::container_utils::require_ostree_container;
 use anyhow::Context;
