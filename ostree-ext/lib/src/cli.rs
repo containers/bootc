@@ -371,6 +371,9 @@ async fn tar_import(opts: &ImportOpts) -> Result<()> {
 
 /// Export a tar archive containing an ostree commit.
 fn tar_export(opts: &ExportOpts) -> Result<()> {
+    if !crate::tar::FORMAT_VERSIONS.contains(&opts.format_version) {
+        anyhow::bail!("Invalid format version: {}", opts.format_version);
+    }
     #[allow(clippy::needless_update)]
     let subopts = crate::tar::ExportOptions {
         format_version: opts.format_version,
