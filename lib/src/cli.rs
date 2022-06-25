@@ -653,14 +653,14 @@ fn ima_sign(cmdopts: &ImaSignOpts) -> Result<()> {
 }
 
 #[cfg(feature = "internal-testing-api")]
-fn testing(opts: &TestingOpts) -> Result<()> {
+async fn testing(opts: &TestingOpts) -> Result<()> {
     match opts {
         TestingOpts::DetectEnv => {
             let s = crate::integrationtest::detectenv();
             println!("{}", s);
             Ok(())
         }
-        TestingOpts::CreateFixture => crate::integrationtest::create_fixture(),
+        TestingOpts::CreateFixture => crate::integrationtest::create_fixture().await,
         TestingOpts::Run => crate::integrationtest::run_tests(),
         TestingOpts::RunIMA => crate::integrationtest::test_ima(),
         TestingOpts::FilterTar => {
@@ -797,6 +797,6 @@ where
         },
         Opt::ImaSign(ref opts) => ima_sign(opts),
         #[cfg(feature = "internal-testing-api")]
-        Opt::InternalOnlyForTesting(ref opts) => testing(opts),
+        Opt::InternalOnlyForTesting(ref opts) => testing(opts).await,
     }
 }
