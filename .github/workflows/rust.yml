@@ -26,6 +26,8 @@ jobs:
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
     steps:
       - uses: actions/checkout@v2
+      - name: Code lints
+        run: ./ci/lints.sh
       - name: Install deps
         run: ./ci/installdeps.sh
       # xref containers/containers-image-proxy-rs
