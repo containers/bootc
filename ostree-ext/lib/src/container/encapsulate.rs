@@ -237,7 +237,7 @@ async fn build_impl(
 ) -> Result<String> {
     let mut opts = opts.unwrap_or_default();
     if dest.transport == Transport::ContainerStorage {
-        opts.skip_compression = false;
+        opts.skip_compression = true;
     }
     let digest = if dest.transport == Transport::OciDir {
         let _copied: ImageReference = build_oci(
