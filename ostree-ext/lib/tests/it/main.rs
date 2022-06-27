@@ -8,6 +8,7 @@ use ostree_ext::container::store;
 use ostree_ext::container::{
     Config, ExportOpts, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
+use ostree_ext::ocidir;
 use ostree_ext::prelude::FileExt;
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
@@ -275,6 +276,42 @@ fn validate_tar_expected<T: std::io::Read>(
     Ok(())
 }
 
+fn common_tar_structure() -> impl Iterator<Item = TarExpected> {
+    use tar::EntryType::Directory;
+    [
+        ("sysroot/ostree/repo/objects/00", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/23", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/77", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/bc", Directory, 0o755),
+        ("sysroot/ostree/repo/objects/ff", Directory, 0o755),
+        ("sysroot/ostree/repo/refs", Directory, 0o755),
+        ("sysroot/ostree/repo/refs", Directory, 0o755),
+        ("sysroot/ostree/repo/refs/heads", Directory, 0o755),
+        ("sysroot/ostree/repo/refs/mirrors", Directory, 0o755),
+        ("sysroot/ostree/repo/refs/remotes", Directory, 0o755),
+        ("sysroot/ostree/repo/state", Directory, 0o755),
+        ("sysroot/ostree/repo/tmp", Directory, 0o755),
+        ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
+    ]
+    .into_iter()
+    .map(Into::into)
+}
+
+fn validate_tar_v1<R: std::io::Read>(mut src: tar::Archive<R>) -> Result<()> {
+    use tar::EntryType::{Directory, Regular};
+    let prelude = [
+        ("sysroot/ostree/repo", Directory, 0o755),
+        ("sysroot/ostree/repo/config", Regular, 0o644),
+    ]
+    .into_iter()
+    .map(Into::into);
+
+    let expected = prelude.chain(common_tar_structure());
+    validate_tar_expected(1, src.entries()?, expected)?;
+
+    Ok(())
+}
+
 /// Validate basic structure of the tar export.
 #[test]
 fn test_tar_export_structure() -> Result<()> {
@@ -294,54 +331,32 @@ fn test_tar_export_structure() -> Result<()> {
     let next = entries.next().unwrap().unwrap();
     assert_eq!(next.path().unwrap().as_os_str(), "sysroot");
 
-    let common_structure = [
-        ("sysroot/ostree/repo/objects/00", Directory, 0o755),
-        ("sysroot/ostree/repo/objects/23", Directory, 0o755),
-        ("sysroot/ostree/repo/objects/77", Directory, 0o755),
-        ("sysroot/ostree/repo/objects/bc", Directory, 0o755),
-        ("sysroot/ostree/repo/objects/ff", Directory, 0o755),
-        ("sysroot/ostree/repo/refs", Directory, 0o755),
-        ("sysroot/ostree/repo/refs", Directory, 0o755),
-        ("sysroot/ostree/repo/refs/heads", Directory, 0o755),
-        ("sysroot/ostree/repo/refs/mirrors", Directory, 0o755),
-        ("sysroot/ostree/repo/refs/remotes", Directory, 0o755),
-        ("sysroot/ostree/repo/state", Directory, 0o755),
-        ("sysroot/ostree/repo/tmp", Directory, 0o755),
-        ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
-    ]
-    .into_iter();
-
-    // Validate format version 0
-    let expected = [
+    let v0_prelude = [
         ("sysroot/config", Regular, 0o644),
         ("sysroot/ostree/repo", Directory, 0o755),
-        ("sysroot/ostree/repo/extensions", Directory, 0o755)]
-        .into_iter().chain(common_structure.clone())
+        ("sysroot/ostree/repo/extensions", Directory, 0o755),
+    ]
+    .into_iter()
+    .map(Into::into);
+
+    // Validate format version 0
+    let expected = v0_prelude.chain(common_tar_structure())
         .chain([
         ("sysroot/ostree/repo/xattrs", Directory, 0o755),
         ("sysroot/ostree/repo/xattrs/d67db507c5a6e7bfd078f0f3ded0a5669479a902e812931fc65c6f5e01831ef5", Regular, 0o644),
         ("usr", Directory, 0o755),
-    ]).into_iter();
+    ].into_iter().map(Into::into));
     validate_tar_expected(fixture.format_version, entries, expected.map(Into::into))?;
 
     // Validate format version 1
     fixture.format_version = 1;
     let src_tar = fixture.export_tar()?;
-    let src_tar = std::io::BufReader::new(fixture.dir.open(src_tar)?);
-    let mut src_tar = tar::Archive::new(src_tar);
-    let expected = [
-        ("sysroot/ostree/repo", Directory, 0o755),
-        ("sysroot/ostree/repo/config", Regular, 0o644),
-    ]
-    .into_iter()
-    .chain(common_structure.clone())
-    .chain([("usr", Directory, 0o755)].into_iter())
-    .into_iter();
-    validate_tar_expected(
-        fixture.format_version,
-        src_tar.entries()?,
-        expected.map(Into::into),
-    )?;
+    let src_tar = fixture
+        .dir
+        .open(src_tar)
+        .map(BufReader::new)
+        .map(tar::Archive::new)?;
+    validate_tar_v1(src_tar).unwrap();
 
     Ok(())
 }
@@ -600,6 +615,20 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
     Ok(())
 }
 
+/// Parse a chunked container image and validate its structure; particularly
+fn validate_chunked_structure(oci_path: &Utf8Path) -> Result<()> {
+    let d = Dir::open_ambient_dir(oci_path, cap_std::ambient_authority())?;
+    let d = ocidir::OciDir::open(&d)?;
+    let manifest = d.read_manifest()?;
+    let ostree_layer = manifest.layers().last().unwrap();
+    let ostree_layer_blob = d
+        .read_blob(ostree_layer)
+        .map(BufReader::new)
+        .map(flate2::read::GzDecoder::new)
+        .map(tar::Archive::new)?;
+    validate_tar_v1(ostree_layer_blob)
+}
+
 #[tokio::test]
 async fn impl_test_container_chunked() -> Result<()> {
     let nlayers = 6u32;
@@ -609,6 +638,14 @@ async fn impl_test_container_chunked() -> Result<()> {
     let imgref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref: imgref,
+    };
+    // Validate the structure of the image
+    match &imgref.imgref {
+        ImageReference {
+            transport: Transport::OciDir,
+            name,
+        } => validate_chunked_structure(Utf8Path::new(name)).unwrap(),
+        _ => unreachable!(),
     };
 
     let mut imp =
