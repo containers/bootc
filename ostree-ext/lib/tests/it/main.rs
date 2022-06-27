@@ -306,7 +306,10 @@ fn validate_tar_v1<R: std::io::Read>(mut src: tar::Archive<R>) -> Result<()> {
     .into_iter()
     .map(Into::into);
 
-    let expected = prelude.chain(common_tar_structure());
+    let content = [("usr", Directory, 0o755), ("boot", Directory, 0o755)];
+    let content = content.into_iter().map(Into::into);
+
+    let expected = prelude.chain(common_tar_structure()).chain(content);
     validate_tar_expected(1, src.entries()?, expected)?;
 
     Ok(())
