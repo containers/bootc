@@ -32,28 +32,6 @@ pub(crate) struct Chunk {
     pub(crate) size: u64,
 }
 
-#[derive(Debug)]
-pub(crate) enum Meta {
-    DirTree(RcStr),
-    DirMeta(RcStr),
-}
-
-impl Meta {
-    pub(crate) fn objtype(&self) -> ostree::ObjectType {
-        match self {
-            Meta::DirTree(_) => ostree::ObjectType::DirTree,
-            Meta::DirMeta(_) => ostree::ObjectType::DirMeta,
-        }
-    }
-
-    pub(crate) fn checksum(&self) -> &str {
-        match self {
-            Meta::DirTree(v) => v,
-            Meta::DirMeta(v) => v,
-        }
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 /// Object metadata, but with additional size data
 pub struct ObjectSourceMetaSized {
@@ -107,7 +85,6 @@ impl ObjectMetaSized {
 #[derive(Debug, Default)]
 pub struct Chunking {
     pub(crate) metadata_size: u64,
-    pub(crate) meta: Vec<Meta>,
     pub(crate) remainder: Chunk,
     pub(crate) chunks: Vec<Chunk>,
 
@@ -124,7 +101,6 @@ pub struct Chunking {
 struct Generation {
     path: Utf8PathBuf,
     metadata_size: u64,
-    meta: Vec<Meta>,
     dirtree_found: BTreeSet<RcStr>,
     dirmeta_found: BTreeSet<RcStr>,
 }
@@ -137,7 +113,6 @@ fn push_dirmeta(repo: &ostree::Repo, gen: &mut Generation, checksum: &str) -> Re
     gen.dirmeta_found.insert(RcStr::clone(&checksum));
     let child_v = repo.load_variant(ostree::ObjectType::DirMeta, checksum.borrow())?;
     gen.metadata_size += child_v.data_as_bytes().as_ref().len() as u64;
-    gen.meta.push(Meta::DirMeta(checksum));
     Ok(())
 }
 
@@ -152,7 +127,6 @@ fn push_dirtree(
     let child_v = repo.load_variant(ostree::ObjectType::DirTree, checksum)?;
     let checksum = RcStr::from(checksum);
     gen.dirtree_found.insert(RcStr::clone(&checksum));
-    gen.meta.push(Meta::DirTree(checksum));
     gen.metadata_size += child_v.data_as_bytes().as_ref().len() as u64;
     Ok(Some(child_v))
 }
@@ -258,7 +232,6 @@ impl Chunking {
 
         let chunking = Chunking {
             metadata_size: gen.metadata_size,
-            meta: gen.meta,
             remainder: chunk,
             ..Default::default()
         };

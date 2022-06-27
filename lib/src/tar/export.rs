@@ -70,6 +70,8 @@ struct OstreeTarWriter<'a, W: std::io::Write> {
     out: &'a mut tar::Builder<W>,
     options: ExportOptions,
     wrote_initdirs: bool,
+    /// True if we're only writing directories
+    structure_only: bool,
     wrote_dirtree: HashSet<String>,
     wrote_dirmeta: HashSet<String>,
     wrote_content: HashSet<String>,
@@ -153,6 +155,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             out,
             options,
             wrote_initdirs: false,
+            structure_only: false,
             wrote_dirmeta: HashSet::new(),
             wrote_dirtree: HashSet::new(),
             wrote_content: HashSet::new(),
@@ -508,14 +511,16 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             c.set_error_if_cancelled()?;
         }
 
-        for file in files {
-            let (name, csum) = file.to_tuple();
-            let name = name.to_str();
-            let checksum = &hex::encode(csum);
-            let (objpath, h) = self.append_content(checksum)?;
-            let subpath = &dirpath.join(name);
-            let subpath = map_path(subpath);
-            self.append_content_hardlink(&objpath, h, &*subpath)?;
+        if !self.structure_only {
+            for file in files {
+                let (name, csum) = file.to_tuple();
+                let name = name.to_str();
+                let checksum = &hex::encode(csum);
+                let (objpath, h) = self.append_content(checksum)?;
+                let subpath = &dirpath.join(name);
+                let subpath = map_path(subpath);
+                self.append_content_hardlink(&objpath, h, &*subpath)?;
+            }
         }
 
         for item in dirs {
@@ -633,19 +638,11 @@ pub(crate) fn export_final_chunk<W: std::io::Write>(
         ..Default::default()
     };
     let writer = &mut OstreeTarWriter::new(repo, commit_checksum, out, options)?;
-    writer.write_repo_structure()?;
-
-    // Write the commit
-    writer.append_commit_object()?;
-
-    // In the chunked case, the final layer has all ostree metadata objects.
-    for meta in &chunking.meta {
-        let objtype = meta.objtype();
-        let checksum = meta.checksum();
-        let v = repo.load_variant(objtype, checksum)?;
-        writer.append(objtype, checksum, &v)?;
-    }
-
+    // For the final chunk, output the commit object, plus all ostree metadata objects along with
+    // the containing directories.
+    writer.structure_only = true;
+    writer.write_commit()?;
+    writer.structure_only = false;
     write_chunk(writer, chunking.remainder.content)
 }
 
