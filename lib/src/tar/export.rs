@@ -699,7 +699,6 @@ pub(crate) fn reinject_detached_metadata<C: IsA<gio::Cancellable>>(
     let next_ent_path: &Utf8Path = (&*next_ent_path).try_into()?;
     let objtype = crate::tar::import::Importer::parse_metadata_entry(next_ent_path)?.1;
     if objtype != ostree::ObjectType::CommitMeta {
-        dbg!(objtype);
         crate::tar::write::copy_entry(next_ent, dest, None)?;
     }
 
