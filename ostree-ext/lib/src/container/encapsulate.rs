@@ -237,7 +237,7 @@ async fn build_impl(
 ) -> Result<String> {
     let mut opts = opts.unwrap_or_default();
     if dest.transport == Transport::ContainerStorage {
-        opts.skip_compression = false;
+        opts.skip_compression = true;
     }
     let digest = if dest.transport == Transport::OciDir {
         let _copied: ImageReference = build_oci(
@@ -283,7 +283,7 @@ async fn build_impl(
 /// Options controlling commit export into OCI
 #[derive(Debug, Default)]
 pub struct ExportOpts {
-    /// If false, do not perform gzip compression of the tar layers.
+    /// If true, do not perform gzip compression of the tar layers.
     pub skip_compression: bool,
     /// A set of commit metadata keys to copy as image labels.
     pub copy_meta_keys: Vec<String>,
