@@ -1,5 +1,8 @@
 //! Internal API to interact with Open Container Images; mostly
 //! oriented towards generating images.
+//!
+//! NOTE: Everything in here is `pub`, but that's only used to
+//! expose this API when we're running our own tests.
 
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
@@ -12,6 +15,7 @@ use oci_image::MediaType;
 use oci_spec::image::{self as oci_image, Descriptor};
 use openssl::hash::{Hasher, MessageDigest};
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::fs::File;
 use std::io::{prelude::*, BufReader};
 use std::os::unix::fs::DirBuilderExt;
@@ -22,17 +26,21 @@ const BLOBDIR: &str = "blobs/sha256";
 
 /// Completed blob metadata
 #[derive(Debug)]
-pub(crate) struct Blob {
-    pub(crate) sha256: String,
-    pub(crate) size: u64,
+pub struct Blob {
+    /// SHA-256 digest
+    pub sha256: String,
+    /// Size
+    pub size: u64,
 }
 
 impl Blob {
-    pub(crate) fn digest_id(&self) -> String {
+    /// The OCI standard checksum-type:checksum
+    pub fn digest_id(&self) -> String {
         format!("sha256:{}", self.sha256)
     }
 
-    pub(crate) fn descriptor(&self) -> oci_image::DescriptorBuilder {
+    /// Descriptor
+    pub fn descriptor(&self) -> oci_image::DescriptorBuilder {
         oci_image::DescriptorBuilder::default()
             .digest(self.digest_id())
             .size(self.size as i64)
@@ -41,38 +49,64 @@ impl Blob {
 
 /// Completed layer metadata
 #[derive(Debug)]
-pub(crate) struct Layer {
-    pub(crate) blob: Blob,
-    pub(crate) uncompressed_sha256: String,
+pub struct Layer {
+    /// The underlying blob (usually compressed)
+    pub blob: Blob,
+    /// The uncompressed digest, which will be used for "diffid"s
+    pub uncompressed_sha256: String,
 }
 
 impl Layer {
-    pub(crate) fn descriptor(&self) -> oci_image::DescriptorBuilder {
+    /// Return the descriptor for this layer
+    pub fn descriptor(&self) -> oci_image::DescriptorBuilder {
         self.blob.descriptor()
     }
 }
 
 /// Create an OCI blob.
-pub(crate) struct BlobWriter<'a> {
-    pub(crate) hash: Hasher,
-    pub(crate) target: Option<cap_tempfile::TempFile<'a>>,
+pub struct BlobWriter<'a> {
+    /// Compute checksum
+    pub hash: Hasher,
+    /// Target file
+    pub target: Option<cap_tempfile::TempFile<'a>>,
     size: u64,
 }
 
+impl<'a> Debug for BlobWriter<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlobWriter")
+            .field("target", &self.target)
+            .field("size", &self.size)
+            .finish()
+    }
+}
+
 /// Create an OCI layer (also a blob).
-pub(crate) struct RawLayerWriter<'a> {
+pub struct RawLayerWriter<'a> {
     bw: BlobWriter<'a>,
     uncompressed_hash: Hasher,
     compressor: GzEncoder<Vec<u8>>,
 }
 
-pub(crate) struct OciDir {
-    pub(crate) dir: std::sync::Arc<Dir>,
+impl<'a> Debug for RawLayerWriter<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RawLayerWriter")
+            .field("bw", &self.bw)
+            .field("compressor", &self.compressor)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
+/// An opened OCI directory.
+pub struct OciDir {
+    /// The underlying directory.
+    pub dir: std::sync::Arc<Dir>,
 }
 
 /// Write a serializable data (JSON) as an OCI blob
 #[context("Writing json blob")]
-pub(crate) fn write_json_blob<S: serde::Serialize>(
+pub fn write_json_blob<S: serde::Serialize>(
     ocidir: &Dir,
     v: &S,
     media_type: oci_image::MediaType,
@@ -104,7 +138,7 @@ fn empty_config_descriptor() -> oci_image::Descriptor {
 }
 
 /// Generate a "valid" empty manifest.  See above.
-pub(crate) fn new_empty_manifest() -> oci_image::ImageManifestBuilder {
+pub fn new_empty_manifest() -> oci_image::ImageManifestBuilder {
     oci_image::ImageManifestBuilder::default()
         .schema_version(oci_image::SCHEMA_VERSION)
         .config(empty_config_descriptor())
@@ -113,7 +147,7 @@ pub(crate) fn new_empty_manifest() -> oci_image::ImageManifestBuilder {
 
 impl OciDir {
     /// Create a new, empty OCI directory at the target path, which should be empty.
-    pub(crate) fn create(dir: &Dir) -> Result<Self> {
+    pub fn create(dir: &Dir) -> Result<Self> {
         let mut db = cap_std::fs::DirBuilder::new();
         db.recursive(true).mode(0o755);
         dir.ensure_dir_with(BLOBDIR, &db)?;
@@ -122,7 +156,7 @@ impl OciDir {
     }
 
     /// Clone an OCI directory, using reflinks for blobs.
-    pub(crate) fn clone_to(&self, destdir: &Dir, p: impl AsRef<Path>) -> Result<Self> {
+    pub fn clone_to(&self, destdir: &Dir, p: impl AsRef<Path>) -> Result<Self> {
         let p = p.as_ref();
         destdir.create_dir(p)?;
         let cloned = Self::create(&destdir.open_dir(p)?)?;
@@ -137,21 +171,18 @@ impl OciDir {
     }
 
     /// Open an existing OCI directory.
-    pub(crate) fn open(dir: &Dir) -> Result<Self> {
+    pub fn open(dir: &Dir) -> Result<Self> {
         let dir = std::sync::Arc::new(dir.try_clone()?);
         Ok(Self { dir })
     }
 
     /// Create a writer for a new blob (expected to be a tar stream)
-    pub(crate) fn create_raw_layer(
-        &self,
-        c: Option<flate2::Compression>,
-    ) -> Result<RawLayerWriter> {
+    pub fn create_raw_layer(&self, c: Option<flate2::Compression>) -> Result<RawLayerWriter> {
         RawLayerWriter::new(&self.dir, c)
     }
 
     /// Create a tar output stream, backed by a blob
-    pub(crate) fn create_layer(
+    pub fn create_layer(
         &self,
         c: Option<flate2::Compression>,
     ) -> Result<tar::Builder<RawLayerWriter>> {
@@ -160,7 +191,7 @@ impl OciDir {
 
     /// Add a layer to the top of the image stack.  The firsh pushed layer becomes the root.
 
-    pub(crate) fn push_layer(
+    pub fn push_layer(
         &self,
         manifest: &mut oci_image::ImageManifest,
         config: &mut oci_image::ImageConfiguration,
@@ -174,7 +205,7 @@ impl OciDir {
     /// Add a layer to the top of the image stack with optional annotations.
     ///
     /// This is otherwise equivalent to [`Self::push_layer`].
-    pub(crate) fn push_layer_annotated(
+    pub fn push_layer_annotated(
         &self,
         manifest: &mut oci_image::ImageManifest,
         config: &mut oci_image::ImageConfiguration,
@@ -215,7 +246,8 @@ impl OciDir {
         Ok(Path::new(BLOBDIR).join(hash))
     }
 
-    pub(crate) fn read_blob(&self, desc: &oci_spec::image::Descriptor) -> Result<File> {
+    /// Open a blob
+    pub fn read_blob(&self, desc: &oci_spec::image::Descriptor) -> Result<File> {
         let path = Self::parse_descriptor_to_path(desc)?;
         self.dir
             .open(&path)
@@ -224,7 +256,7 @@ impl OciDir {
     }
 
     /// Read a JSON blob.
-    pub(crate) fn read_json_blob<T: serde::de::DeserializeOwned + Send + 'static>(
+    pub fn read_json_blob<T: serde::de::DeserializeOwned + Send + 'static>(
         &self,
         desc: &oci_spec::image::Descriptor,
     ) -> Result<T> {
@@ -233,7 +265,7 @@ impl OciDir {
     }
 
     /// Write a configuration blob.
-    pub(crate) fn write_config(
+    pub fn write_config(
         &self,
         config: oci_image::ImageConfiguration,
     ) -> Result<oci_image::Descriptor> {
@@ -243,7 +275,7 @@ impl OciDir {
     }
 
     /// Write a manifest as a blob, and replace the index with a reference to it.
-    pub(crate) fn write_manifest(
+    pub fn write_manifest(
         &self,
         manifest: oci_image::ImageManifest,
         platform: oci_image::Platform,
@@ -267,14 +299,12 @@ impl OciDir {
     }
 
     /// If this OCI directory has a single manifest, return it.  Otherwise, an error is returned.
-    pub(crate) fn read_manifest(&self) -> Result<oci_image::ImageManifest> {
+    pub fn read_manifest(&self) -> Result<oci_image::ImageManifest> {
         self.read_manifest_and_descriptor().map(|r| r.0)
     }
 
     /// If this OCI directory has a single manifest, return it.  Otherwise, an error is returned.
-    pub(crate) fn read_manifest_and_descriptor(
-        &self,
-    ) -> Result<(oci_image::ImageManifest, Descriptor)> {
+    pub fn read_manifest_and_descriptor(&self) -> Result<(oci_image::ImageManifest, Descriptor)> {
         let f = self
             .dir
             .open("index.json")
@@ -302,7 +332,7 @@ impl<'a> BlobWriter<'a> {
 
     #[context("Completing blob")]
     /// Finish writing this blob object.
-    pub(crate) fn complete(mut self) -> Result<Blob> {
+    pub fn complete(mut self) -> Result<Blob> {
         let sha256 = hex::encode(self.hash.finish()?);
         let destname = &format!("{}/{}", BLOBDIR, sha256);
         let target = self.target.take().unwrap();
@@ -344,7 +374,7 @@ impl<'a> RawLayerWriter<'a> {
 
     #[context("Completing layer")]
     /// Consume this writer, flushing buffered data and put the blob in place.
-    pub(crate) fn complete(mut self) -> Result<Layer> {
+    pub fn complete(mut self) -> Result<Layer> {
         self.compressor.get_mut().clear();
         let buf = self.compressor.finish()?;
         self.bw.write_all(&buf)?;

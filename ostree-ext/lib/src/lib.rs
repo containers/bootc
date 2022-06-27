@@ -52,3 +52,5 @@ pub mod prelude {
 pub mod fixture;
 #[cfg(feature = "internal-testing-api")]
 pub mod integrationtest;
+#[cfg(feature = "internal-testing-api")]
+pub use container::ocidir;
