@@ -215,7 +215,7 @@ struct TarExpected {
     mode: u32,
 }
 
-impl Into<TarExpected> for &(&'static str, tar::EntryType, u32) {
+impl Into<TarExpected> for (&'static str, tar::EntryType, u32) {
     fn into(self) -> TarExpected {
         TarExpected {
             path: self.0,
@@ -294,11 +294,7 @@ fn test_tar_export_structure() -> Result<()> {
     let next = entries.next().unwrap().unwrap();
     assert_eq!(next.path().unwrap().as_os_str(), "sysroot");
 
-    // Validate format version 0
-    let expected = [
-        ("sysroot/config", Regular, 0o644),
-        ("sysroot/ostree/repo", Directory, 0o755),
-        ("sysroot/ostree/repo/extensions", Directory, 0o755),
+    let common_structure = [
         ("sysroot/ostree/repo/objects/00", Directory, 0o755),
         ("sysroot/ostree/repo/objects/23", Directory, 0o755),
         ("sysroot/ostree/repo/objects/77", Directory, 0o755),
@@ -312,15 +308,21 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/state", Directory, 0o755),
         ("sysroot/ostree/repo/tmp", Directory, 0o755),
         ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
+    ]
+    .into_iter();
+
+    // Validate format version 0
+    let expected = [
+        ("sysroot/config", Regular, 0o644),
+        ("sysroot/ostree/repo", Directory, 0o755),
+        ("sysroot/ostree/repo/extensions", Directory, 0o755)]
+        .into_iter().chain(common_structure.clone())
+        .chain([
         ("sysroot/ostree/repo/xattrs", Directory, 0o755),
         ("sysroot/ostree/repo/xattrs/d67db507c5a6e7bfd078f0f3ded0a5669479a902e812931fc65c6f5e01831ef5", Regular, 0o644),
         ("usr", Directory, 0o755),
-    ];
-    validate_tar_expected(
-        fixture.format_version,
-        entries,
-        expected.iter().map(Into::into),
-    )?;
+    ]).into_iter();
+    validate_tar_expected(fixture.format_version, entries, expected.map(Into::into))?;
 
     // Validate format version 1
     fixture.format_version = 1;
@@ -330,26 +332,15 @@ fn test_tar_export_structure() -> Result<()> {
     let expected = [
         ("sysroot/ostree/repo", Directory, 0o755),
         ("sysroot/ostree/repo/config", Regular, 0o644),
-        ("sysroot/ostree/repo/extensions", Directory, 0o755),
-        ("sysroot/ostree/repo/objects/00", Directory, 0o755),
-        ("sysroot/ostree/repo/objects/23", Directory, 0o755),
-        ("sysroot/ostree/repo/objects/77", Directory, 0o755),
-        ("sysroot/ostree/repo/objects/bc", Directory, 0o755),
-        ("sysroot/ostree/repo/objects/ff", Directory, 0o755),
-        ("sysroot/ostree/repo/refs", Directory, 0o755),
-        ("sysroot/ostree/repo/refs", Directory, 0o755),
-        ("sysroot/ostree/repo/refs/heads", Directory, 0o755),
-        ("sysroot/ostree/repo/refs/mirrors", Directory, 0o755),
-        ("sysroot/ostree/repo/refs/remotes", Directory, 0o755),
-        ("sysroot/ostree/repo/state", Directory, 0o755),
-        ("sysroot/ostree/repo/tmp", Directory, 0o755),
-        ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
-        ("usr", Directory, 0o755),
-    ];
+    ]
+    .into_iter()
+    .chain(common_structure.clone())
+    .chain([("usr", Directory, 0o755)].into_iter())
+    .into_iter();
     validate_tar_expected(
         fixture.format_version,
         src_tar.entries()?,
-        expected.iter().map(Into::into),
+        expected.map(Into::into),
     )?;
 
     Ok(())
