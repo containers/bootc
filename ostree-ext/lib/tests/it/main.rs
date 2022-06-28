@@ -459,7 +459,10 @@ fn skopeo_inspect_config(imgref: &str) -> Result<oci_spec::image::ImageConfigura
     Ok(serde_json::from_slice(&out.stdout)?)
 }
 
-async fn impl_test_container_import_export(export_format: ExportLayout) -> Result<()> {
+async fn impl_test_container_import_export(
+    export_format: ExportLayout,
+    chunked: bool,
+) -> Result<()> {
     let fixture = Fixture::new_v1()?;
     let testrev = fixture
         .srcrepo()
@@ -481,10 +484,6 @@ async fn impl_test_container_import_export(export_format: ExportLayout) -> Resul
         ..Default::default()
     };
     // If chunking is requested, compute object ownership and size mappings
-    let chunked = matches!(
-        export_format,
-        ExportLayout::ChunkedV0 | ExportLayout::ChunkedV1
-    );
     let contentmeta = chunked
         .then(|| {
             let meta = fixture.get_object_meta().context("Computing object meta")?;
@@ -629,8 +628,8 @@ fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Resu
     let d = ocidir::OciDir::open(&d)?;
     let manifest = d.read_manifest()?;
     let ostree_layer = match format {
-        ExportLayout::SingleLayer | ExportLayout::ChunkedV0 => manifest.layers().last(),
-        ExportLayout::ChunkedV1 => manifest.layers().first(),
+        ExportLayout::V0 => manifest.layers().last(),
+        ExportLayout::V1 => manifest.layers().first(),
     }
     .unwrap();
     let ostree_layer_blob = d
@@ -643,12 +642,12 @@ fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Resu
 
 #[tokio::test]
 async fn test_container_chunked_v0() -> Result<()> {
-    impl_test_container_chunked(ExportLayout::ChunkedV0).await
+    impl_test_container_chunked(ExportLayout::V0).await
 }
 
 #[tokio::test]
 async fn test_container_chunked_v1() -> Result<()> {
-    impl_test_container_chunked(ExportLayout::ChunkedV1).await
+    impl_test_container_chunked(ExportLayout::V1).await
 }
 
 async fn impl_test_container_chunked(format: ExportLayout) -> Result<()> {
@@ -712,7 +711,7 @@ r usr/bin/bash bash-v0
     assert!(first.0.commit.is_none());
     assert!(second.0.commit.is_none());
     match format {
-        ExportLayout::SingleLayer | ExportLayout::ChunkedV0 => {
+        ExportLayout::V0 => {
             assert_eq!(first.1, "bash");
             assert!(
                 second.1.starts_with("ostree export of commit"),
@@ -720,7 +719,7 @@ r usr/bin/bash bash-v0
                 second.1
             );
         }
-        ExportLayout::ChunkedV1 => {
+        ExportLayout::V1 => {
             assert_eq!(first.1, "testlink");
             assert_eq!(second.1, "bash");
         }
@@ -820,24 +819,23 @@ async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Res
 }
 
 #[tokio::test]
-async fn test_container_import_export_single_layer() {
-    impl_test_container_import_export(ExportLayout::SingleLayer)
+async fn test_container_import_export_v0() {
+    impl_test_container_import_export(ExportLayout::V0, false)
         .await
-        .unwrap()
+        .unwrap();
+    impl_test_container_import_export(ExportLayout::V0, true)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
-async fn test_container_import_export_chunked_v0() {
-    impl_test_container_import_export(ExportLayout::ChunkedV0)
+async fn test_container_import_export_v1() {
+    impl_test_container_import_export(ExportLayout::V1, false)
         .await
-        .unwrap()
-}
-
-#[tokio::test]
-async fn test_container_import_export_chunked_v1() {
-    impl_test_container_import_export(ExportLayout::ChunkedV1)
+        .unwrap();
+    impl_test_container_import_export(ExportLayout::V1, true)
         .await
-        .unwrap()
+        .unwrap();
 }
 
 /// But layers work via the container::write module.

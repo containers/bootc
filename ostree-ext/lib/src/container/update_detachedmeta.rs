@@ -104,20 +104,14 @@ pub async fn update_detached_metadata(
 
         let labels = ctrcfg.labels_mut().get_or_insert_with(Default::default);
         match export_layout {
-            ExportLayout::SingleLayer | ExportLayout::ChunkedV0 => {
-                labels.insert(
-                    crate::container::OSTREE_DIFFID_LABEL.into(),
-                    out_layer_diffid,
-                );
+            ExportLayout::V0 => {
+                labels.insert(export_layout.label().into(), out_layer_diffid);
             }
-            ExportLayout::ChunkedV1 => {
+            ExportLayout::V1 => {
                 // Nothing to do except in the special case where there's somehow only one
                 // chunked layer.
                 if manifest.layers().len() == 1 {
-                    labels.insert(
-                        crate::container::OSTREE_FINAL_LAYER_LABEL.into(),
-                        out_layer_diffid,
-                    );
+                    labels.insert(export_layout.label().into(), out_layer_diffid);
                 }
             }
         }

@@ -611,9 +611,8 @@ impl Fixture {
         export_format: ExportLayout,
     ) -> Result<(ImageReference, String)> {
         let name = match export_format {
-            ExportLayout::SingleLayer => "oci-single",
-            ExportLayout::ChunkedV0 => "oci-chunked-v0",
-            ExportLayout::ChunkedV1 => "oci-chunked-v1",
+            ExportLayout::V0 => "oci-v0",
+            ExportLayout::V1 => "oci-v1",
         };
         let container_path = &self.path.join(name);
         if container_path.exists() {
