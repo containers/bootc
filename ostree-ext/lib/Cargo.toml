@@ -10,7 +10,7 @@ version = "0.8.0"
 
 [dependencies]
 anyhow = "1.0"
-containers-image-proxy = "0.5.0"
+containers-image-proxy = "0.5.1"
 
 async-compression = { version = "0.3", features = ["gzip", "tokio"] }
 bitflags = "1"
@@ -39,7 +39,7 @@ structopt = "0.3.21"
 tar = "0.4.38"
 tempfile = "3.2.0"
 term_size = "0.3.2"
-tokio = { features = ["full"], version = ">= 1.13.0" }
+tokio = { features = ["time", "process", "rt", "net"], version = ">= 1.13.0" }
 tokio-util = { features = ["io-util"], version = "0.6.9" }
 tokio-stream = { features = ["sync"], version = "0.1.8" }
 tracing = "0.1"
