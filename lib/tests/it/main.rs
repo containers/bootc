@@ -674,6 +674,7 @@ async fn impl_test_container_chunked(format: ExportLayout) -> Result<()> {
         store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         store::PrepareResult::Ready(r) => r,
     };
+    assert_eq!(prep.export_layout, format);
     let digest = prep.manifest_digest.clone();
     assert!(prep.ostree_commit_layer.commit.is_none());
     assert_eq!(prep.ostree_layers.len(), nlayers as usize);
