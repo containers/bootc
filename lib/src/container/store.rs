@@ -280,6 +280,7 @@ pub fn manifest_digest_from_commit(commit: &glib::Variant) -> Result<String> {
 /// we require a 1-to-1 mapping between the two up until the ostree level.
 /// For a bit more information on this, see https://github.com/opencontainers/image-spec/blob/main/config.md
 fn layer_from_diffid<'a>(
+    layout: ExportLayout,
     manifest: &'a ImageManifest,
     config: &ImageConfiguration,
     diffid: &str,
@@ -289,7 +290,7 @@ fn layer_from_diffid<'a>(
         .diff_ids()
         .iter()
         .position(|x| x.as_str() == diffid)
-        .ok_or_else(|| anyhow!("Missing {} {}", OSTREE_DIFFID_LABEL, diffid))?;
+        .ok_or_else(|| anyhow!("Missing {} {}", layout.label(), diffid))?;
     manifest.layers().get(idx).ok_or_else(|| {
         anyhow!(
             "diffid position {} exceeds layer count {}",
@@ -316,29 +317,29 @@ pub(crate) fn parse_manifest_layout<'a>(
         .ok_or_else(|| anyhow!("No layers in manifest"))?;
     let info = config_labels.and_then(|labels| {
         labels
-            .get(OSTREE_FINAL_LAYER_LABEL)
-            .map(|v| (ExportLayout::ChunkedV1, v))
+            .get(ExportLayout::V1.label())
+            .map(|v| (ExportLayout::V1, v))
             .or_else(|| {
                 labels
-                    .get(OSTREE_DIFFID_LABEL)
-                    .map(|v| (ExportLayout::ChunkedV0, v))
+                    .get(ExportLayout::V0.label())
+                    .map(|v| (ExportLayout::V0, v))
             })
     });
 
     // Look for the format v1 label
     if let Some((layout, target_diffid)) = info {
-        let target_layer = layer_from_diffid(manifest, config, target_diffid.as_str())?;
+        let target_layer = layer_from_diffid(layout, manifest, config, target_diffid.as_str())?;
         let mut chunk_layers = Vec::new();
         let mut derived_layers = Vec::new();
         let mut after_target = false;
         // Gather the ostree layer
         let ostree_layer = match layout {
-            ExportLayout::SingleLayer | ExportLayout::ChunkedV0 => target_layer,
-            ExportLayout::ChunkedV1 => first_layer,
+            ExportLayout::V0 => target_layer,
+            ExportLayout::V1 => first_layer,
         };
         // Now, we need to handle the split differently in chunked v1 vs v0
         match layout {
-            ExportLayout::SingleLayer | ExportLayout::ChunkedV0 => {
+            ExportLayout::V0 => {
                 for layer in manifest.layers() {
                     if layer == target_layer {
                         if after_target {
@@ -352,7 +353,7 @@ pub(crate) fn parse_manifest_layout<'a>(
                     }
                 }
             }
-            ExportLayout::ChunkedV1 => {
+            ExportLayout::V1 => {
                 for layer in manifest.layers() {
                     if layer == target_layer {
                         if after_target {
@@ -380,7 +381,7 @@ pub(crate) fn parse_manifest_layout<'a>(
     // For backwards compatibility, if there's only 1 layer, don't require labels.
     // This can be dropped when we drop format version 0 support.
     let rest = manifest.layers().iter().skip(1).collect();
-    Ok((ExportLayout::SingleLayer, first_layer, Vec::new(), rest))
+    Ok((ExportLayout::V0, first_layer, Vec::new(), rest))
 }
 
 impl ImageImporter {
