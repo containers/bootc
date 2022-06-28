@@ -1,9 +1,9 @@
 //! APIs for creating container images from OSTree commits
 
-use super::ocidir::OciDir;
+use super::ocidir::{Layer, OciDir};
 use super::{ocidir, OstreeImageReference, Transport};
 use super::{ImageReference, SignatureSource, OSTREE_COMMIT_LABEL};
-use crate::chunking::{Chunking, ObjectMetaSized};
+use crate::chunking::{Chunk, Chunking, ObjectMetaSized};
 use crate::container::skopeo;
 use crate::tar as ostree_tar;
 use anyhow::{anyhow, Context, Result};
@@ -20,6 +20,31 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use tracing::instrument;
 
+/// Type of container image generated
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ExportLayout {
+    /// Actually the second layout now, but the true first one can be parsed as either
+    V0,
+    /// The hopefully final (optionally chunked) container image layout
+    V1,
+}
+
+impl Default for ExportLayout {
+    fn default() -> Self {
+        // For now
+        Self::V0
+    }
+}
+
+impl ExportLayout {
+    pub(crate) fn label(&self) -> &'static str {
+        match self {
+            ExportLayout::V0 => "ostree.diffid",
+            ExportLayout::V1 => "ostree.final-diffid",
+        }
+    }
+}
+
 /// Annotation injected into the layer to say that this is an ostree commit.
 /// However, because this gets lost when converted to D2S2 https://docs.docker.com/registry/spec/manifest-v2-2/
 /// schema, it's not actually useful today.  But, we keep it
@@ -32,20 +57,6 @@ pub struct Config {
     pub labels: Option<BTreeMap<String, String>>,
     /// The equivalent of a `Dockerfile`'s `CMD` instruction.
     pub cmd: Option<Vec<String>>,
-}
-
-/// Write an ostree commit to an OCI blob
-#[context("Writing ostree root to blob")]
-fn export_ostree_ref(
-    repo: &ostree::Repo,
-    rev: &str,
-    writer: &mut OciDir,
-    opts: &ExportOpts,
-) -> Result<ocidir::Layer> {
-    let commit = repo.require_rev(rev)?;
-    let mut w = writer.create_raw_layer(Some(opts.compression()))?;
-    ostree_tar::export_commit(repo, commit.as_str(), &mut w, None)?;
-    w.complete()
 }
 
 fn commit_meta_to_labels<'a>(
@@ -74,6 +85,26 @@ fn commit_meta_to_labels<'a>(
     Ok(())
 }
 
+fn export_chunks(
+    repo: &ostree::Repo,
+    commit: &str,
+    ociw: &mut OciDir,
+    chunks: Vec<Chunk>,
+    opts: &ExportOpts,
+) -> Result<Vec<(Layer, String)>> {
+    chunks
+        .into_iter()
+        .enumerate()
+        .map(|(i, chunk)| -> Result<_> {
+            let mut w = ociw.create_layer(Some(opts.compression()))?;
+            ostree_tar::export_chunk(repo, commit, chunk.content, &mut w)
+                .with_context(|| format!("Exporting chunk {i}"))?;
+            let w = w.into_inner()?;
+            Ok((w.complete()?, chunk.name))
+        })
+        .collect()
+}
+
 /// Write an ostree commit to an OCI blob
 #[context("Writing ostree root to blob")]
 #[allow(clippy::too_many_arguments)]
@@ -88,31 +119,58 @@ fn export_chunked(
     opts: &ExportOpts,
     description: &str,
 ) -> Result<()> {
-    let layers: Result<Vec<_>> = chunking
-        .take_chunks()
-        .into_iter()
-        .enumerate()
-        .map(|(i, chunk)| -> Result<_> {
-            let mut w = ociw.create_layer(Some(opts.compression()))?;
-            ostree_tar::export_chunk(repo, commit, chunk.content, &mut w)
-                .with_context(|| format!("Exporting chunk {i}"))?;
+    let layers = export_chunks(repo, commit, ociw, chunking.take_chunks(), opts)?;
+    let compression = Some(opts.compression());
+
+    match opts.format {
+        ExportLayout::V0 => {
+            // In V0, the component/content chunks come first.
+            for (layer, name) in layers {
+                ociw.push_layer(manifest, imgcfg, layer, name.as_str());
+            }
+            // Then, export the final layer
+            let mut w = ociw.create_layer(compression)?;
+            ostree_tar::export_final_chunk(repo, commit, chunking.remainder, &mut w)?;
             let w = w.into_inner()?;
-            Ok((w.complete()?, chunk.name))
-        })
-        .collect();
-    for (layer, name) in layers? {
-        ociw.push_layer(manifest, imgcfg, layer, &name);
+            let final_layer = w.complete()?;
+            labels.insert(
+                opts.format.label().into(),
+                format!("sha256:{}", final_layer.uncompressed_sha256),
+            );
+            ociw.push_layer(manifest, imgcfg, final_layer, description);
+            Ok(())
+        }
+        ExportLayout::V1 => {
+            // In V1, the ostree layer comes first
+            let mut w = ociw.create_layer(compression)?;
+            ostree_tar::export_final_chunk(repo, commit, chunking.remainder, &mut w)?;
+            let w = w.into_inner()?;
+            let ostree_layer = w.complete()?;
+
+            // Then, we have a label that points to the last chunk.
+            // Note in the pathological case of a single layer chunked v1 image, this could be the ostree layer.
+            let last_digest = layers
+                .last()
+                .map(|v| &v.0)
+                .unwrap_or(&ostree_layer)
+                .uncompressed_sha256
+                .clone();
+
+            // Add the ostree layer
+            ociw.push_layer(manifest, imgcfg, ostree_layer, description);
+            // Add the component/content layers
+            for (layer, name) in layers {
+                ociw.push_layer(manifest, imgcfg, layer, name.as_str());
+            }
+            // This label (mentioned above) points to the last layer that is part of
+            // the ostree commit.
+            labels.insert(
+                opts.format.label().into(),
+                format!("sha256:{}", last_digest),
+            );
+            Ok(())
+        }
     }
-    let mut w = ociw.create_layer(Some(opts.compression()))?;
-    ostree_tar::export_final_chunk(repo, commit, chunking, &mut w)?;
-    let w = w.into_inner()?;
-    let final_layer = w.complete()?;
-    labels.insert(
-        crate::container::OSTREE_DIFFID_LABEL.into(),
-        format!("sha256:{}", final_layer.uncompressed_sha256),
-    );
-    ociw.push_layer(manifest, imgcfg, final_layer, description);
-    Ok(())
 }
 
 /// Generate an OCI image from a given ostree root
@@ -158,6 +216,10 @@ fn build_oci(
     let chunking = contentmeta
         .map(|meta| crate::chunking::Chunking::from_mapping(repo, commit, meta, opts.max_layers))
         .transpose()?;
+    // If no chunking was provided, create a logical single chunk.
+    let chunking = chunking
+        .map(Ok)
+        .unwrap_or_else(|| crate::chunking::Chunking::new(repo, commit))?;
 
     if let Some(version) = commit_meta.lookup::<String>("version")? {
         labels.insert("version".into(), version);
@@ -176,32 +238,17 @@ fn build_oci(
         Cow::Borrowed(commit_subject)
     };
 
-    if let Some(chunking) = chunking {
-        export_chunked(
-            repo,
-            commit,
-            &mut writer,
-            &mut manifest,
-            &mut imgcfg,
-            labels,
-            chunking,
-            &opts,
-            &description,
-        )?;
-    } else {
-        let rootfs_blob = export_ostree_ref(repo, commit, &mut writer, &opts)?;
-        labels.insert(
-            crate::container::OSTREE_DIFFID_LABEL.into(),
-            format!("sha256:{}", rootfs_blob.uncompressed_sha256),
-        );
-        writer.push_layer_annotated(
-            &mut manifest,
-            &mut imgcfg,
-            rootfs_blob,
-            Some(annos),
-            &description,
-        );
-    }
+    export_chunked(
+        repo,
+        commit,
+        &mut writer,
+        &mut manifest,
+        &mut imgcfg,
+        labels,
+        chunking,
+        &opts,
+        &description,
+    )?;
 
     // Lookup the cmd embedded in commit metadata
     let cmd = commit_meta.lookup::<Vec<String>>(ostree::COMMIT_META_CONTAINER_CMD)?;
@@ -289,6 +336,8 @@ pub struct ExportOpts {
     pub copy_meta_keys: Vec<String>,
     /// Maximum number of layers to use
     pub max_layers: Option<NonZeroU32>,
+    /// The container image layout
+    pub format: ExportLayout,
 }
 
 impl ExportOpts {
