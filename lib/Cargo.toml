@@ -39,7 +39,7 @@ structopt = "0.3.21"
 tar = "0.4.38"
 tempfile = "3.2.0"
 term_size = "0.3.2"
-tokio = { features = ["time", "process", "rt", "net"], version = ">= 1.13.0" }
+tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1.13.0" }
 tokio-util = { features = ["io-util"], version = "0.6.9" }
 tokio-stream = { features = ["sync"], version = "0.1.8" }
 tracing = "0.1"
