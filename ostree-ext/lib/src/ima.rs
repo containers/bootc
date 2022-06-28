@@ -13,13 +13,11 @@ use glib::Cast;
 use glib::Variant;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{gv, Marker, Structure};
-use io_lifetimes::AsFilelike;
 use ostree::gio;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::CString;
 use std::fs::File;
 use std::io::Seek;
-use std::ops::DerefMut;
 use std::os::unix::io::AsRawFd;
 use std::process::{Command, Stdio};
 
@@ -120,10 +118,11 @@ impl<'a> CommitRewriter<'a> {
         let mut tempf = tempfile::NamedTempFile::new_in(self.tempdir.path())?;
         // If we're operating on a bare repo, we can clone the file (copy_file_range) directly.
         if let Ok(instream) = instream.clone().downcast::<gio::UnixInputStream>() {
+            use io_lifetimes::AsFilelike;
             // View the fd as a File
-            let instream_fd = unsafe { BorrowedFd::borrow_raw_fd(instream.as_raw_fd()) };
-            let instream_fd = &mut instream_fd.as_filelike_view::<File>();
-            std::io::copy(instream_fd.deref_mut(), tempf.as_file_mut())?;
+            let instream_fd = unsafe { BorrowedFd::borrow_raw(instream.as_raw_fd()) };
+            let instream_fd = instream_fd.as_filelike_view::<std::fs::File>();
+            std::io::copy(&mut (&*instream_fd), tempf.as_file_mut())?;
         } else {
             // If we're operating on an archive repo, then we need to uncompress
             // and recompress...
@@ -163,8 +162,7 @@ impl<'a> CommitRewriter<'a> {
         } else {
             return Ok(None);
         };
-        let meta = meta.unwrap();
-        let mut xattrs = xattrs_to_map(&xattrs.unwrap());
+        let mut xattrs = xattrs_to_map(&xattrs);
         let existing_sig = xattrs.remove(IMA_XATTR.as_bytes());
         if existing_sig.is_some() && !self.ima.overwrite {
             return Ok(None);
