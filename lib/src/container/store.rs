@@ -10,6 +10,7 @@ use crate::refescape;
 use anyhow::{anyhow, Context};
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
+use futures_util::TryFutureExt;
 use oci_spec::image::{self as oci_image, Descriptor, History, ImageConfiguration, ImageManifest};
 use ostree::prelude::{Cast, ToVariant};
 use ostree::{gio, glib};
@@ -170,6 +171,8 @@ impl ManifestLayerState {
 /// Information about which layers need to be downloaded.
 #[derive(Debug)]
 pub struct PreparedImport {
+    /// The format we found from metadata
+    pub export_layout: ExportLayout,
     /// The manifest digest that was found
     pub manifest_digest: String,
     /// The deserialized manifest.
@@ -276,6 +279,7 @@ pub fn manifest_digest_from_commit(commit: &glib::Variant) -> Result<String> {
 /// we require a 1-to-1 mapping between the two up until the ostree level.
 /// For a bit more information on this, see https://github.com/opencontainers/image-spec/blob/main/config.md
 fn layer_from_diffid<'a>(
+    layout: ExportLayout,
     manifest: &'a ImageManifest,
     config: &ImageConfiguration,
     diffid: &str,
@@ -285,7 +289,7 @@ fn layer_from_diffid<'a>(
         .diff_ids()
         .iter()
         .position(|x| x.as_str() == diffid)
-        .ok_or_else(|| anyhow!("Missing {} {}", OSTREE_DIFFID_LABEL, diffid))?;
+        .ok_or_else(|| anyhow!("Missing {} {}", layout.label(), diffid))?;
     manifest.layers().get(idx).ok_or_else(|| {
         anyhow!(
             "diffid position {} exceeds layer count {}",
@@ -295,21 +299,88 @@ fn layer_from_diffid<'a>(
     })
 }
 
-pub(crate) fn ostree_layer<'a>(
+pub(crate) fn parse_manifest_layout<'a>(
     manifest: &'a ImageManifest,
     config: &ImageConfiguration,
-) -> Result<&'a Descriptor> {
-    let label = crate::container::OSTREE_DIFFID_LABEL;
+) -> Result<(
+    ExportLayout,
+    &'a Descriptor,
+    Vec<&'a Descriptor>,
+    Vec<&'a Descriptor>,
+)> {
     let config_labels = config.config().as_ref().and_then(|c| c.labels().as_ref());
-    let diffid = config_labels.and_then(|labels| labels.get(label));
-    // For backwards compatibility, if there's only 1 layer, don't require the label.
+
+    let first_layer = manifest
+        .layers()
+        .get(0)
+        .ok_or_else(|| anyhow!("No layers in manifest"))?;
+    let info = config_labels.and_then(|labels| {
+        labels
+            .get(ExportLayout::V1.label())
+            .map(|v| (ExportLayout::V1, v))
+            .or_else(|| {
+                labels
+                    .get(ExportLayout::V0.label())
+                    .map(|v| (ExportLayout::V0, v))
+            })
+    });
+
+    // Look for the format v1 label
+    if let Some((layout, target_diffid)) = info {
+        let target_layer = layer_from_diffid(layout, manifest, config, target_diffid.as_str())?;
+        let mut chunk_layers = Vec::new();
+        let mut derived_layers = Vec::new();
+        let mut after_target = false;
+        // Gather the ostree layer
+        let ostree_layer = match layout {
+            ExportLayout::V0 => target_layer,
+            ExportLayout::V1 => first_layer,
+        };
+        // Now, we need to handle the split differently in chunked v1 vs v0
+        match layout {
+            ExportLayout::V0 => {
+                for layer in manifest.layers() {
+                    if layer == target_layer {
+                        if after_target {
+                            anyhow::bail!("Multiple entries for {}", layer.digest());
+                        }
+                        after_target = true;
+                    } else if !after_target {
+                        chunk_layers.push(layer);
+                    } else {
+                        derived_layers.push(layer);
+                    }
+                }
+            }
+            ExportLayout::V1 => {
+                for layer in manifest.layers() {
+                    if layer == target_layer {
+                        if after_target {
+                            anyhow::bail!("Multiple entries for {}", layer.digest());
+                        }
+                        after_target = true;
+                        if layer != ostree_layer {
+                            chunk_layers.push(layer);
+                        }
+                    } else if !after_target {
+                        if layer != ostree_layer {
+                            chunk_layers.push(layer);
+                        }
+                    } else {
+                        derived_layers.push(layer);
+                    }
+                }
+            }
+        }
+
+        let r = (layout, ostree_layer, chunk_layers, derived_layers);
+        return Ok(r);
+    }
+
+    // For backwards compatibility, if there's only 1 layer, don't require labels.
     // This can be dropped when we drop format version 0 support.
-    let r = if let Some(diffid) = diffid {
-        layer_from_diffid(manifest, config, diffid.as_str())?
-    } else {
-        &manifest.layers()[0]
-    };
-    Ok(r)
+    let rest = manifest.layers().iter().skip(1).collect();
+    Ok((ExportLayout::V0, first_layer, Vec::new(), rest))
 }
 
 impl ImageImporter {
@@ -404,29 +475,22 @@ impl ImageImporter {
 
         let config = self.proxy.fetch_config(&self.proxy_img).await?;
 
-        let commit_layer_digest = ostree_layer(&manifest, &config)?.digest();
+        let (export_layout, commit_layer, component_layers, remaining_layers) =
+            parse_manifest_layout(&manifest, &config)?;
 
-        let mut component_layers = Vec::new();
-        let mut commit_layer = None;
-        let mut remaining_layers = Vec::new();
         let query = |l: &Descriptor| query_layer(&self.repo, l.clone());
-        for layer in manifest.layers() {
-            if layer.digest() == commit_layer_digest {
-                commit_layer = Some(query(layer)?);
-            } else if commit_layer.is_none() {
-                component_layers.push(query(layer)?);
-            } else {
-                remaining_layers.push(query(layer)?);
-            }
-        }
-        let commit_layer = commit_layer.ok_or_else(|| {
-            anyhow!(
-                "Image does not contain ostree-exported layer {}",
-                commit_layer_digest
-            )
-        })?;
+        let commit_layer = query(commit_layer)?;
+        let component_layers = component_layers
+            .into_iter()
+            .map(query)
+            .collect::<Result<Vec<_>>>()?;
+        let remaining_layers = remaining_layers
+            .into_iter()
+            .map(query)
+            .collect::<Result<Vec<_>>>()?;
 
         let imp = PreparedImport {
+            export_layout,
             manifest,
             manifest_digest,
             config,
@@ -493,7 +557,8 @@ impl ImageImporter {
                     };
                     txn.commit(Some(cancellable))?;
                     Ok::<_, anyhow::Error>(commit)
-                });
+                })
+                .map_err(|e| e.context(format!("Layer {}", layer.digest())));
             let commit = super::unencapsulate::join_fetch(import_task, driver).await?;
             layer.commit = commit;
             if let Some(p) = self.layer_progress.as_ref() {
