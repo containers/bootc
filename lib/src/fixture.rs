@@ -369,7 +369,7 @@ impl Fixture {
         srcdir_dfd.create_dir("gpghome")?;
         let gpghome = srcdir_dfd.open_dir("gpghome")?;
         let st = std::process::Command::new("tar")
-            .cwd_dir_owned(gpghome)
+            .cwd_dir(gpghome)
             .stdin(Stdio::from(gpgtar))
             .args(&["-azxf", "-"])
             .status()?;

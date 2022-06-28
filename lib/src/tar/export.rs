@@ -403,8 +403,6 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         let path = object_path(ostree::ObjectType::File, checksum);
 
         let (instream, meta, xattrs) = self.repo.load_file(checksum, gio::NONE_CANCELLABLE)?;
-        let meta = meta.ok_or_else(|| anyhow!("Missing metadata for object {}", checksum))?;
-        let xattrs = xattrs.ok_or_else(|| anyhow!("Missing xattrs for object {}", checksum))?;
 
         let mut h = tar::Header::new_gnu();
         h.set_uid(meta.attribute_uint32("unix::uid") as u64);
