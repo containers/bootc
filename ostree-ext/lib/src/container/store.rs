@@ -172,8 +172,7 @@ impl ManifestLayerState {
 #[derive(Debug)]
 pub struct PreparedImport {
     /// The format we found from metadata
-    #[allow(dead_code)]
-    pub(crate) export_layout: ExportLayout,
+    pub export_layout: ExportLayout,
     /// The manifest digest that was found
     pub manifest_digest: String,
     /// The deserialized manifest.
