@@ -10,7 +10,7 @@ async fn run() -> Result<()> {
     ostree_ext::cli::run_from_iter(std::env::args_os()).await
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     if let Err(e) = run().await {
         eprintln!("error: {:#}", e);
