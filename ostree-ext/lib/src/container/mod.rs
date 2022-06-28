@@ -241,6 +241,7 @@ pub use unencapsulate::*;
 #[cfg(feature = "internal-testing-api")]
 pub mod ocidir;
 #[cfg(not(feature = "internal-testing-api"))]
+#[allow(dead_code)]
 mod ocidir;
 mod skopeo;
 pub mod store;
