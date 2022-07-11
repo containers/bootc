@@ -206,7 +206,7 @@ impl PreparedImport {
         &self,
     ) -> impl Iterator<Item = Result<(&ManifestLayerState, &History)>> {
         // FIXME use .filter(|h| h.empty_layer.unwrap_or_default()) after https://github.com/containers/oci-spec-rs/pull/100 lands.
-        let truncated = std::iter::once(Err(anyhow::anyhow!("Truncated history")));
+        let truncated = std::iter::once_with(|| Err(anyhow::anyhow!("Truncated history")));
         let history = self.config.history().iter().map(Ok).chain(truncated);
         self.all_layers()
             .zip(history)
