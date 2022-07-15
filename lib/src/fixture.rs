@@ -131,6 +131,8 @@ static OWNERS: Lazy<Vec<(Regex, &str)>> = Lazy::new(|| {
         ("usr/bin/hardlink.*", "testlink"),
         ("usr/etc/someconfig.conf", "someconfig"),
         ("usr/etc/polkit.conf", "a-polkit-config"),
+        ("usr/lib/pkgdb", "pkgdb"),
+        ("usr/lib/sysimage/pkgdb", "pkgdb"),
     ]
     .iter()
     .map(|(k, v)| (Regex::new(k).unwrap(), *v))
@@ -150,6 +152,10 @@ r usr/bin/hardlink-b testlink
 r usr/etc/someconfig.conf someconfig
 m 10 10 644
 r usr/etc/polkit.conf a-polkit-config
+m 0 0 644
+# See https://github.com/coreos/fedora-coreos-tracker/issues/1258
+r usr/lib/sysimage/pkgdb some-package-database
+r usr/lib/pkgdb/pkgdb some-package-database
 m
 d boot
 d run
@@ -157,7 +163,8 @@ m 0 0 1755
 d tmp
 "## };
 pub const CONTENTS_CHECKSUM_V0: &str =
-    "76f0d5ec8814bc2a1d7868dbe8d3783535dc0cc9c7dcfdf37fa3512f8e276f6c";
+    "3af747e156c34d08a3a2fb85b94de6999205a1d1c1c7b1993d6ce534a8918cd9";
+pub static CONTENTS_V0_LEN: Lazy<usize> = Lazy::new(|| OWNERS.len());
 
 #[derive(Debug, PartialEq, Eq)]
 enum SeLabel {
