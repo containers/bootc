@@ -19,7 +19,7 @@ use std::io::{BufReader, BufWriter};
 use std::os::unix::fs::DirBuilderExt;
 use std::process::Command;
 
-use ostree_ext::fixture::{FileDef, Fixture, CONTENTS_CHECKSUM_V0};
+use ostree_ext::fixture::{FileDef, Fixture, CONTENTS_CHECKSUM_V0, CONTENTS_V0_LEN};
 
 const EXAMPLE_TAR_LAYER: &[u8] = include_bytes!("fixtures/hlinks.tar.gz");
 const TEST_REGISTRY_DEFAULT: &str = "localhost:5000";
@@ -293,6 +293,8 @@ fn common_tar_structure() -> impl Iterator<Item = TarExpected> {
         ("sysroot/ostree/repo/state", Directory, 0o755),
         ("sysroot/ostree/repo/tmp", Directory, 0o755),
         ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
+        ("usr/lib/pkgdb", Directory, 0o755),
+        ("usr/lib/sysimage", Directory, 0o755),
     ]
     .into_iter()
     .map(Into::into)
@@ -531,7 +533,7 @@ async fn impl_test_container_import_export(
         "/usr/bin/bash"
     );
 
-    let n_chunks = if chunked { 7 } else { 1 };
+    let n_chunks = if chunked { *CONTENTS_V0_LEN } else { 1 };
     assert_eq!(cfg.rootfs().diff_ids().len(), n_chunks);
     assert_eq!(cfg.history().len(), n_chunks);
 
@@ -628,6 +630,7 @@ fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Resu
     let d = Dir::open_ambient_dir(oci_path, cap_std::ambient_authority())?;
     let d = ocidir::OciDir::open(&d)?;
     let manifest = d.read_manifest()?;
+    assert_eq!(manifest.layers().len(), *CONTENTS_V0_LEN);
     let ostree_layer = match format {
         ExportLayout::V0 => manifest.layers().last(),
         ExportLayout::V1 => manifest.layers().first(),
@@ -652,7 +655,7 @@ async fn test_container_chunked_v1() -> Result<()> {
 }
 
 async fn impl_test_container_chunked(format: ExportLayout) -> Result<()> {
-    let nlayers = 6u32;
+    let nlayers = *CONTENTS_V0_LEN - 1;
     let mut fixture = Fixture::new_v1()?;
 
     let (imgref, expected_digest) = fixture.export_container(format).await.unwrap();
@@ -788,7 +791,7 @@ r usr/bin/bash bash-v0
     store::remove_images(fixture.destrepo(), [&derived_imgref.imgref]).unwrap();
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 0);
     let n_removed = store::gc_image_layers(&fixture.destrepo())?;
-    assert_eq!(n_removed, 8);
+    assert_eq!(n_removed, (*CONTENTS_V0_LEN + 1) as u32);
 
     // Repo should be clean now
     assert_eq!(
