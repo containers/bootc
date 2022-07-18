@@ -238,6 +238,9 @@ fn validate_tar_expected<T: std::io::Read>(
     // Verify we're injecting directories, fixes the absence of `/tmp` in our
     // images for example.
     for entry in entries {
+        if expected.is_empty() {
+            return Ok(());
+        }
         let header = entry.header();
         let entry_path = entry.path().unwrap().to_string_lossy().into_owned();
         if seen_paths.contains(&entry_path) {
@@ -251,7 +254,8 @@ fn validate_tar_expected<T: std::io::Read>(
             let header_mode = header.mode().unwrap();
             if is_old_object && !entry_path.starts_with("sysroot/") {
                 let fmtbits = match header.entry_type() {
-                    tar::EntryType::Regular => libc::S_IFREG,
+                    // For now assume only hardlinks to regular files
+                    tar::EntryType::Regular | tar::EntryType::Link => libc::S_IFREG,
                     tar::EntryType::Directory => libc::S_IFDIR,
                     tar::EntryType::Symlink => 0,
                     o => panic!("Unexpected entry type {:?}", o),
@@ -293,8 +297,20 @@ fn common_tar_structure() -> impl Iterator<Item = TarExpected> {
         ("sysroot/ostree/repo/state", Directory, 0o755),
         ("sysroot/ostree/repo/tmp", Directory, 0o755),
         ("sysroot/ostree/repo/tmp/cache", Directory, 0o755),
-        ("usr/lib/pkgdb", Directory, 0o755),
-        ("usr/lib/sysimage", Directory, 0o755),
+    ]
+    .into_iter()
+    .map(Into::into)
+}
+
+// Find various expected files
+fn common_tar_contents_all() -> impl Iterator<Item = TarExpected> {
+    use tar::EntryType::{Directory, Link};
+    [
+        ("boot", Directory, 0o755),
+        ("usr", Directory, 0o755),
+        ("usr/bin/bash", Link, 0o755),
+        ("usr/bin/hardlink-a", Link, 0o644),
+        ("usr/bin/hardlink-b", Link, 0o644),
     ]
     .into_iter()
     .map(Into::into)
@@ -310,11 +326,7 @@ fn validate_tar_v1_metadata<R: std::io::Read>(src: &mut tar::Entries<R>) -> Resu
     .into_iter()
     .map(Into::into);
 
-    let content = [("usr", Directory, 0o755), ("boot", Directory, 0o755)];
-    let content = content.into_iter().map(Into::into);
-
-    let expected = prelude.chain(common_tar_structure()).chain(content);
-    validate_tar_expected(1, src, expected)?;
+    validate_tar_expected(1, src, prelude)?;
 
     Ok(())
 }
@@ -356,7 +368,7 @@ fn test_tar_export_structure() -> Result<()> {
     validate_tar_expected(
         fixture.format_version,
         &mut entries,
-        expected.map(Into::into),
+        expected.chain(common_tar_contents_all()),
     )?;
 
     // Validate format version 1
@@ -369,6 +381,11 @@ fn test_tar_export_structure() -> Result<()> {
         .map(tar::Archive::new)?;
     let mut src_tar = src_tar.entries()?;
     validate_tar_v1_metadata(&mut src_tar).unwrap();
+    validate_tar_expected(
+        fixture.format_version,
+        &mut src_tar,
+        common_tar_contents_all(),
+    )?;
 
     Ok(())
 }
