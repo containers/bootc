@@ -8,7 +8,7 @@ use log::LevelFilter;
 #[clap(name = "bootupd", about = "Bootupd backend commands", version)]
 pub struct DCommand {
     /// Verbosity level (higher is more verbose).
-    #[clap(short = 'v', parse(from_occurrences), global = true)]
+    #[clap(short = 'v', action = clap::ArgAction::Count, global = true)]
     verbosity: u8,
 
     /// CLI sub-command.
@@ -42,15 +42,17 @@ pub enum DVerb {
 #[derive(Debug, Parser)]
 pub struct InstallOpts {
     /// Source root
-    #[clap(long, default_value = "/")]
+    #[clap(long, value_parser, default_value_t = String::from("/"))]
     src_root: String,
     /// Target root
+    #[clap(value_parser)]
     dest_root: String,
 }
 
 #[derive(Debug, Parser)]
 pub struct GenerateOpts {
     /// Physical root mountpoint
+    #[clap(value_parser)]
     sysroot: String,
 }
 
