@@ -19,7 +19,7 @@ use std::io::{BufReader, BufWriter};
 use std::os::unix::fs::DirBuilderExt;
 use std::process::Command;
 
-use ostree_ext::fixture::{FileDef, Fixture, CONTENTS_CHECKSUM_V0};
+use ostree_ext::fixture::{FileDef, Fixture, CONTENTS_CHECKSUM_V0, CONTENTS_V0_LEN};
 
 const EXAMPLE_TAR_LAYER: &[u8] = include_bytes!("fixtures/hlinks.tar.gz");
 const TEST_REGISTRY_DEFAULT: &str = "localhost:5000";
@@ -228,7 +228,7 @@ impl Into<TarExpected> for (&'static str, tar::EntryType, u32) {
 
 fn validate_tar_expected<T: std::io::Read>(
     format_version: u32,
-    t: tar::Entries<T>,
+    t: &mut tar::Entries<T>,
     expected: impl IntoIterator<Item = TarExpected>,
 ) -> Result<()> {
     let mut expected: HashMap<&'static str, TarExpected> =
@@ -238,6 +238,9 @@ fn validate_tar_expected<T: std::io::Read>(
     // Verify we're injecting directories, fixes the absence of `/tmp` in our
     // images for example.
     for entry in entries {
+        if expected.is_empty() {
+            return Ok(());
+        }
         let header = entry.header();
         let entry_path = entry.path().unwrap().to_string_lossy().into_owned();
         if seen_paths.contains(&entry_path) {
@@ -248,9 +251,11 @@ fn validate_tar_expected<T: std::io::Read>(
             assert_eq!(header.entry_type(), exp.etype, "{}", entry_path);
             let is_old_object = format_version == 0;
             let mut expected_mode = exp.mode;
+            let header_mode = header.mode().unwrap();
             if is_old_object && !entry_path.starts_with("sysroot/") {
                 let fmtbits = match header.entry_type() {
-                    tar::EntryType::Regular => libc::S_IFREG,
+                    // For now assume only hardlinks to regular files
+                    tar::EntryType::Regular | tar::EntryType::Link => libc::S_IFREG,
                     tar::EntryType::Directory => libc::S_IFDIR,
                     tar::EntryType::Symlink => 0,
                     o => panic!("Unexpected entry type {:?}", o),
@@ -258,9 +263,9 @@ fn validate_tar_expected<T: std::io::Read>(
                 expected_mode |= fmtbits;
             }
             assert_eq!(
-                header.mode().unwrap(),
+                header_mode,
                 expected_mode,
-                "fmtver: {} type: {:?} path: {}",
+                "h={header_mode:o} e={expected_mode:o} fmtver: {} type: {:?} path: {}",
                 format_version,
                 header.entry_type(),
                 entry_path
@@ -297,7 +302,22 @@ fn common_tar_structure() -> impl Iterator<Item = TarExpected> {
     .map(Into::into)
 }
 
-fn validate_tar_v1<R: std::io::Read>(mut src: tar::Archive<R>) -> Result<()> {
+// Find various expected files
+fn common_tar_contents_all() -> impl Iterator<Item = TarExpected> {
+    use tar::EntryType::{Directory, Link};
+    [
+        ("boot", Directory, 0o755),
+        ("usr", Directory, 0o755),
+        ("usr/bin/bash", Link, 0o755),
+        ("usr/bin/hardlink-a", Link, 0o644),
+        ("usr/bin/hardlink-b", Link, 0o644),
+    ]
+    .into_iter()
+    .map(Into::into)
+}
+
+/// Validate metadata (prelude) in a v1 tar.
+fn validate_tar_v1_metadata<R: std::io::Read>(src: &mut tar::Entries<R>) -> Result<()> {
     use tar::EntryType::{Directory, Regular};
     let prelude = [
         ("sysroot/ostree/repo", Directory, 0o755),
@@ -306,11 +326,7 @@ fn validate_tar_v1<R: std::io::Read>(mut src: tar::Archive<R>) -> Result<()> {
     .into_iter()
     .map(Into::into);
 
-    let content = [("usr", Directory, 0o755), ("boot", Directory, 0o755)];
-    let content = content.into_iter().map(Into::into);
-
-    let expected = prelude.chain(common_tar_structure()).chain(content);
-    validate_tar_expected(1, src.entries()?, expected)?;
+    validate_tar_expected(1, src, prelude)?;
 
     Ok(())
 }
@@ -349,17 +365,27 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/xattrs/d67db507c5a6e7bfd078f0f3ded0a5669479a902e812931fc65c6f5e01831ef5", Regular, 0o644),
         ("usr", Directory, 0o755),
     ].into_iter().map(Into::into));
-    validate_tar_expected(fixture.format_version, entries, expected.map(Into::into))?;
+    validate_tar_expected(
+        fixture.format_version,
+        &mut entries,
+        expected.chain(common_tar_contents_all()),
+    )?;
 
     // Validate format version 1
     fixture.format_version = 1;
     let src_tar = fixture.export_tar()?;
-    let src_tar = fixture
+    let mut src_tar = fixture
         .dir
         .open(src_tar)
         .map(BufReader::new)
         .map(tar::Archive::new)?;
-    validate_tar_v1(src_tar).unwrap();
+    let mut src_tar = src_tar.entries()?;
+    validate_tar_v1_metadata(&mut src_tar).unwrap();
+    validate_tar_expected(
+        fixture.format_version,
+        &mut src_tar,
+        common_tar_contents_all(),
+    )?;
 
     Ok(())
 }
@@ -530,7 +556,7 @@ async fn impl_test_container_import_export(
         "/usr/bin/bash"
     );
 
-    let n_chunks = if chunked { 7 } else { 1 };
+    let n_chunks = if chunked { *CONTENTS_V0_LEN } else { 1 };
     assert_eq!(cfg.rootfs().diff_ids().len(), n_chunks);
     assert_eq!(cfg.history().len(), n_chunks);
 
@@ -624,20 +650,45 @@ async fn impl_test_container_import_export(
 
 /// Parse a chunked container image and validate its structure; particularly
 fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Result<()> {
+    use tar::EntryType::Link;
+
     let d = Dir::open_ambient_dir(oci_path, cap_std::ambient_authority())?;
     let d = ocidir::OciDir::open(&d)?;
     let manifest = d.read_manifest()?;
+    assert_eq!(manifest.layers().len(), *CONTENTS_V0_LEN);
     let ostree_layer = match format {
         ExportLayout::V0 => manifest.layers().last(),
         ExportLayout::V1 => manifest.layers().first(),
     }
     .unwrap();
-    let ostree_layer_blob = d
+    let mut ostree_layer_blob = d
         .read_blob(ostree_layer)
         .map(BufReader::new)
         .map(flate2::read::GzDecoder::new)
         .map(tar::Archive::new)?;
-    validate_tar_v1(ostree_layer_blob)
+    let mut ostree_layer_blob = ostree_layer_blob.entries()?;
+    validate_tar_v1_metadata(&mut ostree_layer_blob)?;
+
+    // This layer happens to be first
+    let pkgdb_layer_offset = match format {
+        ExportLayout::V0 => 0,
+        ExportLayout::V1 => 1,
+    };
+    let pkgdb_layer = &manifest.layers()[pkgdb_layer_offset];
+    let mut pkgdb_blob = d
+        .read_blob(pkgdb_layer)
+        .map(BufReader::new)
+        .map(flate2::read::GzDecoder::new)
+        .map(tar::Archive::new)?;
+
+    // FIXME add usr/lib/sysimage/pkgdb here once https://github.com/ostreedev/ostree-rs-ext/issues/339 is fixed
+    let pkgdb = [("usr/lib/pkgdb/pkgdb", Link, 0o644)]
+        .into_iter()
+        .map(Into::into);
+
+    validate_tar_expected(0, &mut pkgdb_blob.entries()?, pkgdb)?;
+
+    Ok(())
 }
 
 #[tokio::test]
@@ -651,7 +702,7 @@ async fn test_container_chunked_v1() -> Result<()> {
 }
 
 async fn impl_test_container_chunked(format: ExportLayout) -> Result<()> {
-    let nlayers = 6u32;
+    let nlayers = *CONTENTS_V0_LEN - 1;
     let mut fixture = Fixture::new_v1()?;
 
     let (imgref, expected_digest) = fixture.export_container(format).await.unwrap();
@@ -787,7 +838,7 @@ r usr/bin/bash bash-v0
     store::remove_images(fixture.destrepo(), [&derived_imgref.imgref]).unwrap();
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 0);
     let n_removed = store::gc_image_layers(&fixture.destrepo())?;
-    assert_eq!(n_removed, 8);
+    assert_eq!(n_removed, (*CONTENTS_V0_LEN + 1) as u32);
 
     // Repo should be clean now
     assert_eq!(
