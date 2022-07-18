@@ -650,6 +650,8 @@ async fn impl_test_container_import_export(
 
 /// Parse a chunked container image and validate its structure; particularly
 fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Result<()> {
+    use tar::EntryType::Link;
+
     let d = Dir::open_ambient_dir(oci_path, cap_std::ambient_authority())?;
     let d = ocidir::OciDir::open(&d)?;
     let manifest = d.read_manifest()?;
@@ -665,7 +667,28 @@ fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Resu
         .map(flate2::read::GzDecoder::new)
         .map(tar::Archive::new)?;
     let mut ostree_layer_blob = ostree_layer_blob.entries()?;
-    validate_tar_v1_metadata(&mut ostree_layer_blob)
+    validate_tar_v1_metadata(&mut ostree_layer_blob)?;
+
+    // This layer happens to be first
+    let pkgdb_layer_offset = match format {
+        ExportLayout::V0 => 0,
+        ExportLayout::V1 => 1,
+    };
+    let pkgdb_layer = &manifest.layers()[pkgdb_layer_offset];
+    let mut pkgdb_blob = d
+        .read_blob(pkgdb_layer)
+        .map(BufReader::new)
+        .map(flate2::read::GzDecoder::new)
+        .map(tar::Archive::new)?;
+
+    // FIXME add usr/lib/sysimage/pkgdb here once https://github.com/ostreedev/ostree-rs-ext/issues/339 is fixed
+    let pkgdb = [("usr/lib/pkgdb/pkgdb", Link, 0o644)]
+        .into_iter()
+        .map(Into::into);
+
+    validate_tar_expected(0, &mut pkgdb_blob.entries()?, pkgdb)?;
+
+    Ok(())
 }
 
 #[tokio::test]
