@@ -681,10 +681,12 @@ fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Resu
         .map(flate2::read::GzDecoder::new)
         .map(tar::Archive::new)?;
 
-    // FIXME add usr/lib/sysimage/pkgdb here once https://github.com/ostreedev/ostree-rs-ext/issues/339 is fixed
-    let pkgdb = [("usr/lib/pkgdb/pkgdb", Link, 0o644)]
-        .into_iter()
-        .map(Into::into);
+    let pkgdb = [
+        ("usr/lib/pkgdb/pkgdb", Link, 0o644),
+        ("usr/lib/sysimage/pkgdb", Link, 0o644),
+    ]
+    .into_iter()
+    .map(Into::into);
 
     validate_tar_expected(0, &mut pkgdb_blob.entries()?, pkgdb)?;
 
