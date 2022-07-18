@@ -248,6 +248,7 @@ fn validate_tar_expected<T: std::io::Read>(
             assert_eq!(header.entry_type(), exp.etype, "{}", entry_path);
             let is_old_object = format_version == 0;
             let mut expected_mode = exp.mode;
+            let header_mode = header.mode().unwrap();
             if is_old_object && !entry_path.starts_with("sysroot/") {
                 let fmtbits = match header.entry_type() {
                     tar::EntryType::Regular => libc::S_IFREG,
@@ -258,9 +259,9 @@ fn validate_tar_expected<T: std::io::Read>(
                 expected_mode |= fmtbits;
             }
             assert_eq!(
-                header.mode().unwrap(),
+                header_mode,
                 expected_mode,
-                "fmtver: {} type: {:?} path: {}",
+                "h={header_mode:o} e={expected_mode:o} fmtver: {} type: {:?} path: {}",
                 format_version,
                 header.entry_type(),
                 entry_path
