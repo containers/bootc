@@ -1,6 +1,6 @@
 [licenses]
 unlicensed = "deny"
-allow = ["Apache-2.0", "Apache-2.0 WITH LLVM-exception", "MIT", "BSD-3-Clause", "BSD-2-Clause"]
+allow = ["Apache-2.0", "Apache-2.0 WITH LLVM-exception", "MIT", "BSD-3-Clause", "BSD-2-Clause", "Unicode-DFS-2016"]
 
 [bans]
 
