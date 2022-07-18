@@ -228,7 +228,7 @@ impl Into<TarExpected> for (&'static str, tar::EntryType, u32) {
 
 fn validate_tar_expected<T: std::io::Read>(
     format_version: u32,
-    t: tar::Entries<T>,
+    t: &mut tar::Entries<T>,
     expected: impl IntoIterator<Item = TarExpected>,
 ) -> Result<()> {
     let mut expected: HashMap<&'static str, TarExpected> =
@@ -300,7 +300,8 @@ fn common_tar_structure() -> impl Iterator<Item = TarExpected> {
     .map(Into::into)
 }
 
-fn validate_tar_v1<R: std::io::Read>(mut src: tar::Archive<R>) -> Result<()> {
+/// Validate metadata (prelude) in a v1 tar.
+fn validate_tar_v1_metadata<R: std::io::Read>(src: &mut tar::Entries<R>) -> Result<()> {
     use tar::EntryType::{Directory, Regular};
     let prelude = [
         ("sysroot/ostree/repo", Directory, 0o755),
@@ -313,7 +314,7 @@ fn validate_tar_v1<R: std::io::Read>(mut src: tar::Archive<R>) -> Result<()> {
     let content = content.into_iter().map(Into::into);
 
     let expected = prelude.chain(common_tar_structure()).chain(content);
-    validate_tar_expected(1, src.entries()?, expected)?;
+    validate_tar_expected(1, src, expected)?;
 
     Ok(())
 }
@@ -352,17 +353,22 @@ fn test_tar_export_structure() -> Result<()> {
         ("sysroot/ostree/repo/xattrs/d67db507c5a6e7bfd078f0f3ded0a5669479a902e812931fc65c6f5e01831ef5", Regular, 0o644),
         ("usr", Directory, 0o755),
     ].into_iter().map(Into::into));
-    validate_tar_expected(fixture.format_version, entries, expected.map(Into::into))?;
+    validate_tar_expected(
+        fixture.format_version,
+        &mut entries,
+        expected.map(Into::into),
+    )?;
 
     // Validate format version 1
     fixture.format_version = 1;
     let src_tar = fixture.export_tar()?;
-    let src_tar = fixture
+    let mut src_tar = fixture
         .dir
         .open(src_tar)
         .map(BufReader::new)
         .map(tar::Archive::new)?;
-    validate_tar_v1(src_tar).unwrap();
+    let mut src_tar = src_tar.entries()?;
+    validate_tar_v1_metadata(&mut src_tar).unwrap();
 
     Ok(())
 }
@@ -636,12 +642,13 @@ fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Resu
         ExportLayout::V1 => manifest.layers().first(),
     }
     .unwrap();
-    let ostree_layer_blob = d
+    let mut ostree_layer_blob = d
         .read_blob(ostree_layer)
         .map(BufReader::new)
         .map(flate2::read::GzDecoder::new)
         .map(tar::Archive::new)?;
-    validate_tar_v1(ostree_layer_blob)
+    let mut ostree_layer_blob = ostree_layer_blob.entries()?;
+    validate_tar_v1_metadata(&mut ostree_layer_blob)
 }
 
 #[tokio::test]
