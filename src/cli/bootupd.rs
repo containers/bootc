@@ -8,7 +8,7 @@ use log::LevelFilter;
 #[clap(name = "bootupd", about = "Bootupd backend commands", version)]
 pub struct DCommand {
     /// Verbosity level (higher is more verbose).
-    #[clap(short = 'v', parse(from_occurrences), global = true)]
+    #[clap(short = 'v', action = clap::ArgAction::Count, global = true)]
     verbosity: u8,
 
     /// CLI sub-command.
