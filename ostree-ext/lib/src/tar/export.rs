@@ -616,7 +616,13 @@ pub(crate) fn export_chunk<W: std::io::Write>(
     chunk: chunking::ChunkMapping,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
-    let writer = &mut OstreeTarWriter::new(repo, commit, out, ExportOptions::default())?;
+    // For chunking, we default to format version 1
+    #[allow(clippy::needless_update)]
+    let opts = ExportOptions {
+        format_version: 1,
+        ..Default::default()
+    };
+    let writer = &mut OstreeTarWriter::new(repo, commit, out, opts)?;
     writer.write_repo_structure()?;
     write_chunk(writer, chunk)
 }
