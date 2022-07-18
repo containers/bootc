@@ -45,7 +45,7 @@ pub(crate) fn filenames(dir: &openat::Dir) -> Result<HashSet<String>> {
         };
         match dir.get_file_type(&entry)? {
             openat::SimpleType::File => {
-                ret.insert(format!("/{}", name));
+                ret.insert(format!("/{name}"));
             }
             openat::SimpleType::Dir => {
                 let child = dir.sub_dir(name)?;
