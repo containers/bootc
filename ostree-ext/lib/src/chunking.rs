@@ -120,15 +120,15 @@ fn push_dirtree(
     repo: &ostree::Repo,
     gen: &mut Generation,
     checksum: &str,
-) -> Result<Option<glib::Variant>> {
-    if gen.dirtree_found.contains(checksum) {
-        return Ok(None);
-    }
+) -> Result<glib::Variant> {
     let child_v = repo.load_variant(ostree::ObjectType::DirTree, checksum)?;
-    let checksum = RcStr::from(checksum);
-    gen.dirtree_found.insert(RcStr::clone(&checksum));
-    gen.metadata_size += child_v.data_as_bytes().as_ref().len() as u64;
-    Ok(Some(child_v))
+    if !gen.dirtree_found.contains(checksum) {
+        gen.metadata_size += child_v.data_as_bytes().as_ref().len() as u64;
+    } else {
+        let checksum = RcStr::from(checksum);
+        gen.dirtree_found.insert(checksum);
+    }
+    Ok(child_v)
 }
 
 fn generate_chunking_recurse(
@@ -165,9 +165,9 @@ fn generate_chunking_recurse(
         gen.path.push(name);
         hex::encode_to_slice(contents_csum, &mut hexbuf)?;
         let checksum_s = std::str::from_utf8(&hexbuf)?;
-        if let Some(child_v) = push_dirtree(repo, gen, checksum_s)? {
-            generate_chunking_recurse(repo, gen, chunk, &child_v)?;
-        }
+        let dirtree_v = push_dirtree(repo, gen, checksum_s)?;
+        generate_chunking_recurse(repo, gen, chunk, &dirtree_v)?;
+        drop(dirtree_v);
         hex::encode_to_slice(meta_csum, &mut hexbuf)?;
         let checksum_s = std::str::from_utf8(&hexbuf)?;
         push_dirmeta(repo, gen, checksum_s)?;
