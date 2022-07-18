@@ -60,11 +60,11 @@ pub struct StatusOpts {
     /// If there are updates available, output `Updates available: ` to standard output;
     /// otherwise output nothing.  Avoid parsing this, just check whether or not
     /// the output is empty.
-    #[clap(long)]
+    #[clap(long, action)]
     print_if_available: bool,
 
     /// Output JSON
-    #[clap(long)]
+    #[clap(long, action)]
     json: bool,
 }
 
