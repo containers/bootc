@@ -7,6 +7,10 @@ authors = ["Colin Walters <walters@verbum.org>"]
 edition = "2021"
 rust-version = "1.58.1"
 
+# See https://github.com/cgwalters/cargo-vendor-filterer
+[package.metadata.vendor-filter]
+platforms = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+
 [[bin]]
 name = "bootupd"
 path = "src/main.rs"
