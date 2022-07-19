@@ -688,7 +688,7 @@ fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Resu
     .into_iter()
     .map(Into::into);
 
-    validate_tar_expected(0, &mut pkgdb_blob.entries()?, pkgdb)?;
+    validate_tar_expected(1, &mut pkgdb_blob.entries()?, pkgdb)?;
 
     Ok(())
 }
