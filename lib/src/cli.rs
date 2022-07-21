@@ -480,12 +480,12 @@ async fn container_import(
         pb
     });
     let importer = ImageImporter::new(repo, imgref, Default::default()).await?;
-    let import_result = importer.unencapsulate().await;
+    let import = importer.unencapsulate().await;
+    // Ensure we finish the progress bar before potentially propagating an error
     if let Some(pb) = pb.as_ref() {
         pb.finish();
     }
-    // It must have been set
-    let import = import_result.unwrap();
+    let import = import?;
     if let Some(write_ref) = write_ref {
         repo.set_ref_immediate(
             None,
