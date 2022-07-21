@@ -118,7 +118,7 @@ impl<'a> CommitRewriter<'a> {
         let mut tempf = tempfile::NamedTempFile::new_in(self.tempdir.path())?;
         // If we're operating on a bare repo, we can clone the file (copy_file_range) directly.
         if let Ok(instream) = instream.clone().downcast::<gio::UnixInputStream>() {
-            use io_lifetimes::AsFilelike;
+            use cap_std_ext::cap_std::io_lifetimes::AsFilelike;
             // View the fd as a File
             let instream_fd = unsafe { BorrowedFd::borrow_raw(instream.as_raw_fd()) };
             let instream_fd = instream_fd.as_filelike_view::<std::fs::File>();
