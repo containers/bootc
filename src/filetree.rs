@@ -312,13 +312,13 @@ pub(crate) fn apply_diff(
         let pathtmp = tmpname_for_path(path);
         destdir
             .local_rename(&pathtmp, path)
-            .with_context(|| format!("renaming {}", path))?;
+            .with_context(|| format!("renaming {path}"))?;
     }
     if !opts.skip_removals {
         for path in diff.removals.iter() {
             destdir
                 .remove_file(path)
-                .with_context(|| format!("removing {}", path))?;
+                .with_context(|| format!("removing {path}"))?;
         }
     }
     // A second full filesystem sync to narrow any races rather than
