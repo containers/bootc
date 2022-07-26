@@ -60,7 +60,7 @@ dependencies = [
 
 [[package]]
 name = "bootupd"
-version = "0.2.7-alpha.0"
+version = "0.2.7"
 dependencies = [
  "anyhow",
  "bincode",
