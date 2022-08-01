@@ -70,11 +70,11 @@ dependencies = [
  "fn-error-context",
  "fs2",
  "hex",
- "lazy_static",
  "libc",
  "libsystemd",
  "log",
  "nix",
+ "once_cell",
  "openat",
  "openat-ext",
  "openssl",
@@ -427,9 +427,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.8.0"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "692fcb63b64b1758029e0a96ee63e049ce8c5948587f2f7208df04625e5f6b56"
+checksum = "18a6dbe30758c9f83eb00cbea4ac95966305f5a7772f3f42ebfc7fc7eddbd8e1"
 
 [[package]]
 name = "openat"
