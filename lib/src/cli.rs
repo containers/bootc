@@ -412,7 +412,11 @@ async fn handle_layer_progress_print(
 ) {
     let style = indicatif::ProgressStyle::default_bar();
     let pb = indicatif::ProgressBar::new(100);
-    pb.set_style(style.template("{prefix} {bytes} [{bar:20}] ({eta}) {msg}"));
+    pb.set_style(
+        style
+            .template("{prefix} {bytes} [{bar:20}] ({eta}) {msg}")
+            .unwrap(),
+    );
     loop {
         tokio::select! {
             // Always handle layer changes first.
@@ -474,8 +478,8 @@ async fn container_import(
     let pb = (!quiet).then(|| {
         let pb = indicatif::ProgressBar::new_spinner();
         pb.set_draw_target(target);
-        pb.set_style(style.template("{spinner} {prefix} {msg}"));
-        pb.enable_steady_tick(200);
+        pb.set_style(style.template("{spinner} {prefix} {msg}").unwrap());
+        pb.enable_steady_tick(std::time::Duration::from_millis(200));
         pb.set_message("Downloading...");
         pb
     });
