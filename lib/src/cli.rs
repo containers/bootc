@@ -131,6 +131,10 @@ enum ContainerOpts {
         /// Corresponds to the Dockerfile `CMD` instruction.
         #[structopt(long)]
         cmd: Option<Vec<String>>,
+
+        /// Compress at the fastest level (e.g. gzip level 1)
+        #[structopt(long)]
+        compression_fast: bool,
     },
 
     #[structopt(alias = "commit")]
@@ -513,6 +517,7 @@ async fn container_export(
     labels: BTreeMap<String, String>,
     copy_meta_keys: Vec<String>,
     cmd: Option<Vec<String>>,
+    compression_fast: bool,
 ) -> Result<()> {
     let config = Config {
         labels: Some(labels),
@@ -520,6 +525,7 @@ async fn container_export(
     };
     let opts = crate::container::ExportOpts {
         copy_meta_keys,
+        skip_compression: compression_fast, // TODO rename this in the struct at the next semver break
         ..Default::default()
     };
     let pushed =
@@ -699,6 +705,7 @@ where
                 labels,
                 copy_meta_keys,
                 cmd,
+                compression_fast,
             } => {
                 let labels: Result<BTreeMap<_, _>> = labels
                     .into_iter()
@@ -709,7 +716,16 @@ where
                         Ok((k.to_string(), v.to_string()))
                     })
                     .collect();
-                container_export(&repo, &rev, &imgref, labels?, copy_meta_keys, cmd).await
+                container_export(
+                    &repo,
+                    &rev,
+                    &imgref,
+                    labels?,
+                    copy_meta_keys,
+                    cmd,
+                    compression_fast,
+                )
+                .await
             }
             ContainerOpts::Image(opts) => match opts {
                 ContainerImageOpts::List { repo } => {
