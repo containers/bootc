@@ -344,7 +344,7 @@ impl ExportOpts {
     /// Return the gzip compression level to use, as configured by the export options.
     fn compression(&self) -> Compression {
         if self.skip_compression {
-            Compression::none()
+            Compression::fast()
         } else {
             Compression::default()
         }
