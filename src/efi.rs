@@ -14,7 +14,7 @@ use anyhow::{bail, Context, Result};
 use openat_ext::OpenatDirExt;
 
 use chrono::prelude::*;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
 use crate::component::*;
 use crate::filetree;
@@ -26,13 +26,13 @@ use crate::util::CommandRunExt;
 /// The ESP partition label
 pub(crate) const ESP_PART_LABEL: &str = "EFI-SYSTEM";
 
-lazy_static! {
-    /// The path to a temporary ESP mount
-    static ref MOUNT_PATH: PathBuf = {
-        // Create new directory in /tmp with randomly generated name at runtime for ESP mount path.
-        tempfile::tempdir_in("/tmp").expect("Failed to create temp dir for EFI mount").into_path()
-    };
-}
+/// The path to a temporary ESP mount
+static MOUNT_PATH: Lazy<PathBuf> = Lazy::new(|| {
+    // Create new directory in /tmp with randomly generated name at runtime for ESP mount path.
+    tempfile::tempdir_in("/tmp")
+        .expect("Failed to create temp dir for EFI mount")
+        .into_path()
+});
 
 #[derive(Default)]
 pub(crate) struct Efi {}
