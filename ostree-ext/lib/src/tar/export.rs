@@ -26,6 +26,8 @@ pub const FORMAT_VERSIONS: RangeInclusive<u32> = 0..=1;
 const SYSROOT: &str = "sysroot";
 // This way the default ostree -> sysroot/ostree symlink works.
 const OSTREEDIR: &str = "sysroot/ostree";
+// The ref added (under ostree/) in the exported OSTree repo pointing at the commit.
+const OSTREEREF: &str = "encapsulated";
 
 /// In v0 format, we use this relative path prefix.  I think I chose this by looking
 /// at the current Fedora base image tar stream.  However, several others don't do
@@ -320,6 +322,13 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                 &commitmeta,
             )?;
         }
+
+        // and add the canonical ref
+        let path: Utf8PathBuf = format!("{}/repo/refs/heads/ostree", OSTREEDIR).into();
+        self.append_default_dir(&path)?;
+        let path: Utf8PathBuf =
+            format!("{}/repo/refs/heads/ostree/{}", OSTREEDIR, OSTREEREF).into();
+        self.append_default_data(Utf8Path::new(&path), self.commit_checksum.as_bytes())?;
         Ok(())
     }
 
