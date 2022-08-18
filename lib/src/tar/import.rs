@@ -202,8 +202,8 @@ impl Importer {
             .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", orig_path))?;
         // Ignore the regular non-object file hardlinks we inject
         if let Ok(path) = path.strip_prefix(REPO_PREFIX) {
-            // Filter out the repo config file
-            if path.file_name() == Some("config") {
+            // Filter out the repo config file and refs dir
+            if path.file_name() == Some("config") || path.starts_with("refs") {
                 return Ok(None);
             }
             let path = path.into();
