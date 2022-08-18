@@ -112,6 +112,22 @@ pub async fn fetch_manifest(
     fetch_manifest_impl(&mut proxy, imgref).await
 }
 
+/// Download the manifest for a target image and its sha256 digest, as well as the image configuration.
+#[context("Fetching manifest and config")]
+pub async fn fetch_manifest_and_config(
+    imgref: &OstreeImageReference,
+) -> Result<(
+    oci_spec::image::ImageManifest,
+    String,
+    oci_spec::image::ImageConfiguration,
+)> {
+    let proxy = ImageProxy::new().await?;
+    let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
+    let (digest, manifest) = proxy.fetch_manifest(oi).await?;
+    let config = proxy.fetch_config(oi).await?;
+    Ok((manifest, digest, config))
+}
+
 /// The result of an import operation
 #[derive(Debug)]
 pub struct Import {
