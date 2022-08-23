@@ -24,6 +24,7 @@ use ostree_ext::fixture::{FileDef, Fixture, CONTENTS_CHECKSUM_V0, CONTENTS_V0_LE
 const EXAMPLE_TAR_LAYER: &[u8] = include_bytes!("fixtures/hlinks.tar.gz");
 const TEST_REGISTRY_DEFAULT: &str = "localhost:5000";
 
+#[track_caller]
 fn assert_err_contains<T>(r: Result<T>, s: impl AsRef<str>) {
     let s = s.as_ref();
     let msg = format!("{:#}", r.err().expect("Expecting an error"));
