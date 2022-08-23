@@ -597,6 +597,10 @@ async fn impl_test_container_import_export(
     let (_, pushed_digest) = ostree_ext::container::fetch_manifest(&srcoci_unverified).await?;
     assert_eq!(pushed_digest, digest);
 
+    let (_, pushed_digest, _config) =
+        ostree_ext::container::fetch_manifest_and_config(&srcoci_unverified).await?;
+    assert_eq!(pushed_digest, digest);
+
     // No remote matching
     let srcoci_unknownremote = OstreeImageReference {
         sigverify: SignatureSource::OstreeRemote("unknownremote".to_string()),
