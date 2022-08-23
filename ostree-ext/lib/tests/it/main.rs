@@ -322,14 +322,6 @@ fn validate_tar_v1_metadata<R: std::io::Read>(src: &mut tar::Entries<R>) -> Resu
     let prelude = [
         ("sysroot/ostree/repo", Directory, 0o755),
         ("sysroot/ostree/repo/config", Regular, 0o644),
-        ("sysroot/ostree/repo/refs", Directory, 0o755),
-        ("sysroot/ostree/repo/refs/heads", Directory, 0o755),
-        ("sysroot/ostree/repo/refs/heads/ostree", Directory, 0o755),
-        (
-            "sysroot/ostree/repo/refs/heads/ostree/encapsulated",
-            Regular,
-            0o644,
-        ),
     ]
     .into_iter()
     .map(Into::into);
