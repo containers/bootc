@@ -373,7 +373,7 @@ fn components_size(components: &[&ObjectSourceMetaSized]) -> u64 {
 /// Compute the total size of a packing
 #[cfg(test)]
 fn packing_size(packing: &[ChunkedComponents]) -> u64 {
-    packing.iter().map(|v| components_size(&v)).sum()
+    packing.iter().map(|v| components_size(v)).sum()
 }
 
 fn sort_packing(packing: &mut [ChunkedComponents]) {

@@ -216,6 +216,7 @@ struct TarExpected {
     mode: u32,
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<TarExpected> for (&'static str, tar::EntryType, u32) {
     fn into(self) -> TarExpected {
         TarExpected {
@@ -465,7 +466,7 @@ async fn test_tar_write_tar_layer() -> Result<()> {
     let uncompressed_tar = tokio::io::BufReader::new(
         async_compression::tokio::bufread::GzipDecoder::new(EXAMPLE_TAR_LAYER),
     );
-    ostree_ext::tar::write_tar(&fixture.destrepo(), uncompressed_tar, "test", None).await?;
+    ostree_ext::tar::write_tar(fixture.destrepo(), uncompressed_tar, "test", None).await?;
     Ok(())
 }
 
@@ -714,7 +715,7 @@ async fn impl_test_container_chunked(format: ExportLayout) -> Result<()> {
     let (imgref, expected_digest) = fixture.export_container(format).await.unwrap();
     let imgref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
-        imgref: imgref,
+        imgref,
     };
     // Validate the structure of the image
     match &imgref.imgref {
@@ -787,7 +788,7 @@ r usr/bin/bash bash-v0
 
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
 
-    let n_removed = store::gc_image_layers(&fixture.destrepo())?;
+    let n_removed = store::gc_image_layers(fixture.destrepo())?;
     assert_eq!(n_removed, 2);
     fixture
         .destrepo()
@@ -834,16 +835,16 @@ r usr/bin/bash bash-v0
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 2);
 
     // Should only be new layers
-    let n_removed = store::gc_image_layers(&fixture.destrepo())?;
+    let n_removed = store::gc_image_layers(fixture.destrepo())?;
     assert_eq!(n_removed, 0);
     store::remove_images(fixture.destrepo(), [&imgref.imgref]).unwrap();
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
     // Still no removed layers after removing the base image
-    let n_removed = store::gc_image_layers(&fixture.destrepo())?;
+    let n_removed = store::gc_image_layers(fixture.destrepo())?;
     assert_eq!(n_removed, 0);
     store::remove_images(fixture.destrepo(), [&derived_imgref.imgref]).unwrap();
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 0);
-    let n_removed = store::gc_image_layers(&fixture.destrepo())?;
+    let n_removed = store::gc_image_layers(fixture.destrepo())?;
     assert_eq!(n_removed, (*CONTENTS_V0_LEN + 1) as u32);
 
     // Repo should be clean now
