@@ -168,7 +168,7 @@ mod test {
         for &v in UNCHANGED.iter().chain(ROUNDTRIP).chain(CORNERCASES) {
             let escaped = &prefix_escape_for_ref(TESTPREFIX, v).unwrap();
             ostree::validate_rev(escaped).unwrap();
-            let unescaped = unprefix_unescape_ref(TESTPREFIX, &escaped).unwrap();
+            let unescaped = unprefix_unescape_ref(TESTPREFIX, escaped).unwrap();
             assert_eq!(v, unescaped);
         }
         // Explicit test
