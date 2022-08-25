@@ -713,34 +713,75 @@ impl ImageImporter {
         let imgref = self.target_imgref.unwrap_or(self.imgref);
         let state = crate::tokio_util::spawn_blocking_cancellable_flatten(
             move |cancellable| -> Result<Box<LayeredImageState>> {
+                use cap_std_ext::rustix::fd::AsRawFd;
+
                 let cancellable = Some(cancellable);
                 let repo = &repo;
                 let txn = repo.auto_transaction(cancellable)?;
-                let (base_commit_tree, _) = repo.read_commit(&base_commit, cancellable)?;
-                let base_commit_tree = base_commit_tree.downcast::<ostree::RepoFile>().unwrap();
-                let base_contents_obj = base_commit_tree.tree_get_contents_checksum().unwrap();
-                let base_metadata_obj = base_commit_tree.tree_get_metadata_checksum().unwrap();
-                let mt = ostree::MutableTree::from_checksum(
-                    repo,
-                    &base_contents_obj,
-                    &base_metadata_obj,
-                );
+
+                let devino = ostree::RepoDevInoCache::new();
+                let repodir = repo.dfd_as_dir()?;
+                let repo_tmp = repodir.open_dir("tmp")?;
+                let td = cap_tempfile::TempDir::new_in(&repo_tmp)?;
+
+                let rootpath = "root";
+                let checkout_mode = if repo.mode() == ostree::RepoMode::Bare {
+                    ostree::RepoCheckoutMode::None
+                } else {
+                    ostree::RepoCheckoutMode::User
+                };
+                let mut checkout_opts = ostree::RepoCheckoutAtOptions {
+                    mode: checkout_mode,
+                    overwrite_mode: ostree::RepoCheckoutOverwriteMode::UnionFiles,
+                    devino_to_csum_cache: Some(devino.clone()),
+                    no_copy_fallback: true,
+                    force_copy_zerosized: true,
+                    process_whiteouts: false,
+                    ..Default::default()
+                };
+                repo.checkout_at(
+                    Some(&checkout_opts),
+                    (*td).as_raw_fd(),
+                    rootpath,
+                    &base_commit,
+                    cancellable,
+                )
+                .context("Checking out base commit")?;
+
                 // Layer all subsequent commits
+                checkout_opts.process_whiteouts = true;
                 for commit in layer_commits {
-                    let (layer_tree, _) = repo.read_commit(&commit, cancellable)?;
-                    repo.write_directory_to_mtree(&layer_tree, &mt, None, cancellable)?;
+                    repo.checkout_at(
+                        Some(&checkout_opts),
+                        (*td).as_raw_fd(),
+                        rootpath,
+                        &commit,
+                        cancellable,
+                    )
+                    .with_context(|| format!("Checking out layer {commit}"))?;
                 }
 
-                let merged_root = repo.write_mtree(&mt, cancellable)?;
-                let merged_root = merged_root.downcast::<ostree::RepoFile>().unwrap();
-                let merged_commit = repo.write_commit(
-                    None,
-                    None,
-                    None,
-                    Some(&metadata),
-                    &merged_root,
+                let modifier =
+                    ostree::RepoCommitModifier::new(ostree::RepoCommitModifierFlags::CONSUME, None);
+                modifier.set_devino_cache(&devino);
+
+                let mt = ostree::MutableTree::new();
+                repo.write_dfd_to_mtree(
+                    (*td).as_raw_fd(),
+                    rootpath,
+                    &mt,
+                    Some(&modifier),
                     cancellable,
-                )?;
+                )
+                .context("Writing merged filesystem to mtree")?;
+
+                let merged_root = repo
+                    .write_mtree(&mt, cancellable)
+                    .context("Writing mtree")?;
+                let merged_root = merged_root.downcast::<ostree::RepoFile>().unwrap();
+                let merged_commit = repo
+                    .write_commit(None, None, None, Some(&metadata), &merged_root, cancellable)
+                    .context("Writing commit")?;
                 repo.transaction_set_ref(None, &ostree_ref, Some(merged_commit.as_str()));
                 txn.commit(cancellable)?;
                 // Here we re-query state just to run through the same code path,

@@ -935,6 +935,15 @@ async fn test_container_write_derive() -> Result<()> {
         temproot.join("usr/bin/newderivedfile3"),
         "newderivedfile3 v0",
     )?;
+    // Remove the kernel directory and make a new one
+    let moddir = temproot.join("usr/lib/modules");
+    let oldkernel = "5.10.18-200.x86_64";
+    std::fs::create_dir_all(&moddir)?;
+    let oldkernel_wh = &format!(".wh.{oldkernel}");
+    std::fs::write(moddir.join(oldkernel_wh), "")?;
+    let newkdir = moddir.join("5.12.7-42.x86_64");
+    std::fs::create_dir_all(&newkdir)?;
+    std::fs::write(newkdir.join("vmlinuz"), "a new kernel")?;
     ostree_ext::integrationtest::generate_derived_oci(derived_path, temproot)?;
     // And v2
     let derived2_path = &fixture.path.join("derived2.oci");
@@ -1010,6 +1019,9 @@ async fn test_container_write_derive() -> Result<()> {
         let found_newderived_contents =
             ostree_ext::ostree_manual::repo_file_read_to_string(derived)?;
         assert_eq!(found_newderived_contents, newderivedfile_contents);
+
+        let old_kernel_dir = root.resolve_relative_path(format!("usr/lib/modules/{oldkernel}"));
+        assert!(!old_kernel_dir.query_exists(cancellable));
     }
 
     // Import again, but there should be no changes.

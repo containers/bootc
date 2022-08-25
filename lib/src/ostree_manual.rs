@@ -7,9 +7,8 @@ use ostree;
 use ostree::prelude::{Cast, InputStreamExtManual};
 use ostree::{gio, glib};
 
+/// Equivalent of `g_file_read()` for ostree::RepoFile to work around https://github.com/ostreedev/ostree/issues/2703
 #[allow(unsafe_code)]
-
-/// Equivalent of `g_file_read()` for ostree::RepoFile to work around an ostree bug.
 pub fn repo_file_read(f: &ostree::RepoFile) -> Result<gio::InputStream, glib::Error> {
     use glib::translate::*;
     let stream = unsafe {
@@ -19,8 +18,8 @@ pub fn repo_file_read(f: &ostree::RepoFile) -> Result<gio::InputStream, glib::Er
         if !error.is_null() {
             return Err(from_glib_full(error));
         }
-        let stream = stream as *mut gio::ffi::GInputStream;
-        from_glib_full(stream)
+        // Upcast to GInputStream here
+        from_glib_full(stream as *mut gio::ffi::GInputStream)
     };
 
     Ok(stream)
