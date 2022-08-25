@@ -483,6 +483,7 @@ impl Fixture {
         );
         metadata.insert("ostree.container-cmd", &vec!["/usr/bin/bash"]);
         metadata.insert("version", &"42.0");
+        metadata.insert(*ostree::METADATA_KEY_BOOTABLE, &true);
         let metadata = metadata.to_variant();
         let commit = self.srcrepo.write_commit_with_time(
             None,
@@ -539,6 +540,7 @@ impl Fixture {
         // Load our base commit
         let rev = &self.srcrepo().require_rev(self.testref())?;
         let (commit, _) = self.srcrepo.load_commit(rev)?;
+        let metadata = commit.child_value(0);
         let root = ostree::MutableTree::from_commit(self.srcrepo(), rev)?;
         // Bump the commit timestamp by one day
         let ts = chrono::Utc.timestamp(ostree::commit_get_timestamp(&commit) as i64, 0);
@@ -568,7 +570,15 @@ impl Fixture {
         let root = root.downcast_ref::<ostree::RepoFile>().unwrap();
         let commit = self
             .srcrepo
-            .write_commit_with_time(Some(rev), None, None, None, root, new_ts, cancellable)
+            .write_commit_with_time(
+                Some(rev),
+                None,
+                None,
+                Some(&metadata),
+                root,
+                new_ts,
+                cancellable,
+            )
             .context("Writing commit")?;
         self.srcrepo
             .transaction_set_ref(None, self.testref(), Some(commit.as_str()));

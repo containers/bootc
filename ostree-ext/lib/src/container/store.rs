@@ -309,6 +309,11 @@ pub(crate) fn parse_manifest_layout<'a>(
     Vec<&'a Descriptor>,
 )> {
     let config_labels = config.config().as_ref().and_then(|c| c.labels().as_ref());
+    let bootable_key = *ostree::METADATA_KEY_BOOTABLE;
+    let bootable = config_labels.map_or(false, |l| l.contains_key(bootable_key));
+    if !bootable {
+        anyhow::bail!("Target image does not have {bootable_key} label");
+    }
 
     let first_layer = manifest
         .layers()
