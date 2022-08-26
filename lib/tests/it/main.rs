@@ -1021,6 +1021,14 @@ async fn test_container_write_derive() -> Result<()> {
             ostree_ext::ostree_manual::repo_file_read_to_string(derived)?;
         assert_eq!(found_newderived_contents, newderivedfile_contents);
 
+        let kver = ostree_ext::bootabletree::find_kernel_dir(root.upcast_ref(), cancellable)
+            .unwrap()
+            .unwrap()
+            .basename()
+            .unwrap();
+        let kver = Utf8Path::from_path(&kver).unwrap();
+        assert_eq!(kver, newkdir.file_name().unwrap());
+
         let old_kernel_dir = root.resolve_relative_path(format!("usr/lib/modules/{oldkernel}"));
         assert!(!old_kernel_dir.query_exists(cancellable));
     }
