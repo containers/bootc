@@ -9,7 +9,7 @@ use ostree_ext::container::{
     Config, ExportOpts, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
 use ostree_ext::ocidir;
-use ostree_ext::prelude::FileExt;
+use ostree_ext::prelude::{Cast, FileExt};
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
 use sh_inline::bash_in;
@@ -901,6 +901,7 @@ async fn test_container_import_export_v1() {
 /// But layers work via the container::write module.
 #[tokio::test]
 async fn test_container_write_derive() -> Result<()> {
+    let cancellable = gio::NONE_CANCELLABLE;
     let fixture = Fixture::new_v1()?;
     let base_oci_path = &fixture.path.join("exampleos.oci");
     let _digest = ostree_ext::container::encapsulate(
@@ -926,11 +927,24 @@ async fn test_container_write_derive() -> Result<()> {
     oci_clone(base_oci_path, derived_path).await?;
     let temproot = &fixture.path.join("temproot");
     std::fs::create_dir_all(&temproot.join("usr/bin"))?;
-    std::fs::write(temproot.join("usr/bin/newderivedfile"), "newderivedfile v0")?;
+    let newderivedfile_contents = "newderivedfile v0";
+    std::fs::write(
+        temproot.join("usr/bin/newderivedfile"),
+        newderivedfile_contents,
+    )?;
     std::fs::write(
         temproot.join("usr/bin/newderivedfile3"),
         "newderivedfile3 v0",
     )?;
+    // Remove the kernel directory and make a new one
+    let moddir = temproot.join("usr/lib/modules");
+    let oldkernel = "5.10.18-200.x86_64";
+    std::fs::create_dir_all(&moddir)?;
+    let oldkernel_wh = &format!(".wh.{oldkernel}");
+    std::fs::write(moddir.join(oldkernel_wh), "")?;
+    let newkdir = moddir.join("5.12.7-42.x86_64");
+    std::fs::create_dir_all(&newkdir)?;
+    std::fs::write(newkdir.join("vmlinuz"), "a new kernel")?;
     ostree_ext::integrationtest::generate_derived_oci(derived_path, temproot)?;
     // And v2
     let derived2_path = &fixture.path.join("derived2.oci");
@@ -995,11 +1009,21 @@ async fn test_container_write_derive() -> Result<()> {
     assert_eq!(config.os(), &oci_spec::image::Os::Linux);
 
     // Parse the commit and verify we pulled the derived content.
-    bash_in!(
-        &fixture.dir,
-        "ostree --repo=dest/repo ls ${r} /usr/bin/newderivedfile >/dev/null",
-        r = import.merge_commit.as_str()
-    )?;
+    let root = fixture
+        .destrepo()
+        .read_commit(&import.merge_commit, cancellable)?
+        .0;
+    let root = root.downcast_ref::<ostree::RepoFile>().unwrap();
+    {
+        let derived = root.resolve_relative_path("usr/bin/newderivedfile");
+        let derived = derived.downcast_ref::<ostree::RepoFile>().unwrap();
+        let found_newderived_contents =
+            ostree_ext::ostree_manual::repo_file_read_to_string(derived)?;
+        assert_eq!(found_newderived_contents, newderivedfile_contents);
+
+        let old_kernel_dir = root.resolve_relative_path(format!("usr/lib/modules/{oldkernel}"));
+        assert!(!old_kernel_dir.query_exists(cancellable));
+    }
 
     // Import again, but there should be no changes.
     let mut imp =
