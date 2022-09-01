@@ -802,6 +802,7 @@ where
                         kargs: kargs.as_deref(),
                         target_imgref: target_imgref.as_ref(),
                         proxy_cfg: Some(proxyopts.into()),
+                        ..Default::default()
                     };
                     let state = crate::container::deploy::deploy(
                         sysroot,

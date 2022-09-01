@@ -27,6 +27,12 @@ pub struct DeployOpts<'a> {
 
     /// Configuration for fetching containers.
     pub proxy_cfg: Option<super::store::ImageProxyConfig>,
+
+    /// If true, then no image reference will be written; but there will be refs
+    /// for the fetched layers.  This ensures that if the machine is later updated
+    /// to a different container image, the fetch process will reuse shared layers, but
+    /// it will not be necessary to remove the previous image.
+    pub no_imgref: bool,
 }
 
 /// Write a container image to an OSTree deployment.
@@ -47,6 +53,9 @@ pub async fn deploy(
             .await?;
     if let Some(target) = options.target_imgref {
         imp.set_target(target);
+    }
+    if options.no_imgref {
+        imp.set_no_imgref();
     }
     let state = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(r) => r,
