@@ -7,9 +7,8 @@ set -euo pipefail
 sysroot=/run/host
 # Current stable image fixture
 image=quay.io/coreos-assembler/fcos:testing-devel
-# My hand-uploaded chunked images
-chunked_image=quay.io/cgwalters/fcos-chunked:latest
-chunked_image_v1=quay.io/cgwalters/fcos-chunked:v1
+# An unchunked v1 image
+old_image=quay.io/cgwalters/fcos:unchunked
 imgref=ostree-unverified-registry:${image}
 stateroot=testos
 
@@ -26,7 +25,7 @@ ostree-ext-cli container image deploy --sysroot "${sysroot}" \
     --stateroot "${stateroot}" --imgref "${imgref}"
 ostree admin --sysroot="${sysroot}" status
 ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"${image}"
-for img in "${chunked_image}" "${chunked_image_v1}"; do
+for img in "${image}" "${old_image}"; do
     ostree-ext-cli container image deploy --sysroot "${sysroot}" \
         --stateroot "${stateroot}" --imgref ostree-unverified-registry:"${img}"
     ostree admin --sysroot="${sysroot}" status
