@@ -131,6 +131,7 @@ pub struct ImageImporter {
     pub(crate) proxy: ImageProxy,
     imgref: OstreeImageReference,
     target_imgref: Option<OstreeImageReference>,
+    no_imgref: bool, // If true, do not write final image ref
     pub(crate) proxy_img: OpenedImage,
 
     layer_progress: Option<Sender<ImportProgress>>,
@@ -405,6 +406,7 @@ impl ImageImporter {
             proxy,
             proxy_img,
             target_imgref: None,
+            no_imgref: false,
             imgref: imgref.clone(),
             layer_progress: None,
             layer_byte_progress: None,
@@ -414,6 +416,13 @@ impl ImageImporter {
     /// Write cached data as if the image came from this source.
     pub fn set_target(&mut self, target: &OstreeImageReference) {
         self.target_imgref = Some(target.clone())
+    }
+
+    /// Do not write the final image ref, but do write refs for shared layers.
+    /// This is useful in scenarios where you want to "pre-pull" an image,
+    /// but in such a way that it does not need to be manually removed later.
+    pub fn set_no_imgref(&mut self) {
+        self.no_imgref = true;
     }
 
     /// Determine if there is a new manifest, and if so return its digest.
@@ -787,7 +796,9 @@ impl ImageImporter {
                 let merged_commit = repo
                     .write_commit(None, None, None, Some(&metadata), &merged_root, cancellable)
                     .context("Writing commit")?;
-                repo.transaction_set_ref(None, &ostree_ref, Some(merged_commit.as_str()));
+                if !self.no_imgref {
+                    repo.transaction_set_ref(None, &ostree_ref, Some(merged_commit.as_str()));
+                }
                 txn.commit(cancellable)?;
                 // Here we re-query state just to run through the same code path,
                 // though it'd be cheaper to synthesize it from the data we already have.
