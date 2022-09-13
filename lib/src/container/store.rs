@@ -969,6 +969,39 @@ fn prune_image(repo: &ostree::Repo, image: &ImageReference) -> Result<()> {
     Ok(())
 }
 
+/// Given an image, if it has any non-ostree compatible content, return a suitable
+/// warning message.
+pub fn image_filtered_content_warning(
+    repo: &ostree::Repo,
+    image: &ImageReference,
+) -> Result<Option<String>> {
+    use std::fmt::Write;
+
+    let ostree_ref = ref_for_image(image)?;
+    let rev = repo.require_rev(&ostree_ref)?;
+    let commit_obj = repo.load_commit(rev.as_str())?.0;
+    let commit_meta = &glib::VariantDict::new(Some(&commit_obj.child_value(0)));
+
+    let r = commit_meta
+        .lookup::<MetaFilteredData>(META_FILTERED)?
+        .filter(|v| !v.is_empty())
+        .map(|v| {
+            let mut filtered = HashMap::<&String, u32>::new();
+            for paths in v.values() {
+                for (k, v) in paths {
+                    let e = filtered.entry(k).or_default();
+                    *e += v;
+                }
+            }
+            let mut buf = "Image contains non-ostree compatible file paths:".to_string();
+            for (k, v) in filtered {
+                write!(buf, " {k}: {v}").unwrap();
+            }
+            buf
+        });
+    Ok(r)
+}
+
 /// Remove the specified image references.
 ///
 /// This function assumes no transaction is active on the repository.
