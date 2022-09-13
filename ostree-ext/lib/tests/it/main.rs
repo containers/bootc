@@ -746,6 +746,12 @@ async fn impl_test_container_chunked(format: ExportLayout) -> Result<()> {
 
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
 
+    assert!(
+        store::image_filtered_content_warning(fixture.destrepo(), &imgref.imgref)
+            .unwrap()
+            .is_none()
+    );
+
     const ADDITIONS: &str = indoc::indoc! { "
 r usr/bin/bash bash-v0
 "};
@@ -835,6 +841,12 @@ r usr/bin/bash bash-v0
     let _import = imp.import(prep).await.unwrap();
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 2);
 
+    assert!(
+        store::image_filtered_content_warning(fixture.destrepo(), &derived_imgref.imgref)
+            .unwrap()
+            .is_none()
+    );
+
     // Should only be new layers
     let n_removed = store::gc_image_layers(fixture.destrepo())?;
     assert_eq!(n_removed, 0);
@@ -856,6 +868,58 @@ r usr/bin/bash bash-v0
             .unwrap()
             .len(),
         0
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_container_var_content() -> Result<()> {
+    let fixture = Fixture::new_v1()?;
+
+    let imgref = fixture.export_container(ExportLayout::V1).await.unwrap().0;
+    let imgref = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref,
+    };
+
+    // Build a derived image
+    let derived_path = &fixture.path.join("derived.oci");
+    let srcpath = imgref.imgref.name.as_str();
+    oci_clone(srcpath, derived_path).await.unwrap();
+    let temproot = &fixture.path.join("temproot");
+    || -> Result<_> {
+        std::fs::create_dir(temproot)?;
+        let temprootd = Dir::open_ambient_dir(temproot, cap_std::ambient_authority())?;
+        let mut db = DirBuilder::new();
+        db.mode(0o755);
+        db.recursive(true);
+        temprootd.create_dir_with("var/lib", &db)?;
+        temprootd.write("var/lib/foo", "junk var data")?;
+        Ok(())
+    }()
+    .context("generating temp content")?;
+    ostree_ext::integrationtest::generate_derived_oci(derived_path, temproot)?;
+
+    let derived_imgref = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: ImageReference {
+            transport: Transport::OciDir,
+            name: derived_path.to_string(),
+        },
+    };
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &derived_imgref, Default::default()).await?;
+    let prep = match imp.prepare().await.unwrap() {
+        store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        store::PrepareResult::Ready(r) => r,
+    };
+    let _import = imp.import(prep).await.unwrap();
+
+    assert!(
+        store::image_filtered_content_warning(fixture.destrepo(), &derived_imgref.imgref)
+            .unwrap()
+            .is_some()
     );
 
     Ok(())

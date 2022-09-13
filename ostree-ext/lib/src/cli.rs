@@ -573,18 +573,10 @@ async fn container_store(
         let _ = printer.await;
     }
     let import = import?;
-    let commit = &repo.load_commit(&import.merge_commit)?.0;
-    let commit_meta = &glib::VariantDict::new(Some(&commit.child_value(0)));
-    let filtered = commit_meta.lookup::<ostree_container::store::MetaFilteredData>(
-        ostree_container::store::META_FILTERED,
-    )?;
-    if let Some(filtered) = filtered {
-        for (layerid, filtered) in filtered {
-            eprintln!("Unsupported paths filtered from {}:", layerid);
-            for (prefix, count) in filtered {
-                eprintln!("  {}: {}", prefix, count);
-            }
-        }
+    if let Some(msg) =
+        ostree_container::store::image_filtered_content_warning(repo, &imgref.imgref)?
+    {
+        eprintln!("{msg}")
     }
     println!("Wrote: {} => {}", imgref, import.merge_commit);
     Ok(())
@@ -793,6 +785,7 @@ where
                 } => {
                     let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
                     sysroot.load(gio::NONE_CANCELLABLE)?;
+                    let repo = &sysroot.repo().unwrap();
                     let kargs = karg.as_deref();
                     let kargs = kargs.map(|v| {
                         let r: Vec<_> = v.iter().map(|s| s.as_str()).collect();
@@ -811,6 +804,12 @@ where
                         Some(options),
                     )
                     .await?;
+                    if let Some(msg) = ostree_container::store::image_filtered_content_warning(
+                        repo,
+                        &imgref.imgref,
+                    )? {
+                        eprintln!("{msg}")
+                    }
                     if let Some(p) = write_commitid_to {
                         std::fs::write(&p, state.merge_commit.as_bytes())
                             .with_context(|| format!("Failed to write commitid to {}", p))?;
