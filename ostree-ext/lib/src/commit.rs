@@ -49,7 +49,7 @@ fn process_dir_recurse(root: &Dir, path: &Utf8Path, error_count: &mut i32) -> Re
 
 /// Given a root filesystem, clean out empty directories and warn about
 /// files in /var.  /run, /tmp, and /var/tmp have their contents recursively cleaned.
-fn prepare_ostree_commit_in(root: &Dir) -> Result<()> {
+pub fn prepare_ostree_commit_in(root: &Dir) -> Result<()> {
     let mut error_count = 0;
     for path in FORCE_CLEAN_PATHS {
         if let Some(subdir) = root.open_dir_optional(path)? {
