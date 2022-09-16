@@ -47,10 +47,7 @@ fn process_dir_recurse(root: &Dir, path: &Utf8Path, error_count: &mut i32) -> Re
     Ok(validated)
 }
 
-/// Given a root filesystem, clean out empty directories and warn about
-/// files in /var.  /run, /tmp, and /var/tmp have their contents recursively cleaned.
-pub fn prepare_ostree_commit_in(root: &Dir) -> Result<()> {
-    let mut error_count = 0;
+fn clean_paths_in(root: &Dir) -> Result<()> {
     for path in FORCE_CLEAN_PATHS {
         if let Some(subdir) = root.open_dir_optional(path)? {
             for entry in subdir.entries()? {
@@ -59,11 +56,33 @@ pub fn prepare_ostree_commit_in(root: &Dir) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+#[allow(clippy::collapsible_if)]
+fn process_var(root: &Dir, strict: bool) -> Result<()> {
     let var = Utf8Path::new("var");
-    if root.try_exists(var)? && !process_dir_recurse(root, var, &mut error_count)? {
-        anyhow::bail!("Found content in {var}");
+    let mut error_count = 0;
+    if root.try_exists(var)? {
+        if !process_dir_recurse(root, var, &mut error_count)? && strict {
+            anyhow::bail!("Found content in {var}");
+        }
     }
     Ok(())
+}
+
+/// Given a root filesystem, clean out empty directories and warn about
+/// files in /var.  /run, /tmp, and /var/tmp have their contents recursively cleaned.
+pub fn prepare_ostree_commit_in(root: &Dir) -> Result<()> {
+    clean_paths_in(root)?;
+    process_var(root, true)
+}
+
+/// Like [`prepare_ostree_commit_in`] but only emits warnings about unsupported
+/// files in `/var` and will not error.
+pub fn prepare_ostree_commit_in_nonstrict(root: &Dir) -> Result<()> {
+    clean_paths_in(root)?;
+    process_var(root, false)
 }
 
 /// Entrypoint to the commit procedures, initially we just
@@ -87,6 +106,7 @@ mod tests {
 
         // Handle the empty case
         prepare_ostree_commit_in(td).unwrap();
+        prepare_ostree_commit_in_nonstrict(td).unwrap();
 
         let var = Utf8Path::new("var");
         let run = Utf8Path::new("run");
@@ -117,6 +137,10 @@ mod tests {
         td.create_dir(&var)?;
         td.write(var.join("foo"), "somefile")?;
         assert!(prepare_ostree_commit_in(td).is_err());
+        assert!(td.try_exists(var)?);
+
+        td.write(var.join("foo"), "somefile")?;
+        prepare_ostree_commit_in_nonstrict(td).unwrap();
         assert!(td.try_exists(var)?);
 
         let nested = Utf8Path::new("var/lib/nested");
