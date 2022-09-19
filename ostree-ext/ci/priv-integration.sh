@@ -25,6 +25,7 @@ ostree-ext-cli container image deploy --sysroot "${sysroot}" \
     --stateroot "${stateroot}" --imgref "${imgref}"
 ostree admin --sysroot="${sysroot}" status
 ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"${image}"
+ostree admin --sysroot="${sysroot}" undeploy 0
 for img in "${image}" "${old_image}"; do
     ostree-ext-cli container image deploy --sysroot "${sysroot}" \
         --stateroot "${stateroot}" --imgref ostree-unverified-registry:"${img}"

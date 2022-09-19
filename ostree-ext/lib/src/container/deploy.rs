@@ -48,6 +48,7 @@ pub async fn deploy(
     let cancellable = ostree::gio::NONE_CANCELLABLE;
     let options = options.unwrap_or_default();
     let repo = &sysroot.repo().unwrap();
+    let merge_deployment = sysroot.merge_deployment(Some(stateroot));
     let mut imp =
         super::store::ImageImporter::new(repo, imgref, options.proxy_cfg.unwrap_or_default())
             .await?;
@@ -65,17 +66,39 @@ pub async fn deploy(
     let origin = glib::KeyFile::new();
     let target_imgref = options.target_imgref.unwrap_or(imgref);
     origin.set_string("origin", ORIGIN_CONTAINER, &target_imgref.to_string());
-    let deployment = &sysroot.deploy_tree(
-        Some(stateroot),
-        commit,
-        Some(&origin),
-        None,
-        options.kargs.unwrap_or_default(),
-        cancellable,
-    )?;
-    let flags = ostree::SysrootSimpleWriteDeploymentFlags::NONE;
-    sysroot.simple_write_deployment(Some(stateroot), deployment, None, flags, cancellable)?;
-    sysroot.cleanup(cancellable)?;
+
+    if sysroot.booted_deployment().is_some() {
+        let opts = ostree::SysrootDeployTreeOpts {
+            override_kernel_argv: options.kargs,
+            ..Default::default()
+        };
+        sysroot.stage_tree_with_options(
+            Some(stateroot),
+            commit,
+            Some(&origin),
+            merge_deployment.as_ref(),
+            &opts,
+            cancellable,
+        )?;
+    } else {
+        let deployment = &sysroot.deploy_tree(
+            Some(stateroot),
+            commit,
+            Some(&origin),
+            merge_deployment.as_ref(),
+            options.kargs.unwrap_or_default(),
+            cancellable,
+        )?;
+        let flags = ostree::SysrootSimpleWriteDeploymentFlags::NONE;
+        sysroot.simple_write_deployment(
+            Some(stateroot),
+            deployment,
+            merge_deployment.as_ref(),
+            flags,
+            cancellable,
+        )?;
+        sysroot.cleanup(cancellable)?;
+    }
 
     Ok(state)
 }
