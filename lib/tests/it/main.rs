@@ -802,9 +802,7 @@ r usr/bin/bash bash-v0
         .prune(ostree::RepoPruneFlags::REFS_ONLY, 0, gio::NONE_CANCELLABLE)?;
 
     // Build a derived image
-    let derived_path = &fixture.path.join("derived.oci");
     let srcpath = imgref.imgref.name.as_str();
-    oci_clone(srcpath, derived_path).await.unwrap();
     let temproot = &fixture.path.join("temproot");
     || -> Result<_> {
         std::fs::create_dir(temproot)?;
@@ -818,13 +816,14 @@ r usr/bin/bash bash-v0
         Ok(())
     }()
     .context("generating temp content")?;
-    ostree_ext::integrationtest::generate_derived_oci(derived_path, temproot)?;
+    let derived_tag = "derived";
+    ostree_ext::integrationtest::generate_derived_oci(srcpath, temproot, Some(derived_tag))?;
 
     let derived_imgref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref: ImageReference {
             transport: Transport::OciDir,
-            name: derived_path.to_string(),
+            name: format!("{srcpath}:{derived_tag}"),
         },
     };
     let mut imp =
@@ -899,7 +898,7 @@ async fn test_container_var_content() -> Result<()> {
         Ok(())
     }()
     .context("generating temp content")?;
-    ostree_ext::integrationtest::generate_derived_oci(derived_path, temproot)?;
+    ostree_ext::integrationtest::generate_derived_oci(derived_path, temproot, None)?;
 
     let derived_imgref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
@@ -1009,7 +1008,7 @@ async fn test_container_write_derive() -> Result<()> {
     let newkdir = moddir.join("5.12.7-42.x86_64");
     std::fs::create_dir_all(&newkdir)?;
     std::fs::write(newkdir.join("vmlinuz"), "a new kernel")?;
-    ostree_ext::integrationtest::generate_derived_oci(derived_path, temproot)?;
+    ostree_ext::integrationtest::generate_derived_oci(derived_path, temproot, None)?;
     // And v2
     let derived2_path = &fixture.path.join("derived2.oci");
     oci_clone(base_oci_path, derived2_path).await?;
@@ -1020,7 +1019,7 @@ async fn test_container_write_derive() -> Result<()> {
         temproot.join("usr/bin/newderivedfile2"),
         "newderivedfile2 v0",
     )?;
-    ostree_ext::integrationtest::generate_derived_oci(derived2_path, temproot)?;
+    ostree_ext::integrationtest::generate_derived_oci(derived2_path, temproot, None)?;
 
     let derived_ref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
