@@ -179,12 +179,14 @@ fn build_oci(
     repo: &ostree::Repo,
     rev: &str,
     ocidir_path: &Path,
+    tag: Option<&str>,
     config: &Config,
     opts: ExportOpts,
     contentmeta: Option<crate::chunking::ObjectMetaSized>,
 ) -> Result<ImageReference> {
-    // Explicitly error if the target exists
-    std::fs::create_dir(ocidir_path).context("Creating OCI dir")?;
+    if !ocidir_path.exists() {
+        std::fs::create_dir(ocidir_path).context("Creating OCI dir")?;
+    }
     let ocidir = Dir::open_ambient_dir(ocidir_path, cap_std::ambient_authority())?;
     let mut writer = ocidir::OciDir::create(&ocidir)?;
 
@@ -264,12 +266,27 @@ fn build_oci(
     imgcfg.set_config(Some(ctrcfg));
     let ctrcfg = writer.write_config(imgcfg)?;
     manifest.set_config(ctrcfg);
-    writer.write_manifest(manifest, oci_image::Platform::default())?;
+    let platform = oci_image::Platform::default();
+    if let Some(tag) = tag {
+        writer.insert_manifest(manifest, Some(tag), platform)?;
+    } else {
+        writer.replace_with_single_manifest(manifest, platform)?;
+    }
 
     Ok(ImageReference {
         transport: Transport::OciDir,
         name: ocidir_path.to_str().unwrap().to_string(),
     })
+}
+
+/// Interpret a filesystem path as optionally including a tag.  Paths
+/// such as `/foo/bar` will return `("/foo/bar"`, None)`, whereas
+/// e.g. `/foo/bar:latest` will return `("/foo/bar", Some("latest"))`.
+pub(crate) fn parse_oci_path_and_tag(path: &str) -> (&str, Option<&str>) {
+    match path.rsplit_once(':') {
+        Some((path, tag)) => (path, Some(tag)),
+        None => (path, None),
+    }
 }
 
 /// Helper for `build()` that avoids generics
@@ -287,10 +304,12 @@ async fn build_impl(
         opts.skip_compression = true;
     }
     let digest = if dest.transport == Transport::OciDir {
+        let (path, tag) = parse_oci_path_and_tag(dest.name.as_str());
         let _copied: ImageReference = build_oci(
             repo,
             ostree_ref,
-            Path::new(dest.name.as_str()),
+            Path::new(path),
+            tag,
             config,
             opts,
             contentmeta,
@@ -305,6 +324,7 @@ async fn build_impl(
             repo,
             ostree_ref,
             Path::new(tempdest),
+            None,
             config,
             opts,
             contentmeta,
