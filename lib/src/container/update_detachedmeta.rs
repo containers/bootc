@@ -122,7 +122,7 @@ pub async fn update_detached_metadata(
         manifest.set_config(new_config_descriptor);
         // This entirely replaces the single entry in the OCI directory, which skopeo will find by default.
         tempsrc
-            .write_manifest(manifest, platform)
+            .replace_with_single_manifest(manifest, platform)
             .context("Writing manifest")?;
         Ok(())
     })

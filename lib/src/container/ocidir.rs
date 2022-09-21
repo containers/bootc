@@ -24,6 +24,8 @@ use std::path::{Path, PathBuf};
 /// Path inside an OCI directory to the blobs
 const BLOBDIR: &str = "blobs/sha256";
 
+const OCI_TAG_ANNOTATION: &str = "org.opencontainers.image.ref.name";
+
 /// Completed blob metadata
 #[derive(Debug)]
 pub struct Blob {
@@ -275,7 +277,48 @@ impl OciDir {
     }
 
     /// Write a manifest as a blob, and replace the index with a reference to it.
-    pub fn write_manifest(
+    pub fn insert_manifest(
+        &self,
+        manifest: oci_image::ImageManifest,
+        tag: Option<&str>,
+        platform: oci_image::Platform,
+    ) -> Result<Descriptor> {
+        let mut manifest = write_json_blob(&self.dir, &manifest, MediaType::ImageManifest)?
+            .platform(platform)
+            .build()
+            .unwrap();
+        if let Some(tag) = tag {
+            let annotations: HashMap<_, _> = [(OCI_TAG_ANNOTATION.to_string(), tag.to_string())]
+                .into_iter()
+                .collect();
+            manifest.set_annotations(Some(annotations));
+        }
+
+        let index = self.dir.open_optional("index.json")?.map(BufReader::new);
+        let index =
+            if let Some(mut index) = index.map(oci_image::ImageIndex::from_reader).transpose()? {
+                let mut manifests = index.manifests().clone();
+                manifests.push(manifest.clone());
+                index.set_manifests(manifests);
+                index
+            } else {
+                oci_image::ImageIndexBuilder::default()
+                    .schema_version(oci_image::SCHEMA_VERSION)
+                    .manifests(vec![manifest.clone()])
+                    .build()
+                    .unwrap()
+            };
+
+        self.dir
+            .atomic_replace_with("index.json", |w| -> Result<()> {
+                cjson::to_writer(w, &index).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+                Ok(())
+            })?;
+        Ok(manifest)
+    }
+
+    /// Write a manifest as a blob, and replace the index with a reference to it.
+    pub fn replace_with_single_manifest(
         &self,
         manifest: oci_image::ImageManifest,
         platform: oci_image::Platform,
@@ -301,6 +344,27 @@ impl OciDir {
     /// If this OCI directory has a single manifest, return it.  Otherwise, an error is returned.
     pub fn read_manifest(&self) -> Result<oci_image::ImageManifest> {
         self.read_manifest_and_descriptor().map(|r| r.0)
+    }
+
+    /// Find the manifest with the provided tag
+    pub fn find_manifest_with_tag(&self, tag: &str) -> Result<Option<oci_image::ImageManifest>> {
+        let f = self
+            .dir
+            .open("index.json")
+            .context("Failed to open index.json")?;
+        let idx: oci_image::ImageIndex = serde_json::from_reader(BufReader::new(f))?;
+        for img in idx.manifests() {
+            if img
+                .annotations()
+                .as_ref()
+                .and_then(|annos| annos.get(OCI_TAG_ANNOTATION))
+                .filter(|tagval| tagval.as_str() == tag)
+                .is_some()
+            {
+                return self.read_json_blob(img).map(Some);
+            }
+        }
+        Ok(None)
     }
 
     /// If this OCI directory has a single manifest, return it.  Otherwise, an error is returned.
@@ -460,7 +524,19 @@ mod tests {
         w.push_layer(&mut manifest, &mut config, root_layer, "root");
         let config = w.write_config(config)?;
         manifest.set_config(config);
-        w.write_manifest(manifest, oci_image::Platform::default())?;
+        w.replace_with_single_manifest(manifest.clone(), oci_image::Platform::default())?;
+
+        let read_manifest = w.read_manifest().unwrap();
+        assert_eq!(&read_manifest, &manifest);
+
+        let _: Descriptor =
+            w.insert_manifest(manifest, Some("latest"), oci_image::Platform::default())?;
+        // There's more than one now
+        assert!(w.read_manifest().is_err());
+        assert!(w.find_manifest_with_tag("noent").unwrap().is_none());
+        let found_via_tag = w.find_manifest_with_tag("latest").unwrap().unwrap();
+        assert_eq!(found_via_tag, read_manifest);
+
         Ok(())
     }
 }
