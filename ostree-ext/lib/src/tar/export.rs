@@ -20,7 +20,11 @@ use std::ops::RangeInclusive;
 pub const BARE_SPLIT_XATTRS_MODE: &str = "bare-split-xattrs";
 
 /// The set of allowed format versions; ranges from zero to 1, inclusive.
+#[cfg(feature = "compat")]
 pub const FORMAT_VERSIONS: RangeInclusive<u32> = 0..=1;
+#[cfg(not(feature = "compat"))]
+/// The set of allowed format versions.
+pub const FORMAT_VERSIONS: RangeInclusive<u32> = 1..=1;
 
 // This is both special in the tar stream *and* it's in the ostree commit.
 const SYSROOT: &str = "sysroot";
@@ -567,10 +571,18 @@ fn impl_export<W: std::io::Write>(
 }
 
 /// Configuration for tar export.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ExportOptions {
     /// Format version; must be in [`FORMAT_VERSIONS`].
     pub format_version: u32,
+}
+
+impl Default for ExportOptions {
+    fn default() -> Self {
+        Self {
+            format_version: if cfg!(feature = "compat") { 0 } else { 1 },
+        }
+    }
 }
 
 /// Export an ostree commit to an (uncompressed) tar archive stream.

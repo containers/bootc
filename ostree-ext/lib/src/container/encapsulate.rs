@@ -31,8 +31,11 @@ pub enum ExportLayout {
 
 impl Default for ExportLayout {
     fn default() -> Self {
-        // For now
-        Self::V0
+        if cfg!(feature = "compat") {
+            Self::V0
+        } else {
+            Self::V1
+        }
     }
 }
 
@@ -124,6 +127,10 @@ fn export_chunked(
 
     match opts.format {
         ExportLayout::V0 => {
+            if cfg!(not(feature = "compat")) {
+                let label = opts.format.label();
+                anyhow::bail!("This legacy format using the {label} label is no longer supported");
+            }
             // In V0, the component/content chunks come first.
             for (layer, name) in layers {
                 ociw.push_layer(manifest, imgcfg, layer, name.as_str());

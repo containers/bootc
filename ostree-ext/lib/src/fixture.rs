@@ -395,7 +395,7 @@ impl Fixture {
             path,
             srcrepo,
             destrepo,
-            format_version: 0,
+            format_version: if cfg!(feature = "compat") { 0 } else { 1 },
             selinux: true,
         })
     }
