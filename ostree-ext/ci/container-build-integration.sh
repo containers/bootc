@@ -13,8 +13,9 @@ sed -ie 's,ostree container commit,ostree-ext-cli container commit,' Dockerfile
 sed -ie 's,^\(FROM .*\),\1\nADD ostree-ext-cli /usr/bin,' Dockerfile
 git diff
 
-docker build -t localhost/fcos-tailscale .
-
-docker run --rm localhost/fcos-tailscale rpm -q tailscale
+for runtime in podman docker; do
+    $runtime build -t localhost/fcos-tailscale .
+    $runtime run --rm localhost/fcos-tailscale rpm -q tailscale
+done
 
 echo ok container image integration
