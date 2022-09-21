@@ -18,7 +18,7 @@ mod rcstr_serialize {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&*v)
+        serializer.serialize_str(v)
     }
 
     pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Rc<str>, D::Error>

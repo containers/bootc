@@ -382,7 +382,7 @@ impl Importer {
                 }
             }
             tar::EntryType::Symlink => self.import_symlink_object(entry, checksum, xattrs),
-            o => return Err(anyhow!("Invalid tar entry of type {:?}", o)),
+            o => Err(anyhow!("Invalid tar entry of type {:?}", o)),
         }
     }
 
