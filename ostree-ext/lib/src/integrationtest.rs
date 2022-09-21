@@ -28,7 +28,11 @@ pub(crate) fn detectenv() -> &'static str {
 /// Using `src` as a base, take append `dir` into OCI image.
 /// Should only be enabled for testing.
 #[context("Generating derived oci")]
-pub fn generate_derived_oci(src: impl AsRef<Utf8Path>, dir: impl AsRef<Utf8Path>) -> Result<()> {
+pub fn generate_derived_oci(
+    src: impl AsRef<Utf8Path>,
+    dir: impl AsRef<Utf8Path>,
+    tag: Option<&str>,
+) -> Result<()> {
     let src = src.as_ref();
     let src = Dir::open_ambient_dir(src, cap_std::ambient_authority())?;
     let src = ocidir::OciDir::open(&src)?;
@@ -63,7 +67,11 @@ pub fn generate_derived_oci(src: impl AsRef<Utf8Path>, dir: impl AsRef<Utf8Path>
     let new_config_desc = src.write_config(config)?;
     manifest.set_config(new_config_desc);
 
-    src.write_manifest(manifest, oci_image::Platform::default())?;
+    if let Some(tag) = tag {
+        src.insert_manifest(manifest, Some(tag), oci_image::Platform::default())?;
+    } else {
+        src.replace_with_single_manifest(manifest, oci_image::Platform::default())?;
+    }
     Ok(())
 }
 
