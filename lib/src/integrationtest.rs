@@ -2,7 +2,10 @@
 
 use std::path::Path;
 
-use crate::container::{ocidir, ExportLayout};
+use crate::{
+    container::{ocidir, ExportLayout},
+    container_utils::is_ostree_container,
+};
 use anyhow::Result;
 use camino::Utf8Path;
 use cap_std::fs::Dir;
@@ -12,17 +15,17 @@ use gio::prelude::*;
 use oci_spec::image as oci_image;
 use ostree::gio;
 
-fn has_ostree() -> bool {
-    std::path::Path::new("/sysroot/ostree/repo").exists()
-}
-
-pub(crate) fn detectenv() -> &'static str {
-    match (crate::container_utils::running_in_container(), has_ostree()) {
-        (true, true) => "ostree-container",
-        (true, false) => "container",
-        (false, true) => "ostree",
-        (false, false) => "none",
-    }
+pub(crate) fn detectenv() -> Result<&'static str> {
+    let r = if is_ostree_container()? {
+        "ostree-container"
+    } else if Path::new("/run/ostree-booted").exists() {
+        "ostree"
+    } else if crate::container_utils::running_in_container() {
+        "container"
+    } else {
+        "none"
+    };
+    Ok(r)
 }
 
 /// Using `src` as a base, take append `dir` into OCI image.
