@@ -7,11 +7,11 @@
 
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
+use clap::{Parser, Subcommand};
 use ostree::{cap_std, gio, glib};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use structopt::StructOpt;
 use tokio::sync::mpsc::Receiver;
 
 use crate::commit::container_commit;
@@ -37,11 +37,11 @@ pub fn parse_repo(s: &str) -> Result<ostree::Repo> {
 }
 
 /// Options for importing a tar archive.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct ImportOpts {
     /// Path to the repository
-    #[structopt(long)]
-    #[structopt(parse(try_from_str = parse_repo))]
+    #[clap(long)]
+    #[clap(parse(try_from_str = parse_repo))]
     repo: ostree::Repo,
 
     /// Path to a tar archive; if unspecified, will be stdin.  Currently the tar archive must not be compressed.
@@ -49,15 +49,15 @@ struct ImportOpts {
 }
 
 /// Options for exporting a tar archive.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct ExportOpts {
     /// Path to the repository
-    #[structopt(long)]
-    #[structopt(parse(try_from_str = parse_repo))]
+    #[clap(long)]
+    #[clap(parse(try_from_str = parse_repo))]
     repo: ostree::Repo,
 
     /// The format version.  Must be 0 or 1.
-    #[structopt(long)]
+    #[clap(long)]
     format_version: u32,
 
     /// The ostree ref or commit to export
@@ -65,7 +65,7 @@ struct ExportOpts {
 }
 
 /// Options for import/export to tar archives.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Subcommand)]
 enum TarOpts {
     /// Import a tar archive (currently, must not be compressed)
     Import(ImportOpts),
@@ -75,165 +75,166 @@ enum TarOpts {
 }
 
 /// Options for container import/export.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Subcommand)]
 enum ContainerOpts {
-    #[structopt(alias = "import")]
+    #[clap(alias = "import")]
     /// Import an ostree commit embedded in a remote container image
     Unencapsulate {
         /// Path to the repository
-        #[structopt(long)]
-        #[structopt(parse(try_from_str = parse_repo))]
+        #[clap(long)]
+        #[clap(parse(try_from_str = parse_repo))]
         repo: ostree::Repo,
 
         /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
-        #[structopt(parse(try_from_str = parse_imgref))]
+        #[clap(parse(try_from_str = parse_imgref))]
         imgref: OstreeImageReference,
 
         /// Create an ostree ref pointing to the imported commit
-        #[structopt(long)]
+        #[clap(long)]
         write_ref: Option<String>,
 
         /// Don't display progress
-        #[structopt(long)]
+        #[clap(long)]
         quiet: bool,
     },
 
     /// Print information about an exported ostree-container image.
     Info {
         /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
-        #[structopt(parse(try_from_str = parse_imgref))]
+        #[clap(parse(try_from_str = parse_imgref))]
         imgref: OstreeImageReference,
     },
 
     ///  Wrap an ostree commit into a container
-    #[structopt(alias = "export")]
+    #[clap(alias = "export")]
     Encapsulate {
         /// Path to the repository
-        #[structopt(long)]
-        #[structopt(parse(try_from_str = parse_repo))]
+        #[clap(long)]
+        #[clap(parse(try_from_str = parse_repo))]
         repo: ostree::Repo,
 
         /// The ostree ref or commit to export
         rev: String,
 
         /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
-        #[structopt(parse(try_from_str = parse_base_imgref))]
+        #[clap(parse(try_from_str = parse_base_imgref))]
         imgref: ImageReference,
 
         /// Additional labels for the container
-        #[structopt(name = "label", long, short)]
+        #[clap(name = "label", long, short)]
         labels: Vec<String>,
 
         /// Propagate an OSTree commit metadata key to container label
-        #[structopt(name = "copymeta", long)]
+        #[clap(name = "copymeta", long)]
         copy_meta_keys: Vec<String>,
 
         /// Corresponds to the Dockerfile `CMD` instruction.
-        #[structopt(long)]
+        #[clap(long)]
         cmd: Option<Vec<String>>,
 
         /// Compress at the fastest level (e.g. gzip level 1)
-        #[structopt(long)]
+        #[clap(long)]
         compression_fast: bool,
     },
 
-    #[structopt(alias = "commit")]
+    #[clap(alias = "commit")]
     /// Perform build-time checking and canonicalization.
     /// This is presently an optional command, but may become required in the future.
     Commit,
 
     /// Commands for working with (possibly layered, non-encapsulated) container images.
+    #[clap(subcommand)]
     Image(ContainerImageOpts),
 }
 
 /// Options for container image fetching.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct ContainerProxyOpts {
-    #[structopt(long)]
+    #[clap(long)]
     /// Do not use default authentication files.
     auth_anonymous: bool,
 
-    #[structopt(long)]
+    #[clap(long)]
     /// Path to Docker-formatted authentication file.
     authfile: Option<PathBuf>,
 
-    #[structopt(long)]
+    #[clap(long)]
     /// Directory with certificates (*.crt, *.cert, *.key) used to connect to registry
     /// Equivalent to `skopeo --cert-dir`
     cert_dir: Option<PathBuf>,
 
-    #[structopt(long)]
+    #[clap(long)]
     /// Skip TLS verification.
     insecure_skip_tls_verification: bool,
 }
 
 /// Options for import/export to tar archives.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Subcommand)]
 enum ContainerImageOpts {
     /// List container images
     List {
         /// Path to the repository
-        #[structopt(long)]
-        #[structopt(parse(try_from_str = parse_repo))]
+        #[clap(long)]
+        #[clap(parse(try_from_str = parse_repo))]
         repo: ostree::Repo,
     },
 
     /// Pull (or update) a container image.
     Pull {
         /// Path to the repository
-        #[structopt(parse(try_from_str = parse_repo))]
+        #[clap(parse(try_from_str = parse_repo))]
         repo: ostree::Repo,
 
         /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
-        #[structopt(parse(try_from_str = parse_imgref))]
+        #[clap(parse(try_from_str = parse_imgref))]
         imgref: OstreeImageReference,
 
-        #[structopt(flatten)]
+        #[clap(flatten)]
         proxyopts: ContainerProxyOpts,
 
         /// Don't display progress
-        #[structopt(long)]
+        #[clap(long)]
         quiet: bool,
     },
 
     /// Output metadata about an already stored container image.
     History {
         /// Path to the repository
-        #[structopt(long, parse(try_from_str = parse_repo))]
+        #[clap(long, parse(try_from_str = parse_repo))]
         repo: ostree::Repo,
 
         /// Container image reference, e.g. registry:quay.io/exampleos/exampleos:latest
-        #[structopt(parse(try_from_str = parse_base_imgref))]
+        #[clap(parse(try_from_str = parse_base_imgref))]
         imgref: ImageReference,
     },
 
     /// Copy a pulled container image from one repo to another.
     Copy {
         /// Path to the source repository
-        #[structopt(long)]
-        #[structopt(parse(try_from_str = parse_repo))]
+        #[clap(long)]
+        #[clap(parse(try_from_str = parse_repo))]
         src_repo: ostree::Repo,
 
         /// Path to the destination repository
-        #[structopt(long)]
-        #[structopt(parse(try_from_str = parse_repo))]
+        #[clap(long)]
+        #[clap(parse(try_from_str = parse_repo))]
         dest_repo: ostree::Repo,
 
         /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
-        #[structopt(parse(try_from_str = parse_imgref))]
+        #[clap(parse(try_from_str = parse_imgref))]
         imgref: OstreeImageReference,
     },
 
     /// Replace the detached metadata (e.g. to add a signature)
     ReplaceDetachedMetadata {
         /// Path to the source repository
-        #[structopt(long)]
-        #[structopt(parse(try_from_str = parse_base_imgref))]
+        #[clap(long)]
+        #[clap(parse(try_from_str = parse_base_imgref))]
         src: ImageReference,
 
         /// Target image
-        #[structopt(long)]
-        #[structopt(parse(try_from_str = parse_base_imgref))]
+        #[clap(long)]
+        #[clap(parse(try_from_str = parse_base_imgref))]
         dest: ImageReference,
 
         /// Path to file containing new detached metadata; if not provided,
@@ -244,61 +245,61 @@ enum ContainerImageOpts {
     /// Unreference one or more pulled container images and perform a garbage collection.
     Remove {
         /// Path to the repository
-        #[structopt(long)]
-        #[structopt(parse(try_from_str = parse_repo))]
+        #[clap(long)]
+        #[clap(parse(try_from_str = parse_repo))]
         repo: ostree::Repo,
 
         /// Image reference, e.g. quay.io/exampleos/exampleos:latest
-        #[structopt(parse(try_from_str = parse_base_imgref))]
+        #[clap(parse(try_from_str = parse_base_imgref))]
         imgrefs: Vec<ImageReference>,
 
         /// Do not garbage collect unused layers
-        #[structopt(long)]
+        #[clap(long)]
         skip_gc: bool,
     },
 
     /// Perform initial deployment for a container image
     Deploy {
         /// Path to the system root
-        #[structopt(long)]
+        #[clap(long)]
         sysroot: String,
 
         /// Name for the state directory, also known as "osname".
-        #[structopt(long)]
+        #[clap(long)]
         stateroot: String,
 
         /// Source image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos@sha256:abcd...
-        #[structopt(long)]
-        #[structopt(parse(try_from_str = parse_imgref))]
+        #[clap(long)]
+        #[clap(parse(try_from_str = parse_imgref))]
         imgref: OstreeImageReference,
 
-        #[structopt(flatten)]
+        #[clap(flatten)]
         proxyopts: ContainerProxyOpts,
 
         /// Target image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
         ///
         /// If specified, `--imgref` will be used as a source, but this reference will be emitted into the origin
         /// so that later OS updates pull from it.
-        #[structopt(long)]
-        #[structopt(parse(try_from_str = parse_imgref))]
+        #[clap(long)]
+        #[clap(parse(try_from_str = parse_imgref))]
         target_imgref: Option<OstreeImageReference>,
 
-        #[structopt(long)]
+        #[clap(long)]
         /// Add a kernel argument
         karg: Option<Vec<String>>,
 
         /// Write the deployed checksum to this file
-        #[structopt(long)]
+        #[clap(long)]
         write_commitid_to: Option<Utf8PathBuf>,
     },
 }
 
 /// Options for the Integrity Measurement Architecture (IMA).
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct ImaSignOpts {
     /// Path to the repository
-    #[structopt(long)]
-    #[structopt(parse(try_from_str = parse_repo))]
+    #[clap(long)]
+    #[clap(parse(try_from_str = parse_repo))]
     repo: ostree::Repo,
     /// The ostree ref or commit to use as a base
     src_rev: String,
@@ -310,13 +311,13 @@ struct ImaSignOpts {
     /// Path to IMA key
     key: Utf8PathBuf,
 
-    #[structopt(long)]
+    #[clap(long)]
     /// Overwrite any existing signatures
     overwrite: bool,
 }
 
 /// Options for internal testing
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Subcommand)]
 enum TestingOpts {
     /// Detect the current environment
     DetectEnv,
@@ -330,19 +331,21 @@ enum TestingOpts {
 }
 
 /// Toplevel options for extended ostree functionality.
-#[derive(Debug, StructOpt)]
-#[structopt(name = "ostree-ext")]
-#[structopt(rename_all = "kebab-case")]
+#[derive(Debug, Parser)]
+#[clap(name = "ostree-ext")]
+#[clap(rename_all = "kebab-case")]
 #[allow(clippy::large_enum_variant)]
 enum Opt {
     /// Import and export to tar
+    #[clap(subcommand)]
     Tar(TarOpts),
     /// Import and export to a container image
+    #[clap(subcommand)]
     Container(ContainerOpts),
     /// IMA signatures
     ImaSign(ImaSignOpts),
     /// Internal integration testing helpers.
-    #[structopt(setting(structopt::clap::AppSettings::Hidden))]
+    #[clap(hide(true), subcommand)]
     #[cfg(feature = "internal-testing-api")]
     InternalOnlyForTesting(TestingOpts),
 }
