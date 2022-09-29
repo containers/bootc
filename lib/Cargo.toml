@@ -11,12 +11,12 @@ version = "0.8.7"
 [dependencies]
 anyhow = "1.0"
 containers-image-proxy = "0.5.1"
-
 async-compression = { version = "0.3", features = ["gzip", "tokio"] }
 bitflags = "1"
 camino = "1.0.4"
 chrono = "0.4.19"
 cjson = "0.1.1"
+clap = { version= "3.2", features = ["derive"] }
 cap-std-ext = "0.26"
 cap-tempfile = "0.25"
 flate2 = { features = ["zlib"], default_features = false, version = "1.0.20" }
@@ -34,7 +34,6 @@ pin-project = "1.0"
 regex = "1.5.4"
 serde = { features = ["derive"], version = "1.0.125" }
 serde_json = "1.0.64"
-structopt = "0.3.21"
 tar = "0.4.38"
 tempfile = "3.2.0"
 term_size = "0.3.2"

@@ -43,7 +43,7 @@ static TEST_REGISTRY: Lazy<String> = Lazy::new(|| match std::env::var_os("TEST_R
 fn test_cli_fns() -> Result<()> {
     let fixture = Fixture::new_v1()?;
     let srcpath = fixture.path.join("src/repo");
-    let srcrepo_parsed = ostree_ext::cli::parse_repo(srcpath.as_str()).unwrap();
+    let srcrepo_parsed = ostree_ext::cli::parse_repo(&srcpath).unwrap();
     assert_eq!(srcrepo_parsed.mode(), fixture.srcrepo().mode());
 
     let ir =
