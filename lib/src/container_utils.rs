@@ -15,6 +15,8 @@ const V1_REPO_CONFIG: &str = "/sysroot/ostree/repo/config";
 /// Attempts to detect if the current process is running inside a container.
 /// This looks for the `container` environment variable or the presence
 /// of Docker or podman's more generic `/run/.containerenv`.
+/// This is a best-effort function, as there is not a 100% reliable way
+/// to determine this.
 pub fn running_in_container() -> bool {
     if std::env::var_os("container").is_some() {
         return true;
@@ -66,7 +68,14 @@ pub fn is_bare_split_xattrs() -> Result<bool> {
 ///
 /// This just invokes [`is_bare_split_xattrs`] and [`running_in_container`].
 pub fn is_ostree_container() -> Result<bool> {
-    Ok(running_in_container() && is_bare_split_xattrs()?)
+    let is_container_ostree = is_bare_split_xattrs()?;
+    let running_in_systemd = std::env::var_os("INVOCATION_ID").is_some();
+    // If we have a container-ostree repo format, then we'll assume we're
+    // running in a container unless there's strong evidence not (we detect
+    // we're part of a systemd unit or are in a booted ostree system).
+    let maybe_container = running_in_container()
+        || (!running_in_systemd && !Path::new("/run/ostree-booted").exists());
+    Ok(is_container_ostree && maybe_container)
 }
 
 /// Returns an error unless the current filesystem is an ostree-based container
