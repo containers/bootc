@@ -42,16 +42,13 @@ impl Efi {
         Path::new(&*MOUNT_PATH).join("EFI")
     }
 
-    fn esp_device(&self) -> PathBuf {
-        Path::new("/dev/disk/by-partlabel/").join(ESP_PART_LABEL)
-    }
-
     fn open_esp_optional(&self) -> Result<Option<openat::Dir>> {
         self.ensure_mounted_esp()?;
         let sysroot = openat::Dir::open("/")?;
         let esp = sysroot.sub_dir_optional(&self.esp_path())?;
         Ok(esp)
     }
+
     fn open_esp(&self) -> Result<openat::Dir> {
         self.ensure_mounted_esp()?;
         let sysroot = openat::Dir::open("/")?;
@@ -60,18 +57,18 @@ impl Efi {
     }
 
     fn ensure_mounted_esp(&self) -> Result<()> {
+        let esp_device = Path::new("/dev/disk/by-partlabel/").join(ESP_PART_LABEL);
         let mount_point = &Path::new("/").join(&*MOUNT_PATH);
         let output = std::process::Command::new("mountpoint")
             .arg(mount_point)
             .output()?;
         if !output.status.success() {
-            let esp_device = &self.esp_device();
             if !esp_device.exists() {
                 log::error!("Single ESP device not found; ESP on multiple independent filesystems currently unsupported");
                 anyhow::bail!("Could not find {:?}", esp_device);
             }
             let status = std::process::Command::new("mount")
-                .arg(&self.esp_device())
+                .arg(&esp_device)
                 .arg(mount_point)
                 .status()?;
             if !status.success() {
