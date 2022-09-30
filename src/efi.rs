@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::prelude::*;
 use std::os::unix::io::AsRawFd;
@@ -14,7 +15,6 @@ use anyhow::{bail, Context, Result};
 use openat_ext::OpenatDirExt;
 
 use chrono::prelude::*;
-use once_cell::sync::Lazy;
 
 use crate::component::*;
 use crate::filetree;
@@ -26,56 +26,49 @@ use crate::util::CommandRunExt;
 /// The ESP partition label
 pub(crate) const ESP_PART_LABEL: &str = "EFI-SYSTEM";
 
-/// The path to a temporary ESP mount
-static MOUNT_PATH: Lazy<PathBuf> = Lazy::new(|| {
-    // Create new directory in /tmp with randomly generated name at runtime for ESP mount path.
-    tempfile::tempdir_in("/tmp")
-        .expect("Failed to create temp dir for EFI mount")
-        .into_path()
-});
-
 #[derive(Default)]
-pub(crate) struct Efi {}
+pub(crate) struct Efi {
+    mountpoint: RefCell<Option<PathBuf>>,
+}
 
 impl Efi {
-    fn esp_path(&self) -> PathBuf {
-        Path::new(&*MOUNT_PATH).join("EFI")
+    fn esp_path(&self) -> Result<PathBuf> {
+        self.ensure_mounted_esp().map(|v| v.join("EFI"))
     }
 
     fn open_esp_optional(&self) -> Result<Option<openat::Dir>> {
-        self.ensure_mounted_esp()?;
         let sysroot = openat::Dir::open("/")?;
-        let esp = sysroot.sub_dir_optional(&self.esp_path())?;
+        let esp = sysroot.sub_dir_optional(&self.esp_path()?)?;
         Ok(esp)
     }
 
     fn open_esp(&self) -> Result<openat::Dir> {
         self.ensure_mounted_esp()?;
         let sysroot = openat::Dir::open("/")?;
-        let esp = sysroot.sub_dir(&self.esp_path())?;
+        let esp = sysroot.sub_dir(&self.esp_path()?)?;
         Ok(esp)
     }
 
-    fn ensure_mounted_esp(&self) -> Result<()> {
+    fn ensure_mounted_esp(&self) -> Result<PathBuf> {
+        let mut mountpoint = self.mountpoint.borrow_mut();
+        if let Some(mountpoint) = mountpoint.as_deref() {
+            return Ok(mountpoint.to_owned());
+        }
         let esp_device = Path::new("/dev/disk/by-partlabel/").join(ESP_PART_LABEL);
-        let mount_point = &Path::new("/").join(&*MOUNT_PATH);
-        let output = std::process::Command::new("mountpoint")
-            .arg(mount_point)
-            .output()?;
-        if !output.status.success() {
-            if !esp_device.exists() {
-                log::error!("Single ESP device not found; ESP on multiple independent filesystems currently unsupported");
-                anyhow::bail!("Could not find {:?}", esp_device);
-            }
-            let status = std::process::Command::new("mount")
-                .arg(&esp_device)
-                .arg(mount_point)
-                .status()?;
-            if !status.success() {
-                anyhow::bail!("Failed to mount {:?}", esp_device);
-            }
-        };
-        Ok(())
+        if !esp_device.exists() {
+            log::error!("Single ESP device not found; ESP on multiple independent filesystems currently unsupported");
+            anyhow::bail!("Could not find {:?}", esp_device);
+        }
+        let tmppath = tempfile::tempdir_in("/tmp")?.into_path();
+        let status = std::process::Command::new("mount")
+            .arg(&esp_device)
+            .arg(&tmppath)
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("Failed to mount {:?}", esp_device);
+        }
+        *mountpoint = Some(tmppath);
+        Ok(mountpoint.as_deref().unwrap().to_owned())
     }
 }
 
@@ -146,8 +139,7 @@ impl Component for Efi {
         };
         let srcdir_name = component_updatedirname(self);
         let ft = crate::filetree::FileTree::new_from_dir(&src_root.sub_dir(&srcdir_name)?)?;
-        self.ensure_mounted_esp()?;
-        let destdir = &*MOUNT_PATH;
+        let destdir = &self.ensure_mounted_esp()?;
         {
             let destd = openat::Dir::open(destdir)
                 .with_context(|| format!("opening dest dir {}", destdir.display()))?;
