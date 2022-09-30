@@ -137,7 +137,8 @@ impl Component for Efi {
         })
     }
 
-    fn install(&self, src_root: &openat::Dir, dest_root: &str) -> Result<InstalledContent> {
+    // TODO: Remove dest_root; it was never actually used
+    fn install(&self, src_root: &openat::Dir, _dest_root: &str) -> Result<InstalledContent> {
         let meta = if let Some(meta) = get_component_update(src_root, self)? {
             meta
         } else {
@@ -146,9 +147,9 @@ impl Component for Efi {
         let srcdir_name = component_updatedirname(self);
         let ft = crate::filetree::FileTree::new_from_dir(&src_root.sub_dir(&srcdir_name)?)?;
         self.ensure_mounted_esp()?;
-        let destdir = Path::new(dest_root).join(&*MOUNT_PATH);
+        let destdir = &*MOUNT_PATH;
         {
-            let destd = openat::Dir::open(&destdir)
+            let destd = openat::Dir::open(destdir)
                 .with_context(|| format!("opening dest dir {}", destdir.display()))?;
             validate_esp(&destd)?;
         }
