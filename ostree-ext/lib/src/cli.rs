@@ -656,8 +656,7 @@ fn ima_sign(cmdopts: &ImaSignOpts) -> Result<()> {
 async fn testing(opts: &TestingOpts) -> Result<()> {
     match opts {
         TestingOpts::DetectEnv => {
-            let s = crate::integrationtest::detectenv();
-            println!("{}", s);
+            println!("{}", crate::integrationtest::detectenv()?);
             Ok(())
         }
         TestingOpts::CreateFixture => crate::integrationtest::create_fixture().await,
