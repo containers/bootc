@@ -83,7 +83,6 @@ dependencies = [
  "libsystemd",
  "log",
  "nix",
- "once_cell",
  "openat",
  "openat-ext",
  "openssl",
