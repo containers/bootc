@@ -70,6 +70,16 @@ impl Efi {
         *mountpoint = Some(tmppath);
         Ok(mountpoint.as_deref().unwrap().to_owned())
     }
+
+    fn unmount(&self) -> Result<()> {
+        if let Some(mount) = self.mountpoint.borrow_mut().take() {
+            let status = Command::new("umount").arg(&mount).status()?;
+            if !status.success() {
+                anyhow::bail!("Failed to unmount {mount:?}: {status:?}");
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Component for Efi {
@@ -298,6 +308,12 @@ impl Component for Efi {
         } else {
             Ok(ValidationResult::Valid)
         }
+    }
+}
+
+impl Drop for Efi {
+    fn drop(&mut self) {
+        let _ = self.unmount();
     }
 }
 
