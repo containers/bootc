@@ -426,6 +426,7 @@ impl ImageImporter {
     }
 
     /// Determine if there is a new manifest, and if so return its digest.
+    #[context("Preparing import")]
     pub async fn prepare(&mut self) -> Result<PrepareResult> {
         self.prepare_internal(false).await
     }
@@ -649,6 +650,7 @@ impl ImageImporter {
     }
 
     /// Import a layered container image
+    #[context("Importing")]
     pub async fn import(
         mut self,
         mut import: Box<PreparedImport>,
