@@ -812,9 +812,10 @@ where
                         Some(options),
                     )
                     .await?;
+                    let wrote_imgref = target_imgref.as_ref().unwrap_or(&imgref);
                     if let Some(msg) = ostree_container::store::image_filtered_content_warning(
                         repo,
-                        &imgref.imgref,
+                        &wrote_imgref.imgref,
                     )? {
                         eprintln!("{msg}")
                     }
