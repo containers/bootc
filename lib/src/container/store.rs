@@ -201,6 +201,14 @@ impl PreparedImport {
             .chain(self.layers.iter())
     }
 
+    /// If this image is using any deprecated features, return a message saying so.
+    pub fn deprecated_warning(&self) -> Option<&'static str> {
+        match self.export_layout {
+            ExportLayout::V0 => Some("Image is using v0 export layout, this is deprecated and support will be dropped in the future"),
+            ExportLayout::V1 => None,
+        }
+    }
+
     /// Iterate over all layers paired with their history entry.
     /// An error will be returned if the history does not cover all entries.
     pub fn layers_with_history(
@@ -640,12 +648,14 @@ impl ImageImporter {
         if !prep.layers.is_empty() {
             anyhow::bail!("Image has {} non-ostree layers", prep.layers.len());
         }
+        let deprecated_warning = prep.deprecated_warning().map(ToOwned::to_owned);
         self.unencapsulate_base(&mut prep, false).await?;
         let ostree_commit = prep.ostree_commit_layer.commit.unwrap();
         let image_digest = prep.manifest_digest;
         Ok(Import {
             ostree_commit,
             image_digest,
+            deprecated_warning,
         })
     }
 

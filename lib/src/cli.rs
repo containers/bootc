@@ -464,6 +464,11 @@ fn print_layer_status(prep: &PreparedImport) {
     }
 }
 
+pub(crate) fn print_deprecated_warning(msg: &str) {
+    eprintln!("warning: {msg}");
+    std::thread::sleep(std::time::Duration::from_secs(3));
+}
+
 /// Import a container image with an encapsulated ostree commit.
 async fn container_import(
     repo: &ostree::Repo,
@@ -488,6 +493,9 @@ async fn container_import(
         pb.finish();
     }
     let import = import?;
+    if let Some(warning) = import.deprecated_warning.as_deref() {
+        print_deprecated_warning(warning);
+    }
     if let Some(write_ref) = write_ref {
         repo.set_ref_immediate(
             None,
@@ -554,6 +562,9 @@ async fn container_store(
         }
         PrepareResult::Ready(r) => r,
     };
+    if let Some(warning) = prep.deprecated_warning() {
+        print_deprecated_warning(warning);
+    }
     print_layer_status(&prep);
     let printer = (!quiet).then(|| {
         let layer_progress = imp.request_progress();
