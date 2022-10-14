@@ -23,8 +23,9 @@ use crate::ostreeutil;
 use crate::util;
 use crate::util::CommandRunExt;
 
-/// The ESP partition label
-pub(crate) const ESP_PART_LABEL: &str = "EFI-SYSTEM";
+/// The ESP partition label on Fedora CoreOS derivatives
+pub(crate) const COREOS_ESP_PART_LABEL: &str = "EFI-SYSTEM";
+pub(crate) const ANACONDA_ESP_PART_LABEL: &str = "EFI\\x20System\\x20Partition";
 
 #[derive(Default)]
 pub(crate) struct Efi {
@@ -54,11 +55,17 @@ impl Efi {
         if let Some(mountpoint) = mountpoint.as_deref() {
             return Ok(mountpoint.to_owned());
         }
-        let esp_device = Path::new("/dev/disk/by-partlabel/").join(ESP_PART_LABEL);
-        if !esp_device.exists() {
-            log::error!("Single ESP device not found; ESP on multiple independent filesystems currently unsupported");
-            anyhow::bail!("Could not find {:?}", esp_device);
+        let esp_devices = [COREOS_ESP_PART_LABEL, ANACONDA_ESP_PART_LABEL]
+            .into_iter()
+            .map(|p| Path::new("/dev/disk/by-partlabel/").join(p));
+        let mut esp_device = None;
+        for path in esp_devices {
+            if path.exists() {
+                esp_device = Some(path);
+                break;
+            }
         }
+        let esp_device = esp_device.ok_or_else(|| anyhow::anyhow!("Failed to find ESP device"))?;
         let tmppath = tempfile::tempdir_in("/tmp")?.into_path();
         let status = std::process::Command::new("mount")
             .arg(&esp_device)
@@ -94,21 +101,33 @@ impl Component for Efi {
             return Ok(None);
         };
         // This would be extended with support for other operating systems later
-        let coreos_aleph = if let Some(a) = crate::coreos::get_aleph_version()? {
-            a
+        if let Some(coreos_aleph) = crate::coreos::get_aleph_version()? {
+            let meta = ContentMetadata {
+                timestamp: coreos_aleph.ts,
+                version: coreos_aleph.aleph.imgid,
+            };
+            log::trace!("EFI adoptable: {:?}", &meta);
+            return Ok(Some(Adoptable {
+                version: meta,
+                confident: true,
+            }));
         } else {
             log::trace!("No CoreOS aleph detected");
-            return Ok(None);
-        };
-        let meta = ContentMetadata {
-            timestamp: coreos_aleph.ts,
-            version: coreos_aleph.aleph.imgid,
-        };
-        log::trace!("EFI adoptable: {:?}", &meta);
-        Ok(Some(Adoptable {
-            version: meta,
-            confident: true,
-        }))
+        }
+        let ostree_deploy_dir = Path::new("/ostree/deploy");
+        if ostree_deploy_dir.exists() {
+            let btime = ostree_deploy_dir.metadata()?.created()?;
+            let timestamp = chrono::DateTime::from(btime);
+            let meta = ContentMetadata {
+                timestamp,
+                version: "unknown".to_string(),
+            };
+            return Ok(Some(Adoptable {
+                version: meta,
+                confident: true,
+            }));
+        }
+        Ok(None)
     }
 
     /// Given an adoptable system and an update, perform the update.
