@@ -32,7 +32,7 @@ codestyle: {
 
 // Build FCOS and do a kola basic run
 // FIXME update to main branch once https://github.com/coreos/fedora-coreos-config/pull/595 merges
-cosaPod(runAsUser: 0, memory: "3072Mi", cpu: "4") {
+cosaPod(runAsUser: 0, memory: "4608Mi", cpu: "4") {
   stage("Build FCOS") {
     checkout scm
     unstash 'build'
