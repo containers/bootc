@@ -35,6 +35,7 @@ pub mod container_utils;
 pub mod diff;
 pub mod ima;
 pub mod keyfileext;
+pub(crate) mod logging;
 pub mod refescape;
 pub mod tar;
 pub mod tokio_util;

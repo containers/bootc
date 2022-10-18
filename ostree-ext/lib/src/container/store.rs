@@ -6,6 +6,7 @@
 //! base.  See [`encapsulate`][`super::encapsulate()`] for more information on encaspulation of images.
 
 use super::*;
+use crate::logging::system_repo_journal_print;
 use crate::refescape;
 use anyhow::{anyhow, Context};
 use containers_image_proxy::{ImageProxy, OpenedImage};
@@ -234,6 +235,23 @@ impl PreparedImport {
             .transpose()
         })
     }
+
+    /// Common helper to format a string for the status
+    pub(crate) fn format_layer_status(&self) -> Option<String> {
+        let (stored, to_fetch, to_fetch_size) =
+            self.all_layers()
+                .fold((0u32, 0u32, 0u64), |(stored, to_fetch, sz), v| {
+                    if v.commit.is_some() {
+                        (stored + 1, to_fetch, sz)
+                    } else {
+                        (stored, to_fetch + 1, sz + v.size())
+                    }
+                });
+        (to_fetch > 0).then(|| {
+            let size = crate::glib::format_size(to_fetch_size);
+            format!("layers stored: {stored} needed: {to_fetch} ({size})")
+        })
+    }
 }
 
 // Given a manifest, compute its ostree ref name and cached ostree commit
@@ -407,6 +425,13 @@ impl ImageImporter {
         // Apply our defaults to the proxy config
         merge_default_container_proxy_opts(&mut config)?;
         let proxy = ImageProxy::new_with_config(config).await?;
+
+        system_repo_journal_print(
+            repo,
+            libsystemd::logging::Priority::Info,
+            &format!("Fetching {}", imgref),
+        );
+
         let proxy_img = proxy.open_image(&imgref.imgref.to_string()).await?;
         let repo = repo.clone();
         Ok(ImageImporter {
@@ -665,6 +690,9 @@ impl ImageImporter {
         mut self,
         mut import: Box<PreparedImport>,
     ) -> Result<Box<LayeredImageState>> {
+        if let Some(status) = import.format_layer_status() {
+            system_repo_journal_print(&self.repo, libsystemd::logging::Priority::Info, &status);
+        }
         // First download all layers for the base image (if necessary) - we need the SELinux policy
         // there to label all following layers.
         self.unencapsulate_base(&mut import, true).await?;
