@@ -449,18 +449,8 @@ async fn handle_layer_progress_print(
 }
 
 fn print_layer_status(prep: &PreparedImport) {
-    let (stored, to_fetch, to_fetch_size) =
-        prep.all_layers()
-            .fold((0u32, 0u32, 0u64), |(stored, to_fetch, sz), v| {
-                if v.commit.is_some() {
-                    (stored + 1, to_fetch, sz)
-                } else {
-                    (stored, to_fetch + 1, sz + v.size())
-                }
-            });
-    if to_fetch > 0 {
-        let size = crate::glib::format_size(to_fetch_size);
-        println!("layers stored: {stored} needed: {to_fetch} ({size})");
+    if let Some(status) = prep.format_layer_status() {
+        println!("{status}");
     }
 }
 
