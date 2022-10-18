@@ -40,4 +40,8 @@ for img in "${image}" "${old_image}"; do
     fi
 done
 
+# Verify we have systemd journal messages
+nsenter -m -t 1 journalctl _COMM=ostree-ext-cli > logs.txt
+grep 'layers stored: ' logs.txt
+
 echo ok privileged integration
