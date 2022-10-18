@@ -60,7 +60,13 @@ pub async fn deploy(
     }
     let state = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(r) => r,
-        PrepareResult::Ready(prep) => imp.import(prep).await?,
+        PrepareResult::Ready(prep) => {
+            if let Some(warning) = prep.deprecated_warning() {
+                crate::cli::print_deprecated_warning(warning);
+            }
+
+            imp.import(prep).await?
+        }
     };
     let commit = state.get_commit();
     let origin = glib::KeyFile::new();

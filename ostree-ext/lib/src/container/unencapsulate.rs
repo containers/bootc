@@ -135,6 +135,9 @@ pub struct Import {
     pub ostree_commit: String,
     /// The image digest retrieved
     pub image_digest: String,
+
+    /// Any deprecation warning
+    pub deprecated_warning: Option<String>,
 }
 
 /// Use this to process potential errors from a worker and a driver.
