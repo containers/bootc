@@ -205,6 +205,8 @@ pub(crate) async fn fetch_layer_decompress<'a>(
     manifest: &oci_image::ImageManifest,
     layer: &'a oci_image::Descriptor,
     progress: Option<&'a Sender<Option<store::LayerProgress>>>,
+    layer_info: Option<&Vec<containers_image_proxy::ConvertedLayerInfo>>,
+    transport_src: Transport,
 ) -> Result<(
     Box<dyn AsyncBufRead + Send + Unpin>,
     impl Future<Output = Result<()>> + 'a,
@@ -212,10 +214,31 @@ pub(crate) async fn fetch_layer_decompress<'a>(
     use futures_util::future::Either;
     tracing::debug!("fetching {}", layer.digest());
     let layer_index = manifest.layers().iter().position(|x| x == layer).unwrap();
+    let (blob, driver, size);
+    let media_type: &oci_image::MediaType;
+    match transport_src {
+        Transport::ContainerStorage => {
+            let layer_info = layer_info
+                .ok_or_else(|| anyhow!("skopeo too old to pull from containers-storage"))?;
+            let n_layers = layer_info.len();
+            let layer_blob = layer_info.get(layer_index).ok_or_else(|| {
+                anyhow!("blobid position {layer_index} exceeds diffid count {n_layers}")
+            })?;
+            size = layer_blob.size;
+            media_type = &layer_blob.media_type;
+            (blob, driver) = proxy
+                .get_blob(img, layer_blob.digest.as_str(), size as u64)
+                .await?;
+        }
+        _ => {
+            size = layer.size();
+            media_type = layer.media_type();
+            (blob, driver) = proxy
+                .get_blob(img, layer.digest().as_str(), size as u64)
+                .await?;
+        }
+    };
 
-    let (blob, driver) = proxy
-        .get_blob(img, layer.digest().as_str(), layer.size() as u64)
-        .await?;
     if let Some(progress) = progress {
         let (readprogress, mut readwatch) = ProgressReader::new(blob);
         let readprogress = tokio::io::BufReader::new(readprogress);
@@ -225,16 +248,16 @@ pub(crate) async fn fetch_layer_decompress<'a>(
                 let status = LayerProgress {
                     layer_index,
                     fetched: *fetched,
-                    total: layer.size() as u64,
+                    total: size as u64,
                 };
                 progress.send_replace(Some(status));
             }
         };
-        let reader = new_async_decompressor(layer.media_type(), readprogress)?;
+        let reader = new_async_decompressor(media_type, readprogress)?;
         let driver = futures_util::future::join(readproxy, driver).map(|r| r.1);
         Ok((reader, Either::Left(driver)))
     } else {
-        let blob = new_async_decompressor(layer.media_type(), blob)?;
+        let blob = new_async_decompressor(media_type, blob)?;
         Ok((blob, Either::Right(driver)))
     }
 }
