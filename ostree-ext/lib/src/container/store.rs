@@ -583,7 +583,7 @@ impl ImageImporter {
                 None
             }
         };
-
+        let des_layers = self.proxy.get_layer_info(&self.proxy_img).await?;
         for layer in import.ostree_layers.iter_mut() {
             if layer.commit.is_some() {
                 continue;
@@ -598,6 +598,8 @@ impl ImageImporter {
                 &import.manifest,
                 &layer.layer,
                 self.layer_byte_progress.as_ref(),
+                des_layers.as_ref(),
+                self.imgref.imgref.transport,
             )
             .await?;
             let repo = self.repo.clone();
@@ -641,6 +643,8 @@ impl ImageImporter {
                 &import.manifest,
                 &import.ostree_commit_layer.layer,
                 self.layer_byte_progress.as_ref(),
+                des_layers.as_ref(),
+                self.imgref.imgref.transport,
             )
             .await?;
             let repo = self.repo.clone();
@@ -712,6 +716,7 @@ impl ImageImporter {
         // First download all layers for the base image (if necessary) - we need the SELinux policy
         // there to label all following layers.
         self.unencapsulate_base(&mut import, true).await?;
+        let des_layers = self.proxy.get_layer_info(&self.proxy_img).await?;
         let mut proxy = self.proxy;
         let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
         let base_commit = import.ostree_commit_layer.commit.clone().unwrap();
@@ -735,6 +740,8 @@ impl ImageImporter {
                     &import.manifest,
                     &layer.layer,
                     self.layer_byte_progress.as_ref(),
+                    des_layers.as_ref(),
+                    self.imgref.imgref.transport,
                 )
                 .await?;
                 // An important aspect of this is that we SELinux label the derived layers using
