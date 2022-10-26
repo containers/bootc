@@ -219,6 +219,12 @@ pub fn merge_default_container_proxy_opts(
 ) -> Result<()> {
     if !config.auth_anonymous && config.authfile.is_none() {
         config.authfile = crate::globals::get_global_authfile_path()?;
+        // If there's no authfile, then force on anonymous pulls to ensure
+        // that the container stack doesn't try to find it in the standard
+        // container paths.
+        if config.authfile.is_none() {
+            config.auth_anonymous = true;
+        }
     }
     Ok(())
 }
