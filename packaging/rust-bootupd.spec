@@ -53,15 +53,6 @@ License:        ASL 2.0
 %install
 %make_install INSTALL="install -p -c"
 
-%post        -n %{crate}
-%systemd_post bootupd.service bootupd.socket
-
-%preun       -n %{crate}
-%systemd_preun bootupd.service bootupd.socket
-
-%postun      -n %{crate}
-%systemd_postun bootupd.service bootupd.socket
-
 %changelog
 * Fri Sep 11 2020 Colin Walters <walters@verbum.org> - 0.1.0-3
 - Initial package

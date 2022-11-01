@@ -48,8 +48,6 @@ if ! test -n "${TARGET_GRUB_PKG}"; then
     fatal "Missing TARGET_GRUB_PKG"
 fi
 
-systemctl start bootupd.socket
-
 bootupctl validate
 ok validate
 
