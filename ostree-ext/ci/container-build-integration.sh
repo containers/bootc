@@ -2,7 +2,7 @@
 # Verify `ostree container commit`
 set -euo pipefail
 
-image=quay.io/coreos-assembler/fcos:stable
+image=quay.io/fedora/fedora-coreos:stable
 example=coreos-layering-examples/tailscale
 set -x
 

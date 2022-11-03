@@ -114,7 +114,7 @@ jobs:
     name: "Integration"
     needs: build
     runs-on: ubuntu-latest
-    container: quay.io/coreos-assembler/fcos:testing-devel
+    container: quay.io/fedora/fedora-coreos:testing-devel
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -130,7 +130,7 @@ jobs:
     name: "Integration (IMA)"
     needs: build
     runs-on: ubuntu-latest
-    container: quay.io/coreos-assembler/fcos:testing-devel
+    container: quay.io/fedora/fedora-coreos:testing-devel
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -147,7 +147,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     container:
-      image: quay.io/coreos-assembler/fcos:testing-devel
+      image: quay.io/fedora/fedora-coreos:testing-devel
       options: "--privileged --pid=host -v /run/systemd/journal:/run/systemd/journal -v /:/run/host"
     steps:
       - name: Checkout repository
