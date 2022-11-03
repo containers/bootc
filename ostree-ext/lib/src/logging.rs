@@ -15,6 +15,9 @@ pub(crate) fn system_repo_journal_send<K, V>(
     K: AsRef<str>,
     V: AsRef<str>,
 {
+    if !libsystemd::daemon::booted() {
+        return;
+    }
     if !repo.is_system() {
         return;
     }
