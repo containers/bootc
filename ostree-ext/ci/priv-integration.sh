@@ -6,7 +6,7 @@ set -euo pipefail
 
 sysroot=/run/host
 # Current stable image fixture
-image=quay.io/coreos-assembler/fcos:testing-devel
+image=quay.io/fedora/fedora-coreos:testing-devel
 # An unchunked v1 image
 old_image=quay.io/cgwalters/fcos:unchunked
 imgref=ostree-unverified-registry:${image}
