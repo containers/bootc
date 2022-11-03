@@ -278,6 +278,13 @@ enum ContainerImageOpts {
         #[clap(value_parser = parse_imgref)]
         target_imgref: Option<OstreeImageReference>,
 
+        /// If set, only write the layer refs, but not the final container image reference.  This
+        /// allows generating a disk image that when booted uses "native ostree", but has layer
+        /// references "pre-cached" such that a container image fetch will avoid redownloading
+        /// everything.
+        #[clap(long)]
+        no_imgref: bool,
+
         #[clap(long)]
         /// Add a kernel argument
         karg: Option<Vec<String>>,
@@ -788,6 +795,7 @@ where
                     stateroot,
                     imgref,
                     target_imgref,
+                    no_imgref,
                     karg,
                     proxyopts,
                     write_commitid_to,
@@ -800,10 +808,12 @@ where
                         let r: Vec<_> = v.iter().map(|s| s.as_str()).collect();
                         r
                     });
+                    #[allow(clippy::needless_update)]
                     let options = crate::container::deploy::DeployOpts {
                         kargs: kargs.as_deref(),
                         target_imgref: target_imgref.as_ref(),
                         proxy_cfg: Some(proxyopts.into()),
+                        no_imgref,
                         ..Default::default()
                     };
                     let state = crate::container::deploy::deploy(
