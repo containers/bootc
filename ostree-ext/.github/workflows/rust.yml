@@ -41,6 +41,21 @@ jobs:
         run: (cd cli && cargo check) && (cd lib && cargo check)
       - name: Run tests
         run: cargo test -- --nocapture --quiet
+  test-compat:
+    runs-on: ubuntu-latest
+    container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install deps
+        run: ./ci/installdeps.sh
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v1
+        with:
+          key: "test-compat"
+      - name: Build
+        run: cargo test --no-run --features=compat
+      - name: Run tests
+        run: cargo test --features=compat -- --nocapture --quiet
   build:
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
