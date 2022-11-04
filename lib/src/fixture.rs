@@ -247,7 +247,12 @@ pub fn create_dirmeta(path: &Utf8Path, selinux: bool) -> glib::Variant {
 /// Wraps [`create_dirmeta`] and commits it.
 pub fn require_dirmeta(repo: &ostree::Repo, path: &Utf8Path, selinux: bool) -> Result<String> {
     let v = create_dirmeta(path, selinux);
-    let r = repo.write_metadata(ostree::ObjectType::DirMeta, None, &v, gio::NONE_CANCELLABLE)?;
+    let r = repo.write_metadata(
+        ostree::ObjectType::DirMeta,
+        None,
+        &v,
+        gio::Cancellable::NONE,
+    )?;
     Ok(r.to_hex())
 }
 
@@ -280,7 +285,7 @@ fn build_mapping_recurse(
     ret: &mut ObjectMeta,
 ) -> Result<()> {
     use std::collections::btree_map::Entry;
-    let cancellable = gio::NONE_CANCELLABLE;
+    let cancellable = gio::Cancellable::NONE;
     let e = dir.enumerate_children(
         "standard::name,standard::type",
         gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
@@ -415,9 +420,9 @@ impl Fixture {
     // Delete all objects in the destrepo
     pub fn clear_destrepo(&self) -> Result<()> {
         self.destrepo()
-            .set_ref_immediate(None, self.testref(), None, gio::NONE_CANCELLABLE)?;
+            .set_ref_immediate(None, self.testref(), None, gio::Cancellable::NONE)?;
         self.destrepo()
-            .prune(ostree::RepoPruneFlags::REFS_ONLY, 0, gio::NONE_CANCELLABLE)?;
+            .prune(ostree::RepoPruneFlags::REFS_ONLY, 0, gio::Cancellable::NONE)?;
         Ok(())
     }
 
@@ -446,7 +451,7 @@ impl Fixture {
                 libc::S_IFREG | def.mode,
                 xattrs,
                 contents.as_bytes(),
-                gio::NONE_CANCELLABLE,
+                gio::Cancellable::NONE,
             )?,
             FileDefType::Symlink(target) => self.srcrepo.write_symlink(
                 None,
@@ -454,7 +459,7 @@ impl Fixture {
                 def.gid,
                 xattrs,
                 target.as_str(),
-                gio::NONE_CANCELLABLE,
+                gio::Cancellable::NONE,
             )?,
             FileDefType::Directory => {
                 let d = parent.ensure_dir(name)?;
@@ -469,7 +474,7 @@ impl Fixture {
 
     pub fn commit_filedefs(&self, defs: impl IntoIterator<Item = Result<FileDef>>) -> Result<()> {
         let root = ostree::MutableTree::new();
-        let cancellable = gio::NONE_CANCELLABLE;
+        let cancellable = gio::Cancellable::NONE;
         let tx = self.srcrepo.auto_transaction(cancellable)?;
         for def in defs {
             let def = def?;
@@ -509,7 +514,7 @@ impl Fixture {
         self.srcrepo.write_commit_detached_metadata(
             commit.as_str(),
             Some(&detached),
-            gio::NONE_CANCELLABLE,
+            gio::Cancellable::NONE,
         )?;
 
         let gpghome = self.path.join("src/gpghome");
@@ -517,7 +522,7 @@ impl Fixture {
             &commit,
             TEST_GPG_KEYID_1,
             Some(gpghome.as_str()),
-            gio::NONE_CANCELLABLE,
+            gio::Cancellable::NONE,
         )?;
 
         Ok(())
@@ -539,7 +544,7 @@ impl Fixture {
         additions: impl Iterator<Item = Result<FileDef>>,
         removals: impl Iterator<Item = Cow<'static, Utf8Path>>,
     ) -> Result<()> {
-        let cancellable = gio::NONE_CANCELLABLE;
+        let cancellable = gio::Cancellable::NONE;
 
         // Load our base commit
         let rev = &self.srcrepo().require_rev(self.testref())?;
@@ -595,7 +600,7 @@ impl Fixture {
 
     /// Gather object metadata for the current commit.
     pub fn get_object_meta(&self) -> Result<crate::objectsource::ObjectMeta> {
-        let cancellable = gio::NONE_CANCELLABLE;
+        let cancellable = gio::Cancellable::NONE;
 
         // Load our base commit
         let root = self.srcrepo.read_commit(self.testref(), cancellable)?.0;
@@ -613,7 +618,7 @@ impl Fixture {
 
     #[context("Exporting tar")]
     pub fn export_tar(&self) -> Result<&'static Utf8Path> {
-        let cancellable = gio::NONE_CANCELLABLE;
+        let cancellable = gio::Cancellable::NONE;
         let (_, rev) = self.srcrepo.read_commit(self.testref(), cancellable)?;
         let path = "exampleos-export.tar";
         let mut outf = std::io::BufWriter::new(self.dir.create(path)?);

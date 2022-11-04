@@ -274,7 +274,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
 
     /// Recursively serialize a commit object to the target tar stream.
     fn write_commit(&mut self) -> Result<()> {
-        let cancellable = gio::NONE_CANCELLABLE;
+        let cancellable = gio::Cancellable::NONE;
 
         let commit_bytes = self.commit_object.data_as_bytes();
         let commit_bytes = commit_bytes.try_as_aligned()?;
@@ -319,7 +319,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         )?;
         if let Some(commitmeta) = self
             .repo
-            .read_commit_detached_metadata(self.commit_checksum, gio::NONE_CANCELLABLE)?
+            .read_commit_detached_metadata(self.commit_checksum, gio::Cancellable::NONE)?
         {
             self.append(
                 ostree::ObjectType::CommitMeta,
@@ -412,7 +412,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     fn append_content(&mut self, checksum: &str) -> Result<(Utf8PathBuf, tar::Header)> {
         let path = object_path(ostree::ObjectType::File, checksum);
 
-        let (instream, meta, xattrs) = self.repo.load_file(checksum, gio::NONE_CANCELLABLE)?;
+        let (instream, meta, xattrs) = self.repo.load_file(checksum, gio::Cancellable::NONE)?;
 
         let mut h = tar::Header::new_gnu();
         h.set_uid(meta.attribute_uint32("unix::uid") as u64);
