@@ -40,7 +40,7 @@ pub fn parse_repo(s: &Utf8Path) -> Result<ostree::Repo> {
 
 /// Options for importing a tar archive.
 #[derive(Debug, Parser)]
-struct ImportOpts {
+pub(crate) struct ImportOpts {
     /// Path to the repository
     #[clap(long, value_parser)]
     repo: Utf8PathBuf,
@@ -51,7 +51,7 @@ struct ImportOpts {
 
 /// Options for exporting a tar archive.
 #[derive(Debug, Parser)]
-struct ExportOpts {
+pub(crate) struct ExportOpts {
     /// Path to the repository
     #[clap(long, value_parser)]
     repo: Utf8PathBuf,
@@ -66,7 +66,7 @@ struct ExportOpts {
 
 /// Options for import/export to tar archives.
 #[derive(Debug, Subcommand)]
-enum TarOpts {
+pub(crate) enum TarOpts {
     /// Import a tar archive (currently, must not be compressed)
     Import(ImportOpts),
 
@@ -76,7 +76,7 @@ enum TarOpts {
 
 /// Options for container import/export.
 #[derive(Debug, Subcommand)]
-enum ContainerOpts {
+pub(crate) enum ContainerOpts {
     #[clap(alias = "import")]
     /// Import an ostree commit embedded in a remote container image
     Unencapsulate {
@@ -147,7 +147,7 @@ enum ContainerOpts {
 
 /// Options for container image fetching.
 #[derive(Debug, Parser)]
-struct ContainerProxyOpts {
+pub(crate) struct ContainerProxyOpts {
     #[clap(long)]
     /// Do not use default authentication files.
     auth_anonymous: bool,
@@ -168,7 +168,7 @@ struct ContainerProxyOpts {
 
 /// Options for import/export to tar archives.
 #[derive(Debug, Subcommand)]
-enum ContainerImageOpts {
+pub(crate) enum ContainerImageOpts {
     /// List container images
     List {
         /// Path to the repository
@@ -297,7 +297,7 @@ enum ContainerImageOpts {
 
 /// Options for the Integrity Measurement Architecture (IMA).
 #[derive(Debug, Parser)]
-struct ImaSignOpts {
+pub(crate) struct ImaSignOpts {
     /// Path to the repository
     #[clap(long, value_parser)]
     repo: Utf8PathBuf,
@@ -319,7 +319,7 @@ struct ImaSignOpts {
 
 /// Options for internal testing
 #[derive(Debug, Subcommand)]
-enum TestingOpts {
+pub(crate) enum TestingOpts {
     /// Detect the current environment
     DetectEnv,
     /// Generate a test fixture
@@ -331,12 +331,20 @@ enum TestingOpts {
     FilterTar,
 }
 
+/// Options for man page generation
+#[derive(Debug, Parser)]
+pub(crate) struct ManOpts {
+    #[clap(long)]
+    /// Output to this directory
+    directory: Utf8PathBuf,
+}
+
 /// Toplevel options for extended ostree functionality.
 #[derive(Debug, Parser)]
 #[clap(name = "ostree-ext")]
 #[clap(rename_all = "kebab-case")]
 #[allow(clippy::large_enum_variant)]
-enum Opt {
+pub(crate) enum Opt {
     /// Import and export to tar
     #[clap(subcommand)]
     Tar(TarOpts),
@@ -349,6 +357,9 @@ enum Opt {
     #[clap(hide(true), subcommand)]
     #[cfg(feature = "internal-testing-api")]
     InternalOnlyForTesting(TestingOpts),
+    #[clap(hide(true))]
+    #[cfg(feature = "docgen")]
+    Man(ManOpts),
 }
 
 #[allow(clippy::from_over_into)]
@@ -841,5 +852,7 @@ where
         Opt::ImaSign(ref opts) => ima_sign(opts),
         #[cfg(feature = "internal-testing-api")]
         Opt::InternalOnlyForTesting(ref opts) => testing(opts).await,
+        #[cfg(feature = "docgen")]
+        Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
     }
 }

@@ -17,6 +17,7 @@ camino = "1.0.4"
 chrono = "0.4.19"
 cjson = "0.1.1"
 clap = { version= "3.2", features = ["derive"] }
+clap_mangen = { version = "0.1", optional = true }
 cap-std-ext = "0.26"
 cap-tempfile = "0.25"
 flate2 = { features = ["zlib"], default_features = false, version = "1.0.20" }
@@ -56,6 +57,7 @@ ostree-ext = { path = ".", features = ["internal-testing-api"] }
 features = ["dox"]
 
 [features]
+docgen = ["clap_mangen"]
 dox = ["ostree/dox"]
 compat = []
 internal-testing-api = ["sh-inline", "indoc"]
