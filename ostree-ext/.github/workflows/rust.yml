@@ -41,6 +41,8 @@ jobs:
         run: (cd cli && cargo check) && (cd lib && cargo check)
       - name: Run tests
         run: cargo test -- --nocapture --quiet
+      - name: Manpage generation
+        run: mkdir -p target/man && cargo run --features=docgen -- man --directory target/man
   test-compat:
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
