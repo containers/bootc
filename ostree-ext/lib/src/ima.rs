@@ -54,15 +54,12 @@ fn xattrs_to_map(v: &glib::Variant) -> BTreeMap<Vec<u8>, Vec<u8>> {
 pub(crate) fn new_variant_a_ayay<'a, T: 'a + AsRef<[u8]>>(
     items: impl IntoIterator<Item = (T, T)>,
 ) -> glib::Variant {
-    let children: Vec<_> = items
-        .into_iter()
-        .map(|(a, b)| {
-            let a = a.as_ref();
-            let b = b.as_ref();
-            Variant::from_tuple(&[a.to_variant(), b.to_variant()])
-        })
-        .collect();
-    Variant::from_array::<(&[u8], &[u8])>(&children)
+    let children = items.into_iter().map(|(a, b)| {
+        let a = a.as_ref();
+        let b = b.as_ref();
+        Variant::tuple_from_iter([a.to_variant(), b.to_variant()])
+    });
+    Variant::array_from_iter::<(&[u8], &[u8])>(children)
 }
 
 struct CommitRewriter<'a> {
@@ -155,7 +152,7 @@ impl<'a> CommitRewriter<'a> {
 
     #[context("Content object {}", checksum)]
     fn map_file(&mut self, checksum: &str) -> Result<Option<String>> {
-        let cancellable = gio::NONE_CANCELLABLE;
+        let cancellable = gio::Cancellable::NONE;
         let (instream, meta, xattrs) = self.repo.load_file(checksum, cancellable)?;
         let instream = if let Some(i) = instream {
             i
@@ -236,7 +233,7 @@ impl<'a> CommitRewriter<'a> {
                 ostree::ObjectType::DirTree,
                 None,
                 &new_dirtree,
-                gio::NONE_CANCELLABLE,
+                gio::Cancellable::NONE,
             )?
             .to_hex();
 
@@ -247,7 +244,7 @@ impl<'a> CommitRewriter<'a> {
     #[context("Mapping {}", rev)]
     fn map_commit(&mut self, rev: &str) -> Result<String> {
         let checksum = self.repo.require_rev(rev)?;
-        let cancellable = gio::NONE_CANCELLABLE;
+        let cancellable = gio::Cancellable::NONE;
         let (commit_v, _) = self.repo.load_commit(&checksum)?;
         let commit_v = &commit_v;
 
@@ -266,7 +263,7 @@ impl<'a> CommitRewriter<'a> {
         }
         let new_dt = hex::decode(new_dt)?;
         parts[6] = new_dt.to_variant();
-        let new_commit = Variant::from_tuple(&parts);
+        let new_commit = Variant::tuple_from_iter(&parts);
 
         let new_commit_checksum = self
             .repo

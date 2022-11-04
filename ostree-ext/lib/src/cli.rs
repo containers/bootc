@@ -520,7 +520,7 @@ async fn container_import(
             None,
             write_ref,
             Some(import.ostree_commit.as_str()),
-            gio::NONE_CANCELLABLE,
+            gio::Cancellable::NONE,
         )?;
         println!(
             "Imported: {} => {}",
@@ -666,7 +666,7 @@ async fn container_history(repo: &ostree::Repo, imgref: &ImageReference) -> Resu
 
 /// Add IMA signatures to an ostree commit, generating a new commit.
 fn ima_sign(cmdopts: &ImaSignOpts) -> Result<()> {
-    let cancellable = gio::NONE_CANCELLABLE;
+    let cancellable = gio::Cancellable::NONE;
     let signopts = crate::ima::ImaOpts {
         algorithm: cmdopts.algorithm.clone(),
         key: cmdopts.key.clone(),
@@ -834,7 +834,7 @@ where
                     write_commitid_to,
                 } => {
                     let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
-                    sysroot.load(gio::NONE_CANCELLABLE)?;
+                    sysroot.load(gio::Cancellable::NONE)?;
                     let repo = &sysroot.repo().unwrap();
                     let kargs = karg.as_deref();
                     let kargs = kargs.map(|v| {

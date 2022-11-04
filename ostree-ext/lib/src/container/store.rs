@@ -874,7 +874,7 @@ impl ImageImporter {
 
 /// List all images stored
 pub fn list_images(repo: &ostree::Repo) -> Result<Vec<String>> {
-    let cancellable = gio::NONE_CANCELLABLE;
+    let cancellable = gio::Cancellable::NONE;
     let refs = repo.list_refs_ext(
         Some(IMAGE_PREFIX),
         ostree::RepoListRefsExtFlags::empty(),
@@ -1023,7 +1023,7 @@ fn list_container_deployment_manifests(
 /// The underlying objects are *not* pruned; that requires a separate invocation
 /// of [`ostree::Repo::prune`].
 pub fn gc_image_layers(repo: &ostree::Repo) -> Result<u32> {
-    gc_image_layers_impl(repo, gio::NONE_CANCELLABLE)
+    gc_image_layers_impl(repo, gio::Cancellable::NONE)
 }
 
 #[context("Pruning image layers")]
@@ -1070,7 +1070,7 @@ fn gc_image_layers_impl(
 #[cfg(feature = "internal-testing-api")]
 /// Return how many container blobs (layers) are stored
 pub fn count_layer_references(repo: &ostree::Repo) -> Result<u32> {
-    let cancellable = gio::NONE_CANCELLABLE;
+    let cancellable = gio::Cancellable::NONE;
     let n = repo
         .list_refs_ext(
             Some(LAYER_PREFIX),
@@ -1127,7 +1127,7 @@ pub fn remove_image(repo: &ostree::Repo, img: &ImageReference) -> Result<bool> {
     // Note this API is already idempotent, but we might as well avoid another
     // trip into ostree.
     if found {
-        repo.set_ref_immediate(None, ostree_ref, None, gio::NONE_CANCELLABLE)?;
+        repo.set_ref_immediate(None, ostree_ref, None, gio::Cancellable::NONE)?;
     }
     Ok(found)
 }
