@@ -371,6 +371,13 @@ pub(crate) fn parse_manifest_layout<'a>(
         // Now, we need to handle the split differently in chunked v1 vs v0
         match layout {
             ExportLayout::V0 => {
+                if cfg!(not(feature = "compat")) {
+                    let label = layout.label();
+                    anyhow::bail!(
+                        "This legacy format using the {label} label is no longer supported"
+                    );
+                }
+
                 for layer in manifest.layers() {
                     if layer == target_layer {
                         if after_target {
