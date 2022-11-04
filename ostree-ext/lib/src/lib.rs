@@ -46,8 +46,6 @@ pub mod objectsource;
 pub(crate) mod objgv;
 #[cfg(feature = "internal-testing-api")]
 pub mod ostree_manual;
-#[cfg(not(feature = "internal-testing-api"))]
-mod ostree_manual;
 
 /// Prelude, intended for glob import.
 pub mod prelude {
