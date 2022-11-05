@@ -47,6 +47,9 @@ pub(crate) mod objgv;
 #[cfg(feature = "internal-testing-api")]
 pub mod ostree_manual;
 
+#[cfg(feature = "docgen")]
+mod docgen;
+
 /// Prelude, intended for glob import.
 pub mod prelude {
     #[doc(hidden)]
