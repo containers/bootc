@@ -42,3 +42,5 @@ install: install-units
 	mkdir -p "${DESTDIR}$(PREFIX)/bin" "${DESTDIR}$(LIBEXECDIR)"
 	install -D -t "${DESTDIR}$(LIBEXECDIR)" target/${PROFILE}/bootupd
 	ln -f ${DESTDIR}$(LIBEXECDIR)/bootupd ${DESTDIR}$(PREFIX)/bin/bootupctl
+	install -d "${DESTDIR}$(PREFIX)/lib/systemd/system/multi-user.target.wants"
+	ln -s ../bootupd.socket "${DESTDIR}$(PREFIX)/lib/systemd/system/multi-user.target.wants"

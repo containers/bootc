@@ -40,8 +40,6 @@ prepare_efi_update() {
   rm -rf ${efiupdir} ${bootupdir}/EFI.json
 }
 
-systemctl start bootupd.socket
-
 bootupctl status > out.txt
 assert_file_has_content_literal out.txt 'Component EFI'
 assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
