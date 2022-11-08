@@ -306,10 +306,12 @@ fn common_tar_structure() -> impl Iterator<Item = TarExpected> {
 
 // Find various expected files
 fn common_tar_contents_all() -> impl Iterator<Item = TarExpected> {
-    use tar::EntryType::{Directory, Link};
+    use tar::EntryType::{Directory, Link, Regular};
     [
         ("boot", Directory, 0o755),
         ("usr", Directory, 0o755),
+        ("usr/lib/emptyfile", Regular, 0o644),
+        ("usr/lib64/emptyfile2", Regular, 0o644),
         ("usr/bin/bash", Link, 0o755),
         ("usr/bin/hardlink-a", Link, 0o644),
         ("usr/bin/hardlink-b", Link, 0o644),
