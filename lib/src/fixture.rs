@@ -128,6 +128,7 @@ static OWNERS: Lazy<Vec<(Regex, &str)>> = Lazy::new(|| {
         ("usr/lib/modules/.*/initramfs", "initramfs"),
         ("usr/lib/modules", "kernel"),
         ("usr/bin/(ba)?sh", "bash"),
+        ("usr/lib.*/emptyfile.*", "bash"),
         ("usr/bin/hardlink.*", "testlink"),
         ("usr/etc/someconfig.conf", "someconfig"),
         ("usr/etc/polkit.conf", "a-polkit-config"),
@@ -146,6 +147,9 @@ m 0 0 755
 r usr/bin/bash the-bash-shell
 l usr/bin/sh bash
 m 0 0 644
+# Some empty files
+r usr/lib/emptyfile 
+r usr/lib64/emptyfile2 
 # Should be the same object
 r usr/bin/hardlink-a testlink
 r usr/bin/hardlink-b testlink
@@ -163,8 +167,8 @@ m 0 0 1755
 d tmp
 "## };
 pub const CONTENTS_CHECKSUM_V0: &str =
-    "3af747e156c34d08a3a2fb85b94de6999205a1d1c1c7b1993d6ce534a8918cd9";
-pub static CONTENTS_V0_LEN: Lazy<usize> = Lazy::new(|| OWNERS.len());
+    "5e41de82f9f861fa51e53ce6dd640a260e4fb29b7657f5a3f14157e93d2c0659";
+pub static CONTENTS_V0_LEN: Lazy<usize> = Lazy::new(|| OWNERS.len().checked_sub(1).unwrap());
 
 #[derive(Debug, PartialEq, Eq)]
 enum SeLabel {

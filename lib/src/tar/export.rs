@@ -419,9 +419,9 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         h.set_gid(meta.attribute_uint32("unix::gid") as u64);
         let mode = meta.attribute_uint32("unix::mode");
         h.set_mode(self.filter_mode(mode));
-        let mut target_header = h.clone();
-        target_header.set_size(0);
-
+        if instream.is_some() {
+            h.set_size(meta.size() as u64);
+        }
         if !self.wrote_content.contains(checksum) {
             let inserted = self.wrote_content.insert(checksum.to_string());
             debug_assert!(inserted);
@@ -464,7 +464,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             }
         }
 
-        Ok((path, target_header))
+        Ok((path, h))
     }
 
     /// Write a directory using the provided metadata.
@@ -488,9 +488,21 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         mut h: tar::Header,
         dest: &Utf8Path,
     ) -> Result<()> {
-        h.set_entry_type(tar::EntryType::Link);
-        h.set_link_name(srcpath)?;
-        self.out.append_data(&mut h, dest, &mut std::io::empty())?;
+        // Query the original size first
+        let size = h.size().context("Querying size for hardlink append")?;
+        // Don't create hardlinks to zero-sized files, it's much more likely
+        // to result in generated tar streams from container builds resulting
+        // in a modified linked-to file in /sysroot, which we don't currently handle.
+        // And in the case where the input is *not* zero sized, we still output
+        // a hardlink of size zero, as this is what is normal.
+        h.set_size(0);
+        if h.entry_type() == tar::EntryType::Regular && size == 0 {
+            self.out.append_data(&mut h, dest, &mut std::io::empty())?;
+        } else {
+            h.set_entry_type(tar::EntryType::Link);
+            h.set_link_name(srcpath)?;
+            self.out.append_data(&mut h, dest, &mut std::io::empty())?;
+        }
         Ok(())
     }
 
