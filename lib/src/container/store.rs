@@ -132,7 +132,8 @@ pub struct ImageImporter {
     pub(crate) proxy: ImageProxy,
     imgref: OstreeImageReference,
     target_imgref: Option<OstreeImageReference>,
-    no_imgref: bool, // If true, do not write final image ref
+    no_imgref: bool,  // If true, do not write final image ref
+    disable_gc: bool, // If true, don't prune unused image layers
     pub(crate) proxy_img: OpenedImage,
 
     layer_progress: Option<Sender<ImportProgress>>,
@@ -447,6 +448,7 @@ impl ImageImporter {
             proxy_img,
             target_imgref: None,
             no_imgref: false,
+            disable_gc: false,
             imgref: imgref.clone(),
             layer_progress: None,
             layer_byte_progress: None,
@@ -463,6 +465,11 @@ impl ImageImporter {
     /// but in such a way that it does not need to be manually removed later.
     pub fn set_no_imgref(&mut self) {
         self.no_imgref = true;
+    }
+
+    /// Do not prune image layers.
+    pub fn disable_gc(&mut self) {
+        self.disable_gc = true;
     }
 
     /// Determine if there is a new manifest, and if so return its digest.
@@ -691,7 +698,9 @@ impl ImageImporter {
         })
     }
 
-    /// Import a layered container image
+    /// Import a layered container image.
+    ///
+    /// If enabled, this will also prune unused container image layers.
     #[context("Importing")]
     pub async fn import(
         mut self,
@@ -847,6 +856,12 @@ impl ImageImporter {
                     repo.transaction_set_ref(None, &ostree_ref, Some(merged_commit.as_str()));
                 }
                 txn.commit(cancellable)?;
+
+                if !self.disable_gc {
+                    let n: u32 = gc_image_layers_impl(repo, cancellable)?;
+                    tracing::debug!("pruned {n} layers");
+                }
+
                 // Here we re-query state just to run through the same code path,
                 // though it'd be cheaper to synthesize it from the data we already have.
                 let state = query_image(repo, &imgref)?.unwrap();
@@ -970,7 +985,14 @@ pub async fn copy(
 /// The underlying objects are *not* pruned; that requires a separate invocation
 /// of [`ostree::Repo::prune`].
 pub fn gc_image_layers(repo: &ostree::Repo) -> Result<u32> {
-    let cancellable = gio::NONE_CANCELLABLE;
+    gc_image_layers_impl(repo, gio::NONE_CANCELLABLE)
+}
+
+#[context("Pruning image layers")]
+fn gc_image_layers_impl(
+    repo: &ostree::Repo,
+    cancellable: Option<&gio::Cancellable>,
+) -> Result<u32> {
     let all_images = list_images(repo)?;
     let all_manifests = all_images
         .into_iter()
@@ -1003,6 +1025,20 @@ pub fn gc_image_layers(repo: &ostree::Repo) -> Result<u32> {
     }
 
     Ok(pruned)
+}
+
+#[cfg(feature = "internal-testing-api")]
+/// Return how many container blobs (layers) are stored
+pub fn count_layer_references(repo: &ostree::Repo) -> Result<u32> {
+    let cancellable = gio::NONE_CANCELLABLE;
+    let n = repo
+        .list_refs_ext(
+            Some(LAYER_PREFIX),
+            ostree::RepoListRefsExtFlags::empty(),
+            cancellable,
+        )?
+        .len();
+    Ok(n as u32)
 }
 
 #[context("Pruning {}", image)]
