@@ -33,7 +33,7 @@ pub(crate) fn copy_entry(
     let path = if let Some(path) = path {
         path.to_owned()
     } else {
-        (&*entry.path()?).to_owned()
+        (*entry.path()?).to_owned()
     };
     let mut header = entry.header().clone();
 
