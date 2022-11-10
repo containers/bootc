@@ -780,7 +780,6 @@ impl ImageImporter {
 
         // Destructure to transfer ownership to thread
         let repo = self.repo;
-        let imgref = self.target_imgref.unwrap_or(self.imgref);
         let state = crate::tokio_util::spawn_blocking_cancellable_flatten(
             move |cancellable| -> Result<Box<LayeredImageState>> {
                 use cap_std_ext::rustix::fd::AsRawFd;
@@ -864,7 +863,7 @@ impl ImageImporter {
 
                 // Here we re-query state just to run through the same code path,
                 // though it'd be cheaper to synthesize it from the data we already have.
-                let state = query_image(repo, &imgref)?.unwrap();
+                let state = query_image_commit(repo, &merged_commit)?;
                 Ok(state)
             },
         )
@@ -893,11 +892,16 @@ pub fn query_image_ref(
 ) -> Result<Option<Box<LayeredImageState>>> {
     let ostree_ref = &ref_for_image(imgref)?;
     let merge_rev = repo.resolve_rev(ostree_ref, true)?;
-    let (merge_commit, merge_commit_obj) = if let Some(r) = merge_rev {
-        (r.to_string(), repo.load_commit(r.as_str())?.0)
-    } else {
-        return Ok(None);
-    };
+    merge_rev
+        .map(|r| query_image_commit(repo, r.as_str()))
+        .transpose()
+}
+
+/// Query metadata for a pulled image via an OSTree commit digest.
+/// The digest must refer to a pulled container image's merge commit.
+pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<LayeredImageState>> {
+    let merge_commit = commit.to_string();
+    let merge_commit_obj = repo.load_commit(commit)?.0;
     let commit_meta = &merge_commit_obj.child_value(0);
     let commit_meta = &ostree::glib::VariantDict::new(Some(commit_meta));
     let (manifest, manifest_digest) = manifest_data_from_commitmeta(commit_meta)?;
@@ -920,7 +924,7 @@ pub fn query_image_ref(
         configuration,
     });
     tracing::debug!(state = ?state);
-    Ok(Some(state))
+    Ok(state)
 }
 
 /// Query metadata for a pulled image.
