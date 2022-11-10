@@ -252,6 +252,13 @@ pub(crate) enum ContainerImageOpts {
         skip_gc: bool,
     },
 
+    /// Garbage collect unreferenced image layer references.
+    PruneLayers {
+        /// Path to the repository
+        #[clap(long, value_parser)]
+        repo: Utf8PathBuf,
+    },
+
     /// Perform initial deployment for a container image
     Deploy {
         /// Path to the system root
@@ -775,6 +782,12 @@ where
                     } else {
                         println!("Removed images: {nimgs}");
                     }
+                    Ok(())
+                }
+                ContainerImageOpts::PruneLayers { repo } => {
+                    let repo = parse_repo(&repo)?;
+                    let nlayers = crate::container::store::gc_image_layers(&repo)?;
+                    println!("Removed layers: {nlayers}");
                     Ok(())
                 }
                 ContainerImageOpts::Copy {
