@@ -1261,11 +1261,17 @@ async fn test_container_write_derive_sysroot_hardlink() -> Result<()> {
         store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         store::PrepareResult::Ready(r) => r,
     };
-    // Should fail for now
-    assert_err_contains(
-        imp.import(prep).await,
-        "Failed to find object: No such file or directory: sysroot",
-    );
+    let import = imp.import(prep).await.unwrap();
+
+    // Verify we have the new file
+    bash_in!(
+        &fixture.dir,
+        r#"set -x;
+         ostree --repo=dest/repo ls ${r} /usr/bin/bash >/dev/null
+         test "$(ostree --repo=dest/repo cat ${r} /usr/bin/bash)" = "hello"
+        "#,
+        r = import.merge_commit.as_str()
+    )?;
 
     Ok(())
 }
