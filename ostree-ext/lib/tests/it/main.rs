@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter};
 use std::os::unix::fs::DirBuilderExt;
 use std::process::Command;
+use std::time::SystemTime;
 
 use ostree_ext::fixture::{FileDef, Fixture, CONTENTS_CHECKSUM_V0, CONTENTS_V0_LEN};
 
@@ -1183,6 +1184,88 @@ async fn test_container_write_derive() -> Result<()> {
     let images = store::list_images(&destrepo2)?;
     assert_eq!(images.len(), 1);
     assert_eq!(images[0], derived_ref.imgref.to_string());
+
+    Ok(())
+}
+
+/// Test for https://github.com/ostreedev/ostree-rs-ext/issues/405
+/// We need to handle the case of modified hardlinks into /sysroot
+#[tokio::test]
+async fn test_container_write_derive_sysroot_hardlink() -> Result<()> {
+    let fixture = Fixture::new_v1()?;
+    let baseimg = &fixture.export_container(ExportLayout::V1).await?.0;
+    let basepath = &match baseimg.transport {
+        Transport::OciDir => fixture.path.join(baseimg.name.as_str()),
+        _ => unreachable!(),
+    };
+
+    // Build a derived image
+    let derived_path = &fixture.path.join("derived.oci");
+    oci_clone(basepath, derived_path).await?;
+    ostree_ext::integrationtest::generate_derived_oci_from_tar(
+        derived_path,
+        |w| {
+            let mut tar = tar::Builder::new(w);
+            let objpath = Utf8Path::new("sysroot/ostree/repo/objects/60/feb13e826d2f9b62490ab24cea0f4a2d09615fb57027e55f713c18c59f4796.file");
+            let d = objpath.parent().unwrap();
+            fn mkparents<F: std::io::Write>(
+                t: &mut tar::Builder<F>,
+                path: &Utf8Path,
+            ) -> std::io::Result<()> {
+                if let Some(parent) = path.parent().filter(|p| !p.as_str().is_empty()) {
+                    mkparents(t, parent)?;
+                }
+                let mut h = tar::Header::new_gnu();
+                h.set_entry_type(tar::EntryType::Directory);
+                h.set_uid(0);
+                h.set_gid(0);
+                h.set_mode(0o755);
+                h.set_size(0);
+                t.append_data(&mut h, path, std::io::empty())
+            }
+            mkparents(&mut tar, d).context("Appending parent")?;
+
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .as_secs();
+            let mut h = tar::Header::new_gnu();
+            h.set_entry_type(tar::EntryType::Regular);
+            h.set_uid(0);
+            h.set_gid(0);
+            h.set_mode(0o644);
+            h.set_mtime(now);
+            let data = b"hello";
+            h.set_size(data.len() as u64);
+            tar.append_data(&mut h, objpath, std::io::Cursor::new(data))
+                .context("appending object")?;
+            let targetpath = Utf8Path::new("usr/bin/bash");
+            h.set_size(0);
+            h.set_mtime(now);
+            h.set_entry_type(tar::EntryType::Link);
+            tar.append_link(&mut h, targetpath, objpath)
+                .context("appending target")?;
+            Ok::<_, anyhow::Error>(())
+        },
+        None,
+    )?;
+    let derived_ref = &OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: ImageReference {
+            transport: Transport::OciDir,
+            name: derived_path.to_string(),
+        },
+    };
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &derived_ref, Default::default()).await?;
+    let prep = match imp.prepare().await.context("Init prep derived")? {
+        store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        store::PrepareResult::Ready(r) => r,
+    };
+    // Should fail for now
+    assert_err_contains(
+        imp.import(prep).await,
+        "Failed to find object: No such file or directory: sysroot",
+    );
 
     Ok(())
 }
