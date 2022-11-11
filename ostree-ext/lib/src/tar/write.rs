@@ -10,15 +10,19 @@
 use crate::Result;
 use anyhow::{anyhow, Context};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
+
+use cap_std_ext::cap_std;
 use cap_std_ext::cmdext::CapStdExtCommandExt;
 use cap_std_ext::rustix;
+use once_cell::unsync::OnceCell;
 use ostree::gio;
 use ostree::prelude::FileExt;
 use rustix::fd::FromFd;
-use std::collections::BTreeMap;
-use std::io::{BufWriter, Write};
+use std::collections::{BTreeMap, HashMap};
+use std::io::{BufWriter, Seek, Write};
 use std::path::Path;
 use std::process::Stdio;
+
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tracing::instrument;
@@ -164,10 +168,73 @@ pub(crate) fn filter_tar(
     let mut filtered = BTreeMap::new();
 
     let ents = src.entries()?;
+
+    // Lookaside data for dealing with hardlinked files into /sysroot; see below.
+    let mut changed_sysroot_objects = HashMap::new();
+    let mut new_sysroot_link_targets = HashMap::<Utf8PathBuf, Utf8PathBuf>::new();
+    // A temporary directory if needed
+    let tmpdir = OnceCell::new();
+
     for entry in ents {
-        let entry = entry?;
+        let mut entry = entry?;
+        let header = entry.header();
         let path = entry.path()?;
         let path: &Utf8Path = (&*path).try_into()?;
+
+        let is_modified = header.mtime().unwrap_or_default() > 0;
+        let is_regular = header.entry_type() == tar::EntryType::Regular;
+        if path.strip_prefix(crate::tar::REPO_PREFIX).is_ok() {
+            // If it's a modified file in /sysroot, it may be a target for future hardlinks.
+            // In that case, we copy the data off to a temporary file.  Then the first hardlink
+            // to it becomes instead the real file, and any *further* hardlinks refer to that
+            // file instead.
+            if is_modified && is_regular {
+                tracing::debug!("Processing modified sysroot file {path}");
+                // Lazily allocate a temporary directory
+                let tmpdir = tmpdir.get_or_try_init(|| {
+                    let vartmp = &cap_std::fs::Dir::open_ambient_dir(
+                        "/var/tmp",
+                        cap_std::ambient_authority(),
+                    )?;
+                    cap_tempfile::tempdir_in(vartmp)
+                })?;
+                // Create an O_TMPFILE (anonymous file) to use as a temporary store for the file data
+                let mut tmpf = cap_tempfile::TempFile::new_anonymous(tmpdir).map(BufWriter::new)?;
+                let path = path.to_owned();
+                let header = header.clone();
+                std::io::copy(&mut entry, &mut tmpf)?;
+                let mut tmpf = tmpf.into_inner()?;
+                tmpf.seek(std::io::SeekFrom::Start(0))?;
+                // Cache this data, indexed by the file path
+                changed_sysroot_objects.insert(path, (header, tmpf));
+                continue;
+            }
+        } else if header.entry_type() == tar::EntryType::Link && is_modified {
+            let target = header
+                .link_name()?
+                .ok_or_else(|| anyhow!("Invalid empty hardlink"))?;
+            let target: &Utf8Path = (&*target).try_into()?;
+            // If this is a hardlink into /sysroot...
+            if target.strip_prefix(crate::tar::REPO_PREFIX).is_ok() {
+                // And we found a previously processed modified file there
+                if let Some((mut header, data)) = changed_sysroot_objects.remove(target) {
+                    tracing::debug!("Making {path} canonical for sysroot link {target}");
+                    // Make *this* entry the canonical one, consuming the temporary file data
+                    dest.append_data(&mut header, path, data)?;
+                    // And cache this file path as the new link target
+                    new_sysroot_link_targets.insert(target.to_owned(), path.to_owned());
+                } else if let Some(target) = new_sysroot_link_targets.get(path) {
+                    tracing::debug!("Relinking {path} to {target}");
+                    // We found a 2nd (or 3rd, etc.) link into /sysroot; rewrite the link
+                    // target to be the first file outside of /sysroot we found.
+                    let mut header = header.clone();
+                    dest.append_link(&mut header, path, target)?;
+                } else {
+                    tracing::debug!("Found unhandled modified link from {path} to {target}");
+                }
+                continue;
+            }
+        }
 
         let normalized = match normalize_validate_path(path)? {
             NormalizedPathResult::Filtered(path) => {

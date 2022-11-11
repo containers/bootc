@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::{
     container::{ocidir, ExportLayout},
     container_utils::is_ostree_container,
+    ocidir::RawLayerWriter,
 };
 use anyhow::Result;
 use camino::Utf8Path;
@@ -36,17 +37,39 @@ pub fn generate_derived_oci(
     dir: impl AsRef<Utf8Path>,
     tag: Option<&str>,
 ) -> Result<()> {
+    generate_derived_oci_from_tar(
+        src,
+        move |w| {
+            let dir = dir.as_ref();
+            let mut layer_tar = tar::Builder::new(w);
+            layer_tar.append_dir_all("./", dir.as_std_path())?;
+            layer_tar.finish()?;
+            Ok(())
+        },
+        tag,
+    )
+}
+
+/// Using `src` as a base, take append `dir` into OCI image.
+/// Should only be enabled for testing.
+#[context("Generating derived oci")]
+pub fn generate_derived_oci_from_tar<F>(
+    src: impl AsRef<Utf8Path>,
+    f: F,
+    tag: Option<&str>,
+) -> Result<()>
+where
+    F: FnOnce(&mut RawLayerWriter) -> Result<()>,
+{
     let src = src.as_ref();
     let src = Dir::open_ambient_dir(src, cap_std::ambient_authority())?;
     let src = ocidir::OciDir::open(&src)?;
-    let dir = dir.as_ref();
+
     let mut manifest = src.read_manifest()?;
     let mut config: oci_spec::image::ImageConfiguration = src.read_json_blob(manifest.config())?;
 
-    let bw = src.create_raw_layer(None)?;
-    let mut layer_tar = tar::Builder::new(bw);
-    layer_tar.append_dir_all("./", dir.as_std_path())?;
-    let bw = layer_tar.into_inner()?;
+    let mut bw = src.create_raw_layer(None)?;
+    f(&mut bw)?;
     let new_layer = bw.complete()?;
 
     manifest.layers_mut().push(
