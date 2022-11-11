@@ -983,6 +983,40 @@ pub async fn copy(
     Ok(())
 }
 
+/// Iterate over deployment commits, returning the manifests from
+/// commits which point to a container image.
+fn list_container_deployment_manifests(
+    repo: &ostree::Repo,
+    cancellable: Option<&gio::Cancellable>,
+) -> Result<Vec<ImageManifest>> {
+    let commits = repo
+        .list_refs_ext(
+            Some("ostree/0"),
+            ostree::RepoListRefsExtFlags::empty(),
+            cancellable,
+        )?
+        .into_iter()
+        .chain(repo.list_refs_ext(
+            Some("ostree/1"),
+            ostree::RepoListRefsExtFlags::empty(),
+            cancellable,
+        )?)
+        .map(|v| v.1);
+    let mut r = Vec::new();
+    for commit in commits {
+        let commit_obj = repo.load_commit(&commit)?.0;
+        let commit_meta = &glib::VariantDict::new(Some(&commit_obj.child_value(0)));
+        if commit_meta
+            .lookup::<String>(META_MANIFEST_DIGEST)?
+            .is_some()
+        {
+            let manifest = manifest_data_from_commitmeta(commit_meta)?.0;
+            r.push(manifest);
+        }
+    }
+    Ok(r)
+}
+
 /// Garbage collect unused image layer references.
 ///
 /// This function assumes no transaction is active on the repository.
@@ -998,11 +1032,13 @@ fn gc_image_layers_impl(
     cancellable: Option<&gio::Cancellable>,
 ) -> Result<u32> {
     let all_images = list_images(repo)?;
+    let deployment_commits = list_container_deployment_manifests(repo, cancellable)?;
     let all_manifests = all_images
         .into_iter()
         .map(|img| {
             ImageReference::try_from(img.as_str()).and_then(|ir| manifest_for_image(repo, &ir))
         })
+        .chain(deployment_commits.into_iter().map(Ok))
         .collect::<Result<Vec<_>>>()?;
     let mut referenced_layers = BTreeSet::new();
     for m in all_manifests.iter() {
