@@ -27,7 +27,7 @@ const MAX_METADATA_SIZE: u32 = 10 * 1024 * 1024;
 pub(crate) const SMALL_REGFILE_SIZE: usize = 127 * 1024;
 
 // The prefix for filenames that contain content we actually look at.
-const REPO_PREFIX: &str = "sysroot/ostree/repo/";
+pub(crate) const REPO_PREFIX: &str = "sysroot/ostree/repo/";
 /// Statistics from import.
 #[derive(Debug, Default)]
 struct ImportStats {
