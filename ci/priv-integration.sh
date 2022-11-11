@@ -29,8 +29,14 @@ for img in "${image}"; do
     ostree-ext-cli container image deploy --sysroot "${sysroot}" \
         --stateroot "${stateroot}" --imgref ostree-unverified-registry:"${img}"
     ostree admin --sysroot="${sysroot}" status
+    initial_refs=$(ostree --repo="${sysroot}/ostree/repo" refs | wc -l)
     ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"${img}"
+    pruned_refs=$(ostree --repo="${sysroot}/ostree/repo" refs | wc -l)
+    # Removing the image should only drop the image reference, not its layers
+    test "$(($initial_refs - 1))" = "$pruned_refs"
     ostree admin --sysroot="${sysroot}" undeploy 0
+    # TODO: when we fold together ostree and ostree-ext, automatically prune layers
+    ostree-ext-cli container image prune-layers --repo="${sysroot}/ostree/repo"
     ostree --repo="${sysroot}/ostree/repo" refs > refs.txt
     if test "$(wc -l < refs.txt)" -ne 0; then
         echo "found refs"
