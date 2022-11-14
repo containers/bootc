@@ -547,7 +547,10 @@ impl Fixture {
         let metadata = commit.child_value(0);
         let root = ostree::MutableTree::from_commit(self.srcrepo(), rev)?;
         // Bump the commit timestamp by one day
-        let ts = chrono::Utc.timestamp(ostree::commit_get_timestamp(&commit) as i64, 0);
+        let ts = chrono::Utc
+            .timestamp_opt(ostree::commit_get_timestamp(&commit) as i64, 0)
+            .single()
+            .unwrap();
         let new_ts = ts.add(chrono::Duration::days(1)).timestamp() as u64;
 
         // Prepare a transaction
