@@ -863,7 +863,9 @@ r usr/bin/bash bash-v0
     // Should only be new layers
     let n_removed = store::gc_image_layers(fixture.destrepo())?;
     assert_eq!(n_removed, 0);
-    store::remove_images(fixture.destrepo(), [&imgref.imgref]).unwrap();
+    // Also test idempotence
+    store::remove_image(fixture.destrepo(), &imgref.imgref).unwrap();
+    store::remove_image(fixture.destrepo(), &imgref.imgref).unwrap();
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
     // Still no removed layers after removing the base image
     let n_removed = store::gc_image_layers(fixture.destrepo())?;
