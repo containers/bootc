@@ -1081,17 +1081,6 @@ pub fn count_layer_references(repo: &ostree::Repo) -> Result<u32> {
     Ok(n as u32)
 }
 
-#[context("Pruning {}", image)]
-fn prune_image(repo: &ostree::Repo, image: &ImageReference) -> Result<()> {
-    let ostree_ref = &ref_for_image(image)?;
-
-    if repo.resolve_rev(ostree_ref, true)?.is_none() {
-        anyhow::bail!("No such image");
-    }
-    repo.set_ref_immediate(None, ostree_ref, None, gio::NONE_CANCELLABLE)?;
-    Ok(())
-}
-
 /// Given an image, if it has any non-ostree compatible content, return a suitable
 /// warning message.
 pub fn image_filtered_content_warning(
@@ -1125,7 +1114,26 @@ pub fn image_filtered_content_warning(
     Ok(r)
 }
 
-/// Remove the specified image references.
+/// Remove the specified image reference.  If the image is already
+/// not present, this function will successfully perform no operation.
+///
+/// This function assumes no transaction is active on the repository.
+/// The underlying layers are *not* pruned; that requires a separate invocation
+/// of [`gc_image_layers`].
+#[context("Pruning {img}")]
+pub fn remove_image(repo: &ostree::Repo, img: &ImageReference) -> Result<bool> {
+    let ostree_ref = &ref_for_image(img)?;
+    let found = repo.resolve_rev(ostree_ref, true)?.is_some();
+    // Note this API is already idempotent, but we might as well avoid another
+    // trip into ostree.
+    if found {
+        repo.set_ref_immediate(None, ostree_ref, None, gio::NONE_CANCELLABLE)?;
+    }
+    Ok(found)
+}
+
+/// Remove the specified image references.  If an image is not found, further
+/// images will be removed, but an error will be returned.
 ///
 /// This function assumes no transaction is active on the repository.
 /// The underlying layers are *not* pruned; that requires a separate invocation
@@ -1134,8 +1142,19 @@ pub fn remove_images<'a>(
     repo: &ostree::Repo,
     imgs: impl IntoIterator<Item = &'a ImageReference>,
 ) -> Result<()> {
+    let mut missing = Vec::new();
     for img in imgs.into_iter() {
-        prune_image(repo, img)?;
+        let found = remove_image(repo, img)?;
+        if !found {
+            missing.push(img);
+        }
+    }
+    if !missing.is_empty() {
+        let missing = missing.into_iter().fold("".to_string(), |mut a, v| {
+            a.push_str(&v.to_string());
+            a
+        });
+        return Err(anyhow::anyhow!("Missing images: {missing}"));
     }
     Ok(())
 }
