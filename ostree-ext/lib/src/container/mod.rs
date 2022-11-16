@@ -28,6 +28,7 @@
 use anyhow::anyhow;
 use std::borrow::Cow;
 use std::ops::Deref;
+use std::str::FromStr;
 
 /// The label injected into a container image that contains the ostree commit SHA-256.
 pub const OSTREE_COMMIT_LABEL: &str = "ostree.commit";
@@ -118,6 +119,14 @@ impl TryFrom<&str> for ImageReference {
     }
 }
 
+impl FromStr for ImageReference {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Self::try_from(s)
+    }
+}
+
 impl TryFrom<&str> for SignatureSource {
     type Error = anyhow::Error;
 
@@ -130,6 +139,14 @@ impl TryFrom<&str> for SignatureSource {
                 _ => Err(anyhow!("Invalid signature source: {}", o)),
             },
         }
+    }
+}
+
+impl FromStr for SignatureSource {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Self::try_from(s)
     }
 }
 
@@ -176,6 +193,14 @@ impl TryFrom<&str> for OstreeImageReference {
         };
         let imgref = rest.deref().try_into()?;
         Ok(Self { sigverify, imgref })
+    }
+}
+
+impl FromStr for OstreeImageReference {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Self::try_from(s)
     }
 }
 
@@ -303,7 +328,10 @@ mod tests {
             );
         }
 
+        // Also verify our FromStr impls
+
         let ir: OstreeImageReference = ir_s.try_into().unwrap();
+        assert_eq!(ir, OstreeImageReference::from_str(ir_s).unwrap());
         // test our Eq implementation
         assert_eq!(&ir, &OstreeImageReference::try_from(ir_registry).unwrap());
 
