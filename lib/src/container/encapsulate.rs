@@ -65,6 +65,7 @@ pub struct Config {
 fn commit_meta_to_labels<'a>(
     meta: &glib::VariantDict,
     keys: impl IntoIterator<Item = &'a str>,
+    opt_keys: impl IntoIterator<Item = &'a str>,
     labels: &mut HashMap<String, String>,
 ) -> Result<()> {
     for k in keys {
@@ -73,6 +74,14 @@ fn commit_meta_to_labels<'a>(
             .context("Expected string for commit metadata value")?
             .ok_or_else(|| anyhow!("Could not find commit metadata key: {}", k))?;
         labels.insert(k.to_string(), v);
+    }
+    for k in opt_keys {
+        let v = meta
+            .lookup::<String>(k)
+            .context("Expected string for commit metadata value")?;
+        if let Some(v) = v {
+            labels.insert(k.to_string(), v);
+        }
     }
     // Copy standard metadata keys `ostree.bootable` and `ostree.linux`.
     // Bootable is an odd one out in being a boolean.
@@ -217,6 +226,7 @@ fn build_oci(
     commit_meta_to_labels(
         &commit_meta,
         opts.copy_meta_keys.iter().map(|k| k.as_str()),
+        opts.copy_meta_opt_keys.iter().map(|k| k.as_str()),
         labels,
     )?;
 
@@ -361,6 +371,8 @@ pub struct ExportOpts {
     pub skip_compression: bool,
     /// A set of commit metadata keys to copy as image labels.
     pub copy_meta_keys: Vec<String>,
+    /// A set of optionally-present commit metadata keys to copy as image labels.
+    pub copy_meta_opt_keys: Vec<String>,
     /// Maximum number of layers to use
     pub max_layers: Option<NonZeroU32>,
     /// The container image layout
