@@ -126,6 +126,10 @@ pub(crate) enum ContainerOpts {
         #[clap(name = "copymeta", long)]
         copy_meta_keys: Vec<String>,
 
+        /// Propagate an optionally-present OSTree commit metadata key to container label
+        #[clap(name = "copymeta-opt", long)]
+        copy_meta_opt_keys: Vec<String>,
+
         /// Corresponds to the Dockerfile `CMD` instruction.
         #[clap(long)]
         cmd: Option<Vec<String>>,
@@ -531,12 +535,14 @@ async fn container_import(
 }
 
 /// Export a container image with an encapsulated ostree commit.
+#[allow(clippy::too_many_arguments)]
 async fn container_export(
     repo: &ostree::Repo,
     rev: &str,
     imgref: &ImageReference,
     labels: BTreeMap<String, String>,
     copy_meta_keys: Vec<String>,
+    copy_meta_opt_keys: Vec<String>,
     cmd: Option<Vec<String>>,
     compression_fast: bool,
 ) -> Result<()> {
@@ -546,6 +552,7 @@ async fn container_export(
     };
     let opts = crate::container::ExportOpts {
         copy_meta_keys,
+        copy_meta_opt_keys,
         skip_compression: compression_fast, // TODO rename this in the struct at the next semver break
         ..Default::default()
     };
@@ -723,6 +730,7 @@ where
                 imgref,
                 labels,
                 copy_meta_keys,
+                copy_meta_opt_keys,
                 cmd,
                 compression_fast,
             } => {
@@ -742,6 +750,7 @@ where
                     &imgref,
                     labels?,
                     copy_meta_keys,
+                    copy_meta_opt_keys,
                     cmd,
                     compression_fast,
                 )
