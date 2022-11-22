@@ -525,6 +525,7 @@ async fn impl_test_container_import_export(
         .transpose()?;
     let opts = ExportOpts {
         copy_meta_keys: vec!["buildsys.checksum".to_string()],
+        copy_meta_opt_keys: vec!["nosuchvalue".to_string()],
         format: export_format,
         ..Default::default()
     };
