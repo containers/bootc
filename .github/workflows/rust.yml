@@ -101,7 +101,7 @@ jobs:
   cargo-deny:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: EmbarkStudios/cargo-deny-action@v1
       with:
         log-level: warn
@@ -112,7 +112,7 @@ jobs:
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Install deps
         run: ./ci/installdeps.sh
       - name: Remove system Rust toolchain
@@ -134,7 +134,7 @@ jobs:
     container: quay.io/fedora/fedora-coreos:testing-devel
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Download ostree-ext-cli
         uses: actions/download-artifact@v2
         with:
@@ -150,7 +150,7 @@ jobs:
     container: quay.io/fedora/fedora-coreos:testing-devel
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Download ostree-ext-cli
         uses: actions/download-artifact@v2
         with:
@@ -168,7 +168,7 @@ jobs:
       options: "--privileged --pid=host -v /run/systemd:/run/systemd -v /:/run/host"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Download
         uses: actions/download-artifact@v2
         with:
@@ -183,7 +183,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Checkout coreos-layering-examples
         uses: actions/checkout@v3
         with:
