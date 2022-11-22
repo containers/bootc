@@ -4,6 +4,9 @@
 # Runs IMA tests.
 set -xeuo pipefail
 
+# https://github.com/ostreedev/ostree-rs-ext/issues/417
+mkdir -p /var/tmp
+
 if test '!' -x /usr/bin/evmctl; then
     rpm-ostree install ima-evm-utils
 fi
