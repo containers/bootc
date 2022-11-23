@@ -7,6 +7,7 @@ name = "ostree-ext"
 readme = "README.md"
 repository = "https://github.com/ostreedev/ostree-rs-ext"
 version = "0.9.1"
+rust-version = "1.63.0"
 
 [dependencies]
 anyhow = "1.0"
