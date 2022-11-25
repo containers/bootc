@@ -15,24 +15,22 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Minimum supported Rust version (MSRV)
-  ACTION_MSRV_TOOLCHAIN: 1.58.1
   # Pinned toolchain for linting
-  ACTION_LINTS_TOOLCHAIN: 1.58.1
+  ACTION_LINTS_TOOLCHAIN: 1.63.0
 
 jobs:
   tests:
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Code lints
         run: ./ci/lints.sh
       - name: Install deps
         run: ./ci/installdeps.sh
       # xref containers/containers-image-proxy-rs
       - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v1
+        uses: Swatinem/rust-cache@v2
         with:
           key: "tests"
       - name: Build
@@ -47,11 +45,11 @@ jobs:
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Install deps
         run: ./ci/installdeps.sh
       - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v1
+        uses: Swatinem/rust-cache@v2
         with:
           key: "test-compat"
       - name: Build
@@ -62,11 +60,11 @@ jobs:
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Install deps
         run: ./ci/installdeps.sh
       - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v1
+        uses: Swatinem/rust-cache@v2
         with:
           key: "build"
       - name: Build
@@ -82,18 +80,23 @@ jobs:
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Install deps
         run: ./ci/installdeps.sh
+      - name: Detect crate MSRV
+        shell: bash
+        run: |
+          msrv=$(cargo metadata --format-version 1 --no-deps | \
+              jq -r '.packages[1].rust_version')
+          echo "Crate MSRV: $msrv"
+          echo "ACTION_MSRV_TOOLCHAIN=$msrv" >> $GITHUB_ENV
       - name: Remove system Rust toolchain
         run: dnf remove -y rust cargo
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env['ACTION_MSRV_TOOLCHAIN']  }}
-          default: true
       - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v1
+        uses: Swatinem/rust-cache@v2
         with:
           key: "min"
       - name: cargo check
@@ -117,11 +120,9 @@ jobs:
         run: ./ci/installdeps.sh
       - name: Remove system Rust toolchain
         run: dnf remove -y rust cargo
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env['ACTION_LINTS_TOOLCHAIN']  }}
-          default: true
           components: rustfmt, clippy
       - name: cargo fmt (check)
         run: cargo fmt -- --check -l
