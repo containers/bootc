@@ -4,6 +4,9 @@
 # whatever we want, however we can't actually *reboot* the host.
 set -euo pipefail
 
+# https://github.com/ostreedev/ostree-rs-ext/issues/417
+mkdir -p /var/tmp
+
 sysroot=/run/host
 # Current stable image fixture
 image=quay.io/fedora/fedora-coreos:testing-devel
@@ -56,5 +59,14 @@ echo "ok old image failed to parse"
 # Verify we have systemd journal messages
 nsenter -m -t 1 journalctl _COMM=ostree-ext-cli > logs.txt
 grep 'layers stored: ' logs.txt
+
+podman pull ${image}
+ostree --repo="${sysroot}/ostree/repo" init --mode=bare-user
+if ostree-ext-cli container image pull ${sysroot}/ostree/repo ostree-unverified-image:containers-storage:${image} 2>err.txt; then
+  echo "unexpectedly pulled from containers storage?"
+  exit 1
+fi
+grep "file does not exist" err.txt
+echo "ok pulled from containers storage"
 
 echo ok privileged integration
