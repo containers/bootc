@@ -316,6 +316,7 @@ fn common_tar_contents_all() -> impl Iterator<Item = TarExpected> {
         ("usr/bin/bash", Link, 0o755),
         ("usr/bin/hardlink-a", Link, 0o644),
         ("usr/bin/hardlink-b", Link, 0o644),
+        ("var/tmp", Directory, 0o1777),
     ]
     .into_iter()
     .map(Into::into)
