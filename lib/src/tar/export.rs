@@ -79,6 +79,7 @@ struct OstreeTarWriter<'a, W: std::io::Write> {
     wrote_initdirs: bool,
     /// True if we're only writing directories
     structure_only: bool,
+    wrote_vartmp: bool, // Set if the ostree commit contains /var/tmp
     wrote_dirtree: HashSet<String>,
     wrote_dirmeta: HashSet<String>,
     wrote_content: HashSet<String>,
@@ -163,6 +164,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             options,
             wrote_initdirs: false,
             structure_only: false,
+            wrote_vartmp: false,
             wrote_dirmeta: HashSet::new(),
             wrote_dirtree: HashSet::new(),
             wrote_content: HashSet::new(),
@@ -308,6 +310,9 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             true,
             cancellable,
         )?;
+
+        self.append_standard_var(cancellable)?;
+
         Ok(())
     }
 
@@ -540,6 +545,12 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             }
         }
 
+        // Record if the ostree commit includes /var/tmp; if so we don't need to synthesize
+        // it in `append_standard_var()`.
+        if dirpath == "var/tmp" {
+            self.wrote_vartmp = true;
+        }
+
         for item in dirs {
             let (name, contents_csum, meta_csum) = item.to_tuple();
             let name = name.to_str();
@@ -563,6 +574,31 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             self.append_dirtree(&*subpath, dirtree_csum, false, cancellable)?;
         }
 
+        Ok(())
+    }
+
+    /// Generate e.g. `/var/tmp`.
+    ///
+    /// In the OSTree model we expect `/var` to start out empty, and be populated via
+    /// e.g. `systemd-tmpfiles`.  But, systemd doesn't run in Docker-style containers by default.
+    ///
+    /// So, this function creates a few critical directories in `/var` by default.
+    fn append_standard_var(&mut self, cancellable: Option<&gio::Cancellable>) -> Result<()> {
+        // If the commit included /var/tmp, then it's already in the tar stream.
+        if self.wrote_vartmp {
+            return Ok(());
+        }
+        if let Some(c) = cancellable {
+            c.set_error_if_cancelled()?;
+        }
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Directory);
+        header.set_size(0);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_mode(self.filter_mode(libc::S_IFDIR | 0o1777));
+        self.out
+            .append_data(&mut header, "var/tmp", std::io::empty())?;
         Ok(())
     }
 }
