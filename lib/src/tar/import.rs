@@ -243,7 +243,7 @@ impl Importer {
         // https://github.com/ostreedev/ostree-rs-ext/issues/1
         let actual =
             self.repo
-                .write_metadata(objtype, Some(checksum), &v, gio::NONE_CANCELLABLE)?;
+                .write_metadata(objtype, Some(checksum), &v, gio::Cancellable::NONE)?;
         assert_eq!(actual.to_hex(), checksum);
         Ok(())
     }
@@ -333,7 +333,7 @@ impl Importer {
             gid,
             Some(&xattrs),
             target,
-            gio::NONE_CANCELLABLE,
+            gio::Cancellable::NONE,
         )?;
         debug_assert_eq!(c.as_str(), checksum);
         self.stats.symlinks += 1;
@@ -710,7 +710,7 @@ impl Importer {
                     self.repo.write_commit_detached_metadata(
                         &checksum,
                         Some(&commitmeta),
-                        gio::NONE_CANCELLABLE,
+                        gio::Cancellable::NONE,
                     )?;
                 }
                 _ => {
@@ -761,10 +761,10 @@ impl Importer {
             ostree::ObjectType::DirMeta,
             None,
             &Self::default_dirmeta(),
-            gio::NONE_CANCELLABLE,
+            gio::Cancellable::NONE,
         )?;
         mtree.set_metadata_checksum(&dirmeta.to_hex());
-        let tree = self.repo.write_mtree(&mtree, gio::NONE_CANCELLABLE)?;
+        let tree = self.repo.write_mtree(&mtree, gio::Cancellable::NONE)?;
         let commit = self.repo.write_commit_with_time(
             None,
             None,
@@ -772,7 +772,7 @@ impl Importer {
             None,
             tree.downcast_ref().unwrap(),
             0,
-            gio::NONE_CANCELLABLE,
+            gio::Cancellable::NONE,
         )?;
         Ok(commit.to_string())
     }

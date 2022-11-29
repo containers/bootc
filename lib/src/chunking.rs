@@ -54,7 +54,7 @@ pub struct ObjectMetaSized {
 impl ObjectMetaSized {
     /// Given object metadata and a repo, compute the size of each content source.
     pub fn compute_sizes(repo: &ostree::Repo, meta: ObjectMeta) -> Result<ObjectMetaSized> {
-        let cancellable = gio::NONE_CANCELLABLE;
+        let cancellable = gio::Cancellable::NONE;
         // Destructure into component parts; we'll create the version with sizes
         let map = meta.map;
         let mut set = meta.set;
@@ -148,7 +148,7 @@ fn generate_chunking_recurse(
         let fpath = gen.path.join(name.to_str());
         hex::encode_to_slice(csum, &mut hexbuf)?;
         let checksum = std::str::from_utf8(&hexbuf)?;
-        let meta = repo.query_file(checksum, gio::NONE_CANCELLABLE)?.0;
+        let meta = repo.query_file(checksum, gio::Cancellable::NONE)?.0;
         let size = meta.size() as u64;
         let entry = chunk.content.entry(RcStr::from(checksum)).or_default();
         entry.0 = size;

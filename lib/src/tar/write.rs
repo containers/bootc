@@ -11,13 +11,12 @@ use crate::Result;
 use anyhow::{anyhow, Context};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 
+use cap_std::io_lifetimes;
 use cap_std_ext::cap_std;
 use cap_std_ext::cmdext::CapStdExtCommandExt;
-use cap_std_ext::rustix;
 use once_cell::unsync::OnceCell;
 use ostree::gio;
 use ostree::prelude::FileExt;
-use rustix::fd::FromFd;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufWriter, Seek, Write};
 use std::path::Path;
@@ -79,7 +78,7 @@ pub struct WriteTarResult {
 // Copy of logic from https://github.com/ostreedev/ostree/pull/2447
 // to avoid waiting for backport + releases
 fn sepolicy_from_base(repo: &ostree::Repo, base: &str) -> Result<tempfile::TempDir> {
-    let cancellable = gio::NONE_CANCELLABLE;
+    let cancellable = gio::Cancellable::NONE;
     let policypath = "usr/etc/selinux";
     let tempdir = tempfile::tempdir()?;
     let (root, _) = repo.read_commit(base, cancellable)?;
@@ -294,7 +293,7 @@ pub async fn write_tar(
     };
     let mut c = std::process::Command::new("ostree");
     let repofd = repo.dfd_as_file()?;
-    let repofd = Arc::new(rustix::io::OwnedFd::from_into_fd(repofd));
+    let repofd: Arc<io_lifetimes::OwnedFd> = Arc::new(repofd.into());
     {
         let c = c
             .stdin(Stdio::piped())
