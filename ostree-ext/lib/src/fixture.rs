@@ -357,7 +357,6 @@ pub struct Fixture {
     srcrepo: ostree::Repo,
     destrepo: ostree::Repo,
 
-    pub format_version: u32,
     pub selinux: bool,
 }
 
@@ -404,7 +403,6 @@ impl Fixture {
             path,
             srcrepo,
             destrepo,
-            format_version: if cfg!(feature = "compat") { 0 } else { 1 },
             selinux: true,
         })
     }
@@ -624,7 +622,6 @@ impl Fixture {
         let mut outf = std::io::BufWriter::new(self.dir.create(path)?);
         #[allow(clippy::needless_update)]
         let options = crate::tar::ExportOptions {
-            format_version: self.format_version,
             ..Default::default()
         };
         crate::tar::export_commit(&self.srcrepo, rev.as_str(), &mut outf, Some(options))?;
