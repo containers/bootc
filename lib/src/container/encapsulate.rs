@@ -31,11 +31,7 @@ pub enum ExportLayout {
 
 impl Default for ExportLayout {
     fn default() -> Self {
-        if cfg!(feature = "compat") {
-            Self::V0
-        } else {
-            Self::V1
-        }
+        Self::V1
     }
 }
 
@@ -136,25 +132,8 @@ fn export_chunked(
 
     match opts.format {
         ExportLayout::V0 => {
-            if cfg!(not(feature = "compat")) {
-                let label = opts.format.label();
-                anyhow::bail!("This legacy format using the {label} label is no longer supported");
-            }
-            // In V0, the component/content chunks come first.
-            for (layer, name) in layers {
-                ociw.push_layer(manifest, imgcfg, layer, name.as_str());
-            }
-            // Then, export the final layer
-            let mut w = ociw.create_layer(compression)?;
-            ostree_tar::export_final_chunk(repo, commit, chunking.remainder, &mut w)?;
-            let w = w.into_inner()?;
-            let final_layer = w.complete()?;
-            labels.insert(
-                opts.format.label().into(),
-                format!("sha256:{}", final_layer.uncompressed_sha256),
-            );
-            ociw.push_layer(manifest, imgcfg, final_layer, description);
-            Ok(())
+            let label = opts.format.label();
+            anyhow::bail!("This legacy format using the {label} label is no longer supported");
         }
         ExportLayout::V1 => {
             // In V1, the ostree layer comes first

@@ -235,7 +235,6 @@ impl Into<TarExpected> for (&'static str, tar::EntryType, u32) {
 }
 
 fn validate_tar_expected<T: std::io::Read>(
-    format_version: u32,
     t: &mut tar::Entries<T>,
     expected: impl IntoIterator<Item = TarExpected>,
 ) -> Result<()> {
@@ -257,24 +256,12 @@ fn validate_tar_expected<T: std::io::Read>(
         seen_paths.insert(entry_path.clone());
         if let Some(exp) = expected.remove(entry_path.as_str()) {
             assert_eq!(header.entry_type(), exp.etype, "{}", entry_path);
-            let is_old_object = format_version == 0;
-            let mut expected_mode = exp.mode;
+            let expected_mode = exp.mode;
             let header_mode = header.mode().unwrap();
-            if is_old_object && !entry_path.starts_with("sysroot/") {
-                let fmtbits = match header.entry_type() {
-                    // For now assume only hardlinks to regular files
-                    tar::EntryType::Regular | tar::EntryType::Link => libc::S_IFREG,
-                    tar::EntryType::Directory => libc::S_IFDIR,
-                    tar::EntryType::Symlink => 0,
-                    o => panic!("Unexpected entry type {:?}", o),
-                };
-                expected_mode |= fmtbits;
-            }
             assert_eq!(
                 header_mode,
                 expected_mode,
-                "h={header_mode:o} e={expected_mode:o} fmtver: {} type: {:?} path: {}",
-                format_version,
+                "h={header_mode:o} e={expected_mode:o} type: {:?} path: {}",
                 header.entry_type(),
                 entry_path
             );
@@ -337,7 +324,7 @@ fn validate_tar_v1_metadata<R: std::io::Read>(src: &mut tar::Entries<R>) -> Resu
     .into_iter()
     .map(Into::into);
 
-    validate_tar_expected(1, src, prelude)?;
+    validate_tar_expected(src, common_tar_structure().chain(prelude))?;
 
     Ok(())
 }
@@ -345,47 +332,8 @@ fn validate_tar_v1_metadata<R: std::io::Read>(src: &mut tar::Entries<R>) -> Resu
 /// Validate basic structure of the tar export.
 #[test]
 fn test_tar_export_structure() -> Result<()> {
-    use tar::EntryType::{Directory, Regular};
+    let fixture = Fixture::new_v1()?;
 
-    let mut fixture = Fixture::new_v1()?;
-
-    if cfg!(feature = "compat") {
-        let src_tar = fixture.export_tar()?;
-        let src_tar = std::io::BufReader::new(fixture.dir.open(src_tar)?);
-        let mut src_tar = tar::Archive::new(src_tar);
-        let mut entries = src_tar.entries()?;
-        // The first entry should be the root directory.
-        let first = entries.next().unwrap()?;
-        let firstpath = first.path()?;
-        assert_eq!(firstpath.to_str().unwrap(), "./");
-        assert_eq!(first.header().mode()?, libc::S_IFDIR | 0o755);
-        let next = entries.next().unwrap().unwrap();
-        assert_eq!(next.path().unwrap().as_os_str(), "sysroot");
-
-        let v0_prelude = [
-            ("sysroot/config", Regular, 0o644),
-            ("sysroot/ostree/repo", Directory, 0o755),
-            ("sysroot/ostree/repo/extensions", Directory, 0o755),
-        ]
-        .into_iter()
-        .map(Into::into);
-
-        // Validate format version 0
-        let expected = v0_prelude.chain(common_tar_structure())
-        .chain([
-        ("sysroot/ostree/repo/xattrs", Directory, 0o755),
-        ("sysroot/ostree/repo/xattrs/d67db507c5a6e7bfd078f0f3ded0a5669479a902e812931fc65c6f5e01831ef5", Regular, 0o644),
-        ("usr", Directory, 0o755),
-    ].into_iter().map(Into::into));
-        validate_tar_expected(
-            fixture.format_version,
-            &mut entries,
-            expected.chain(common_tar_contents_all()),
-        )?;
-    }
-
-    // Validate format version 1
-    fixture.format_version = 1;
     let src_tar = fixture.export_tar()?;
     let mut src_tar = fixture
         .dir
@@ -394,11 +342,7 @@ fn test_tar_export_structure() -> Result<()> {
         .map(tar::Archive::new)?;
     let mut src_tar = src_tar.entries()?;
     validate_tar_v1_metadata(&mut src_tar).unwrap();
-    validate_tar_expected(
-        fixture.format_version,
-        &mut src_tar,
-        common_tar_contents_all(),
-    )?;
+    validate_tar_expected(&mut src_tar, common_tar_contents_all())?;
 
     Ok(())
 }
@@ -706,15 +650,9 @@ fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Resu
     .into_iter()
     .map(Into::into);
 
-    validate_tar_expected(1, &mut pkgdb_blob.entries()?, pkgdb)?;
+    validate_tar_expected(&mut pkgdb_blob.entries()?, pkgdb)?;
 
     Ok(())
-}
-
-#[tokio::test]
-#[cfg(feature = "compat")]
-async fn test_container_chunked_v0() -> Result<()> {
-    impl_test_container_chunked(ExportLayout::V0).await
 }
 
 #[tokio::test]
@@ -963,17 +901,6 @@ async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Res
         anyhow::bail!("cp failed");
     }
     Ok(())
-}
-
-#[tokio::test]
-#[cfg(feature = "compat")]
-async fn test_container_import_export_v0() {
-    impl_test_container_import_export(ExportLayout::V0, false)
-        .await
-        .unwrap();
-    impl_test_container_import_export(ExportLayout::V0, true)
-        .await
-        .unwrap();
 }
 
 #[tokio::test]
