@@ -112,7 +112,11 @@ fn test_proxy_auth() -> Result<()> {
     std::fs::write(authpath, "{}")?;
     let mut c = ImageProxyConfig::default();
     merge(&mut c)?;
-    assert_eq!(c.authfile.unwrap().as_path(), authpath,);
+    if cap_std_ext::rustix::process::getuid().is_root() {
+        assert!(c.auth_data.is_some());
+    } else {
+        assert_eq!(c.authfile.unwrap().as_path(), authpath,);
+    }
     let c = ImageProxyConfig {
         auth_anonymous: true,
         ..Default::default()
