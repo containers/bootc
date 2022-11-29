@@ -1294,12 +1294,7 @@ async fn test_old_code_parses_new_export() -> Result<()> {
         return Ok(());
     }
     let fixture = Fixture::new_v1()?;
-    let layout = if cfg!(feature = "compat") {
-        ExportLayout::V0
-    } else {
-        ExportLayout::V1
-    };
-    let imgref = fixture.export_container(layout).await?.0;
+    let imgref = fixture.export_container(ExportLayout::V1).await?.0;
     let imgref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref,
