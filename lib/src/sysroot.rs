@@ -7,7 +7,8 @@ use anyhow::Result;
 /// A locked system root.
 #[derive(Debug)]
 pub struct SysrootLock {
-    sysroot: ostree::Sysroot,
+    /// The underlying sysroot value.
+    pub sysroot: ostree::Sysroot,
 }
 
 impl Drop for SysrootLock {
