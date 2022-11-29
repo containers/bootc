@@ -19,7 +19,7 @@ fn query_info_optional(
     queryattrs: &str,
     queryflags: gio::FileQueryInfoFlags,
 ) -> Result<Option<gio::FileInfo>> {
-    let cancellable = gio::NONE_CANCELLABLE;
+    let cancellable = gio::Cancellable::NONE;
     match f.query_info(queryattrs, queryflags, cancellable) {
         Ok(i) => Ok(Some(i)),
         Err(e) => {
@@ -78,7 +78,7 @@ fn diff_recurse(
     from: &ostree::RepoFile,
     to: &ostree::RepoFile,
 ) -> Result<()> {
-    let cancellable = gio::NONE_CANCELLABLE;
+    let cancellable = gio::Cancellable::NONE;
     let queryattrs = "standard::name,standard::type";
     let queryflags = gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS;
     let from_iter = from.enumerate_children(queryattrs, queryflags, cancellable)?;
@@ -159,8 +159,8 @@ pub fn diff<P: AsRef<str>>(
 ) -> Result<FileTreeDiff> {
     let subdir = subdir.as_ref();
     let subdir = subdir.map(|s| s.as_ref());
-    let (fromroot, _) = repo.read_commit(from, gio::NONE_CANCELLABLE)?;
-    let (toroot, _) = repo.read_commit(to, gio::NONE_CANCELLABLE)?;
+    let (fromroot, _) = repo.read_commit(from, gio::Cancellable::NONE)?;
+    let (toroot, _) = repo.read_commit(to, gio::Cancellable::NONE)?;
     let (fromroot, toroot) = if let Some(subdir) = subdir {
         (
             fromroot.resolve_relative_path(subdir),

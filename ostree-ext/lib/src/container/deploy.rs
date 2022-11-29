@@ -45,7 +45,7 @@ pub async fn deploy(
     imgref: &OstreeImageReference,
     options: Option<DeployOpts<'_>>,
 ) -> Result<Box<LayeredImageState>> {
-    let cancellable = ostree::gio::NONE_CANCELLABLE;
+    let cancellable = ostree::gio::Cancellable::NONE;
     let options = options.unwrap_or_default();
     let repo = &sysroot.repo().unwrap();
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));

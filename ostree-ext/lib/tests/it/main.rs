@@ -70,7 +70,7 @@ async fn test_tar_export_reproducible() -> Result<()> {
     let fixture = Fixture::new_v1()?;
     let (_, rev) = fixture
         .srcrepo()
-        .read_commit(fixture.testref(), gio::NONE_CANCELLABLE)?;
+        .read_commit(fixture.testref(), gio::Cancellable::NONE)?;
     let export1 = {
         let mut h = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256())?;
         ostree_ext::tar::export_commit(fixture.srcrepo(), rev.as_str(), &mut h, None)?;
@@ -119,7 +119,7 @@ async fn test_tar_import_signed() -> Result<()> {
     opts.insert("custom-backend", &"ostree-rs-ext");
     fixture
         .destrepo()
-        .remote_add("myremote", None, Some(&opts.end()), gio::NONE_CANCELLABLE)?;
+        .remote_add("myremote", None, Some(&opts.end()), gio::Cancellable::NONE)?;
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(test_tar)?.into_std());
     let r = ostree_ext::tar::import_tar(
         fixture.destrepo(),
@@ -161,7 +161,7 @@ async fn test_tar_import_signed() -> Result<()> {
     tokio::task::spawn_blocking(move || -> Result<_> {
         let src = BufReader::new(srcf);
         let f = BufWriter::new(destf);
-        ostree_ext::tar::update_detached_metadata(src, f, None, gio::NONE_CANCELLABLE).unwrap();
+        ostree_ext::tar::update_detached_metadata(src, f, None, gio::Cancellable::NONE).unwrap();
         Ok(())
     })
     .await??;
@@ -180,7 +180,7 @@ async fn test_tar_import_signed() -> Result<()> {
     let rev = fixture.srcrepo().require_rev(fixture.testref())?;
     let commitmeta = fixture
         .srcrepo()
-        .read_commit_detached_metadata(&rev, gio::NONE_CANCELLABLE)?
+        .read_commit_detached_metadata(&rev, gio::Cancellable::NONE)?
         .unwrap();
     let mut commitmeta = Vec::from(&*commitmeta.data_as_bytes());
     let len = commitmeta.len() / 2;
@@ -192,8 +192,13 @@ async fn test_tar_import_signed() -> Result<()> {
     tokio::task::spawn_blocking(move || -> Result<_> {
         let src = BufReader::new(srcf);
         let f = BufWriter::new(destf);
-        ostree_ext::tar::update_detached_metadata(src, f, Some(&commitmeta), gio::NONE_CANCELLABLE)
-            .unwrap();
+        ostree_ext::tar::update_detached_metadata(
+            src,
+            f,
+            Some(&commitmeta),
+            gio::Cancellable::NONE,
+        )
+        .unwrap();
         Ok(())
     })
     .await??;
@@ -424,8 +429,8 @@ async fn test_tar_import_export() -> Result<()> {
 
     let (root, _) = fixture
         .destrepo()
-        .read_commit(&imported_commit, gio::NONE_CANCELLABLE)?;
-    let kdir = ostree_ext::bootabletree::find_kernel_dir(&root, gio::NONE_CANCELLABLE)?;
+        .read_commit(&imported_commit, gio::Cancellable::NONE)?;
+    let kdir = ostree_ext::bootabletree::find_kernel_dir(&root, gio::Cancellable::NONE)?;
     let kdir = kdir.unwrap();
     assert_eq!(
         kdir.basename().unwrap().to_str().unwrap(),
@@ -617,7 +622,7 @@ async fn impl_test_container_import_export(
     opts.insert("custom-backend", &"ostree-rs-ext");
     fixture
         .destrepo()
-        .remote_add("myremote", None, Some(&opts.end()), gio::NONE_CANCELLABLE)?;
+        .remote_add("myremote", None, Some(&opts.end()), gio::Cancellable::NONE)?;
     bash_in!(
         &fixture.dir,
         "ostree --repo=dest/repo remote gpg-import --stdin myremote < src/gpghome/key1.asc",
@@ -812,7 +817,7 @@ r usr/bin/bash bash-v0
     assert_eq!(n, n2);
     fixture
         .destrepo()
-        .prune(ostree::RepoPruneFlags::REFS_ONLY, 0, gio::NONE_CANCELLABLE)?;
+        .prune(ostree::RepoPruneFlags::REFS_ONLY, 0, gio::Cancellable::NONE)?;
 
     // Build a derived image
     let srcpath = imgref.imgref.name.as_str();
@@ -881,7 +886,7 @@ r usr/bin/bash bash-v0
     assert_eq!(
         fixture
             .destrepo()
-            .list_refs(None, gio::NONE_CANCELLABLE)
+            .list_refs(None, gio::Cancellable::NONE)
             .unwrap()
             .len(),
         0
@@ -983,7 +988,7 @@ async fn test_container_import_export_v1() {
 /// But layers work via the container::write module.
 #[tokio::test]
 async fn test_container_write_derive() -> Result<()> {
-    let cancellable = gio::NONE_CANCELLABLE;
+    let cancellable = gio::Cancellable::NONE;
     let fixture = Fixture::new_v1()?;
     let base_oci_path = &fixture.path.join("exampleos.oci");
     let _digest = ostree_ext::container::encapsulate(
@@ -1180,7 +1185,7 @@ async fn test_container_write_derive() -> Result<()> {
         fixture.path.join("destrepo2").as_str(),
         ostree::RepoMode::Archive,
         None,
-        gio::NONE_CANCELLABLE,
+        gio::Cancellable::NONE,
     )?;
     store::copy(fixture.destrepo(), &destrepo2, &derived_ref).await?;
 

@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 name = "ostree-ext"
 readme = "README.md"
 repository = "https://github.com/ostreedev/ostree-rs-ext"
-version = "0.9.1"
+version = "0.10.0"
 rust-version = "1.63.0"
 
 [dependencies]
@@ -19,8 +19,8 @@ chrono = "0.4.19"
 cjson = "0.1.1"
 clap = { version= "3.2", features = ["derive"] }
 clap_mangen = { version = "0.1", optional = true }
-cap-std-ext = "0.26"
-cap-tempfile = "0.25"
+cap-std-ext = "1.0"
+cap-tempfile = "1.0"
 flate2 = { features = ["zlib"], default_features = false, version = "1.0.20" }
 fn-error-context = "0.2.0"
 futures-util = "0.3.13"
@@ -32,7 +32,7 @@ libc = "0.2.92"
 libsystemd = "0.5.0"
 oci-spec = "0.5.4"
 openssl = "0.10.33"
-ostree = { features = ["v2021_5", "cap-std-apis"], version = "0.15.0" }
+ostree = { features = ["v2022_5", "cap-std-apis"], version = "0.17.0" }
 pin-project = "1.0"
 regex = "1.5.4"
 serde = { features = ["derive"], version = "1.0.125" }
@@ -46,7 +46,7 @@ tokio-stream = { features = ["sync"], version = "0.1.8" }
 tracing = "0.1"
 
 indoc = { version = "1.0.3", optional = true }
-sh-inline = { version = "0.3", features = ["cap-std-ext"], optional = true }
+sh-inline = { version = "0.4", features = ["cap-std-ext"], optional = true }
 
 [dev-dependencies]
 quickcheck = "1"

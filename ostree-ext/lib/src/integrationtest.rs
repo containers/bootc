@@ -143,7 +143,7 @@ pub(crate) fn test_ima() -> Result<()> {
     use gvariant::aligned_bytes::TryAsAligned;
     use gvariant::{gv, Marker, Structure};
 
-    let cancellable = gio::NONE_CANCELLABLE;
+    let cancellable = gio::Cancellable::NONE;
     let fixture = crate::fixture::Fixture::new_v1()?;
 
     let config = indoc::indoc! { r#"
