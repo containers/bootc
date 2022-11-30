@@ -66,7 +66,7 @@ if ostree-ext-cli container image pull ${sysroot}/ostree/repo ostree-unverified-
   echo "unexpectedly pulled from containers storage?"
   exit 1
 fi
-grep "file does not exist" err.txt
-echo "ok pulled from containers storage"
+grep "skopeo too old to pull from containers-storage" err.txt
+echo "ok pulled from containers storage failed"
 
 echo ok privileged integration
