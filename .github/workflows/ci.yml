@@ -1,0 +1,130 @@
+name: CI
+
+permissions:
+  actions: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned toolchain for linting
+  ACTION_LINTS_TOOLCHAIN: 1.63.0
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
+    steps:
+      - uses: actions/checkout@v3
+      - name: Code lints
+        run: ./ci/lints.sh
+      - name: Install deps
+        run: ./ci/installdeps.sh
+      # xref containers/containers-image-proxy-rs
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: "tests"
+      - name: Build
+        run: cargo test --no-run
+      - name: Individual checks
+        run: (cd cli && cargo check) && (cd lib && cargo check)
+      - name: Run tests
+        run: cargo test -- --nocapture --quiet
+      - name: Manpage generation
+        run: mkdir -p target/man && cargo run --features=docgen -- man --directory target/man
+  build:
+    runs-on: ubuntu-latest
+    container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install deps
+        run: ./ci/installdeps.sh
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: "build"
+      - name: Build
+        run: cargo build --release
+      - name: Upload binary
+        uses: actions/upload-artifact@v2
+        with:
+          name: bootc
+          path: target/release/bootc
+  build-minimum-toolchain:
+    name: "Build using MSRV"
+    runs-on: ubuntu-latest
+    container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install deps
+        run: ./ci/installdeps.sh
+      - name: Detect crate MSRV
+        shell: bash
+        run: |
+          msrv=$(cargo metadata --format-version 1 --no-deps | \
+              jq -r '.packages[1].rust_version')
+          echo "Crate MSRV: $msrv"
+          echo "ACTION_MSRV_TOOLCHAIN=$msrv" >> $GITHUB_ENV
+      - name: Remove system Rust toolchain
+        run: dnf remove -y rust cargo
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env['ACTION_MSRV_TOOLCHAIN']  }}
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: "min"
+      - name: cargo check
+        run: cargo check
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        log-level: warn
+        command: check bans sources licenses
+  linting:
+    name: "Lints, pinned toolchain"
+    runs-on: ubuntu-latest
+    container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install deps
+        run: ./ci/installdeps.sh
+      - name: Remove system Rust toolchain
+        run: dnf remove -y rust cargo
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env['ACTION_LINTS_TOOLCHAIN']  }}
+          components: rustfmt, clippy
+      - name: cargo fmt (check)
+        run: cargo fmt -- --check -l
+      - name: cargo clippy (warnings)
+        run: cargo clippy -- -D warnings
+  # privtest:
+  #   name: "Privileged testing"
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   container:
+  #     image: quay.io/fedora/fedora-coreos:testing-devel
+  #     options: "--privileged --pid=host -v /run/systemd:/run/systemd -v /:/run/host"
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v3
+  #     - name: Download
+  #       uses: actions/download-artifact@v2
+  #       with:
+  #         name: bootc
+  #     - name: Install
+  #       run: install bootc /usr/bin && rm -v bootc
+  #     - name: Integration tests
+  #       run: ./ci/priv-integration.sh

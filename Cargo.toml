@@ -1,0 +1,8 @@
+[workspace]
+members = ["cli", "lib"]
+
+[profile.dev]
+opt-level = 1 # No optimizations are too slow for us.
+
+[profile.release]
+lto = "thin"
