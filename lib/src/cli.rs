@@ -10,8 +10,10 @@ use ostree_container::store::LayeredImageState;
 use ostree_container::store::PrepareResult;
 use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
+use ostree_ext::container::SignatureSource;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
+use std::borrow::Cow;
 use std::ffi::OsString;
 use std::ops::Deref;
 use std::os::unix::process::CommandExt;
@@ -305,7 +307,6 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
         transport,
         name: opts.target.to_string(),
     };
-    use ostree_container::SignatureSource;
     let sigverify = if opts.no_signature_verification {
         SignatureSource::ContainerPolicyAllowInsecure
     } else if let Some(remote) = opts.ostree_remote.as_ref() {
@@ -347,8 +348,8 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     Ok(())
 }
 
-fn serialize_image_reference<S>(
-    txn: &Option<ostree_container::OstreeImageReference>,
+fn serialize_transport<S>(
+    txn: &Option<ostree_container::Transport>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
@@ -360,13 +361,38 @@ where
     }
 }
 
+fn serialize_signature_source<S>(
+    txn: &Option<ostree_container::SignatureSource>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match txn {
+        Some(v) => {
+            let v = match v {
+                SignatureSource::OstreeRemote(r) => Cow::Owned(format!("ostree-remote-image:{r}")),
+                SignatureSource::ContainerPolicy => Cow::Borrowed("ostree-image-signed"),
+                SignatureSource::ContainerPolicyAllowInsecure => {
+                    Cow::Borrowed("ostree-unverified-image")
+                }
+            };
+            serializer.serialize_some(&*v)
+        }
+        None => serializer.serialize_none(),
+    }
+}
+
 #[derive(serde::Serialize)]
 struct DeploymentStatus {
     pinned: bool,
     booted: bool,
     staged: bool,
-    #[serde(serialize_with = "serialize_image_reference")]
-    image: Option<ostree_container::OstreeImageReference>,
+    #[serde(serialize_with = "serialize_signature_source")]
+    verification: Option<ostree_container::SignatureSource>,
+    #[serde(serialize_with = "serialize_transport")]
+    transport: Option<ostree_container::Transport>,
+    image: Option<String>,
     checksum: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     deploy_serial: Option<u32>,
@@ -391,10 +417,22 @@ async fn status(opts: StatusOpts) -> Result<()> {
                 let checksum = deployment.csum().unwrap().to_string();
                 let deploy_serial = (!staged).then(|| deployment.bootserial().try_into().unwrap());
 
+                let (verification, transport, image) = if let Some(image) = image {
+                    (
+                        Some(image.sigverify),
+                        Some(image.imgref.transport),
+                        Some(image.imgref.name),
+                    )
+                } else {
+                    (None, None, None)
+                };
+
                 Ok(DeploymentStatus {
                     staged,
                     pinned,
                     booted,
+                    verification,
+                    transport,
                     image,
                     checksum,
                     deploy_serial,
