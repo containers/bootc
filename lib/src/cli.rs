@@ -253,6 +253,7 @@ pub(crate) fn print_deprecated_warning(msg: &str) {
 }
 
 async fn upgrade(opts: UpgradeOpts) -> Result<()> {
+    ensure_self_unshared_mount_namespace().await?;
     let cancellable = gio::Cancellable::NONE;
     let sysroot = &get_locked_sysroot().await?;
     let repo = &sysroot.repo().unwrap();
@@ -292,6 +293,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
 }
 
 async fn switch(opts: SwitchOpts) -> Result<()> {
+    ensure_self_unshared_mount_namespace().await?;
     let cancellable = gio::Cancellable::NONE;
     let l = get_locked_sysroot().await?;
     let sysroot = l.deref();
@@ -485,7 +487,6 @@ where
     I: IntoIterator,
     I::Item: Into<OsString> + Clone,
 {
-    ensure_self_unshared_mount_namespace().await?;
     let opt = Opt::parse_from(args);
     match opt {
         Opt::Upgrade(opts) => upgrade(opts).await,
