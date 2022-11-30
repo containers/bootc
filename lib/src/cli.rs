@@ -432,6 +432,7 @@ async fn status(opts: StatusOpts) -> Result<()> {
             println!("    (Non-container origin type)");
             println!();
         }
+        println!("    Backend: ostree");
         if deployment.is_pinned() {
             println!("    Pinned: yes")
         }
