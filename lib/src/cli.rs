@@ -349,37 +349,46 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
 }
 
 fn serialize_transport<S>(
-    txn: &Option<ostree_container::Transport>,
+    txn: &ostree_container::Transport,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
-    match txn {
-        Some(v) => serializer.serialize_some(v.to_string().as_str()),
-        None => serializer.serialize_none(),
-    }
+    serializer.serialize_str(&txn.to_string())
 }
 
 fn serialize_signature_source<S>(
-    txn: &Option<ostree_container::SignatureSource>,
+    txn: &ostree_container::SignatureSource,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
-    match txn {
-        Some(v) => {
-            let v = match v {
-                SignatureSource::OstreeRemote(r) => Cow::Owned(format!("ostree-remote-image:{r}")),
-                SignatureSource::ContainerPolicy => Cow::Borrowed("ostree-image-signed"),
-                SignatureSource::ContainerPolicyAllowInsecure => {
-                    Cow::Borrowed("ostree-unverified-image")
-                }
-            };
-            serializer.serialize_some(&*v)
+    let v = match txn {
+        SignatureSource::OstreeRemote(r) => Cow::Owned(format!("ostree-remote-image:{r}")),
+        SignatureSource::ContainerPolicy => Cow::Borrowed("ostree-image-signed"),
+        SignatureSource::ContainerPolicyAllowInsecure => Cow::Borrowed("ostree-unverified-image"),
+    };
+    serializer.serialize_str(&*v)
+}
+
+#[derive(serde::Serialize)]
+struct Image {
+    #[serde(serialize_with = "serialize_signature_source")]
+    verification: ostree_container::SignatureSource,
+    #[serde(serialize_with = "serialize_transport")]
+    transport: ostree_container::Transport,
+    image: String,
+}
+
+impl From<&OstreeImageReference> for Image {
+    fn from(imgref: &OstreeImageReference) -> Self {
+        Self {
+            verification: imgref.sigverify.clone(),
+            transport: imgref.imgref.transport,
+            image: imgref.imgref.name.clone(),
         }
-        None => serializer.serialize_none(),
     }
 }
 
@@ -388,11 +397,7 @@ struct DeploymentStatus {
     pinned: bool,
     booted: bool,
     staged: bool,
-    #[serde(serialize_with = "serialize_signature_source")]
-    verification: Option<ostree_container::SignatureSource>,
-    #[serde(serialize_with = "serialize_transport")]
-    transport: Option<ostree_container::Transport>,
-    image: Option<String>,
+    image: Option<Image>,
     checksum: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     deploy_serial: Option<u32>,
@@ -417,23 +422,11 @@ async fn status(opts: StatusOpts) -> Result<()> {
                 let checksum = deployment.csum().unwrap().to_string();
                 let deploy_serial = (!staged).then(|| deployment.bootserial().try_into().unwrap());
 
-                let (verification, transport, image) = if let Some(image) = image {
-                    (
-                        Some(image.sigverify),
-                        Some(image.imgref.transport),
-                        Some(image.imgref.name),
-                    )
-                } else {
-                    (None, None, None)
-                };
-
                 Ok(DeploymentStatus {
                     staged,
                     pinned,
                     booted,
-                    verification,
-                    transport,
-                    image,
+                    image: image.as_ref().map(Into::into),
                     checksum,
                     deploy_serial,
                 })
