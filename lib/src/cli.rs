@@ -14,7 +14,6 @@ use ostree_ext::container::SignatureSource;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
 use std::ffi::OsString;
-use std::ops::Deref;
 use std::os::unix::process::CommandExt;
 use tokio::sync::mpsc::Receiver;
 
@@ -286,8 +285,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
 async fn switch(opts: SwitchOpts) -> Result<()> {
     ensure_self_unshared_mount_namespace().await?;
     let cancellable = gio::Cancellable::NONE;
-    let l = get_locked_sysroot().await?;
-    let sysroot = l.deref();
+    let sysroot = get_locked_sysroot().await?;
     let booted_deployment = &sysroot.require_booted_deployment()?;
     let (origin, booted_image) = get_image_origin(booted_deployment)?;
     let booted_refspec = origin.optional_string("origin", "refspec")?;

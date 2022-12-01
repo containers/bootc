@@ -3,7 +3,6 @@ use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
 use ostree_ext::container::SignatureSource;
 use std::borrow::Cow;
-use std::ops::Deref;
 
 use crate::utils::get_image_origin;
 
@@ -66,8 +65,7 @@ struct DeploymentStatus {
 
 /// Implementation of the `bootc status` CLI command.
 pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
-    let l = super::cli::get_locked_sysroot().await?;
-    let sysroot = l.deref();
+    let sysroot = super::cli::get_locked_sysroot().await?;
     let repo = &sysroot.repo().unwrap();
     let booted_deployment = &sysroot.require_booted_deployment()?;
 
