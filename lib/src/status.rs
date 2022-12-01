@@ -5,6 +5,8 @@ use ostree_ext::container::SignatureSource;
 use std::borrow::Cow;
 use std::ops::Deref;
 
+use crate::utils::get_image_origin;
+
 fn serialize_transport<S>(
     txn: &ostree_container::Transport,
     serializer: S,
@@ -80,7 +82,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
                 let booted = deployment.equal(booted_deployment);
                 let staged = deployment.is_staged();
                 let pinned = deployment.is_pinned();
-                let image = super::cli::get_image_origin(&deployment)?.1;
+                let image = get_image_origin(&deployment)?.1;
                 let checksum = deployment.csum().unwrap().to_string();
                 let deploy_serial = (!staged).then(|| deployment.bootserial().try_into().unwrap());
 
@@ -105,7 +107,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
         let booted = deployment.equal(booted_deployment);
         let booted_display = booted.then(|| "* ").unwrap_or(" ");
 
-        let image = super::cli::get_image_origin(&deployment)?.1;
+        let image = get_image_origin(&deployment)?.1;
 
         let commit = deployment.csum().unwrap();
         let serial = deployment.deployserial();

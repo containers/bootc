@@ -15,6 +15,7 @@
 
 pub mod cli;
 mod status;
+mod utils;
 
 #[cfg(feature = "docgen")]
 mod docgen;

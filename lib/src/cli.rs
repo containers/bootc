@@ -18,6 +18,8 @@ use std::ops::Deref;
 use std::os::unix::process::CommandExt;
 use tokio::sync::mpsc::Receiver;
 
+use crate::utils::{get_image_origin, print_staged};
+
 /// Perform an upgrade operation
 #[derive(Debug, Parser)]
 pub(crate) struct UpgradeOpts {
@@ -213,32 +215,6 @@ async fn pull(
         eprintln!("{msg}")
     }
     Ok(import)
-}
-
-/// Parse an ostree origin file (a keyfile) and extract the targeted
-/// container image reference.
-pub(crate) fn get_image_origin(
-    deployment: &ostree::Deployment,
-) -> Result<(glib::KeyFile, Option<OstreeImageReference>)> {
-    let origin = deployment
-        .origin()
-        .ok_or_else(|| anyhow::anyhow!("Missing origin"))?;
-    let imgref = origin
-        .optional_string("origin", ostree_container::deploy::ORIGIN_CONTAINER)
-        .context("Failed to load container image from origin")?
-        .map(|v| ostree_container::OstreeImageReference::try_from(v.as_str()))
-        .transpose()?;
-    Ok((origin, imgref))
-}
-
-/// Print the deployment we staged.
-fn print_staged(deployment: &ostree::Deployment) -> Result<()> {
-    let (_origin, imgref) = get_image_origin(deployment)?;
-    let imgref = imgref.ok_or_else(|| {
-        anyhow::anyhow!("Internal error: expected a container deployment to be staged")
-    })?;
-    println!("Queued for next boot: {imgref}");
-    Ok(())
 }
 
 /// Print to stdout how many layers are already stored versus need to be fetched, and
