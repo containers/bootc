@@ -224,17 +224,21 @@ impl std::fmt::Display for ImageReference {
     }
 }
 
-impl std::fmt::Display for OstreeImageReference {
+impl std::fmt::Display for SignatureSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.sigverify {
-            SignatureSource::OstreeRemote(r) => {
-                write!(f, "ostree-remote-image:{}:{}", r, self.imgref)
-            }
-            SignatureSource::ContainerPolicy => write!(f, "ostree-image-signed:{}", self.imgref),
+        match self {
+            SignatureSource::OstreeRemote(r) => write!(f, "ostree-remote-image:{r}"),
+            SignatureSource::ContainerPolicy => write!(f, "ostree-image-signed"),
             SignatureSource::ContainerPolicyAllowInsecure => {
-                write!(f, "ostree-unverified-image:{}", self.imgref)
+                write!(f, "ostree-unverified-image")
             }
         }
+    }
+}
+
+impl std::fmt::Display for OstreeImageReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.sigverify, self.imgref)
     }
 }
 
