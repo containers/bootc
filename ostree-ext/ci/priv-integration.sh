@@ -58,7 +58,7 @@ echo "ok old image failed to parse"
 
 # Verify we have systemd journal messages
 nsenter -m -t 1 journalctl _COMM=ostree-ext-cli > logs.txt
-grep 'layers stored: ' logs.txt
+grep 'layers already present: ' logs.txt
 
 podman pull ${image}
 ostree --repo="${sysroot}/ostree/repo" init --mode=bare-user
