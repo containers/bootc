@@ -94,6 +94,10 @@ pub(crate) enum Opt {
     Man(ManOpts),
 }
 
+/// Ensure we've entered a mount namespace, so that we can remount
+/// `/sysroot` read-write
+/// TODO use https://github.com/ostreedev/ostree/pull/2779 once
+/// we can depend on a new enough ostree
 async fn ensure_self_unshared_mount_namespace() -> Result<()> {
     let uid = cap_std_ext::rustix::process::getuid();
     if !uid.is_root() {
@@ -118,6 +122,8 @@ async fn ensure_self_unshared_mount_namespace() -> Result<()> {
     Err(cmd.exec().into())
 }
 
+/// Acquire a locked sysroot.
+/// TODO drain this and the above into SysrootLock
 async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootLock> {
     let sysroot = ostree::Sysroot::new_default();
     sysroot.set_mount_namespace_in_use();
@@ -126,6 +132,7 @@ async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootLock> {
     Ok(sysroot)
 }
 
+/// Print the status of a layer fetch to stdout.
 pub(crate) async fn handle_layer_progress_print(
     mut layers: Receiver<ostree_container::store::ImportProgress>,
     mut layer_bytes: tokio::sync::watch::Receiver<Option<ostree_container::store::LayerProgress>>,
@@ -170,6 +177,7 @@ pub(crate) async fn handle_layer_progress_print(
     }
 }
 
+/// Wrapper for pulling a container image, wiring up status output.
 async fn pull(
     repo: &ostree::Repo,
     imgref: &OstreeImageReference,
@@ -208,6 +216,8 @@ async fn pull(
     Ok(import)
 }
 
+/// Parse an ostree origin file (a keyfile) and extract the targeted
+/// container image reference.
 fn get_image_origin(
     deployment: &ostree::Deployment,
 ) -> Result<(glib::KeyFile, Option<OstreeImageReference>)> {
@@ -222,6 +232,7 @@ fn get_image_origin(
     Ok((origin, imgref))
 }
 
+/// Print the deployment we staged.
 fn print_staged(deployment: &ostree::Deployment) -> Result<()> {
     let (_origin, imgref) = get_image_origin(deployment)?;
     let imgref = imgref.ok_or_else(|| {
@@ -231,6 +242,8 @@ fn print_staged(deployment: &ostree::Deployment) -> Result<()> {
     Ok(())
 }
 
+/// Print to stdout how many layers are already stored versus need to be fetched, and
+/// their size.
 pub(crate) fn print_layer_status(prep: &ostree_container::store::PreparedImport) {
     let (stored, to_fetch, to_fetch_size) =
         prep.all_layers()
@@ -247,11 +260,13 @@ pub(crate) fn print_layer_status(prep: &ostree_container::store::PreparedImport)
     }
 }
 
+/// Output a deprecation warning with a sleep time to ensure it's visible.
 pub(crate) fn print_deprecated_warning(msg: &str) {
     eprintln!("warning: {msg}");
     std::thread::sleep(std::time::Duration::from_secs(3));
 }
 
+/// Implementation of the `bootc upgrade` CLI command.
 async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     ensure_self_unshared_mount_namespace().await?;
     let cancellable = gio::Cancellable::NONE;
@@ -292,6 +307,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     Ok(())
 }
 
+/// Implementation of the `bootc switch` CLI command.
 async fn switch(opts: SwitchOpts) -> Result<()> {
     ensure_self_unshared_mount_namespace().await?;
     let cancellable = gio::Cancellable::NONE;
@@ -375,6 +391,7 @@ where
     serializer.serialize_str(&*v)
 }
 
+/// Representation of a container image reference suitable for serialization to e.g. JSON.
 #[derive(serde::Serialize)]
 struct Image {
     #[serde(serialize_with = "serialize_signature_source")]
@@ -394,6 +411,7 @@ impl From<&OstreeImageReference> for Image {
     }
 }
 
+/// Representation of a deployment suitable for serialization to e.g. JSON.
 #[derive(serde::Serialize)]
 struct DeploymentStatus {
     pinned: bool,
@@ -405,12 +423,15 @@ struct DeploymentStatus {
     deploy_serial: Option<u32>,
 }
 
+/// Implementation of the `bootc status` CLI command.
 async fn status(opts: StatusOpts) -> Result<()> {
     let l = get_locked_sysroot().await?;
     let sysroot = l.deref();
     let repo = &sysroot.repo().unwrap();
     let booted_deployment = &sysroot.require_booted_deployment()?;
 
+    // If we're in JSON mode, then convert the ostree data into Rust-native
+    // structures that can be serialized.
     if opts.json {
         let deployments = sysroot
             .deployments()
@@ -440,6 +461,7 @@ async fn status(opts: StatusOpts) -> Result<()> {
         return Ok(());
     }
 
+    // We're not writing to JSON, so we directly iterate over the deployments.
     for deployment in sysroot.deployments() {
         let booted = deployment.equal(booted_deployment);
         let booted_display = booted.then(|| "* ").unwrap_or(" ");
