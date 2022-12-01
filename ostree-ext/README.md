@@ -23,30 +23,10 @@ High level features (more on this below):
 - Generalized tar import/export
 - APIs to diff ostree commits
 
-```
-┌─────────────────┐
-│                 │
-│  ostree-rs-ext  ├────────────┐
-│                 │            │
-└────────┬────────┘            │
-         │                     │
-┌────────▼────────┐   ┌────────▼─────────┐
-│                 │   │                  │
-│    ostree-rs    │   │  imageproxy-rs   │
-│                 │   │                  │
-└────────┬────────┘   └────────┬─────────┘
-         │                     │
-┌────────▼────────┐   ┌────────▼─────────┐
-│                 │   │                  │
-│     ostree      │   │     skopeo       │
-│                 │   │                  │
-└─────────────────┘   └────────┬─────────┘
-                               │
-                      ┌────────▼─────────┐
-                      │                  │
-                      │ containers/image │
-                      │                  │
-                      └──────────────────┘
+```mermaid
+flowchart TD
+    ostree-rs-ext --- ostree-rs --- ostree
+    ostree-rs-ext --- containers-image-proxy-rs --- skopeo --- containers/image
 ```
 
 For more information on the container stack, see below.
