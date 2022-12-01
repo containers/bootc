@@ -193,7 +193,7 @@ async fn pull(
         PrepareResult::Ready(p) => p,
     };
     if let Some(warning) = prep.deprecated_warning() {
-        crate::cli::print_deprecated_warning(warning);
+        crate::cli::print_deprecated_warning(warning).await;
     }
     crate::cli::print_layer_status(&prep);
     let printer = (!quiet).then(|| {
@@ -261,9 +261,9 @@ pub(crate) fn print_layer_status(prep: &ostree_container::store::PreparedImport)
 }
 
 /// Output a deprecation warning with a sleep time to ensure it's visible.
-pub(crate) fn print_deprecated_warning(msg: &str) {
+pub(crate) async fn print_deprecated_warning(msg: &str) {
     eprintln!("warning: {msg}");
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 }
 
 /// Implementation of the `bootc upgrade` CLI command.
