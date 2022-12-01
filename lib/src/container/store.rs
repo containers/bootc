@@ -250,7 +250,7 @@ impl PreparedImport {
                 });
         (to_fetch > 0).then(|| {
             let size = crate::glib::format_size(to_fetch_size);
-            format!("layers stored: {stored} needed: {to_fetch} ({size})")
+            format!("layers already present: {stored}; layers needed: {to_fetch} ({size})")
         })
     }
 }
