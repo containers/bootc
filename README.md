@@ -59,5 +59,6 @@ preserving state.
 # More links 
 
 - https://fedoraproject.org/wiki/Changes/OstreeNativeContainerStable
+- https://coreos.github.io/rpm-ostree/container/
 - https://github.com/coreos/layering-examples
 
