@@ -1,42 +1,15 @@
 use anyhow::{Context, Result};
 use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
-use ostree_ext::container::SignatureSource;
-use std::borrow::Cow;
 
-use crate::utils::get_image_origin;
-
-fn serialize_transport<S>(
-    txn: &ostree_container::Transport,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_str(&txn.to_string())
-}
-
-fn serialize_signature_source<S>(
-    txn: &ostree_container::SignatureSource,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    let v = match txn {
-        SignatureSource::OstreeRemote(r) => Cow::Owned(format!("ostree-remote-image:{r}")),
-        SignatureSource::ContainerPolicy => Cow::Borrowed("ostree-image-signed"),
-        SignatureSource::ContainerPolicyAllowInsecure => Cow::Borrowed("ostree-unverified-image"),
-    };
-    serializer.serialize_str(&*v)
-}
+use crate::utils::{get_image_origin, ser_with_display};
 
 /// Representation of a container image reference suitable for serialization to e.g. JSON.
 #[derive(serde::Serialize)]
 struct Image {
-    #[serde(serialize_with = "serialize_signature_source")]
+    #[serde(serialize_with = "ser_with_display")]
     verification: ostree_container::SignatureSource,
-    #[serde(serialize_with = "serialize_transport")]
+    #[serde(serialize_with = "ser_with_display")]
     transport: ostree_container::Transport,
     image: String,
 }
