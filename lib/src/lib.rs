@@ -14,6 +14,7 @@
 #![deny(clippy::todo)]
 
 pub mod cli;
+mod status;
 
 #[cfg(feature = "docgen")]
 mod docgen;

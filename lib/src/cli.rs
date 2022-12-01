@@ -13,7 +13,6 @@ use ostree_ext::container as ostree_container;
 use ostree_ext::container::SignatureSource;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
-use std::borrow::Cow;
 use std::ffi::OsString;
 use std::ops::Deref;
 use std::os::unix::process::CommandExt;
@@ -24,10 +23,10 @@ use tokio::sync::mpsc::Receiver;
 pub(crate) struct UpgradeOpts {
     /// Don't display progress
     #[clap(long)]
-    quiet: bool,
+    pub(crate) quiet: bool,
 
     #[clap(long)]
-    touch_if_changed: Option<Utf8PathBuf>,
+    pub(crate) touch_if_changed: Option<Utf8PathBuf>,
 }
 
 /// Perform an upgrade operation
@@ -35,26 +34,26 @@ pub(crate) struct UpgradeOpts {
 pub(crate) struct SwitchOpts {
     /// Don't display progress
     #[clap(long)]
-    quiet: bool,
+    pub(crate) quiet: bool,
 
     /// The transport; e.g. oci, oci-archive.  Defaults to `registry`.
     #[clap(long, default_value = "registry")]
-    transport: String,
+    pub(crate) transport: String,
 
     /// Explicitly opt-out of requiring any form of signature verification.
     #[clap(long)]
-    no_signature_verification: bool,
+    pub(crate) no_signature_verification: bool,
 
     /// Enable verification via an ostree remote
     #[clap(long)]
-    ostree_remote: Option<String>,
+    pub(crate) ostree_remote: Option<String>,
 
     /// Retain reference to currently booted image
     #[clap(long)]
-    retain: bool,
+    pub(crate) retain: bool,
 
     /// Target image to use for the next boot.
-    target: String,
+    pub(crate) target: String,
 }
 
 /// Perform an upgrade operation
@@ -62,11 +61,11 @@ pub(crate) struct SwitchOpts {
 pub(crate) struct StatusOpts {
     /// Output in JSON format.
     #[clap(long)]
-    json: bool,
+    pub(crate) json: bool,
 
     /// Only display status for the booted deployment.
     #[clap(long)]
-    booted: bool,
+    pub(crate) booted: bool,
 }
 
 /// Options for man page generation
@@ -74,7 +73,7 @@ pub(crate) struct StatusOpts {
 pub(crate) struct ManOpts {
     #[clap(long)]
     /// Output to this directory
-    directory: Utf8PathBuf,
+    pub(crate) directory: Utf8PathBuf,
 }
 
 /// Deploy and upgrade via bootable container images.
@@ -124,7 +123,7 @@ async fn ensure_self_unshared_mount_namespace() -> Result<()> {
 
 /// Acquire a locked sysroot.
 /// TODO drain this and the above into SysrootLock
-async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootLock> {
+pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootLock> {
     let sysroot = ostree::Sysroot::new_default();
     sysroot.set_mount_namespace_in_use();
     let sysroot = ostree_ext::sysroot::SysrootLock::new_from_sysroot(&sysroot).await?;
@@ -218,7 +217,7 @@ async fn pull(
 
 /// Parse an ostree origin file (a keyfile) and extract the targeted
 /// container image reference.
-fn get_image_origin(
+pub(crate) fn get_image_origin(
     deployment: &ostree::Deployment,
 ) -> Result<(glib::KeyFile, Option<OstreeImageReference>)> {
     let origin = deployment
@@ -366,142 +365,6 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     Ok(())
 }
 
-fn serialize_transport<S>(
-    txn: &ostree_container::Transport,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_str(&txn.to_string())
-}
-
-fn serialize_signature_source<S>(
-    txn: &ostree_container::SignatureSource,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    let v = match txn {
-        SignatureSource::OstreeRemote(r) => Cow::Owned(format!("ostree-remote-image:{r}")),
-        SignatureSource::ContainerPolicy => Cow::Borrowed("ostree-image-signed"),
-        SignatureSource::ContainerPolicyAllowInsecure => Cow::Borrowed("ostree-unverified-image"),
-    };
-    serializer.serialize_str(&*v)
-}
-
-/// Representation of a container image reference suitable for serialization to e.g. JSON.
-#[derive(serde::Serialize)]
-struct Image {
-    #[serde(serialize_with = "serialize_signature_source")]
-    verification: ostree_container::SignatureSource,
-    #[serde(serialize_with = "serialize_transport")]
-    transport: ostree_container::Transport,
-    image: String,
-}
-
-impl From<&OstreeImageReference> for Image {
-    fn from(imgref: &OstreeImageReference) -> Self {
-        Self {
-            verification: imgref.sigverify.clone(),
-            transport: imgref.imgref.transport,
-            image: imgref.imgref.name.clone(),
-        }
-    }
-}
-
-/// Representation of a deployment suitable for serialization to e.g. JSON.
-#[derive(serde::Serialize)]
-struct DeploymentStatus {
-    pinned: bool,
-    booted: bool,
-    staged: bool,
-    image: Option<Image>,
-    checksum: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    deploy_serial: Option<u32>,
-}
-
-/// Implementation of the `bootc status` CLI command.
-async fn status(opts: StatusOpts) -> Result<()> {
-    let l = get_locked_sysroot().await?;
-    let sysroot = l.deref();
-    let repo = &sysroot.repo().unwrap();
-    let booted_deployment = &sysroot.require_booted_deployment()?;
-
-    // If we're in JSON mode, then convert the ostree data into Rust-native
-    // structures that can be serialized.
-    if opts.json {
-        let deployments = sysroot
-            .deployments()
-            .into_iter()
-            .filter(|deployment| !opts.booted || deployment.equal(booted_deployment))
-            .map(|deployment| -> Result<DeploymentStatus> {
-                let booted = deployment.equal(booted_deployment);
-                let staged = deployment.is_staged();
-                let pinned = deployment.is_pinned();
-                let image = get_image_origin(&deployment)?.1;
-                let checksum = deployment.csum().unwrap().to_string();
-                let deploy_serial = (!staged).then(|| deployment.bootserial().try_into().unwrap());
-
-                Ok(DeploymentStatus {
-                    staged,
-                    pinned,
-                    booted,
-                    image: image.as_ref().map(Into::into),
-                    checksum,
-                    deploy_serial,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let out = std::io::stdout();
-        let mut out = out.lock();
-        serde_json::to_writer(&mut out, &deployments).context("Writing to stdout")?;
-        return Ok(());
-    }
-
-    // We're not writing to JSON, so we directly iterate over the deployments.
-    for deployment in sysroot.deployments() {
-        let booted = deployment.equal(booted_deployment);
-        let booted_display = booted.then(|| "* ").unwrap_or(" ");
-
-        let image = get_image_origin(&deployment)?.1;
-
-        let commit = deployment.csum().unwrap();
-        let serial = deployment.deployserial();
-        if let Some(image) = image.as_ref() {
-            println!("{booted_display} {image}");
-            let state = ostree_container::store::query_image_commit(repo, &commit)?;
-            println!("    Digest: {}", state.manifest_digest.as_str());
-            let config = state.configuration.as_ref();
-            let cconfig = config.and_then(|c| c.config().as_ref());
-            let labels = cconfig.and_then(|c| c.labels().as_ref());
-            if let Some(labels) = labels {
-                if let Some(version) = labels.get("version") {
-                    println!("    Version: {version}");
-                }
-            }
-        } else {
-            println!("{booted_display} {commit}.{serial}");
-            println!("    (Non-container origin type)");
-            println!();
-        }
-        println!("    Backend: ostree");
-        if deployment.is_pinned() {
-            println!("    Pinned: yes")
-        }
-        if booted {
-            println!("    Booted: yes")
-        } else if deployment.is_staged() {
-            println!("    Staged: yes");
-        }
-        println!();
-    }
-
-    Ok(())
-}
-
 /// Parse the provided arguments and execute.
 /// Calls [`structopt::clap::Error::exit`] on failure, printing the error message and aborting the program.
 pub async fn run_from_iter<I>(args: I) -> Result<()>
@@ -513,7 +376,7 @@ where
     match opt {
         Opt::Upgrade(opts) => upgrade(opts).await,
         Opt::Switch(opts) => switch(opts).await,
-        Opt::Status(opts) => status(opts).await,
+        Opt::Status(opts) => super::status::status(opts).await,
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
     }
