@@ -247,16 +247,17 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     let sysroot = &get_locked_sysroot().await?;
     let repo = &sysroot.repo().unwrap();
     let booted_deployment = &sysroot.require_booted_deployment()?;
+    let status = crate::status::DeploymentStatus::from_deployment(booted_deployment, true)?;
     let osname = booted_deployment.osname().unwrap();
     let osname_v = Some(osname.as_str());
-    let (origin, imgref) = get_image_origin(booted_deployment)?;
-    let imgref =
-        imgref.ok_or_else(|| anyhow::anyhow!("Booted deployment is not container image based"))?;
-    let supported = booted_deployment
+    let origin = booted_deployment
         .origin()
-        .map(|o| !crate::utils::origin_has_rpmostree_stuff(&o))
-        .unwrap_or_default();
-    if !supported {
+        .ok_or_else(|| anyhow::anyhow!("Deployment is missing an origin"))?;
+    let imgref = status
+        .image
+        .ok_or_else(|| anyhow::anyhow!("Booted deployment is not container image based"))?;
+    let imgref: OstreeImageReference = imgref.into();
+    if !status.supported {
         return Err(anyhow::anyhow!(
             "Booted deployment contains local rpm-ostree modifications; cannot upgrade via bootc"
         ));
