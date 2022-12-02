@@ -30,6 +30,7 @@ struct DeploymentStatus {
     pinned: bool,
     booted: bool,
     staged: bool,
+    supported: bool,
     image: Option<Image>,
     checksum: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -56,11 +57,16 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
                 let image = get_image_origin(&deployment)?.1;
                 let checksum = deployment.csum().unwrap().to_string();
                 let deploy_serial = (!staged).then(|| deployment.bootserial().try_into().unwrap());
+                let supported = deployment
+                    .origin()
+                    .map(|o| !crate::utils::origin_has_rpmostree_stuff(&o))
+                    .unwrap_or_default();
 
                 Ok(DeploymentStatus {
                     staged,
                     pinned,
                     booted,
+                    supported,
                     image: image.as_ref().map(Into::into),
                     checksum,
                     deploy_serial,
@@ -79,19 +85,27 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
         let booted_display = booted.then(|| "* ").unwrap_or(" ");
 
         let image = get_image_origin(&deployment)?.1;
+        let supported = deployment
+            .origin()
+            .map(|o| !crate::utils::origin_has_rpmostree_stuff(&o))
+            .unwrap_or_default();
 
         let commit = deployment.csum().unwrap();
         let serial = deployment.deployserial();
         if let Some(image) = image.as_ref() {
             println!("{booted_display} {image}");
-            let state = ostree_container::store::query_image_commit(repo, &commit)?;
-            println!("    Digest: {}", state.manifest_digest.as_str());
-            let config = state.configuration.as_ref();
-            let cconfig = config.and_then(|c| c.config().as_ref());
-            let labels = cconfig.and_then(|c| c.labels().as_ref());
-            if let Some(labels) = labels {
-                if let Some(version) = labels.get("version") {
-                    println!("    Version: {version}");
+            if !supported {
+                println!("    Origin contains rpm-ostree machine-local changes");
+            } else {
+                let state = ostree_container::store::query_image_commit(repo, &commit)?;
+                println!("    Digest: {}", state.manifest_digest.as_str());
+                let config = state.configuration.as_ref();
+                let cconfig = config.and_then(|c| c.config().as_ref());
+                let labels = cconfig.and_then(|c| c.labels().as_ref());
+                if let Some(labels) = labels {
+                    if let Some(version) = labels.get("version") {
+                        println!("    Version: {version}");
+                    }
                 }
             }
         } else {
