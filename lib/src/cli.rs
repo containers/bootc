@@ -252,6 +252,15 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     let (origin, imgref) = get_image_origin(booted_deployment)?;
     let imgref =
         imgref.ok_or_else(|| anyhow::anyhow!("Booted deployment is not container image based"))?;
+    let supported = booted_deployment
+        .origin()
+        .map(|o| !crate::utils::origin_has_rpmostree_stuff(&o))
+        .unwrap_or_default();
+    if !supported {
+        return Err(anyhow::anyhow!(
+            "Booted deployment contains local rpm-ostree modifications; cannot upgrade via bootc"
+        ));
+    }
     let commit = booted_deployment.csum().unwrap();
     let state = ostree_container::store::query_image_commit(repo, &commit)?;
     let digest = state.manifest_digest.as_str();

@@ -24,6 +24,19 @@ pub(crate) fn get_image_origin(
     Ok((origin, imgref))
 }
 
+/// Try to look for keys injected by e.g. rpm-ostree requesting machine-local
+/// changes; if any are present, return `true`.
+pub(crate) fn origin_has_rpmostree_stuff(kf: &glib::KeyFile) -> bool {
+    // These are groups set in https://github.com/coreos/rpm-ostree/blob/27f72dce4f9b5c176ad030911c12354e2498c07d/rust/src/origin.rs#L23
+    // TODO: Add some notion of "owner" into origin files
+    for group in ["rpmostree", "packages", "overrides", "modules"] {
+        if kf.has_group(group) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Print the deployment we staged.
 pub(crate) fn print_staged(deployment: &ostree::Deployment) -> Result<()> {
     let (_origin, imgref) = get_image_origin(deployment)?;
