@@ -1,0 +1,10 @@
+# This Dockerfile generates a container image that installs bootc into
+# a Fedora CoreOS image.
+FROM quay.io/coreos-assembler/fcos-buildroot:testing-devel as builder
+WORKDIR /src
+COPY . .
+RUN make bin-archive
+
+FROM quay.io/fedora/fedora-coreos:testing-devel
+COPY --from=builder /src/bootc.tar.zst /tmp
+RUN tar -xvf /tmp/bootc.tar.zst && ostree container commit 

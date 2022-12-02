@@ -5,3 +5,4 @@ example
 
 /target
 Cargo.lock
+bootc.tar.zst

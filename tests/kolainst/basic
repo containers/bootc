@@ -1,0 +1,24 @@
+#!/bin/bash
+# Verify basic bootc functionality.
+## kola:
+##   timeoutMin: 30
+##   tags: "needs-internet"
+#
+# Copyright (C) 2022 Red Hat, Inc.
+
+set -xeuo pipefail
+
+cd $(mktemp -d)
+
+case "${AUTOPKGTEST_REBOOT_MARK:-}" in
+  "")
+    bootc status --json > status.json
+    image=$(jq -r '.[0].image.image' < status.json)
+    echo "booted into $image"
+
+    # TODO more tests here
+
+    echo "ok status test"
+    ;;
+  *) echo "unexpected mark: ${AUTOPKGTEST_REBOOT_MARK}"; exit 1;;
+esac
