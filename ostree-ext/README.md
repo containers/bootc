@@ -109,6 +109,13 @@ $ podman run --rm -ti --entrypoint bash quay.io/exampleos/exampleos:stable
 Running the container directly for e.g. CI testing is one use case.  But more importantly, this container image
 can be pushed to any registry, and used as part of ostree-based operating system release engineering.
 
+However, this is a very simplistic model - it currently generates a container image with a single layer, which means
+every change requires redownloading that entire layer.  As of recently, the underlying APIs for generating
+container images support "chunked" images.  But this requires coding for a specific package/build system.
+
+A good reference code base for generating "chunked" images is [rpm-ostree compose container-encapsulate](https://coreos.github.io/rpm-ostree/container/#converting-ostree-commits-to-new-base-images).  This is used to generate the current [Fedora CoreOS](https://quay.io/repository/fedora/fedora-coreos?tab=tags&tag=latest)
+images.
+
 ### Unencapsulate an ostree-container directly
 
 A primary goal of this effort is to make it fully native to an ostree-based operating system to pull a container image directly too.
