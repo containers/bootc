@@ -1,11 +1,15 @@
+use std::borrow::Cow;
+
 use anyhow::{Context, Result};
 use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
+use ostree_ext::ostree;
+use ostree_ext::sysroot::SysrootLock;
 
 use crate::utils::{get_image_origin, ser_with_display};
 
 /// Representation of a container image reference suitable for serialization to e.g. JSON.
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 struct Image {
     #[serde(serialize_with = "ser_with_display")]
     verification: ostree_container::SignatureSource,
@@ -24,6 +28,18 @@ impl From<&OstreeImageReference> for Image {
     }
 }
 
+impl From<Image> for OstreeImageReference {
+    fn from(img: Image) -> OstreeImageReference {
+        OstreeImageReference {
+            sigverify: img.verification,
+            imgref: ostree_container::ImageReference {
+                transport: img.transport,
+                name: img.image,
+            },
+        }
+    }
+}
+
 /// Representation of a deployment suitable for serialization to e.g. JSON.
 #[derive(serde::Serialize)]
 struct DeploymentStatus {
@@ -37,64 +53,70 @@ struct DeploymentStatus {
     deploy_serial: Option<u32>,
 }
 
+/// Gather the ostree deployment objects, but also extract metadata from them into
+/// a more native Rust structure.
+fn get_deployments(
+    sysroot: &SysrootLock,
+    booted_deployment: &ostree::Deployment,
+    booted: bool,
+) -> Result<Vec<(ostree::Deployment, DeploymentStatus)>> {
+    sysroot
+        .deployments()
+        .into_iter()
+        .filter(|deployment| !booted || deployment.equal(booted_deployment))
+        .map(|deployment| -> Result<_> {
+            let booted = deployment.equal(booted_deployment);
+            let staged = deployment.is_staged();
+            let pinned = deployment.is_pinned();
+            let image = get_image_origin(&deployment)?.1;
+            let checksum = deployment.csum().unwrap().to_string();
+            let deploy_serial = (!staged).then(|| deployment.bootserial().try_into().unwrap());
+            let supported = deployment
+                .origin()
+                .map(|o| !crate::utils::origin_has_rpmostree_stuff(&o))
+                .unwrap_or_default();
+
+            let status = DeploymentStatus {
+                staged,
+                pinned,
+                booted,
+                supported,
+                image: image.as_ref().map(Into::into),
+                checksum,
+                deploy_serial,
+            };
+            Ok((deployment, status))
+        })
+        .collect()
+}
+
 /// Implementation of the `bootc status` CLI command.
 pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     let sysroot = super::cli::get_locked_sysroot().await?;
     let repo = &sysroot.repo().unwrap();
     let booted_deployment = &sysroot.require_booted_deployment()?;
 
+    let deployments = get_deployments(&sysroot, booted_deployment, opts.booted)?;
     // If we're in JSON mode, then convert the ostree data into Rust-native
     // structures that can be serialized.
     if opts.json {
-        let deployments = sysroot
-            .deployments()
-            .into_iter()
-            .filter(|deployment| !opts.booted || deployment.equal(booted_deployment))
-            .map(|deployment| -> Result<DeploymentStatus> {
-                let booted = deployment.equal(booted_deployment);
-                let staged = deployment.is_staged();
-                let pinned = deployment.is_pinned();
-                let image = get_image_origin(&deployment)?.1;
-                let checksum = deployment.csum().unwrap().to_string();
-                let deploy_serial = (!staged).then(|| deployment.bootserial().try_into().unwrap());
-                let supported = deployment
-                    .origin()
-                    .map(|o| !crate::utils::origin_has_rpmostree_stuff(&o))
-                    .unwrap_or_default();
-
-                Ok(DeploymentStatus {
-                    staged,
-                    pinned,
-                    booted,
-                    supported,
-                    image: image.as_ref().map(Into::into),
-                    checksum,
-                    deploy_serial,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
+        // Filter to just the serializable status structures.
+        let deployments = deployments.into_iter().map(|e| e.1).collect::<Vec<_>>();
         let out = std::io::stdout();
         let mut out = out.lock();
         serde_json::to_writer(&mut out, &deployments).context("Writing to stdout")?;
         return Ok(());
     }
 
-    // We're not writing to JSON, so we directly iterate over the deployments.
-    for deployment in sysroot.deployments() {
-        let booted = deployment.equal(booted_deployment);
-        let booted_display = booted.then(|| "* ").unwrap_or(" ");
+    // We're not writing to JSON; iterate over and print.
+    for (deployment, info) in deployments {
+        let booted_display = info.booted.then(|| "* ").unwrap_or(" ");
+        let image: Option<OstreeImageReference> = info.image.as_ref().map(|i| i.clone().into());
 
-        let image = get_image_origin(&deployment)?.1;
-        let supported = deployment
-            .origin()
-            .map(|o| !crate::utils::origin_has_rpmostree_stuff(&o))
-            .unwrap_or_default();
-
-        let commit = deployment.csum().unwrap();
-        let serial = deployment.deployserial();
+        let commit = info.checksum;
         if let Some(image) = image.as_ref() {
             println!("{booted_display} {image}");
-            if !supported {
+            if !info.supported {
                 println!("    Origin contains rpm-ostree machine-local changes");
             } else {
                 let state = ostree_container::store::query_image_commit(repo, &commit)?;
@@ -109,7 +131,12 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
                 }
             }
         } else {
-            println!("{booted_display} {commit}.{serial}");
+            let deployinfo = if let Some(serial) = info.deploy_serial {
+                Cow::Owned(format!("{commit}.{serial}"))
+            } else {
+                Cow::Borrowed(&commit)
+            };
+            println!("{booted_display} {deployinfo}");
             println!("    (Non-container origin type)");
             println!();
         }
@@ -117,7 +144,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
         if deployment.is_pinned() {
             println!("    Pinned: yes")
         }
-        if booted {
+        if info.booted {
             println!("    Booted: yes")
         } else if deployment.is_staged() {
             println!("    Staged: yes");
