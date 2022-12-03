@@ -10,12 +10,12 @@ use crate::utils::{get_image_origin, ser_with_display};
 
 /// Representation of a container image reference suitable for serialization to e.g. JSON.
 #[derive(Debug, Clone, serde::Serialize)]
-struct Image {
+pub(crate) struct Image {
     #[serde(serialize_with = "ser_with_display")]
-    verification: ostree_container::SignatureSource,
+    pub(crate) verification: ostree_container::SignatureSource,
     #[serde(serialize_with = "ser_with_display")]
-    transport: ostree_container::Transport,
-    image: String,
+    pub(crate) transport: ostree_container::Transport,
+    pub(crate) image: String,
 }
 
 impl From<&OstreeImageReference> for Image {
@@ -42,15 +42,40 @@ impl From<Image> for OstreeImageReference {
 
 /// Representation of a deployment suitable for serialization to e.g. JSON.
 #[derive(serde::Serialize)]
-struct DeploymentStatus {
-    pinned: bool,
-    booted: bool,
-    staged: bool,
-    supported: bool,
-    image: Option<Image>,
-    checksum: String,
+pub(crate) struct DeploymentStatus {
+    pub(crate) pinned: bool,
+    pub(crate) booted: bool,
+    pub(crate) staged: bool,
+    pub(crate) supported: bool,
+    pub(crate) image: Option<Image>,
+    pub(crate) checksum: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    deploy_serial: Option<u32>,
+    pub(crate) deploy_serial: Option<u32>,
+}
+
+impl DeploymentStatus {
+    /// Gather metadata from an ostree deployment into a Rust structure
+    pub(crate) fn from_deployment(deployment: &ostree::Deployment, booted: bool) -> Result<Self> {
+        let staged = deployment.is_staged();
+        let pinned = deployment.is_pinned();
+        let image = get_image_origin(deployment)?.1;
+        let checksum = deployment.csum().unwrap().to_string();
+        let deploy_serial = (!staged).then(|| deployment.bootserial().try_into().unwrap());
+        let supported = deployment
+            .origin()
+            .map(|o| !crate::utils::origin_has_rpmostree_stuff(&o))
+            .unwrap_or_default();
+
+        Ok(DeploymentStatus {
+            staged,
+            pinned,
+            booted,
+            supported,
+            image: image.as_ref().map(Into::into),
+            checksum,
+            deploy_serial,
+        })
+    }
 }
 
 /// Gather the ostree deployment objects, but also extract metadata from them into
@@ -66,25 +91,7 @@ fn get_deployments(
         .filter(|deployment| !booted || deployment.equal(booted_deployment))
         .map(|deployment| -> Result<_> {
             let booted = deployment.equal(booted_deployment);
-            let staged = deployment.is_staged();
-            let pinned = deployment.is_pinned();
-            let image = get_image_origin(&deployment)?.1;
-            let checksum = deployment.csum().unwrap().to_string();
-            let deploy_serial = (!staged).then(|| deployment.bootserial().try_into().unwrap());
-            let supported = deployment
-                .origin()
-                .map(|o| !crate::utils::origin_has_rpmostree_stuff(&o))
-                .unwrap_or_default();
-
-            let status = DeploymentStatus {
-                staged,
-                pinned,
-                booted,
-                supported,
-                image: image.as_ref().map(Into::into),
-                checksum,
-                deploy_serial,
-            };
+            let status = DeploymentStatus::from_deployment(&deployment, booted)?;
             Ok((deployment, status))
         })
         .collect()
