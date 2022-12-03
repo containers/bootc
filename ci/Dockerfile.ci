@@ -4,7 +4,8 @@ FROM quay.io/coreos-assembler/coreos-assembler:latest
 WORKDIR /srv
 USER root
 # Grab all of our ci scripts
-COPY /src/ci/ /ci/
+COPY /ci/ /ci/
 RUN ln -sr /ci/run-kola.sh /usr/bin/bootc-run-kola
 USER builder
+ENTRYPOINT []
 CMD ["/usr/bin/bootc-run-kola"]
