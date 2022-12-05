@@ -1001,6 +1001,7 @@ fn list_container_deployment_manifests(
             .lookup::<String>(META_MANIFEST_DIGEST)?
             .is_some()
         {
+            tracing::trace!("Commit {commit} is a container image");
             let manifest = manifest_data_from_commitmeta(commit_meta)?.0;
             r.push(manifest);
         }
@@ -1031,12 +1032,14 @@ fn gc_image_layers_impl(
         })
         .chain(deployment_commits.into_iter().map(Ok))
         .collect::<Result<Vec<_>>>()?;
+    tracing::debug!("Images found: {}", all_manifests.len());
     let mut referenced_layers = BTreeSet::new();
     for m in all_manifests.iter() {
         for layer in m.layers() {
             referenced_layers.insert(layer.digest().as_str());
         }
     }
+    tracing::debug!("Referenced layers: {}", referenced_layers.len());
     let found_layers = repo
         .list_refs_ext(
             Some(LAYER_PREFIX),
@@ -1045,6 +1048,7 @@ fn gc_image_layers_impl(
         )?
         .into_iter()
         .map(|v| v.0);
+    tracing::debug!("Found layers: {}", found_layers.len());
     let mut pruned = 0u32;
     for layer_ref in found_layers {
         let layer_digest = refescape::unprefix_unescape_ref(LAYER_PREFIX, &layer_ref)?;
@@ -1052,6 +1056,7 @@ fn gc_image_layers_impl(
             continue;
         }
         pruned += 1;
+        tracing::debug!("Pruning: {}", layer_ref.as_str());
         repo.set_ref_immediate(None, layer_ref.as_str(), None, cancellable)?;
     }
 
