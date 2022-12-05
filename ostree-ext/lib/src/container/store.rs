@@ -900,9 +900,10 @@ pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<Layer
     // We require a base layer.
     let base_layer = layers.next().ok_or_else(|| anyhow!("No layers found"))?;
     let base_layer = query_layer(repo, base_layer)?;
+    let ostree_ref = base_layer.ostree_ref.as_str();
     let base_commit = base_layer
         .commit
-        .ok_or_else(|| anyhow!("Missing base image ref"))?;
+        .ok_or_else(|| anyhow!("Missing base image ref {ostree_ref}"))?;
     // If there are more layers after the base, then we're layered.
     let is_layered = layers.count() > 0;
     let state = Box::new(LayeredImageState {
