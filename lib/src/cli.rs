@@ -274,12 +274,12 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
 
     let merge_deployment = sysroot.merge_deployment(osname_v);
 
-    let new_deployment = sysroot.stage_tree(
+    let new_deployment = sysroot.stage_tree_with_options(
         osname_v,
         fetched.merge_commit.as_str(),
         Some(&origin),
         merge_deployment.as_ref(),
-        &[],
+        &Default::default(),
         cancellable,
     )?;
     print_staged(&new_deployment)?;
@@ -336,12 +336,12 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
         }
     }
 
-    let new_deployment = sysroot.stage_tree(
+    let new_deployment = sysroot.stage_tree_with_options(
         osname_v,
         fetched.merge_commit.as_str(),
         Some(&origin),
         merge_deployment.as_ref(),
-        &[],
+        &Default::default(),
         cancellable,
     )?;
     print_staged(&new_deployment)?;
