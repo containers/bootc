@@ -41,6 +41,11 @@ pub const META_FILTERED: &str = "ostree.tar-filtered";
 /// The type used to store content filtering information with `META_FILTERED`.
 pub type MetaFilteredData = HashMap<String, HashMap<String, u32>>;
 
+/// The ref prefixes which point to ostree deployments.  (TODO: Add an official API for this)
+const OSTREE_BASE_DEPLOYMENT_REFS: &[&str] = &["ostree/0", "ostree/1"];
+/// A layering violation we'll carry for a bit to band-aid over https://github.com/coreos/rpm-ostree/issues/4185
+const RPMOSTREE_BASE_REFS: &[&str] = &["rpmostree/base"];
+
 /// Convert e.g. sha256:12345... into `/ostree/container/blob/sha256_2B12345...`.
 fn ref_for_blob_digest(d: &str) -> Result<String> {
     refescape::prefix_escape_for_ref(LAYER_PREFIX, d)
@@ -980,19 +985,26 @@ fn list_container_deployment_manifests(
     repo: &ostree::Repo,
     cancellable: Option<&gio::Cancellable>,
 ) -> Result<Vec<ImageManifest>> {
-    let commits = repo
-        .list_refs_ext(
-            Some("ostree/0"),
-            ostree::RepoListRefsExtFlags::empty(),
-            cancellable,
-        )?
-        .into_iter()
-        .chain(repo.list_refs_ext(
-            Some("ostree/1"),
-            ostree::RepoListRefsExtFlags::empty(),
-            cancellable,
-        )?)
-        .map(|v| v.1);
+    // Gather all refs which start with ostree/0/ or ostree/1/ or rpmostree/base/
+    // and create a set of the commits which they reference.
+    let commits = OSTREE_BASE_DEPLOYMENT_REFS
+        .iter()
+        .chain(RPMOSTREE_BASE_REFS)
+        .try_fold(
+            std::collections::HashSet::new(),
+            |mut acc, &p| -> Result<_> {
+                let refs = repo.list_refs_ext(
+                    Some(p),
+                    ostree::RepoListRefsExtFlags::empty(),
+                    cancellable,
+                )?;
+                for (_, v) in refs {
+                    acc.insert(v);
+                }
+                Ok(acc)
+            },
+        )?;
+    // Loop over the commits - if they refer to a container image, add that to our return value.
     let mut r = Vec::new();
     for commit in commits {
         let commit_obj = repo.load_commit(&commit)?.0;
