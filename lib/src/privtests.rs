@@ -42,7 +42,8 @@ fn init_ostree(sh: &Shell, rootfs: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn impl_run() -> Result<()> {
+#[context("bootc status")]
+fn run_bootc_status() -> Result<()> {
     let sh = Shell::new()?;
 
     let loopdev = LoopbackDevice::new_temp(&sh)?;
@@ -54,14 +55,33 @@ pub(crate) fn impl_run() -> Result<()> {
     let td: &Utf8Path = td.try_into()?;
 
     cmd!(sh, "mkfs.xfs {devpath}").run()?;
-
     cmd!(sh, "mount {devpath} {td}").run()?;
 
     init_ostree(&sh, td)?;
 
+    // Basic sanity test of `bootc status` on an uninitialized root
     let _g = sh.push_env("OSTREE_SYSROOT", td);
     cmd!(sh, "bootc status").run()?;
 
+    Ok(())
+}
+
+// fn run_install() -> Result<()> {
+//     let sh = Shell::new()?;
+
+//     let loopdev = LoopbackDevice::new_temp(&sh)?;
+//     let devpath = &loopdev.dev;
+//     println!("Using {devpath:?}");
+
+//     todo!();
+//     cmd!(sh, "bootc install {devpath}").run()?;
+
+//     Ok(())
+// }
+
+pub(crate) fn impl_run() -> Result<()> {
+    run_bootc_status()?;
+    //run_install()?;
     Ok(())
 }
 
