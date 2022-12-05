@@ -319,11 +319,6 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
 
     let fetched = pull(repo, &target, opts.quiet).await?;
     let merge_deployment = sysroot.merge_deployment(osname_v);
-    origin.set_string(
-        "origin",
-        ostree_container::deploy::ORIGIN_CONTAINER,
-        target.to_string().as_str(),
-    );
 
     if !opts.retain {
         // By default, we prune the previous ostree ref or container image
@@ -335,6 +330,14 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
             let _nlayers: u32 = ostree_container::store::gc_image_layers(repo)?;
         }
     }
+
+    // We always make a fresh origin to toss out old state.
+    let origin = glib::KeyFile::new();
+    origin.set_string(
+        "origin",
+        ostree_container::deploy::ORIGIN_CONTAINER,
+        target.to_string().as_str(),
+    );
 
     let new_deployment = sysroot.stage_tree_with_options(
         osname_v,
