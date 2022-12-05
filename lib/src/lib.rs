@@ -13,11 +13,19 @@
 #![deny(clippy::dbg_macro)]
 #![deny(clippy::todo)]
 
+mod blockdev;
+mod bootloader;
 pub mod cli;
+mod containerenv;
+pub(crate) mod ignition;
+mod install;
+mod lsm;
+mod podman;
 #[cfg(feature = "internal-testing-api")]
 mod privtests;
 mod reexec;
 mod status;
+mod task;
 mod utils;
 
 #[cfg(feature = "docgen")]

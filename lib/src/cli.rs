@@ -94,6 +94,8 @@ pub(crate) enum Opt {
     Switch(SwitchOpts),
     /// Display status
     Status(StatusOpts),
+    /// Install to the target block device
+    Install(crate::install::InstallOpts),
     /// Internal integration testing helpers.
     #[clap(hide(true), subcommand)]
     #[cfg(feature = "internal-testing-api")]
@@ -210,7 +212,9 @@ async fn stage(
 #[context("Preparing for write")]
 async fn prepare_for_write() -> Result<()> {
     ensure_self_unshared_mount_namespace().await?;
-    ostree_ext::selinux::verify_install_domain()?;
+    if crate::lsm::selinux_enabled()? {
+        crate::lsm::selinux_ensure_install()?;
+    }
     Ok(())
 }
 
@@ -319,6 +323,7 @@ where
     match opt {
         Opt::Upgrade(opts) => upgrade(opts).await,
         Opt::Switch(opts) => switch(opts).await,
+        Opt::Install(opts) => crate::install::install(opts).await,
         Opt::Status(opts) => super::status::status(opts).await,
         #[cfg(feature = "internal-testing-api")]
         Opt::InternalTests(ref opts) => {

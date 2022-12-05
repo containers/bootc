@@ -10,7 +10,7 @@ bin-archive: all
 	$(MAKE) install DESTDIR=tmp-install && tar --zstd -C tmp-install -cf bootc.tar.zst . && rm tmp-install -rf
 
 install-kola-tests:
-	install -D -t $(DESTDIR)$(prefix)/lib/coreos-assembler/tests/kola/bootc tests/kolainst/basic
+	install -D -t $(DESTDIR)$(prefix)/lib/coreos-assembler/tests/kola/bootc tests/kolainst/*
 
 vendor:
 	cargo xtask $@
