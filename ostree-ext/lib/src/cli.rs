@@ -433,7 +433,8 @@ pub fn layer_progress_format(p: &ImportProgress) -> String {
     }
 }
 
-async fn handle_layer_progress_print(
+/// Write container fetch progress to standard output.
+pub async fn handle_layer_progress_print(
     mut layers: Receiver<ImportProgress>,
     mut layer_bytes: tokio::sync::watch::Receiver<Option<LayerProgress>>,
 ) {
@@ -477,15 +478,17 @@ async fn handle_layer_progress_print(
     }
 }
 
-fn print_layer_status(prep: &PreparedImport) {
+/// Write the status of layers to download.
+pub fn print_layer_status(prep: &PreparedImport) {
     if let Some(status) = prep.format_layer_status() {
         println!("{status}");
     }
 }
 
-pub(crate) fn print_deprecated_warning(msg: &str) {
+/// Write a deprecation notice, and sleep for 3 seconds.
+pub async fn print_deprecated_warning(msg: &str) {
     eprintln!("warning: {msg}");
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await
 }
 
 /// Import a container image with an encapsulated ostree commit.
@@ -513,7 +516,7 @@ async fn container_import(
     }
     let import = import?;
     if let Some(warning) = import.deprecated_warning.as_deref() {
-        print_deprecated_warning(warning);
+        print_deprecated_warning(warning).await;
     }
     if let Some(write_ref) = write_ref {
         repo.set_ref_immediate(
@@ -585,7 +588,7 @@ async fn container_store(
         PrepareResult::Ready(r) => r,
     };
     if let Some(warning) = prep.deprecated_warning() {
-        print_deprecated_warning(warning);
+        print_deprecated_warning(warning).await;
     }
     print_layer_status(&prep);
     let printer = (!quiet).then(|| {
