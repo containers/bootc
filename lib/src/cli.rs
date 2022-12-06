@@ -13,11 +13,10 @@ use ostree_ext::container as ostree_container;
 use ostree_ext::container::SignatureSource;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
+use ostree_ext::sysroot::SysrootLock;
 use std::ffi::OsString;
 use std::os::unix::process::CommandExt;
 use tokio::sync::mpsc::Receiver;
-
-use crate::utils::{get_image_origin, print_staged};
 
 /// Perform an upgrade operation
 #[derive(Debug, Parser)]
@@ -240,16 +239,37 @@ pub(crate) async fn print_deprecated_warning(msg: &str) {
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 }
 
+/// Stage (queue deployment of) a fetched container image.
+async fn stage(
+    sysroot: &SysrootLock,
+    stateroot: &str,
+    imgref: &ostree_container::OstreeImageReference,
+    image: Box<LayeredImageState>,
+    origin: &glib::KeyFile,
+) -> Result<()> {
+    let cancellable = gio::Cancellable::NONE;
+    let stateroot = Some(stateroot);
+    let merge_deployment = sysroot.merge_deployment(stateroot);
+    let _new_deployment = sysroot.stage_tree_with_options(
+        stateroot,
+        image.merge_commit.as_str(),
+        Some(origin),
+        merge_deployment.as_ref(),
+        &Default::default(),
+        cancellable,
+    )?;
+    println!("Queued for next boot: {imgref}");
+    Ok(())
+}
+
 /// Implementation of the `bootc upgrade` CLI command.
 async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     ensure_self_unshared_mount_namespace().await?;
-    let cancellable = gio::Cancellable::NONE;
     let sysroot = &get_locked_sysroot().await?;
     let repo = &sysroot.repo().unwrap();
     let booted_deployment = &sysroot.require_booted_deployment()?;
     let status = crate::status::DeploymentStatus::from_deployment(booted_deployment, true)?;
     let osname = booted_deployment.osname().unwrap();
-    let osname_v = Some(osname.as_str());
     let origin = booted_deployment
         .origin()
         .ok_or_else(|| anyhow::anyhow!("Deployment is missing an origin"))?;
@@ -272,17 +292,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         return Ok(());
     }
 
-    let merge_deployment = sysroot.merge_deployment(osname_v);
-
-    let new_deployment = sysroot.stage_tree_with_options(
-        osname_v,
-        fetched.merge_commit.as_str(),
-        Some(&origin),
-        merge_deployment.as_ref(),
-        &Default::default(),
-        cancellable,
-    )?;
-    print_staged(&new_deployment)?;
+    stage(sysroot, &osname, &imgref, fetched, &origin).await?;
 
     if let Some(path) = opts.touch_if_changed {
         std::fs::write(&path, "").with_context(|| format!("Writing {path}"))?;
@@ -297,10 +307,9 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let cancellable = gio::Cancellable::NONE;
     let sysroot = get_locked_sysroot().await?;
     let booted_deployment = &sysroot.require_booted_deployment()?;
-    let (origin, booted_image) = get_image_origin(booted_deployment)?;
+    let (origin, booted_image) = crate::utils::get_image_origin(booted_deployment)?;
     let booted_refspec = origin.optional_string("origin", "refspec")?;
     let osname = booted_deployment.osname().unwrap();
-    let osname_v = Some(osname.as_str());
     let repo = &sysroot.repo().unwrap();
 
     let transport = ostree_container::Transport::try_from(opts.transport.as_str())?;
@@ -318,7 +327,6 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let target = ostree_container::OstreeImageReference { sigverify, imgref };
 
     let fetched = pull(repo, &target, opts.quiet).await?;
-    let merge_deployment = sysroot.merge_deployment(osname_v);
 
     if !opts.retain {
         // By default, we prune the previous ostree ref or container image
@@ -338,16 +346,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
         ostree_container::deploy::ORIGIN_CONTAINER,
         target.to_string().as_str(),
     );
-
-    let new_deployment = sysroot.stage_tree_with_options(
-        osname_v,
-        fetched.merge_commit.as_str(),
-        Some(&origin),
-        merge_deployment.as_ref(),
-        &Default::default(),
-        cancellable,
-    )?;
-    print_staged(&new_deployment)?;
+    stage(&sysroot, &osname, &target, fetched, &origin).await?;
 
     Ok(())
 }

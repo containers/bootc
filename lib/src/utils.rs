@@ -37,16 +37,6 @@ pub(crate) fn origin_has_rpmostree_stuff(kf: &glib::KeyFile) -> bool {
     false
 }
 
-/// Print the deployment we staged.
-pub(crate) fn print_staged(deployment: &ostree::Deployment) -> Result<()> {
-    let (_origin, imgref) = get_image_origin(deployment)?;
-    let imgref = imgref.ok_or_else(|| {
-        anyhow::anyhow!("Internal error: expected a container deployment to be staged")
-    })?;
-    println!("Queued for next boot: {imgref}");
-    Ok(())
-}
-
 /// Implement the `Serialize` trait for types that are `Display`.
 /// https://stackoverflow.com/questions/58103801/serialize-using-the-display-trait
 pub(crate) fn ser_with_display<T, S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
