@@ -43,6 +43,8 @@ pub mod sysroot;
 pub mod tar;
 pub mod tokio_util;
 
+pub mod selinux;
+
 pub mod chunking;
 pub mod commit;
 pub mod objectsource;
