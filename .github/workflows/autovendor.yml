@@ -1,0 +1,24 @@
+# Automatically generate a vendor.tar.zstd on pushes to git main.
+name: Auto-vendor artifact
+
+permissions:
+  actions: read
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install vendor tool
+        run: cargo install cargo-vendor-filterer
+      - name: Run
+        run: mkdir -p target && cd cli && cargo vendor-filterer --format=tar.zstd --prefix=vendor/ ../target/vendor.tar.zst
+      - uses: actions/upload-artifact@v3
+        with:
+          name: vendor.tar.zst
+          path: target/vendor.tar.zst
