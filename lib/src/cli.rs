@@ -331,7 +331,9 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     if !opts.retain {
         // By default, we prune the previous ostree ref or container image
         if let Some(ostree_ref) = booted_refspec {
-            repo.set_ref_immediate(None, &ostree_ref, None, cancellable)?;
+            let (remote, ostree_ref) =
+                ostree::parse_refspec(&ostree_ref).context("Failed to parse ostree ref")?;
+            repo.set_ref_immediate(remote.as_deref(), &ostree_ref, None, cancellable)?;
             origin.remove_key("origin", "refspec")?;
         } else if let Some(booted_image) = booted_image.as_ref() {
             ostree_container::store::remove_image(repo, &booted_image.imgref)?;
