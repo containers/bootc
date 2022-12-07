@@ -62,7 +62,7 @@ pub async fn deploy(
         PrepareResult::AlreadyPresent(r) => r,
         PrepareResult::Ready(prep) => {
             if let Some(warning) = prep.deprecated_warning() {
-                crate::cli::print_deprecated_warning(warning);
+                crate::cli::print_deprecated_warning(warning).await;
             }
 
             imp.import(prep).await?
