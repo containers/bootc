@@ -262,9 +262,16 @@ async fn stage(
     Ok(())
 }
 
+/// A few process changes that need to be made for writing.
+async fn prepare_for_write() -> Result<()> {
+    ensure_self_unshared_mount_namespace().await?;
+    ostree_ext::selinux::verify_install_domain()?;
+    Ok(())
+}
+
 /// Implementation of the `bootc upgrade` CLI command.
 async fn upgrade(opts: UpgradeOpts) -> Result<()> {
-    ensure_self_unshared_mount_namespace().await?;
+    prepare_for_write().await?;
     let sysroot = &get_locked_sysroot().await?;
     let repo = &sysroot.repo().unwrap();
     let booted_deployment = &sysroot.require_booted_deployment()?;
@@ -303,7 +310,8 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
 
 /// Implementation of the `bootc switch` CLI command.
 async fn switch(opts: SwitchOpts) -> Result<()> {
-    ensure_self_unshared_mount_namespace().await?;
+    prepare_for_write().await?;
+
     let cancellable = gio::Cancellable::NONE;
     let sysroot = get_locked_sysroot().await?;
     let booted_deployment = &sysroot.require_booted_deployment()?;
