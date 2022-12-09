@@ -3,15 +3,20 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use std::borrow::{Borrow, Cow};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use std::time::Instant;
 
+use crate::container::CONTENT_ANNOTATION;
 use crate::objectsource::{ContentID, ObjectMeta, ObjectMetaMap, ObjectSourceMeta};
 use crate::objgv::*;
+use crate::statistics;
 use anyhow::{anyhow, Result};
 use camino::Utf8PathBuf;
+use containers_image_proxy::oci_spec;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{Marker, Structure};
 use ostree::{gio, glib};
@@ -24,12 +29,17 @@ pub(crate) const MAX_CHUNKS: u32 = 64;
 
 type RcStr = Rc<str>;
 pub(crate) type ChunkMapping = BTreeMap<RcStr, (u64, Vec<Utf8PathBuf>)>;
+// TODO type PackageSet = HashSet<RcStr>;
+
+const LOW_PARTITION: &str = "2ls";
+const HIGH_PARTITION: &str = "1hs";
 
 #[derive(Debug, Default)]
 pub(crate) struct Chunk {
     pub(crate) name: String,
     pub(crate) content: ChunkMapping,
     pub(crate) size: u64,
+    pub(crate) packages: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -40,6 +50,20 @@ pub struct ObjectSourceMetaSized {
     meta: ObjectSourceMeta,
     /// Total size of associated objects
     size: u64,
+}
+
+impl Hash for ObjectSourceMetaSized {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.meta.identifier.hash(state);
+    }
+}
+
+impl Eq for ObjectSourceMetaSized {}
+
+impl PartialEq for ObjectSourceMetaSized {
+    fn eq(&self, other: &Self) -> bool {
+        self.meta.identifier == other.meta.identifier
+    }
 }
 
 /// Extend content source metadata with sizes.
@@ -243,10 +267,11 @@ impl Chunking {
         repo: &ostree::Repo,
         rev: &str,
         meta: ObjectMetaSized,
-        max_layers: Option<NonZeroU32>,
+        max_layers: &Option<NonZeroU32>,
+        prior_build_metadata: Option<&oci_spec::image::ImageManifest>,
     ) -> Result<Self> {
         let mut r = Self::new(repo, rev)?;
-        r.process_mapping(meta, max_layers)?;
+        r.process_mapping(meta, max_layers, prior_build_metadata)?;
         Ok(r)
     }
 
@@ -260,7 +285,8 @@ impl Chunking {
     pub fn process_mapping(
         &mut self,
         meta: ObjectMetaSized,
-        max_layers: Option<NonZeroU32>,
+        max_layers: &Option<NonZeroU32>,
+        prior_build_metadata: Option<&oci_spec::image::ImageManifest>,
     ) -> Result<()> {
         self.max = max_layers
             .unwrap_or(NonZeroU32::new(MAX_CHUNKS).unwrap())
@@ -291,16 +317,27 @@ impl Chunking {
             .unwrap();
 
         // TODO: Compute bin packing in a better way
-        let packing = basic_packing(sizes, NonZeroU32::new(self.max).unwrap());
+        let start = Instant::now();
+        let packing = basic_packing(
+            sizes,
+            NonZeroU32::new(self.max).unwrap(),
+            prior_build_metadata,
+        )?;
+        let duration = start.elapsed();
+        tracing::debug!("Time elapsed in packing: {:#?}", duration);
 
         for bin in packing.into_iter() {
-            let first = bin[0];
-            let first_name = &*first.meta.name;
             let name = match bin.len() {
-                0 => unreachable!(),
-                1 => Cow::Borrowed(first_name),
+                0 => Cow::Borrowed("Reserved for new packages"),
+                1 => {
+                    let first = bin[0];
+                    let first_name = &*first.meta.identifier;
+                    Cow::Borrowed(first_name)
+                }
                 2..=5 => {
-                    let r = bin.iter().map(|v| &*v.meta.name).skip(1).fold(
+                    let first = bin[0];
+                    let first_name = &*first.meta.identifier;
+                    let r = bin.iter().map(|v| &*v.meta.identifier).skip(1).fold(
                         String::from(first_name),
                         |mut acc, v| {
                             write!(acc, " and {}", v).unwrap();
@@ -312,14 +349,13 @@ impl Chunking {
                 n => Cow::Owned(format!("{n} components")),
             };
             let mut chunk = Chunk::new(&name);
+            chunk.packages = bin.iter().map(|v| String::from(&*v.meta.name)).collect();
             for szmeta in bin {
                 for &obj in rmap.get(&szmeta.meta.identifier).unwrap() {
                     self.remainder.move_obj(&mut chunk, obj.as_str());
                 }
             }
-            if !chunk.content.is_empty() {
-                self.chunks.push(chunk);
-            }
+            self.chunks.push(chunk);
         }
 
         assert_eq!(self.remainder.content.len(), 0);
@@ -364,79 +400,366 @@ impl Chunking {
     }
 }
 
-type ChunkedComponents<'a> = Vec<&'a ObjectSourceMetaSized>;
-
+#[cfg(test)]
 fn components_size(components: &[&ObjectSourceMetaSized]) -> u64 {
     components.iter().map(|k| k.size).sum()
 }
 
 /// Compute the total size of a packing
 #[cfg(test)]
-fn packing_size(packing: &[ChunkedComponents]) -> u64 {
+fn packing_size(packing: &[Vec<&ObjectSourceMetaSized>]) -> u64 {
     packing.iter().map(|v| components_size(v)).sum()
 }
 
-fn sort_packing(packing: &mut [ChunkedComponents]) {
-    packing.sort_by(|a, b| {
-        let a: u64 = components_size(a);
-        let b: u64 = components_size(b);
-        b.cmp(&a)
+///Given a certain threshold, divide a list of packages into all combinations
+///of (high, medium, low) size and (high,medium,low) using the following
+///outlier detection methods:
+///- Median and Median Absolute Deviation Method
+///     Aggressively detects outliers in size and classifies them by
+///     high, medium, low. The high size and low size are separate partitions
+///     and deserve bins of their own
+///- Mean and Standard Deviation Method
+///     The medium partition from the previous step is less aggressively
+///     classified by using mean for both size and frequency
+
+//Assumes components is sorted by descending size
+fn get_partitions_with_threshold(
+    components: Vec<&ObjectSourceMetaSized>,
+    limit_hs_bins: usize,
+    threshold: f64,
+) -> Option<BTreeMap<String, Vec<&ObjectSourceMetaSized>>> {
+    let mut partitions: BTreeMap<String, Vec<&ObjectSourceMetaSized>> = BTreeMap::new();
+    let mut med_size: Vec<&ObjectSourceMetaSized> = Vec::new();
+    let mut high_size: Vec<&ObjectSourceMetaSized> = Vec::new();
+
+    let mut sizes: Vec<u64> = components.iter().map(|a| a.size).collect();
+    let (median_size, mad_size) = statistics::median_absolute_deviation(&mut sizes)?;
+
+    //Avoids lower limit being negative
+    let size_low_limit = 0.5 * f64::abs(median_size - threshold * mad_size);
+    let size_high_limit = median_size + threshold * mad_size;
+
+    for pkg in components {
+        let size = pkg.size as f64;
+
+        //high size (hs)
+        if size >= size_high_limit {
+            high_size.push(pkg);
+        }
+        //low size (ls)
+        else if size <= size_low_limit {
+            partitions
+                .entry(LOW_PARTITION.to_string())
+                .and_modify(|bin| bin.push(pkg))
+                .or_insert_with(|| vec![pkg]);
+        }
+        //medium size (ms)
+        else {
+            med_size.push(pkg);
+        }
+    }
+
+    //Extra hs packages
+    let mut remaining_pkgs: Vec<_> = high_size.drain(limit_hs_bins..).collect();
+    assert_eq!(high_size.len(), limit_hs_bins);
+
+    //Concatenate extra hs packages + med_sizes to keep it descending sorted
+    remaining_pkgs.append(&mut med_size);
+    partitions.insert(HIGH_PARTITION.to_string(), high_size);
+
+    //Ascending sorted by frequency, so each partition within ms is freq sorted
+    remaining_pkgs.sort_by(|a, b| {
+        a.meta
+            .change_frequency
+            .partial_cmp(&b.meta.change_frequency)
+            .unwrap()
     });
+    let med_sizes: Vec<u64> = remaining_pkgs.iter().map(|a| a.size).collect();
+    let med_frequencies: Vec<u64> = remaining_pkgs
+        .iter()
+        .map(|a| a.meta.change_frequency.into())
+        .collect();
+
+    let med_mean_freq = statistics::mean(&med_frequencies)?;
+    let med_stddev_freq = statistics::std_deviation(&med_frequencies)?;
+    let med_mean_size = statistics::mean(&med_sizes)?;
+    let med_stddev_size = statistics::std_deviation(&med_sizes)?;
+
+    //Avoids lower limit being negative
+    let med_freq_low_limit = 0.5f64 * f64::abs(med_mean_freq - threshold * med_stddev_freq);
+    let med_freq_high_limit = med_mean_freq + threshold * med_stddev_freq;
+    let med_size_low_limit = 0.5f64 * f64::abs(med_mean_size - threshold * med_stddev_size);
+    let med_size_high_limit = med_mean_size + threshold * med_stddev_size;
+
+    for pkg in remaining_pkgs {
+        let size = pkg.size as f64;
+        let freq = pkg.meta.change_frequency as f64;
+
+        let size_name;
+        if size >= med_size_high_limit {
+            size_name = "hs";
+        } else if size <= med_size_low_limit {
+            size_name = "ls";
+        } else {
+            size_name = "ms";
+        }
+
+        //Numbered to maintain order of partitions in a BTreeMap of hf, mf, lf
+        let freq_name;
+        if freq >= med_freq_high_limit {
+            freq_name = "3hf";
+        } else if freq <= med_freq_low_limit {
+            freq_name = "5lf";
+        } else {
+            freq_name = "4mf";
+        }
+
+        let bucket = format!("{freq_name}_{size_name}");
+        partitions
+            .entry(bucket.to_string())
+            .and_modify(|bin| bin.push(pkg))
+            .or_insert_with(|| vec![pkg]);
+    }
+
+    for (name, pkgs) in &partitions {
+        tracing::debug!("{:#?}: {:#?}", name, pkgs.len());
+    }
+
+    Some(partitions)
 }
 
 /// Given a set of components with size metadata (e.g. boxes of a certain size)
 /// and a number of bins (possible container layers) to use, determine which components
 /// go in which bin.  This algorithm is pretty simple:
-///
-/// - order by size
-/// - If we have fewer components than bins, we're done
-/// - Take the "tail" (all components past maximum), and group by source package
-/// - If we have fewer components than bins, we're done
-/// - Take the whole tail and group them toether (this is the overly simplistic part)
-fn basic_packing(components: &[ObjectSourceMetaSized], bins: NonZeroU32) -> Vec<ChunkedComponents> {
-    // let total_size: u64 = components.iter().map(|v| v.size).sum();
-    // let avg_size: u64 = total_size / components.len() as u64;
+
+// Total available bins = n
+//
+// 1 bin for all the u32_max frequency pkgs
+// 1 bin for all newly added pkgs
+// 1 bin for all low size pkgs
+//
+// 60% of n-3 bins for high size pkgs
+// 40% of n-3 bins for medium size pkgs
+//
+// If HS bins > limit, spillover to MS to package
+// If MS bins > limit, fold by merging 2 bins from the end
+//
+fn basic_packing<'a>(
+    components: &'a [ObjectSourceMetaSized],
+    bin_size: NonZeroU32,
+    prior_build_metadata: Option<&oci_spec::image::ImageManifest>,
+) -> Result<Vec<Vec<&'a ObjectSourceMetaSized>>> {
     let mut r = Vec::new();
-    // And handle the easy case of enough bins for all components
-    // TODO: Possibly try to split off large files?
-    if components.len() <= bins.get() as usize {
-        r.extend(components.iter().map(|v| vec![v]));
-        return r;
-    }
-    // Create a mutable copy
     let mut components: Vec<_> = components.iter().collect();
-    // Iterate over the component tail, folding by source id
-    let mut by_src = HashMap::<_, Vec<&ObjectSourceMetaSized>>::new();
-    // Take the tail off components, then build up mapping from srcid -> Vec<component>
-    for component in components.split_off(bins.get() as usize) {
-        by_src
-            .entry(&component.meta.srcid)
-            .or_default()
-            .push(component);
-    }
-    // Take all the non-tail (largest) components, and append them first
-    r.extend(components.into_iter().map(|v| vec![v]));
-    // Add the tail
-    r.extend(by_src.into_values());
-    // And order the new list
-    sort_packing(&mut r);
-    // It's possible that merging components gave us enough space; if so
-    // we're done!
-    if r.len() <= bins.get() as usize {
-        return r;
+    let before_processing_pkgs_len = components.len();
+
+    //If the current rpm-ostree commit to be encapsulated is not the one in which packing structure changes, then
+    //  Flatten out prior_build_metadata to view all the packages in prior build as a single vec
+    //  Compare the flattened vector to components to see if pkgs added, updated,
+    //  removed or kept same
+    //  if pkgs added, then add them to the last bin of prior
+    //  if pkgs removed, then remove them from the prior[i]
+    //  iterate through prior[i] and make bins according to the name in nevra of pkgs to update
+    //  required packages
+    //else if pkg structure to be changed || prior build not specified
+    //  Recompute optimal packaging strcuture (Compute partitions, place packages and optimize build)
+
+    if let Some(prior_build) = prior_build_metadata {
+        tracing::debug!("Keeping old package structure");
+
+        //1st layer is skipped as packing doesn't manage ostree_commit layer
+        let curr_build: Result<Vec<Vec<String>>> = prior_build
+            .layers()
+            .iter()
+            .skip(1)
+            .map(|layer| -> Result<_> {
+                let annotation_layer = layer
+                    .annotations()
+                    .as_ref()
+                    .and_then(|annos| annos.get(CONTENT_ANNOTATION))
+                    .ok_or_else(|| anyhow!("Missing {CONTENT_ANNOTATION} on prior build"))?;
+                Ok(annotation_layer.split(',').map(ToOwned::to_owned).collect())
+            })
+            .collect();
+        let mut curr_build = curr_build?;
+
+        // View the packages as unordered sets for lookups and differencing
+        let prev_pkgs_set: HashSet<String> = curr_build
+            .iter()
+            .flat_map(|v| v.iter().cloned())
+            .filter(|name| !name.is_empty())
+            .collect();
+        let curr_pkgs_set: HashSet<String> = components
+            .iter()
+            .map(|pkg| pkg.meta.name.to_string())
+            .collect();
+
+        //Handle added packages
+        if let Some(last_bin) = curr_build.last_mut() {
+            let added = curr_pkgs_set.difference(&prev_pkgs_set);
+            last_bin.retain(|name| !name.is_empty());
+            last_bin.extend(added.into_iter().cloned());
+        } else {
+            panic!("No empty last bin for added packages");
+        }
+
+        //Handle removed packages
+        let removed: HashSet<&String> = prev_pkgs_set.difference(&curr_pkgs_set).collect();
+        for bin in curr_build.iter_mut() {
+            bin.retain(|pkg| !removed.contains(pkg));
+        }
+
+        //Handle updated packages
+        let mut name_to_component: HashMap<String, &ObjectSourceMetaSized> = HashMap::new();
+        for component in &components {
+            name_to_component
+                .entry(component.meta.name.to_string())
+                .or_insert(component);
+        }
+        let mut modified_build: Vec<Vec<&ObjectSourceMetaSized>> = Vec::new();
+        for bin in curr_build {
+            let mut mod_bin = Vec::new();
+            for pkg in bin {
+                mod_bin.push(name_to_component[&pkg]);
+            }
+            modified_build.push(mod_bin);
+        }
+
+        //Verify all packages are included
+        let after_processing_pkgs_len: usize = modified_build.iter().map(|b| b.len()).sum();
+        assert_eq!(after_processing_pkgs_len, before_processing_pkgs_len);
+        assert!(modified_build.len() <= bin_size.get() as usize);
+        return Ok(modified_build);
     }
 
-    let last = (bins.get().checked_sub(1).unwrap()) as usize;
-    // The "tail" is components past our maximum.  For now, we simply group all of that together as a single unit.
-    if let Some(tail) = r.drain(last..).reduce(|mut a, b| {
-        a.extend(b.into_iter());
-        a
-    }) {
-        r.push(tail);
+    tracing::debug!("Creating new packing structure");
+
+    //Handle trivial case of no pkgs < bins
+    if before_processing_pkgs_len < bin_size.get() as usize {
+        components.into_iter().for_each(|pkg| r.push(vec![pkg]));
+        if before_processing_pkgs_len > 0 {
+            let new_pkgs_bin: Vec<&ObjectSourceMetaSized> = Vec::new();
+            r.push(new_pkgs_bin);
+        }
+        return Ok(r);
     }
 
-    assert!(r.len() <= bins.get() as usize);
-    r
+    let mut max_freq_components: Vec<&ObjectSourceMetaSized> = Vec::new();
+    components.retain(|pkg| {
+        let retain: bool = pkg.meta.change_frequency != u32::MAX;
+        if !retain {
+            max_freq_components.push(pkg);
+        }
+        retain
+    });
+    let components_len_after_max_freq = components.len();
+    match components_len_after_max_freq {
+        0 => (),
+        _ => {
+            //Defining Limits of each bins
+            let limit_ls_bins = 1usize;
+            let limit_new_bins = 1usize;
+            let _limit_new_pkgs = 0usize;
+            let limit_max_frequency_pkgs = max_freq_components.len();
+            let limit_max_frequency_bins = limit_max_frequency_pkgs.min(1);
+            let limit_hs_bins = (0.6
+                * (bin_size.get()
+                    - (limit_ls_bins + limit_new_bins + limit_max_frequency_bins) as u32)
+                    as f32)
+                .floor() as usize;
+            let limit_ms_bins = (bin_size.get()
+                - (limit_hs_bins + limit_ls_bins + limit_new_bins + limit_max_frequency_bins)
+                    as u32) as usize;
+            let partitions = get_partitions_with_threshold(components, limit_hs_bins, 2f64)
+                .expect("Partitioning components into sets");
+
+            let limit_ls_pkgs = match partitions.get(LOW_PARTITION) {
+                Some(n) => n.len(),
+                None => 0usize,
+            };
+
+            let pkg_per_bin_ms: usize =
+                (components_len_after_max_freq - limit_hs_bins - limit_ls_pkgs)
+                    .checked_div(limit_ms_bins)
+                    .expect("number of bins should be >= 4");
+
+            //Bins assignment
+            for (partition, pkgs) in partitions.iter() {
+                if partition == HIGH_PARTITION {
+                    for pkg in pkgs {
+                        r.push(vec![*pkg]);
+                    }
+                } else if partition == LOW_PARTITION {
+                    let mut bin: Vec<&ObjectSourceMetaSized> = Vec::new();
+                    for pkg in pkgs {
+                        bin.push(*pkg);
+                    }
+                    r.push(bin);
+                } else {
+                    let mut bin: Vec<&ObjectSourceMetaSized> = Vec::new();
+                    for (i, pkg) in pkgs.iter().enumerate() {
+                        if bin.len() < pkg_per_bin_ms {
+                            bin.push(*pkg);
+                        } else {
+                            r.push(bin.clone());
+                            bin.clear();
+                            bin.push(*pkg);
+                        }
+                        if i == pkgs.len() - 1 && !bin.is_empty() {
+                            r.push(bin.clone());
+                            bin.clear();
+                        }
+                    }
+                }
+            }
+            tracing::debug!("Bins before unoptimized build: {}", r.len());
+
+            //Despite allocation certain number of pkgs per bin in MS partitions, the
+            //hard limit of number of MS bins can be exceeded. This is because the pkg_per_bin_ms
+            //is only upper limit and there is no lower limit. Thus, if a partition in MS has only 1 pkg
+            //but pkg_per_bin_ms > 1, then the entire bin will have 1 pkg. This prevents partition
+            //mixing.
+            //
+            //Addressing MS bins limit breach by mergin internal MS partitions
+            //The partitions in MS are merged beginnign from the end so to not mix hf bins with lf bins. The
+            //bins are kept in this order: hf, mf, lf by design.
+            while r.len() > (bin_size.get() as usize - limit_new_bins - limit_max_frequency_bins) {
+                for i in (limit_ls_bins + limit_hs_bins..r.len() - 1)
+                    .step_by(2)
+                    .rev()
+                {
+                    if r.len()
+                        <= (bin_size.get() as usize - limit_new_bins - limit_max_frequency_bins)
+                    {
+                        break;
+                    }
+                    let prev = &r[i - 1];
+                    let curr = &r[i];
+                    let mut merge: Vec<&ObjectSourceMetaSized> = Vec::new();
+                    merge.extend(prev.iter());
+                    merge.extend(curr.iter());
+                    r.remove(i);
+                    r.remove(i - 1);
+                    r.insert(i, merge);
+                }
+            }
+            tracing::debug!("Bins after optimization: {}", r.len());
+        }
+    }
+
+    if !max_freq_components.is_empty() {
+        r.push(max_freq_components);
+    }
+
+    let new_pkgs_bin: Vec<&ObjectSourceMetaSized> = Vec::new();
+    r.push(new_pkgs_bin);
+    let mut after_processing_pkgs_len = 0;
+    r.iter().for_each(|bin| {
+        after_processing_pkgs_len += bin.len();
+    });
+    assert_eq!(after_processing_pkgs_len, before_processing_pkgs_len);
+    assert!(r.len() <= bin_size.get() as usize);
+    Ok(r)
 }
 
 #[cfg(test)]
@@ -449,7 +772,7 @@ mod test {
     fn test_packing_basics() -> Result<()> {
         // null cases
         for v in [1u32, 7].map(|v| NonZeroU32::new(v).unwrap()) {
-            assert_eq!(basic_packing(&[], v).len(), 0);
+            assert_eq!(basic_packing(&[], v, None).unwrap().len(), 0);
         }
         Ok(())
     }
@@ -460,13 +783,188 @@ mod test {
             serde_json::from_reader(flate2::read::GzDecoder::new(FCOS_CONTENTMETA))?;
         let total_size = contentmeta.iter().map(|v| v.size).sum::<u64>();
 
-        let packing = basic_packing(&contentmeta, NonZeroU32::new(MAX_CHUNKS).unwrap());
+        let packing =
+            basic_packing(&contentmeta, NonZeroU32::new(MAX_CHUNKS).unwrap(), None).unwrap();
         assert!(!contentmeta.is_empty());
         // We should fit into the assigned chunk size
         assert_eq!(packing.len() as u32, MAX_CHUNKS);
         // And verify that the sizes match
         let packed_total_size = packing_size(&packing);
         assert_eq!(total_size, packed_total_size);
+        Ok(())
+    }
+
+    fn create_manifest(prev_expected_structure: Vec<Vec<&str>>) -> oci_spec::image::ImageManifest {
+        let mut p = prev_expected_structure
+            .iter()
+            .map(|b| {
+                b.iter()
+                    .map(|p| p.split(".").collect::<Vec<&str>>()[0].to_string())
+                    .collect()
+            })
+            .collect();
+        let mut metadata_with_ostree_commit = vec![vec![String::from("ostree_commit")]];
+        metadata_with_ostree_commit.append(&mut p);
+
+        let config = oci_spec::image::DescriptorBuilder::default()
+            .media_type(oci_spec::image::MediaType::ImageConfig)
+            .size(7023)
+            .digest("sha256:imageconfig")
+            .build()
+            .expect("build config descriptor");
+
+        let layers: Vec<oci_spec::image::Descriptor> = metadata_with_ostree_commit
+            .iter()
+            .map(|l| {
+                oci_spec::image::DescriptorBuilder::default()
+                    .media_type(oci_spec::image::MediaType::ImageLayerGzip)
+                    .size(100)
+                    .digest(format!("sha256:{}", l.len()))
+                    .annotations(HashMap::from([(
+                        CONTENT_ANNOTATION.to_string(),
+                        l.join(","),
+                    )]))
+                    .build()
+                    .expect("build layer")
+            })
+            .collect();
+
+        let image_manifest = oci_spec::image::ImageManifestBuilder::default()
+            .schema_version(oci_spec::image::SCHEMA_VERSION)
+            .config(config)
+            .layers(layers)
+            .build()
+            .expect("build image manifest");
+        image_manifest
+    }
+
+    #[test]
+    fn test_advanced_packing() -> Result<()> {
+        //Step1 : Initial build (Packing sructure computed)
+        let contentmeta_v0: Vec<ObjectSourceMetaSized> = vec![
+            vec![1, u32::MAX, 100000],
+            vec![2, u32::MAX, 99999],
+            vec![3, 30, 99998],
+            vec![4, 100, 99997],
+            vec![10, 51, 1000],
+            vec![8, 50, 500],
+            vec![9, 1, 200],
+            vec![11, 100000, 199],
+            vec![6, 30, 2],
+            vec![7, 30, 1],
+        ]
+        .iter()
+        .map(|data| ObjectSourceMetaSized {
+            meta: ObjectSourceMeta {
+                identifier: RcStr::from(format!("pkg{}.0", data[0])),
+                name: RcStr::from(format!("pkg{}", data[0])),
+                srcid: RcStr::from(format!("srcpkg{}", data[0])),
+                change_time_offset: 0,
+                change_frequency: data[1],
+            },
+            size: data[2] as u64,
+        })
+        .collect();
+
+        let packing = basic_packing(
+            &contentmeta_v0.as_slice(),
+            NonZeroU32::new(6).unwrap(),
+            None,
+        )
+        .unwrap();
+        let structure: Vec<Vec<&str>> = packing
+            .iter()
+            .map(|bin| bin.iter().map(|pkg| &*pkg.meta.identifier).collect())
+            .collect();
+        let v0_expected_structure = vec![
+            vec!["pkg3.0"],
+            vec!["pkg4.0"],
+            vec!["pkg6.0", "pkg7.0", "pkg11.0"],
+            vec!["pkg9.0", "pkg8.0", "pkg10.0"],
+            vec!["pkg1.0", "pkg2.0"],
+            vec![],
+        ];
+        assert_eq!(structure, v0_expected_structure);
+
+        //Step 2: Derive packing structure from last build
+
+        let mut contentmeta_v1: Vec<ObjectSourceMetaSized> = contentmeta_v0;
+        //Upgrade pkg1.0 to 1.1
+        contentmeta_v1[0].meta.identifier = RcStr::from("pkg1.1");
+        //Remove pkg7
+        contentmeta_v1.remove(contentmeta_v1.len() - 1);
+        //Add pkg5
+        contentmeta_v1.push(ObjectSourceMetaSized {
+            meta: ObjectSourceMeta {
+                identifier: RcStr::from("pkg5.0"),
+                name: RcStr::from("pkg5"),
+                srcid: RcStr::from("srcpkg5"),
+                change_time_offset: 0,
+                change_frequency: 42,
+            },
+            size: 100000,
+        });
+
+        let image_manifest_v0 = create_manifest(v0_expected_structure);
+        let packing_derived = basic_packing(
+            &contentmeta_v1.as_slice(),
+            NonZeroU32::new(6).unwrap(),
+            Some(&image_manifest_v0),
+        )
+        .unwrap();
+        let structure_derived: Vec<Vec<&str>> = packing_derived
+            .iter()
+            .map(|bin| bin.iter().map(|pkg| &*pkg.meta.identifier).collect())
+            .collect();
+        let v1_expected_structure = vec![
+            vec!["pkg3.0"],
+            vec!["pkg4.0"],
+            vec!["pkg6.0", "pkg11.0"],
+            vec!["pkg9.0", "pkg8.0", "pkg10.0"],
+            vec!["pkg1.1", "pkg2.0"],
+            vec!["pkg5.0"],
+        ];
+
+        assert_eq!(structure_derived, v1_expected_structure);
+
+        //Step 3: Another update on derived where the pkg in the last bin updates
+
+        let mut contentmeta_v2: Vec<ObjectSourceMetaSized> = contentmeta_v1;
+        //Upgrade pkg5.0 to 5.1
+        contentmeta_v2[9].meta.identifier = RcStr::from("pkg5.1");
+        //Add pkg12
+        contentmeta_v2.push(ObjectSourceMetaSized {
+            meta: ObjectSourceMeta {
+                identifier: RcStr::from("pkg12.0"),
+                name: RcStr::from("pkg12"),
+                srcid: RcStr::from("srcpkg12"),
+                change_time_offset: 0,
+                change_frequency: 42,
+            },
+            size: 100000,
+        });
+
+        let image_manifest_v1 = create_manifest(v1_expected_structure);
+        let packing_derived = basic_packing(
+            &contentmeta_v2.as_slice(),
+            NonZeroU32::new(6).unwrap(),
+            Some(&image_manifest_v1),
+        )
+        .unwrap();
+        let structure_derived: Vec<Vec<&str>> = packing_derived
+            .iter()
+            .map(|bin| bin.iter().map(|pkg| &*pkg.meta.identifier).collect())
+            .collect();
+        let v2_expected_structure = vec![
+            vec!["pkg3.0"],
+            vec!["pkg4.0"],
+            vec!["pkg6.0", "pkg11.0"],
+            vec!["pkg9.0", "pkg8.0", "pkg10.0"],
+            vec!["pkg1.1", "pkg2.0"],
+            vec!["pkg5.1", "pkg12.0"],
+        ];
+
+        assert_eq!(structure_derived, v2_expected_structure);
         Ok(())
     }
 }

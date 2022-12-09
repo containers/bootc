@@ -1,7 +1,7 @@
 //! APIs for creating container images from OSTree commits
 
 use super::ocidir::{Layer, OciDir};
-use super::{ocidir, OstreeImageReference, Transport};
+use super::{ocidir, OstreeImageReference, Transport, CONTENT_ANNOTATION};
 use super::{ImageReference, SignatureSource, OSTREE_COMMIT_LABEL};
 use crate::chunking::{Chunk, Chunking, ObjectMetaSized};
 use crate::container::skopeo;
@@ -104,7 +104,7 @@ fn export_chunks(
     ociw: &mut OciDir,
     chunks: Vec<Chunk>,
     opts: &ExportOpts,
-) -> Result<Vec<(Layer, String)>> {
+) -> Result<Vec<(Layer, String, Vec<String>)>> {
     chunks
         .into_iter()
         .enumerate()
@@ -113,7 +113,7 @@ fn export_chunks(
             ostree_tar::export_chunk(repo, commit, chunk.content, &mut w)
                 .with_context(|| format!("Exporting chunk {i}"))?;
             let w = w.into_inner()?;
-            Ok((w.complete()?, chunk.name))
+            Ok((w.complete()?, chunk.name, chunk.packages))
         })
         .collect()
 }
@@ -151,11 +151,20 @@ fn export_chunked(
         .clone();
 
     // Add the ostree layer
-    ociw.push_layer(manifest, imgcfg, ostree_layer, description);
+    ociw.push_layer(manifest, imgcfg, ostree_layer, description, None);
     // Add the component/content layers
-    for (layer, name) in layers {
-        ociw.push_layer(manifest, imgcfg, layer, name.as_str());
+    for (layer, name, packages) in layers {
+        let mut annotation_component_layer = HashMap::new();
+        annotation_component_layer.insert(CONTENT_ANNOTATION.to_string(), packages.join(","));
+        ociw.push_layer(
+            manifest,
+            imgcfg,
+            layer,
+            name.as_str(),
+            Some(annotation_component_layer),
+        );
     }
+
     // This label (mentioned above) points to the last layer that is part of
     // the ostree commit.
     labels.insert(
@@ -167,6 +176,7 @@ fn export_chunked(
 
 /// Generate an OCI image from a given ostree root
 #[context("Building oci")]
+#[allow(clippy::too_many_arguments)]
 fn build_oci(
     repo: &ostree::Repo,
     rev: &str,
@@ -174,6 +184,7 @@ fn build_oci(
     tag: Option<&str>,
     config: &Config,
     opts: ExportOpts,
+    prior_build: Option<&oci_image::ImageManifest>,
     contentmeta: Option<crate::chunking::ObjectMetaSized>,
 ) -> Result<ImageReference> {
     if !ocidir_path.exists() {
@@ -209,7 +220,15 @@ fn build_oci(
     let mut manifest = ocidir::new_empty_manifest().build().unwrap();
 
     let chunking = contentmeta
-        .map(|meta| crate::chunking::Chunking::from_mapping(repo, commit, meta, opts.max_layers))
+        .map(|meta| {
+            crate::chunking::Chunking::from_mapping(
+                repo,
+                commit,
+                meta,
+                &opts.max_layers,
+                prior_build,
+            )
+        })
         .transpose()?;
     // If no chunking was provided, create a logical single chunk.
     let chunking = chunking
@@ -291,6 +310,7 @@ async fn build_impl(
     repo: &ostree::Repo,
     ostree_ref: &str,
     config: &Config,
+    prior_build: Option<&oci_image::ImageManifest>,
     opts: Option<ExportOpts>,
     contentmeta: Option<ObjectMetaSized>,
     dest: &ImageReference,
@@ -308,6 +328,7 @@ async fn build_impl(
             tag,
             config,
             opts,
+            prior_build,
             contentmeta,
         )?;
         None
@@ -323,6 +344,7 @@ async fn build_impl(
             None,
             config,
             opts,
+            prior_build,
             contentmeta,
         )?;
 
@@ -377,9 +399,19 @@ pub async fn encapsulate<S: AsRef<str>>(
     repo: &ostree::Repo,
     ostree_ref: S,
     config: &Config,
+    prior_build: Option<&oci_image::ImageManifest>,
     opts: Option<ExportOpts>,
     contentmeta: Option<ObjectMetaSized>,
     dest: &ImageReference,
 ) -> Result<String> {
-    build_impl(repo, ostree_ref.as_ref(), config, opts, contentmeta, dest).await
+    build_impl(
+        repo,
+        ostree_ref.as_ref(),
+        config,
+        prior_build,
+        opts,
+        contentmeta,
+        dest,
+    )
+    .await
 }
