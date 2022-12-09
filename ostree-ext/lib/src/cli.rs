@@ -584,7 +584,7 @@ async fn container_export(
         ..Default::default()
     };
     let pushed =
-        crate::container::encapsulate(repo, rev, &config, Some(opts), None, imgref).await?;
+        crate::container::encapsulate(repo, rev, &config, None, Some(opts), None, imgref).await?;
     println!("{}", pushed);
     Ok(())
 }
