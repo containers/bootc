@@ -505,7 +505,7 @@ impl ImageImporter {
         // Query for previous stored state
 
         let (previous_manifest_digest, previous_imageid) =
-            if let Some(previous_state) = query_image(&self.repo, &self.imgref)? {
+            if let Some(previous_state) = try_query_image_ref(&self.repo, &self.imgref.imgref)? {
                 // If the manifest digests match, we're done.
                 if previous_state.manifest_digest == manifest_digest {
                     return Ok(PrepareResult::AlreadyPresent(previous_state));
@@ -878,6 +878,26 @@ pub fn list_images(repo: &ostree::Repo) -> Result<Vec<String>> {
     refs.keys()
         .map(|imgname| refescape::unprefix_unescape_ref(IMAGE_PREFIX, imgname))
         .collect()
+}
+
+/// Attempt to query metadata for a pulled image; if it is corrupted,
+/// the error is printed to stderr and None is returned.
+fn try_query_image_ref(
+    repo: &ostree::Repo,
+    imgref: &ImageReference,
+) -> Result<Option<Box<LayeredImageState>>> {
+    let ostree_ref = &ref_for_image(imgref)?;
+    if let Some(merge_rev) = repo.resolve_rev(ostree_ref, true)? {
+        match query_image_commit(repo, merge_rev.as_str()) {
+            Ok(r) => Ok(Some(r)),
+            Err(e) => {
+                eprintln!("error: failed to query image commit: {e}");
+                Ok(None)
+            }
+        }
+    } else {
+        Ok(None)
+    }
 }
 
 /// Query metadata for a pulled image.
