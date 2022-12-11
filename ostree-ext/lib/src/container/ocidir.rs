@@ -13,7 +13,9 @@ use flate2::write::GzEncoder;
 use fn_error_context::context;
 use oci_image::MediaType;
 use oci_spec::image::{self as oci_image, Descriptor};
+use olpc_cjson::CanonicalFormatter;
 use openssl::hash::{Hasher, MessageDigest};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs::File;
@@ -114,7 +116,8 @@ pub fn write_json_blob<S: serde::Serialize>(
     media_type: oci_image::MediaType,
 ) -> Result<oci_image::DescriptorBuilder> {
     let mut w = BlobWriter::new(ocidir)?;
-    cjson::to_writer(&mut w, v).map_err(|e| anyhow!("{:?}", e))?;
+    let mut ser = serde_json::Serializer::with_formatter(&mut w, CanonicalFormatter::new());
+    v.serialize(&mut ser).context("Failed to serialize")?;
     let blob = w.complete()?;
     Ok(blob.descriptor().media_type(media_type))
 }
@@ -310,8 +313,10 @@ impl OciDir {
             };
 
         self.dir
-            .atomic_replace_with("index.json", |w| -> Result<()> {
-                cjson::to_writer(w, &index).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+            .atomic_replace_with("index.json", |mut w| -> Result<()> {
+                let mut ser =
+                    serde_json::Serializer::with_formatter(&mut w, CanonicalFormatter::new());
+                index.serialize(&mut ser).context("Failed to serialize")?;
                 Ok(())
             })?;
         Ok(manifest)
@@ -334,8 +339,12 @@ impl OciDir {
             .build()
             .unwrap();
         self.dir
-            .atomic_replace_with("index.json", |w| -> Result<()> {
-                cjson::to_writer(w, &index_data).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+            .atomic_replace_with("index.json", |mut w| -> Result<()> {
+                let mut ser =
+                    serde_json::Serializer::with_formatter(&mut w, CanonicalFormatter::new());
+                index_data
+                    .serialize(&mut ser)
+                    .context("Failed to serialize")?;
                 Ok(())
             })?;
         Ok(())

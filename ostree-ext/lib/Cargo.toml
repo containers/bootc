@@ -16,7 +16,7 @@ async-compression = { version = "0.3", features = ["gzip", "tokio"] }
 bitflags = "1"
 camino = "1.0.4"
 chrono = "0.4.19"
-cjson = "0.1.1"
+olpc-cjson = "0.1.1"
 clap = { version= "3.2", features = ["derive"] }
 clap_mangen = { version = "0.1", optional = true }
 cap-std-ext = "1.0"
