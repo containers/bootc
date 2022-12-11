@@ -16,7 +16,6 @@ use ostree_ext::ostree;
 use ostree_ext::sysroot::SysrootLock;
 use std::ffi::OsString;
 use std::os::unix::process::CommandExt;
-use tokio::sync::mpsc::Receiver;
 
 /// Perform an upgrade operation
 #[derive(Debug, Parser)]
@@ -131,51 +130,6 @@ pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootL
     Ok(sysroot)
 }
 
-/// Print the status of a layer fetch to stdout.
-pub(crate) async fn handle_layer_progress_print(
-    mut layers: Receiver<ostree_container::store::ImportProgress>,
-    mut layer_bytes: tokio::sync::watch::Receiver<Option<ostree_container::store::LayerProgress>>,
-) {
-    let style = indicatif::ProgressStyle::default_bar();
-    let pb = indicatif::ProgressBar::new(100);
-    pb.set_style(
-        style
-            .template("{prefix} {bytes} [{bar:20}] ({eta}) {msg}")
-            .unwrap(),
-    );
-    loop {
-        tokio::select! {
-            // Always handle layer changes first.
-            biased;
-            layer = layers.recv() => {
-                if let Some(l) = layer {
-                    if l.is_starting() {
-                        pb.set_position(0);
-                    } else {
-                        pb.finish();
-                    }
-                    pb.set_message(ostree_ext::cli::layer_progress_format(&l));
-                } else {
-                    // If the receiver is disconnected, then we're done
-                    break
-                };
-            },
-            r = layer_bytes.changed() => {
-                if r.is_err() {
-                    // If the receiver is disconnected, then we're done
-                    break
-                }
-                let bytes = layer_bytes.borrow();
-                if let Some(bytes) = &*bytes {
-                    pb.set_length(bytes.total);
-                    pb.set_position(bytes.fetched);
-                }
-            }
-
-        }
-    }
-}
-
 /// Wrapper for pulling a container image, wiring up status output.
 async fn pull(
     repo: &ostree::Repo,
@@ -192,14 +146,14 @@ async fn pull(
         PrepareResult::Ready(p) => p,
     };
     if let Some(warning) = prep.deprecated_warning() {
-        crate::cli::print_deprecated_warning(warning).await;
+        ostree_ext::cli::print_deprecated_warning(warning).await;
     }
-    crate::cli::print_layer_status(&prep);
+    ostree_ext::cli::print_layer_status(&prep);
     let printer = (!quiet).then(|| {
         let layer_progress = imp.request_progress();
         let layer_byte_progress = imp.request_layer_progress();
         tokio::task::spawn(async move {
-            handle_layer_progress_print(layer_progress, layer_byte_progress).await
+            ostree_ext::cli::handle_layer_progress_print(layer_progress, layer_byte_progress).await
         })
     });
     let import = imp.import(prep).await;
@@ -213,30 +167,6 @@ async fn pull(
         eprintln!("{msg}")
     }
     Ok(import)
-}
-
-/// Print to stdout how many layers are already stored versus need to be fetched, and
-/// their size.
-pub(crate) fn print_layer_status(prep: &ostree_container::store::PreparedImport) {
-    let (stored, to_fetch, to_fetch_size) =
-        prep.all_layers()
-            .fold((0u32, 0u32, 0u64), |(stored, to_fetch, sz), v| {
-                if v.commit.is_some() {
-                    (stored + 1, to_fetch, sz)
-                } else {
-                    (stored, to_fetch + 1, sz + v.size())
-                }
-            });
-    if to_fetch > 0 {
-        let size = glib::format_size(to_fetch_size);
-        println!("layers stored: {stored} needed: {to_fetch} ({size})")
-    }
-}
-
-/// Output a deprecation warning with a sleep time to ensure it's visible.
-pub(crate) async fn print_deprecated_warning(msg: &str) {
-    eprintln!("warning: {msg}");
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 }
 
 /// Stage (queue deployment of) a fetched container image.
