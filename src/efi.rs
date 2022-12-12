@@ -23,6 +23,9 @@ use crate::ostreeutil;
 use crate::util;
 use crate::util::CommandRunExt;
 
+/// Well-known paths to the ESP that may have been mounted external to us.
+pub(crate) const ESP_MOUNTS: &[&str] = &["boot/efi", "efi"];
+
 /// The ESP partition label on Fedora CoreOS derivatives
 pub(crate) const COREOS_ESP_PART_LABEL: &str = "EFI-SYSTEM";
 pub(crate) const ANACONDA_ESP_PART_LABEL: &str = "EFI\\x20System\\x20Partition";
@@ -34,7 +37,8 @@ pub(crate) struct Efi {
 
 impl Efi {
     fn esp_path(&self) -> Result<PathBuf> {
-        self.ensure_mounted_esp().map(|v| v.join("EFI"))
+        self.ensure_mounted_esp(Path::new("/"))
+            .map(|v| v.join("EFI"))
     }
 
     fn open_esp_optional(&self) -> Result<Option<openat::Dir>> {
@@ -44,17 +48,31 @@ impl Efi {
     }
 
     fn open_esp(&self) -> Result<openat::Dir> {
-        self.ensure_mounted_esp()?;
+        self.ensure_mounted_esp(Path::new("/"))?;
         let sysroot = openat::Dir::open("/")?;
         let esp = sysroot.sub_dir(&self.esp_path()?)?;
         Ok(esp)
     }
 
-    fn ensure_mounted_esp(&self) -> Result<PathBuf> {
+    fn ensure_mounted_esp(&self, root: &Path) -> Result<PathBuf> {
         let mut mountpoint = self.mountpoint.borrow_mut();
         if let Some(mountpoint) = mountpoint.as_deref() {
             return Ok(mountpoint.to_owned());
         }
+        for &mnt in ESP_MOUNTS {
+            let mnt = root.join(mnt);
+            if !mnt.exists() {
+                continue;
+            }
+            let st = nix::sys::statfs::statfs(&mnt)
+                .with_context(|| format!("statfs failed for {mnt:?}"))?;
+            if st.filesystem_type() != nix::sys::statfs::MSDOS_SUPER_MAGIC {
+                continue;
+            }
+            log::debug!("Reusing existing {mnt:?}");
+            return Ok(mnt);
+        }
+
         let esp_devices = [COREOS_ESP_PART_LABEL, ANACONDA_ESP_PART_LABEL]
             .into_iter()
             .map(|p| Path::new("/dev/disk/by-partlabel/").join(p));
@@ -74,6 +92,7 @@ impl Efi {
         if !status.success() {
             anyhow::bail!("Failed to mount {:?}", esp_device);
         }
+        log::debug!("Mounted at {tmppath:?}");
         *mountpoint = Some(tmppath);
         Ok(mountpoint.as_deref().unwrap().to_owned())
     }
@@ -160,7 +179,7 @@ impl Component for Efi {
     }
 
     // TODO: Remove dest_root; it was never actually used
-    fn install(&self, src_root: &openat::Dir, _dest_root: &str) -> Result<InstalledContent> {
+    fn install(&self, src_root: &openat::Dir, dest_root: &str) -> Result<InstalledContent> {
         let meta = if let Some(meta) = get_component_update(src_root, self)? {
             meta
         } else {
@@ -168,7 +187,7 @@ impl Component for Efi {
         };
         let srcdir_name = component_updatedirname(self);
         let ft = crate::filetree::FileTree::new_from_dir(&src_root.sub_dir(&srcdir_name)?)?;
-        let destdir = &self.ensure_mounted_esp()?;
+        let destdir = &self.ensure_mounted_esp(Path::new(dest_root))?;
         {
             let destd = openat::Dir::open(destdir)
                 .with_context(|| format!("opening dest dir {}", destdir.display()))?;
@@ -207,7 +226,7 @@ impl Component for Efi {
             .context("opening update dir")?;
         let updatef = filetree::FileTree::new_from_dir(&updated).context("reading update dir")?;
         let diff = currentf.diff(&updatef)?;
-        self.ensure_mounted_esp()?;
+        self.ensure_mounted_esp(Path::new("/"))?;
         let destdir = self.open_esp().context("opening EFI dir")?;
         validate_esp(&destdir)?;
         log::trace!("applying diff: {}", &diff);
@@ -311,7 +330,7 @@ impl Component for Efi {
             .filetree
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No filetree for installed EFI found!"))?;
-        self.ensure_mounted_esp()?;
+        self.ensure_mounted_esp(Path::new("/"))?;
         let efidir = self.open_esp()?;
         let diff = currentf.relative_diff_to(&efidir)?;
         let mut errs = Vec::new();
