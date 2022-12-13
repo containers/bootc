@@ -681,6 +681,9 @@ impl ImageImporter {
         }
         let deprecated_warning = prep.deprecated_warning().map(ToOwned::to_owned);
         self.unencapsulate_base(&mut prep, false).await?;
+        // TODO change the imageproxy API to ensure this happens automatically when
+        // the image reference is dropped
+        self.proxy.close_image(&self.proxy_img).await?;
         let ostree_commit = prep.ostree_commit_layer.commit.unwrap();
         let image_digest = prep.manifest_digest;
         Ok(Import {
@@ -706,6 +709,7 @@ impl ImageImporter {
         self.unencapsulate_base(&mut import, true).await?;
         let des_layers = self.proxy.get_layer_info(&self.proxy_img).await?;
         let mut proxy = self.proxy;
+        let proxy_img = self.proxy_img;
         let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
         let base_commit = import.ostree_commit_layer.commit.clone().unwrap();
 
@@ -724,7 +728,7 @@ impl ImageImporter {
                 }
                 let (blob, driver) = super::unencapsulate::fetch_layer_decompress(
                     &mut proxy,
-                    &self.proxy_img,
+                    &proxy_img,
                     &import.manifest,
                     &layer.layer,
                     self.layer_byte_progress.as_ref(),
@@ -754,6 +758,10 @@ impl ImageImporter {
                 }
             }
         }
+
+        // TODO change the imageproxy API to ensure this happens automatically when
+        // the image reference is dropped
+        proxy.close_image(&proxy_img).await?;
 
         // We're done with the proxy, make sure it didn't have any errors.
         proxy.finalize().await?;
