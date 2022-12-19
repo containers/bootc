@@ -262,7 +262,9 @@ pub fn merge_default_container_proxy_opts_with_isolation(
     config: &mut containers_image_proxy::ImageProxyConfig,
     isolation_user: Option<&str>,
 ) -> Result<()> {
-    if !config.auth_anonymous && config.authfile.is_none() {
+    let auth_specified =
+        config.auth_anonymous || config.authfile.is_some() || config.auth_data.is_some();
+    if !auth_specified {
         config.authfile = crate::globals::get_global_authfile_path()?;
         // If there's no authfile, then force on anonymous pulls to ensure
         // that the container stack doesn't try to find it in the standard
@@ -317,6 +319,10 @@ use crate::isolation;
 
 #[cfg(test)]
 mod tests {
+    use std::process::Command;
+
+    use containers_image_proxy::ImageProxyConfig;
+
     use super::*;
 
     const INVALID_IRS: &[&str] = &["", "foo://", "docker:blah", "registry:", "foo:bar"];
@@ -396,5 +402,29 @@ mod tests {
             OstreeImageReference::try_from("ostree-unverified-registry:quay.io/exampleos/blah")
                 .unwrap();
         assert_eq!(&ir_shorthand, &ir);
+    }
+
+    #[test]
+    fn test_merge_authopts() {
+        // Verify idempotence of authentication processing
+        let mut c = ImageProxyConfig::default();
+        let authf = std::fs::File::open("/dev/null").unwrap();
+        c.auth_data = Some(authf);
+        super::merge_default_container_proxy_opts_with_isolation(&mut c, None).unwrap();
+        assert!(!c.auth_anonymous);
+        assert!(c.authfile.is_none());
+        assert!(c.auth_data.is_some());
+        assert!(c.skopeo_cmd.is_none());
+        super::merge_default_container_proxy_opts_with_isolation(&mut c, None).unwrap();
+        assert!(!c.auth_anonymous);
+        assert!(c.authfile.is_none());
+        assert!(c.auth_data.is_some());
+        assert!(c.skopeo_cmd.is_none());
+
+        // Verify interaction with explicit isolation
+        let mut c = ImageProxyConfig::default();
+        c.skopeo_cmd = Some(Command::new("skopeo"));
+        super::merge_default_container_proxy_opts_with_isolation(&mut c, Some("foo")).unwrap();
+        assert_eq!(c.skopeo_cmd.unwrap().get_program(), "skopeo");
     }
 }
