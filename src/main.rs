@@ -50,6 +50,8 @@ fn run_cli() -> i32 {
         .filter(Some(crate_name!()), cli_opts.loglevel())
         .init();
 
+    log::trace!("executing cli");
+
     // Dispatch CLI subcommand.
     match cli_opts.run() {
         Ok(_) => libc::EXIT_SUCCESS,
