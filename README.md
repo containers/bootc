@@ -29,6 +29,16 @@ to provide a new kind of "bootable" base image, distinct from "application"
 base images.  A reference example available today is
 [Fedora CoreOS](https://quay.io/repository/fedora/fedora-coreos).
 
+## Status
+
+At the current time, bootc is in active development and is not quite
+considered ready for production use.  The command line interface
+*might* change.
+
+However, it heavily relies on a lot of underlying technologies which
+are tested, and the goal is to stabilize everything sometime in
+2023.
+
 ## Using bootc
 
 ### Installing
