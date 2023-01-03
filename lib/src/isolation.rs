@@ -36,7 +36,7 @@ pub(crate) fn unprivileged_subprocess(binary: &str, user: &str) -> Command {
         "--bounding-set",
         "-all",
         "--pdeathsig",
-        "SIGTERM",
+        "TERM",
         "--",
         binary,
     ]);
