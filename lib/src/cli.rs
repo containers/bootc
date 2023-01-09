@@ -75,6 +75,13 @@ pub(crate) struct ManOpts {
     pub(crate) directory: Utf8PathBuf,
 }
 
+/// Options for internal testing
+#[derive(Debug, clap::Subcommand)]
+pub(crate) enum TestingOpts {
+    /// Execute integration tests that require a privileged container
+    RunPrivilegedIntegration {},
+}
+
 /// Deploy and upgrade via bootable container images.
 #[derive(Debug, Parser)]
 #[clap(name = "bootc")]
@@ -87,6 +94,10 @@ pub(crate) enum Opt {
     Switch(SwitchOpts),
     /// Display status
     Status(StatusOpts),
+    /// Internal integration testing helpers.
+    #[clap(hide(true), subcommand)]
+    #[cfg(feature = "internal-testing-api")]
+    InternalTests(TestingOpts),
     #[clap(hide(true))]
     #[cfg(feature = "docgen")]
     Man(ManOpts),
@@ -303,6 +314,11 @@ where
         Opt::Upgrade(opts) => upgrade(opts).await,
         Opt::Switch(opts) => switch(opts).await,
         Opt::Status(opts) => super::status::status(opts).await,
+        #[cfg(feature = "internal-testing-api")]
+        Opt::InternalTests(ref opts) => {
+            ensure_self_unshared_mount_namespace().await?;
+            crate::privtests::run(opts).await
+        }
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
     }

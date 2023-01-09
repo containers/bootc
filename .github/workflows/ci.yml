@@ -50,7 +50,7 @@ jobs:
         with:
           key: "build"
       - name: Build
-        run: cargo build --release
+        run: cargo build --release --features internal-testing-api
       - name: Upload binary
         uses: actions/upload-artifact@v2
         with:
@@ -110,21 +110,22 @@ jobs:
         run: cargo fmt -- --check -l
       - name: cargo clippy (warnings)
         run: cargo clippy -- -D warnings
-  # privtest:
-  #   name: "Privileged testing"
-  #   needs: build
-  #   runs-on: ubuntu-latest
-  #   container:
-  #     image: quay.io/fedora/fedora-coreos:testing-devel
-  #     options: "--privileged --pid=host -v /run/systemd:/run/systemd -v /:/run/host"
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v3
-  #     - name: Download
-  #       uses: actions/download-artifact@v2
-  #       with:
-  #         name: bootc
-  #     - name: Install
-  #       run: install bootc /usr/bin && rm -v bootc
-  #     - name: Integration tests
-  #       run: ./ci/priv-integration.sh
+  privtest:
+    name: "Privileged testing"
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/fedora/fedora-coreos:testing-devel
+      options: "--privileged --pid=host -v /run/systemd:/run/systemd -v /:/run/host"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Download
+        uses: actions/download-artifact@v2
+        with:
+          name: bootc
+      - name: Install
+        run: install bootc /usr/bin && rm -v bootc
+      - name: Integration tests
+        run: bootc internal-tests run-privileged-integration
+

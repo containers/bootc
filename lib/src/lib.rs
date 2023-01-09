@@ -14,6 +14,8 @@
 #![deny(clippy::todo)]
 
 pub mod cli;
+#[cfg(feature = "internal-testing-api")]
+mod privtests;
 mod status;
 mod utils;
 
