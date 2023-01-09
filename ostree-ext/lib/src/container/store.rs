@@ -8,6 +8,7 @@
 use super::*;
 use crate::logging::system_repo_journal_print;
 use crate::refescape;
+use crate::utils::ResultExt;
 use anyhow::{anyhow, Context};
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
@@ -423,6 +424,29 @@ pub(crate) fn parse_manifest_layout<'a>(
     Ok((ExportLayout::V0, first_layer, Vec::new(), rest))
 }
 
+/// Find the timestamp of the manifest (or config), ignoring errors.
+fn timestamp_of_manifest_or_config(
+    manifest: &ImageManifest,
+    config: &ImageConfiguration,
+) -> Option<u64> {
+    // The manifest timestamp seems to not be widely used, but let's
+    // try it in preference to the config one.
+    let timestamp = manifest
+        .annotations()
+        .as_ref()
+        .and_then(|a| a.get(oci_image::ANNOTATION_CREATED))
+        .or_else(|| config.created().as_ref());
+    // Try to parse the timestamp
+    timestamp
+        .map(|t| {
+            chrono::DateTime::parse_from_rfc3339(t)
+                .context("Failed to parse manifest timestamp")
+                .map(|t| t.timestamp() as u64)
+        })
+        .transpose()
+        .log_err_default()
+}
+
 impl ImageImporter {
     /// Create a new importer.
     #[context("Creating importer")]
@@ -795,6 +819,8 @@ impl ImageImporter {
         metadata.insert(META_FILTERED, filtered);
         let metadata = metadata.to_variant();
 
+        let timestamp = timestamp_of_manifest_or_config(&import.manifest, &import.config)
+            .unwrap_or_else(|| chrono::offset::Utc::now().timestamp() as u64);
         // Destructure to transfer ownership to thread
         let repo = self.repo;
         let state = crate::tokio_util::spawn_blocking_cancellable_flatten(
@@ -866,7 +892,15 @@ impl ImageImporter {
                     .context("Writing mtree")?;
                 let merged_root = merged_root.downcast::<ostree::RepoFile>().unwrap();
                 let merged_commit = repo
-                    .write_commit(None, None, None, Some(&metadata), &merged_root, cancellable)
+                    .write_commit_with_time(
+                        None,
+                        None,
+                        None,
+                        Some(&metadata),
+                        &merged_root,
+                        timestamp as u64,
+                        cancellable,
+                    )
                     .context("Writing commit")?;
                 if !self.no_imgref {
                     repo.transaction_set_ref(None, &ostree_ref, Some(merged_commit.as_str()));
