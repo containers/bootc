@@ -82,15 +82,18 @@ impl DeploymentStatus {
 /// a more native Rust structure.
 fn get_deployments(
     sysroot: &SysrootLock,
-    booted_deployment: &ostree::Deployment,
-    booted: bool,
+    booted_deployment: Option<&ostree::Deployment>,
+    booted_only: bool,
 ) -> Result<Vec<(ostree::Deployment, DeploymentStatus)>> {
+    let deployment_is_booted = |d: &ostree::Deployment| -> bool {
+        booted_deployment.as_ref().map_or(false, |b| d.equal(b))
+    };
     sysroot
         .deployments()
         .into_iter()
-        .filter(|deployment| !booted || deployment.equal(booted_deployment))
+        .filter(|deployment| !booted_only || deployment_is_booted(deployment))
         .map(|deployment| -> Result<_> {
-            let booted = deployment.equal(booted_deployment);
+            let booted = deployment_is_booted(&deployment);
             let status = DeploymentStatus::from_deployment(&deployment, booted)?;
             Ok((deployment, status))
         })
@@ -101,9 +104,9 @@ fn get_deployments(
 pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     let sysroot = super::cli::get_locked_sysroot().await?;
     let repo = &sysroot.repo().unwrap();
-    let booted_deployment = &sysroot.require_booted_deployment()?;
+    let booted_deployment = sysroot.booted_deployment();
 
-    let deployments = get_deployments(&sysroot, booted_deployment, opts.booted)?;
+    let deployments = get_deployments(&sysroot, booted_deployment.as_ref(), opts.booted)?;
     // If we're in JSON mode, then convert the ostree data into Rust-native
     // structures that can be serialized.
     if opts.json {
