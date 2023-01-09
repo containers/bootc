@@ -14,6 +14,8 @@ old_image=quay.io/cgwalters/fcos:unchunked
 imgref=ostree-unverified-registry:${image}
 stateroot=testos
 
+cd $(mktemp -d -p /var/tmp)
+
 set -x
 
 if test '!' -e "${sysroot}/ostree"; then
@@ -76,5 +78,33 @@ echo "ok pulled from containers storage"
 ostree-ext-cli container compare ${imgref} ${imgref} > compare.txt
 grep "Removed layers: 0  Size: 0 bytes" compare.txt
 grep "Added layers: 0  Size: 0 bytes" compare.txt
+
+mkdir build
+cd build
+cat >Dockerfile << EOF
+FROM ${image}
+RUN touch /usr/share/somefile
+EOF
+systemd-run -dP --wait podman build -t localhost/fcos-derived .
+derived_img=oci:/var/tmp/derived.oci
+systemd-run -dP --wait skopeo copy containers-storage:localhost/fcos-derived "${derived_img}"
+
+# Prune to reset state
+ostree refs ostree/container/image --delete
+
+repo="${sysroot}/ostree/repo"
+images=$(ostree container image list --repo "${repo}" | wc -l)
+test "${images}" -eq 1
+ostree-ext-cli container image deploy --sysroot "${sysroot}" \
+        --stateroot "${stateroot}" --imgref ostree-unverified-image:"${derived_img}"
+imgref=$(ostree refs --repo=${repo} ostree/container/image | head -1)
+img_commit=$(ostree --repo=${repo} rev-parse ostree/container/image/${imgref})
+ostree-ext-cli container image remove --repo "${repo}" "${derived_img}"
+
+ostree-ext-cli container image deploy --sysroot "${sysroot}" \
+        --stateroot "${stateroot}" --imgref ostree-unverified-image:"${derived_img}"
+img_commit2=$(ostree --repo=${repo} rev-parse ostree/container/image/${imgref})
+test "${img_commit}" = "${img_commit2}"
+echo "ok deploy derived container identical revs"
 
 echo ok privileged integration

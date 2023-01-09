@@ -151,7 +151,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: quay.io/fedora/fedora-coreos:testing-devel
-      options: "--privileged --pid=host -v /run/systemd:/run/systemd -v /:/run/host"
+      options: "--privileged --pid=host -v /var/tmp:/var/tmp -v /run/dbus:/run/dbus -v /run/systemd:/run/systemd -v /:/run/host"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
