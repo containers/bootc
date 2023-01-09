@@ -21,7 +21,10 @@ serde_json = "1.0.64"
 tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1.13.0" }
 tokio-util = { features = ["io-util"], version = "0.7" }
 tracing = "0.1"
+tempfile = "3.3.0"
+xshell = { version = "0.2", optional = true }
 
 [features]
+default = []
 docgen = ["clap_mangen"]
-
+internal-testing-api = ["xshell"]
