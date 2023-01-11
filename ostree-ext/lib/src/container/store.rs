@@ -274,6 +274,7 @@ pub(crate) fn query_layer(
     })
 }
 
+#[context("Reading manifest data from commit")]
 fn manifest_data_from_commitmeta(
     commit_meta: &glib::VariantDict,
 ) -> Result<(oci_image::ImageManifest, String)> {
@@ -332,6 +333,7 @@ fn layer_from_diffid<'a>(
     })
 }
 
+#[context("Parsing manifest layout")]
 pub(crate) fn parse_manifest_layout<'a>(
     manifest: &'a ImageManifest,
     config: &ImageConfiguration,
@@ -413,6 +415,7 @@ pub(crate) fn parse_manifest_layout<'a>(
 
 impl ImageImporter {
     /// Create a new importer.
+    #[context("Creating importer")]
     pub async fn new(
         repo: &ostree::Repo,
         imgref: &OstreeImageReference,
@@ -644,9 +647,7 @@ impl ImageImporter {
                     let mut importer = crate::tar::Importer::new_for_commit(&repo, remote);
                     let blob = tokio_util::io::SyncIoBridge::new(blob);
                     let mut archive = tar::Archive::new(blob);
-                    importer
-                        .import_commit(&mut archive, Some(cancellable))
-                        .context("Importing commit layer")?;
+                    importer.import_commit(&mut archive, Some(cancellable))?;
                     let commit = importer.finish_import_commit();
                     if write_refs {
                         repo.transaction_set_ref(None, &target_ref, Some(commit.as_str()));
@@ -912,6 +913,7 @@ fn try_query_image_ref(
 }
 
 /// Query metadata for a pulled image.
+#[context("Querying image {imgref}")]
 pub fn query_image_ref(
     repo: &ostree::Repo,
     imgref: &ImageReference,
@@ -974,6 +976,7 @@ fn manifest_for_image(repo: &ostree::Repo, imgref: &ImageReference) -> Result<Im
 }
 
 /// Copy a downloaded image from one repository to another.
+#[context("Copying image")]
 pub async fn copy(
     src_repo: &ostree::Repo,
     dest_repo: &ostree::Repo,
@@ -1012,6 +1015,7 @@ pub async fn copy(
 
 /// Iterate over deployment commits, returning the manifests from
 /// commits which point to a container image.
+#[context("Listing deployment manifests")]
 fn list_container_deployment_manifests(
     repo: &ostree::Repo,
     cancellable: Option<&gio::Cancellable>,
