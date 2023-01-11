@@ -554,6 +554,7 @@ impl ImageImporter {
     }
 
     /// Extract the base ostree commit.
+    #[context("Unencapsulating base")]
     pub(crate) async fn unencapsulate_base(
         &mut self,
         import: &mut store::PreparedImport,
@@ -643,7 +644,9 @@ impl ImageImporter {
                     let mut importer = crate::tar::Importer::new_for_commit(&repo, remote);
                     let blob = tokio_util::io::SyncIoBridge::new(blob);
                     let mut archive = tar::Archive::new(blob);
-                    importer.import_commit(&mut archive, Some(cancellable))?;
+                    importer
+                        .import_commit(&mut archive, Some(cancellable))
+                        .context("Importing commit layer")?;
                     let commit = importer.finish_import_commit();
                     if write_refs {
                         repo.transaction_set_ref(None, &target_ref, Some(commit.as_str()));
