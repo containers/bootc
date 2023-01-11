@@ -222,6 +222,7 @@ impl Importer {
     }
 
     /// Import a metadata object.
+    #[context("Importing metadata object")]
     fn import_metadata<R: std::io::Read>(
         &mut self,
         entry: tar::Entry<R>,
@@ -249,6 +250,7 @@ impl Importer {
     }
 
     /// Import a content object, large regular file flavour.
+    #[context("Importing regfile")]
     fn import_large_regfile_object<R: std::io::Read>(
         &mut self,
         mut entry: tar::Entry<R>,
@@ -286,6 +288,7 @@ impl Importer {
     }
 
     /// Import a content object, small regular file flavour.
+    #[context("Importing regfile small")]
     fn import_small_regfile_object<R: std::io::Read>(
         &mut self,
         mut entry: tar::Entry<R>,
@@ -313,6 +316,7 @@ impl Importer {
     }
 
     /// Import a content object, symlink flavour.
+    #[context("Importing symlink")]
     fn import_symlink_object<R: std::io::Read>(
         &mut self,
         entry: tar::Entry<R>,
@@ -602,6 +606,7 @@ impl Importer {
         Ok(())
     }
 
+    #[context("Importing objects")]
     pub(crate) fn import_objects(
         &mut self,
         archive: &mut tar::Archive<impl Read + Send + Unpin>,
@@ -614,6 +619,7 @@ impl Importer {
         self.import_objects_impl(ents, cancellable)
     }
 
+    #[context("Importing commit")]
     pub(crate) fn import_commit(
         &mut self,
         archive: &mut tar::Archive<impl Read + Send + Unpin>,
