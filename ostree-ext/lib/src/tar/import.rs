@@ -670,12 +670,14 @@ impl Importer {
 
             // Now that we have both the commit and detached metadata in memory, verify that
             // the signatures in the detached metadata correctly sign the commit.
-            self.repo.signature_verify_commit_data(
-                remote,
-                &commit.data_as_bytes(),
-                &commitmeta.data_as_bytes(),
-                ostree::RepoVerifyFlags::empty(),
-            )?;
+            self.repo
+                .signature_verify_commit_data(
+                    remote,
+                    &commit.data_as_bytes(),
+                    &commitmeta.data_as_bytes(),
+                    ostree::RepoVerifyFlags::empty(),
+                )
+                .context("Verifying ostree commit in tar stream")?;
 
             self.repo.mark_commit_partial(&checksum, true)?;
 
