@@ -208,6 +208,11 @@ impl PreparedImport {
             .chain(self.layers.iter())
     }
 
+    /// Retrieve the container image version.
+    pub fn version(&self) -> Option<&str> {
+        super::version_for_config(&self.config)
+    }
+
     /// If this image is using any deprecated features, return a message saying so.
     pub fn deprecated_warning(&self) -> Option<&'static str> {
         match self.export_layout {
@@ -343,7 +348,7 @@ pub(crate) fn parse_manifest_layout<'a>(
     Vec<&'a Descriptor>,
     Vec<&'a Descriptor>,
 )> {
-    let config_labels = config.config().as_ref().and_then(|c| c.labels().as_ref());
+    let config_labels = super::labels_of(config);
     let bootable_key = *ostree::METADATA_KEY_BOOTABLE;
     let bootable = config_labels.map_or(false, |l| l.contains_key(bootable_key));
     if !bootable {
