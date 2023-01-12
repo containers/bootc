@@ -4,7 +4,7 @@ use cap_std::fs::{Dir, DirBuilder};
 use once_cell::sync::Lazy;
 use ostree::cap_std;
 use ostree_ext::chunking::ObjectMetaSized;
-use ostree_ext::container::{store, ExportLayout};
+use ostree_ext::container::store;
 use ostree_ext::container::{
     Config, ExportOpts, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
@@ -442,10 +442,7 @@ fn skopeo_inspect_config(imgref: &str) -> Result<oci_spec::image::ImageConfigura
     Ok(serde_json::from_slice(&out.stdout)?)
 }
 
-async fn impl_test_container_import_export(
-    export_format: ExportLayout,
-    chunked: bool,
-) -> Result<()> {
+async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
     let fixture = Fixture::new_v1()?;
     let testrev = fixture
         .srcrepo()
@@ -476,7 +473,6 @@ async fn impl_test_container_import_export(
     let opts = ExportOpts {
         copy_meta_keys: vec!["buildsys.checksum".to_string()],
         copy_meta_opt_keys: vec!["nosuchvalue".to_string()],
-        format: export_format,
         ..Default::default()
     };
     let digest = ostree_ext::container::encapsulate(
@@ -611,18 +607,14 @@ async fn impl_test_container_import_export(
 }
 
 /// Parse a chunked container image and validate its structure; particularly
-fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Result<()> {
+fn validate_chunked_structure(oci_path: &Utf8Path) -> Result<()> {
     use tar::EntryType::Link;
 
     let d = Dir::open_ambient_dir(oci_path, cap_std::ambient_authority())?;
     let d = ocidir::OciDir::open(&d)?;
     let manifest = d.read_manifest()?;
     assert_eq!(manifest.layers().len(), *CONTENTS_V0_LEN);
-    let ostree_layer = match format {
-        ExportLayout::V0 => manifest.layers().last(),
-        ExportLayout::V1 => manifest.layers().first(),
-    }
-    .unwrap();
+    let ostree_layer = manifest.layers().first().unwrap();
     let mut ostree_layer_blob = d
         .read_blob(ostree_layer)
         .map(BufReader::new)
@@ -632,10 +624,7 @@ fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Resu
     validate_tar_v1_metadata(&mut ostree_layer_blob)?;
 
     // This layer happens to be first
-    let pkgdb_layer_offset = match format {
-        ExportLayout::V0 => 0,
-        ExportLayout::V1 => 1,
-    };
+    let pkgdb_layer_offset = 1;
     let pkgdb_layer = &manifest.layers()[pkgdb_layer_offset];
     let mut pkgdb_blob = d
         .read_blob(pkgdb_layer)
@@ -657,7 +646,6 @@ fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Resu
 
 #[tokio::test]
 async fn test_container_chunked() -> Result<()> {
-    let format = ExportLayout::V1;
     let nlayers = *CONTENTS_V0_LEN - 1;
     let mut fixture = Fixture::new_v1()?;
 
@@ -671,7 +659,7 @@ async fn test_container_chunked() -> Result<()> {
         ImageReference {
             transport: Transport::OciDir,
             name,
-        } => validate_chunked_structure(Utf8Path::new(name), format).unwrap(),
+        } => validate_chunked_structure(Utf8Path::new(name)).unwrap(),
         _ => unreachable!(),
     };
 
@@ -681,11 +669,7 @@ async fn test_container_chunked() -> Result<()> {
         store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         store::PrepareResult::Ready(r) => r,
     };
-    assert_eq!(
-        format == ExportLayout::V0,
-        prep.deprecated_warning().is_some()
-    );
-    assert_eq!(prep.export_layout, format);
+    assert!(prep.deprecated_warning().is_none());
     assert_eq!(prep.version(), Some("42.0"));
     let digest = prep.manifest_digest.clone();
     assert!(prep.ostree_commit_layer.commit.is_none());
@@ -891,12 +875,8 @@ async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Res
 
 #[tokio::test]
 async fn test_container_import_export_v1() {
-    impl_test_container_import_export(ExportLayout::V1, false)
-        .await
-        .unwrap();
-    impl_test_container_import_export(ExportLayout::V1, true)
-        .await
-        .unwrap();
+    impl_test_container_import_export(false).await.unwrap();
+    impl_test_container_import_export(true).await.unwrap();
 }
 
 /// But layers work via the container::write module.
