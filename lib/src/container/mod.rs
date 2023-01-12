@@ -28,6 +28,7 @@
 use anyhow::anyhow;
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::str::FromStr;
 
@@ -72,6 +73,9 @@ pub enum SignatureSource {
     /// NOT RECOMMENDED.  Fetches will defer to the `containers-policy.json` default which is usually `insecureAcceptAnything`.
     ContainerPolicyAllowInsecure,
 }
+
+/// A commonly used pre-OCI label for versions.
+pub const LABEL_VERSION: &str = "version";
 
 /// Combination of a signature verification mechanism, and a standard container image reference.
 ///
@@ -290,6 +294,25 @@ pub fn merge_default_container_proxy_opts_with_isolation(
         config.skopeo_cmd = Some(cmd);
     }
     Ok(())
+}
+
+/// Convenience helper to return the labels, if present.
+pub(crate) fn labels_of(
+    config: &oci_spec::image::ImageConfiguration,
+) -> Option<&HashMap<String, String>> {
+    config.config().as_ref().and_then(|c| c.labels().as_ref())
+}
+
+/// Retrieve the version number from an image configuration.
+pub fn version_for_config(config: &oci_spec::image::ImageConfiguration) -> Option<&str> {
+    if let Some(labels) = labels_of(config) {
+        for k in [oci_spec::image::ANNOTATION_VERSION, LABEL_VERSION] {
+            if let Some(v) = labels.get(k) {
+                return Some(v.as_str());
+            }
+        }
+    }
+    None
 }
 
 pub mod deploy;
