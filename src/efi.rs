@@ -5,7 +5,6 @@
  */
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::prelude::*;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
@@ -13,8 +12,6 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use openat_ext::OpenatDirExt;
-
-use chrono::prelude::*;
 
 use crate::component::*;
 use crate::filetree;
@@ -267,56 +264,17 @@ impl Component for Efi {
             Command::new("mv").args(&[&efisrc, &dest_efidir]).run()?;
         }
 
-        let src_efidir = openat::Dir::open(&dest_efidir)?;
         // Query the rpm database and list the package and build times for all the
         // files in the EFI system partition. If any files are not owned it is considered
         // and error condition.
-        let rpmout = {
-            let mut c = ostreeutil::rpm_cmd(sysroot_path);
-            c.args(&["-q", "--queryformat", "%{nevra},%{buildtime} ", "-f"]);
-            c.args(util::filenames(&src_efidir)?.drain().map(|mut f| {
-                f.insert_str(0, "/boot/efi/EFI/");
-                f
-            }));
-            c
-        }
-        .output()?;
+        let mut rpmout = util::rpm_query(sysroot_path, &dest_efidir)?;
+        let rpmout = rpmout.output()?;
         if !rpmout.status.success() {
             std::io::stderr().write_all(&rpmout.stderr)?;
             bail!("Failed to invoke rpm -qf");
         }
-        let pkgs = std::str::from_utf8(&rpmout.stdout)?
-            .split_whitespace()
-            .map(|s| -> Result<_> {
-                let parts: Vec<_> = s.splitn(2, ',').collect();
-                let name = parts[0];
-                if let Some(ts) = parts.get(1) {
-                    let nt = NaiveDateTime::parse_from_str(ts, "%s")
-                        .context("Failed to parse rpm buildtime")?;
-                    Ok((name, DateTime::<Utc>::from_utc(nt, Utc)))
-                } else {
-                    bail!("Failed to parse: {}", s);
-                }
-            })
-            .collect::<Result<BTreeMap<&str, DateTime<Utc>>>>()?;
-        if pkgs.is_empty() {
-            bail!("Failed to find any RPM packages matching files in source efidir");
-        }
-        let timestamps: BTreeSet<&DateTime<Utc>> = pkgs.values().collect();
-        // Unwrap safety: We validated pkgs has at least one value above
-        let largest_timestamp = timestamps.iter().last().unwrap();
-        let version = pkgs.keys().fold("".to_string(), |mut s, n| {
-            if !s.is_empty() {
-                s.push(',');
-            }
-            s.push_str(n);
-            s
-        });
 
-        let meta = ContentMetadata {
-            timestamp: **largest_timestamp,
-            version,
-        };
+        let meta = util::parse_rpm_metadata(rpmout.stdout)?;
         write_update_metadata(sysroot_path, self, &meta)?;
         Ok(meta)
     }

@@ -1,10 +1,15 @@
 use std::collections::HashSet;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use openat_ext::OpenatDirExt;
 
 use std::path::Path;
 use std::process::Command;
+
+use crate::model::*;
+use crate::ostreeutil;
+use chrono::prelude::*;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) trait CommandRunExt {
     fn run(&mut self) -> Result<()>;
@@ -82,4 +87,60 @@ pub(crate) fn ensure_writable_mount<P: AsRef<Path>>(p: P) -> Result<()> {
         anyhow::bail!("Failed to remount {:?} writable", p);
     }
     Ok(())
+}
+
+/// Parse the output of `rpm -q`
+pub(crate) fn parse_rpm_metadata(stdout: Vec<u8>) -> Result<ContentMetadata> {
+    let pkgs = std::str::from_utf8(&stdout)?
+        .split_whitespace()
+        .map(|s| -> Result<_> {
+            let parts: Vec<_> = s.splitn(2, ',').collect();
+            let name = parts[0];
+            if let Some(ts) = parts.get(1) {
+                let nt = NaiveDateTime::parse_from_str(ts, "%s")
+                    .context("Failed to parse rpm buildtime")?;
+                Ok((name, DateTime::<Utc>::from_utc(nt, Utc)))
+            } else {
+                bail!("Failed to parse: {}", s);
+            }
+        })
+        .collect::<Result<BTreeMap<&str, DateTime<Utc>>>>()?;
+    if pkgs.is_empty() {
+        bail!("Failed to find any RPM packages matching files in source efidir");
+    }
+    let timestamps: BTreeSet<&DateTime<Utc>> = pkgs.values().collect();
+    // Unwrap safety: We validated pkgs has at least one value above
+    let largest_timestamp = timestamps.iter().last().unwrap();
+    let version = pkgs.keys().fold("".to_string(), |mut s, n| {
+        if !s.is_empty() {
+            s.push(',');
+        }
+        s.push_str(n);
+        s
+    });
+    Ok(ContentMetadata {
+        timestamp: **largest_timestamp,
+        version,
+    })
+}
+
+/// Query the rpm database and list the package and build times, for all the
+/// files in the EFI system partition, or for grub2-install file
+pub(crate) fn rpm_query(sysroot_path: &str, path: &Path) -> Result<Command> {
+    let mut c = ostreeutil::rpm_cmd(sysroot_path);
+    c.args(&["-q", "--queryformat", "%{nevra},%{buildtime} ", "-f"]);
+
+    match path.file_name().expect("filename").to_str() {
+        Some("EFI") => {
+            let efidir = openat::Dir::open(path)?;
+            c.args(filenames(&efidir)?.drain().map(|mut f| {
+                f.insert_str(0, "/boot/efi/EFI/");
+                f
+            }));
+        }
+        _ => {
+            bail!("Unsupported file/directory {:?}", path)
+        }
+    }
+    Ok(c)
 }
