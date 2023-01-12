@@ -656,15 +656,12 @@ fn validate_chunked_structure(oci_path: &Utf8Path, format: ExportLayout) -> Resu
 }
 
 #[tokio::test]
-async fn test_container_chunked_v1() -> Result<()> {
-    impl_test_container_chunked(ExportLayout::V1).await
-}
-
-async fn impl_test_container_chunked(format: ExportLayout) -> Result<()> {
+async fn test_container_chunked() -> Result<()> {
+    let format = ExportLayout::V1;
     let nlayers = *CONTENTS_V0_LEN - 1;
     let mut fixture = Fixture::new_v1()?;
 
-    let (imgref, expected_digest) = fixture.export_container(format).await.unwrap();
+    let (imgref, expected_digest) = fixture.export_container().await.unwrap();
     let imgref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref,
@@ -715,7 +712,7 @@ r usr/bin/bash bash-v0
         .update(FileDef::iter_from(ADDITIONS), std::iter::empty())
         .context("Failed to update")?;
 
-    let expected_digest = fixture.export_container(format).await.unwrap().1;
+    let expected_digest = fixture.export_container().await.unwrap().1;
     assert_ne!(digest, expected_digest);
 
     let mut imp =
@@ -732,20 +729,8 @@ r usr/bin/bash bash-v0
     let (first, second) = (to_fetch[0], to_fetch[1]);
     assert!(first.0.commit.is_none());
     assert!(second.0.commit.is_none());
-    match format {
-        ExportLayout::V0 => {
-            assert_eq!(first.1, "bash");
-            assert!(
-                second.1.starts_with("ostree export of commit"),
-                "{}",
-                second.1
-            );
-        }
-        ExportLayout::V1 => {
-            assert_eq!(first.1, "testlink");
-            assert_eq!(second.1, "bash");
-        }
-    }
+    assert_eq!(first.1, "testlink");
+    assert_eq!(second.1, "bash");
 
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
     let n = store::count_layer_references(fixture.destrepo())? as i64;
@@ -839,7 +824,7 @@ r usr/bin/bash bash-v0
 async fn test_container_var_content() -> Result<()> {
     let fixture = Fixture::new_v1()?;
 
-    let imgref = fixture.export_container(ExportLayout::V1).await.unwrap().0;
+    let imgref = fixture.export_container().await.unwrap().0;
     let imgref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref,
@@ -1130,7 +1115,7 @@ async fn test_container_write_derive() -> Result<()> {
 #[tokio::test]
 async fn test_container_write_derive_sysroot_hardlink() -> Result<()> {
     let fixture = Fixture::new_v1()?;
-    let baseimg = &fixture.export_container(ExportLayout::V1).await?.0;
+    let baseimg = &fixture.export_container().await?.0;
     let basepath = &match baseimg.transport {
         Transport::OciDir => fixture.path.join(baseimg.name.as_str()),
         _ => unreachable!(),
@@ -1223,7 +1208,7 @@ async fn test_old_code_parses_new_export() -> Result<()> {
         return Ok(());
     }
     let fixture = Fixture::new_v1()?;
-    let imgref = fixture.export_container(ExportLayout::V1).await?.0;
+    let imgref = fixture.export_container().await?.0;
     let imgref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,
         imgref,
