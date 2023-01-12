@@ -689,6 +689,7 @@ async fn impl_test_container_chunked(format: ExportLayout) -> Result<()> {
         prep.deprecated_warning().is_some()
     );
     assert_eq!(prep.export_layout, format);
+    assert_eq!(prep.version(), Some("42.0"));
     let digest = prep.manifest_digest.clone();
     assert!(prep.ostree_commit_layer.commit.is_none());
     assert_eq!(prep.ostree_layers.len(), nlayers as usize);
