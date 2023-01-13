@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use clap::Parser;
+use fn_error_context::context;
 use ostree::{gio, glib};
 use ostree_container::store::LayeredImageState;
 use ostree_container::store::PrepareResult;
@@ -133,6 +134,7 @@ async fn ensure_self_unshared_mount_namespace() -> Result<()> {
 
 /// Acquire a locked sysroot.
 /// TODO drain this and the above into SysrootLock
+#[context("Acquiring sysroot")]
 pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootLock> {
     let sysroot = ostree::Sysroot::new_default();
     sysroot.set_mount_namespace_in_use();
@@ -142,6 +144,7 @@ pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootL
 }
 
 /// Wrapper for pulling a container image, wiring up status output.
+#[context("Pulling")]
 async fn pull(
     repo: &ostree::Repo,
     imgref: &OstreeImageReference,
@@ -181,6 +184,7 @@ async fn pull(
 }
 
 /// Stage (queue deployment of) a fetched container image.
+#[context("Staging")]
 async fn stage(
     sysroot: &SysrootLock,
     stateroot: &str,
@@ -204,6 +208,7 @@ async fn stage(
 }
 
 /// A few process changes that need to be made for writing.
+#[context("Preparing for write")]
 async fn prepare_for_write() -> Result<()> {
     ensure_self_unshared_mount_namespace().await?;
     ostree_ext::selinux::verify_install_domain()?;
@@ -211,6 +216,7 @@ async fn prepare_for_write() -> Result<()> {
 }
 
 /// Implementation of the `bootc upgrade` CLI command.
+#[context("Upgrading")]
 async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     prepare_for_write().await?;
     let sysroot = &get_locked_sysroot().await?;
@@ -250,6 +256,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
 }
 
 /// Implementation of the `bootc switch` CLI command.
+#[context("Switching")]
 async fn switch(opts: SwitchOpts) -> Result<()> {
     prepare_for_write().await?;
 
