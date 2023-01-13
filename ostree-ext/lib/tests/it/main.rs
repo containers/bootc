@@ -488,7 +488,10 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
     assert!(srcoci_path.exists());
 
     let inspect = skopeo_inspect(&srcoci_imgref.to_string())?;
+    // Legacy path includes this
     assert!(inspect.contains(r#""version": "42.0""#));
+    // Also include the new standard version
+    assert!(inspect.contains(r#""org.opencontainers.image.version": "42.0""#));
     assert!(inspect.contains(r#""foo": "bar""#));
     assert!(inspect.contains(r#""test": "value""#));
     assert!(inspect.contains(
