@@ -16,6 +16,7 @@
 pub mod cli;
 #[cfg(feature = "internal-testing-api")]
 mod privtests;
+mod reexec;
 mod status;
 mod utils;
 
