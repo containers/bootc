@@ -12,6 +12,8 @@ cd $(mktemp -d)
 
 case "${AUTOPKGTEST_REBOOT_MARK:-}" in
   "")
+    bootc status > status.txt
+    grep 'Version:' status.txt
     bootc status --json > status.json
     image=$(jq -r '.[0].image.image' < status.json)
     echo "booted into $image"
