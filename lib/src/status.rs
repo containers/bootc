@@ -120,7 +120,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
 
     // We're not writing to JSON; iterate over and print.
     for (deployment, info) in deployments {
-        let booted_display = info.booted.then(|| "* ").unwrap_or(" ");
+        let booted_display = if info.booted { "* " } else { " " };
         let image: Option<OstreeImageReference> = info.image.as_ref().map(|i| i.clone().into());
 
         let commit = info.checksum;
