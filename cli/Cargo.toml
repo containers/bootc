@@ -7,6 +7,7 @@ repository = "https://github.com/cgwalters/bootc"
 readme = "README.md"
 publish = false
 rust-version = "1.63.0"
+default-run = "bootc"
 
 # See https://github.com/coreos/cargo-vendor-filterer
 [package.metadata.vendor-filter]
@@ -17,7 +18,7 @@ platforms = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "powerpc64
 
 [dependencies]
 anyhow = "1.0"
-bootc-lib = { path = "../lib" }
+bootc-lib = { version = "0.1", path = "../lib" }
 clap = "3.2"
 libc = "0.2.92"
 tokio = { version = "1", features = ["macros"] }

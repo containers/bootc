@@ -1,0 +1,36 @@
+# This is an unused WIP.  Maybe we'll use it in the future
+# name: Packaging
+
+# permissions:
+#   actions: read
+
+# on:
+#   push:
+#     branches: [main]
+#   pull_request:
+#     branches: [main]
+#     types: [labeled, opened, synchronize, reopened]
+#   workflow_dispatch: {}
+
+# jobs:
+#   srpm:
+#     if: ${{ contains(github.event.pull_request.labels.*.name, 'ci/full') }}
+#     runs-on: ubuntu-latest
+#     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
+#     steps:
+#       - uses: actions/checkout@v3
+#       - name: Mark git checkout as safe
+#         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+#       - name: Cache Dependencies
+#         uses: Swatinem/rust-cache@v2
+#         with:
+#           key: "srpm"
+#       - name: Install vendor tool
+#         run: cargo install cargo-vendor-filterer
+#       - name: Build
+#         run: cargo xtask package-srpm
+#       - name: Upload
+#         uses: actions/upload-artifact@v2
+#         with:
+#           name: bootc-srpm
+#           path: target/*.src.rpm
