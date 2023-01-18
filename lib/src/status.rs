@@ -131,13 +131,12 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
             } else {
                 let state = ostree_container::store::query_image_commit(repo, &commit)?;
                 println!("    Digest: {}", state.manifest_digest.as_str());
-                let config = state.configuration.as_ref();
-                let cconfig = config.and_then(|c| c.config().as_ref());
-                let labels = cconfig.and_then(|c| c.labels().as_ref());
-                if let Some(labels) = labels {
-                    if let Some(version) = labels.get("version") {
-                        println!("    Version: {version}");
-                    }
+                let version = state
+                    .configuration
+                    .as_ref()
+                    .and_then(ostree_container::version_for_config);
+                if let Some(version) = version {
+                    println!("    Version: {version}");
                 }
             }
         } else {
