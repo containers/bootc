@@ -128,7 +128,7 @@ pub(crate) async fn ensure_self_unshared_mount_namespace() -> Result<()> {
             anyhow::bail!("Failed to unshare mount namespace");
         }
     }
-    crate::reexec::reexec_with_guardenv(recurse_env)
+    crate::reexec::reexec_with_guardenv(recurse_env, &["unshare", "-m", "--"])
 }
 
 /// Acquire a locked sysroot.
