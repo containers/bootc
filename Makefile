@@ -11,3 +11,11 @@ bin-archive: all
 
 install-kola-tests:
 	install -D -t $(DESTDIR)$(prefix)/lib/coreos-assembler/tests/kola/bootc tests/kolainst/basic
+
+vendor:
+	cargo xtask $@
+.PHONY: vendor
+
+package-rpm:
+	cargo xtask $@
+.PHONY: package-rpm

@@ -1,8 +1,21 @@
 [workspace]
-members = ["cli", "lib"]
+members = ["cli", "lib", "xtask"]
 
 [profile.dev]
 opt-level = 1 # No optimizations are too slow for us.
 
 [profile.release]
-lto = "thin"
+# RPMs/debs/etc want debuginfo by default
+debug = true
+
+# See https://github.com/coreos/cargo-vendor-filterer
+[workspace.metadata.vendor-filter]
+platforms = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "s390x-unknown-linux-gnu"]
+all-features = true
+exclude-crate-paths = [ { name = "libz-sys", exclude = "src/zlib" },
+                        { name = "libz-sys", exclude = "src/zlib-ng" },
+                        # rustix includes pre-generated assembly for linux_raw, which we don't use
+                        { name = "rustix", exclude = "src/imp/linux_raw" },
+                        # Test files that include binaries
+                        { name = "system-deps", exclude = "src/tests" },
+                      ]
