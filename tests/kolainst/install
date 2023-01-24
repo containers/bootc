@@ -1,0 +1,27 @@
+#!/bin/bash
+# Verify install path
+## kola:
+##   timeoutMin: 30
+##   tags: "needs-internet"
+##   platforms: qemu  # additionalDisks is only supported on qemu
+##   additionalDisks: ["20G"]
+#
+# Copyright (C) 2022 Red Hat, Inc.
+
+set -xeuo pipefail
+
+# See https://github.com/cgwalters/bootc-base-images
+IMAGE=quay.io/cgwalters/fedora-oscore:latest
+
+# Always work out of a temporary directory
+cd $(mktemp -d)
+
+case "${AUTOPKGTEST_REBOOT_MARK:-}" in
+  "")
+    podman run --rm -ti --privileged --pid=host --net=none -v /usr/bin/bootc:/usr/bin/bootc ${IMAGE} bootc install /dev/vda
+    # In theory we could e.g. wipe the bootloader setup on the primary disk, then reboot;
+    # but for now let's just sanity test that the install command executes.
+    echo "ok install"
+    ;;
+  *) echo "unexpected mark: ${AUTOPKGTEST_REBOOT_MARK}"; exit 1;;
+esac

@@ -114,9 +114,6 @@ jobs:
     name: "Privileged testing"
     needs: build
     runs-on: ubuntu-latest
-    container:
-      image: quay.io/fedora/fedora-coreos:testing-devel
-      options: "--privileged --pid=host -v /run/systemd:/run/systemd -v /:/run/host"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -125,7 +122,7 @@ jobs:
         with:
           name: bootc
       - name: Install
-        run: install bootc /usr/bin && rm -v bootc
+        run: sudo install bootc /usr/bin && rm -v bootc
       - name: Integration tests
-        run: bootc internal-tests run-privileged-integration
+        run: sudo podman run --rm -ti --privileged -v /run/systemd:/run/systemd -v /:/run/host -v /usr/bin/bootc:/usr/bin/bootc --pid=host quay.io/fedora/fedora-coreos:testing-devel bootc internal-tests run-privileged-integration
 

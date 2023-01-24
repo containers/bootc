@@ -3,6 +3,7 @@ use std::process::Command;
 use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_std_ext::rustix;
+use fn_error_context::context;
 use rustix::fd::AsFd;
 use xshell::{cmd, Shell};
 
@@ -42,7 +43,8 @@ fn init_ostree(sh: &Shell, rootfs: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn impl_run() -> Result<()> {
+#[context("bootc status")]
+fn run_bootc_status() -> Result<()> {
     let sh = Shell::new()?;
 
     let loopdev = LoopbackDevice::new_temp(&sh)?;
@@ -54,14 +56,42 @@ pub(crate) fn impl_run() -> Result<()> {
     let td: &Utf8Path = td.try_into()?;
 
     cmd!(sh, "mkfs.xfs {devpath}").run()?;
-
     cmd!(sh, "mount {devpath} {td}").run()?;
 
     init_ostree(&sh, td)?;
 
+    // Basic sanity test of `bootc status` on an uninitialized root
     let _g = sh.push_env("OSTREE_SYSROOT", td);
     cmd!(sh, "bootc status").run()?;
 
+    Ok(())
+}
+
+// This needs nontrivial work for loopback devices
+// #[context("bootc install")]
+// fn run_bootc_install() -> Result<()> {
+//     let sh = Shell::new()?;
+//     let loopdev = LoopbackDevice::new_temp(&sh)?;
+//     let devpath = &loopdev.dev;
+//     println!("Using {devpath:?}");
+
+//     let selinux_enabled = crate::lsm::selinux_enabled()?;
+//     let selinux_opt = if selinux_enabled {
+//         ""
+//     } else {
+//         "--disable-selinux"
+//     };
+
+//     cmd!(sh, "bootc install {selinux_opt} {devpath}").run()?;
+
+//     Ok(())
+// }
+
+pub(crate) fn impl_run() -> Result<()> {
+    run_bootc_status()?;
+    println!("ok bootc status");
+    //run_bootc_install()?;
+    //println!("ok bootc install");
     Ok(())
 }
 
