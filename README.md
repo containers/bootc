@@ -2,6 +2,8 @@
 
 Transactional, in-place operating system updates using OCI/Docker container images.
 
+STATUS: Experimental, subject to change!
+
 # Motivation
 
 The original Docker container model of using "layers" to model
@@ -22,18 +24,24 @@ This project currently leverages significant work done in
 
 In the future, there may be non-ostree backends.
 
-## Modeling operating system hosts as containers 
+## Modeling operating system hosts as containers
 
 The bootc project suggests that Linux operating systems and distributions
 to provide a new kind of "bootable" base image, distinct from "application"
-base images.  A reference example available today is
-[Fedora CoreOS](https://quay.io/repository/fedora/fedora-coreos).
+base images.  See below for available images.
+
+Effectively, these images contain a Linux kernel - and while this kernel
+is not used when the image is used via e.g. `podman|docker run`, it *is*
+used when booted via `bootc`.
+
+In the current defaults, `/etc` and `/var` both act a bit like
+mounted, persistent volumes.  More on this in [the ostree docs](https://ostreedev.github.io/ostree/adapting-existing/#system-layout).
 
 ## Status
 
 At the current time, bootc is in active development and is not quite
 considered ready for production use.  The command line interface
-*might* change.
+*might* change.  There is not yet stable RPC API.
 
 However, it heavily relies on a lot of underlying technologies which
 are tested, and the goal is to stabilize everything sometime in
@@ -43,10 +51,18 @@ are tested, and the goal is to stabilize everything sometime in
 
 ### Installing
 
-At the current time, there are no official binary releases; this will
-likely change in the future.  For now, assuming you've done a `cargo build --release`
-and you have a `target/release/bootc` binary, you can copy that onto
-a target host system that is booted using ostree.
+ * Fedora, CentOS Stream 9: There is a [COPR](https://copr.fedorainfracloud.org/coprs/rhcontainerbot/bootc/) tracking git main with binary packages.
+
+You can also build this project like any other Rust project, e.g. `cargo build --release` from a git clone.
+
+### Base images
+
+Many users will be more interested in base (container) images.
+
+* The [bootc-demo-base-images](https://github.com/cgwalters/bootc-demo-base-images) contains demonstration (relatively) small images that can be used as a starting point.
+* [Fedora CoreOS](https://quay.io/repository/fedora/fedora-coreos) can also be used as a base image, but it does not currently include `bootc`.
+
+However, bootc itself is not tied to Fedora derivatives; and the plan is to extend the set of images.
 
 ### Deriving from and switching to base images
 
@@ -58,16 +74,29 @@ There are a number of examples in e.g. [coreos/layering-examples](https://github
 
 First, build a derived container using any container build tooling.
 
-Next, given a disk image (e.g. AMI, qcow2, raw disk image) installed on a host
-system and set up using ostree by default, the `bootc switch` command
-can be used to switch the system to use the targeted container image:
+#### Using `bootc install`
+
+The `bootc install` command will write the current container to a disk, and set it up for booting.
+
+For example, booting a Fedora-derivative (including CentOS and RHEL) system, whether a cloud guest or a live ISO, you can invoke:
+
+```
+$ podman run --privileged --pid=host --net=none --security-opt label=type:unconfined_t --target-no-signature-verification ghcr.io/cgwalters/c9s-oscore bootc install /path/to/disk
+```
+
+As noted above though, if you create a *derivative* container image, it also automatically supports `bootc install`.
+
+#### Switching from an existing ostree-based system
+
+If you have [an operating system already using ostree](https://ostreedev.github.io/ostree/#operating-systems-and-distributions-using-ostree) then you can use `bootc switch`:
 
 ```
 $ bootc switch --no-signature-verification quay.io/examplecorp/custom:latest
 ```
 
 This will preserve existing state in `/etc` and `/var` - for example,
-host SSH keys and home directories.
+host SSH keys and home directories.  There may be some issues with uid/gid
+drift in this scenario however.
 
 ### Upgrading
 
@@ -81,7 +110,7 @@ preserving state.
 
 Today rpm-ostree directly links to `ostree-rs-ext`, and hence
 gains all the same container functionality.  This will likely
-continue.  For example, with rpm-ostree (or, perhaps re-framed as 
+continue.  For example, with rpm-ostree (or, perhaps re-framed as
 "dnf image"), it will continue to work to e.g. `dnf install`
 (i.e. `rpm-ostree install`) on the *client side* system.  However, `bootc upgrade` would
 (should) then error out as it will not understand how to upgrade
@@ -106,7 +135,7 @@ Further, bootc does aim to [include some of the functionality of zincati](https:
 But all this said: *It will be supported to use both bootc and rpm-ostree together*; they are not exclusive.
 For example, `bootc status` at least will still function even if packages are layered.
 
-# More links 
+# More links
 
 - https://fedoraproject.org/wiki/Changes/OstreeNativeContainerStable
 - https://coreos.github.io/rpm-ostree/container/
