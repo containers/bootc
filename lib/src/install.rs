@@ -642,10 +642,12 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
 
     // Let's ensure we have a tmpfs on /tmp, because we need that to write the SELinux label
     // (it won't work on the default overlayfs)
-    Task::new("Creating tmpfs on /tmp", "mount")
-        .quiet()
-        .args(["-t", "tmpfs", "tmpfs", "/tmp"])
-        .run()?;
+    if nix::sys::statfs::statfs("/tmp")?.filesystem_type() != nix::sys::statfs::TMPFS_MAGIC {
+        Task::new("Creating tmpfs on /tmp", "mount")
+            .quiet()
+            .args(["-t", "tmpfs", "tmpfs", "/tmp"])
+            .run()?;
+    }
 
     // Now, deal with SELinux state.
     let srcdata = gather_source_data()?;
