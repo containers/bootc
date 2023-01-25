@@ -657,6 +657,13 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
         let host_selinux = crate::lsm::selinux_enabled()?;
         tracing::debug!("Target has SELinux, host={host_selinux}");
         if host_selinux {
+            // /sys/fs/selinuxfs is not normally mounted, so we do that now.
+            // Because SELinux enablement status is cached process-wide and was very likely
+            // already queried by something else (e.g. glib's constructor), we would also need
+            // to re-exec.  But, selinux_ensure_install does that unconditionally right now too,
+            // so let's just fall through to that.
+            crate::lsm::container_setup_selinux()?;
+            // This will re-execute the current process (once).
             crate::lsm::selinux_ensure_install()?;
         } else if opts.disable_selinux {
             override_disable_selinux = true;
@@ -668,13 +675,6 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
         }
     } else {
         tracing::debug!("Target does not enable SELinux");
-    }
-
-    // Because SELinux enablement status is cached process-wide and was very likely
-    // already queried by something else (e.g. glib's constructor), we need to mount
-    // selinuxfs now if needed, then re-exec *again*.
-    if srcdata.selinux && !override_disable_selinux {
-        crate::lsm::container_setup_selinux()?;
     }
 
     // Create our global (read-only) state which gets wrapped in an Arc
