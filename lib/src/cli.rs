@@ -113,6 +113,7 @@ pub(crate) enum Opt {
 pub(crate) async fn ensure_self_unshared_mount_namespace() -> Result<()> {
     let uid = cap_std_ext::rustix::process::getuid();
     if !uid.is_root() {
+        tracing::debug!("Not root, assuming no need to unshare");
         return Ok(());
     }
     let recurse_env = "_ostree_unshared";
@@ -120,11 +121,13 @@ pub(crate) async fn ensure_self_unshared_mount_namespace() -> Result<()> {
     let ns_self = std::fs::read_link("/proc/self/ns/mnt").context("Reading /proc/self/ns/mnt")?;
     // If we already appear to be in a mount namespace, or we're already pid1, we're done
     if ns_pid1 != ns_self {
+        tracing::debug!("Already in a mount namespace");
         return Ok(());
     }
     if std::env::var_os(recurse_env).is_some() {
         let am_pid1 = cap_std_ext::rustix::process::getpid().is_init();
         if am_pid1 {
+            tracing::debug!("We are pid 1");
             return Ok(());
         } else {
             anyhow::bail!("Failed to unshare mount namespace");

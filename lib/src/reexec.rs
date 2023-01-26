@@ -8,6 +8,7 @@ use fn_error_context::context;
 #[context("Reexec self")]
 pub(crate) fn reexec_with_guardenv(k: &str, prefix_args: &[&str]) -> Result<()> {
     if std::env::var_os(k).is_some() {
+        tracing::trace!("Skipping re-exec due to env var {k}");
         return Ok(());
     }
     let self_exe = std::fs::read_link("/proc/self/exe")?;
@@ -22,5 +23,6 @@ pub(crate) fn reexec_with_guardenv(k: &str, prefix_args: &[&str]) -> Result<()> 
     };
     cmd.env(k, "1");
     cmd.args(std::env::args_os().skip(1));
+    tracing::debug!("Re-executing current process for {k}");
     Err(cmd.exec().into())
 }

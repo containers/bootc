@@ -29,6 +29,8 @@ pub(crate) fn selinux_ensure_install() -> Result<()> {
         if p.exists() {
             tracing::debug!("Removing temporary file");
             std::fs::remove_file(p).context("Removing {p:?}")?;
+        } else {
+            tracing::debug!("Assuming we now have a privileged (e.g. install_t) label");
         }
         return Ok(());
     }
@@ -50,6 +52,7 @@ pub(crate) fn selinux_ensure_install() -> Result<()> {
     let mut cmd = Command::new(&tmpf);
     cmd.env(guardenv, tmpf);
     cmd.args(std::env::args_os().skip(1));
+    tracing::debug!("Re-executing");
     Err(anyhow::Error::msg(cmd.exec()).context("execve"))
 }
 
@@ -60,14 +63,14 @@ pub(crate) fn container_setup_selinux() -> Result<()> {
     let path = Utf8Path::new(SELINUXFS);
     if !path.join("enforce").exists() {
         if !path.exists() {
+            tracing::debug!("Creating {path}");
             std::fs::create_dir(path)?;
         }
         Task::new("Mounting selinuxfs", "mount")
             .args(["selinuxfs", "-t", "selinuxfs", path.as_str()])
             .run()?;
     }
-
-    selinux_ensure_install()
+    Ok(())
 }
 
 fn selinux_label_for_path(target: &str) -> Result<String> {
