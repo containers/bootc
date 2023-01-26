@@ -1,4 +1,6 @@
 use std::fmt::Display;
+use std::io::BufWriter;
+use std::io::Write;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -245,9 +247,10 @@ fn bind_mount_from_host(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -
 async fn initialize_ostree_root_from_self(
     state: &State,
     containerstate: &ContainerExecutionInfo,
-    rootfs: &Utf8Path,
+    root_setup: &RootSetup,
     kargs: &[&str],
 ) -> Result<InstallAleph> {
+    let rootfs = root_setup.rootfs.as_path();
     let opts = &state.opts;
     let cancellable = gio::Cancellable::NONE;
 
@@ -306,11 +309,10 @@ async fn initialize_ostree_root_from_self(
 
     let repopath = &rootfs.join("ostree/repo");
     for (k, v) in [("sysroot.bootloader", "none"), ("sysroot.readonly", "true")] {
-        Task::new_and_run(
-            "Configuring ostree repo",
-            "ostree",
-            ["config", "--repo", repopath.as_str(), "set", k, v],
-        )?;
+        Task::new("Configuring ostree repo", "ostree")
+            .args(["config", "--repo", repopath.as_str(), "set", k, v])
+            .quiet()
+            .run()?;
     }
     Task::new_and_run(
         "Initializing sysroot",
@@ -358,6 +360,32 @@ async fn initialize_ostree_root_from_self(
     println!("   Digest: {digest}");
 
     drop(temporary_dir);
+
+    // Write the entry for /boot to /etc/fstab.  TODO: Encourage OSes to use the karg?
+    // Or better bind this with the grub data.
+    sysroot.load(cancellable)?;
+    let deployment = sysroot
+        .deployments()
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Failed to find deployment"))?;
+    // SAFETY: There must be a path
+    let path = sysroot.deployment_dirpath(&deployment).unwrap();
+    let sysroot_dir = cap_std::fs::Dir::open_ambient_dir(rootfs, cap_std::ambient_authority())
+        .context("Opening rootfs")?;
+    let root = sysroot_dir
+        .open_dir(path.as_str())
+        .context("Opening deployment dir")?;
+    let mut f = {
+        let mut opts = cap_std::fs::OpenOptions::new();
+        root.open_with("etc/fstab", opts.append(true).write(true).create(true))
+            .context("Opening etc/fstab")
+            .map(BufWriter::new)?
+    };
+    let boot_uuid = &root_setup.boot_uuid;
+    let bootfs_type_str = root_setup.bootfs_type.to_string();
+    writeln!(f, "UUID={boot_uuid} /boot {bootfs_type_str} defaults 1 2")?;
+    f.flush()?;
 
     let uname = cap_std_ext::rustix::process::uname();
 
@@ -423,6 +451,7 @@ fn skopeo_supports_containers_storage() -> Result<bool> {
 struct RootSetup {
     device: Utf8PathBuf,
     rootfs: Utf8PathBuf,
+    bootfs_type: Filesystem,
     boot_uuid: uuid::Uuid,
     kargs: Vec<String>,
 }
@@ -551,10 +580,12 @@ fn install_create_rootfs(state: &State) -> Result<RootSetup> {
         BlockSetup::Tpm2Luks => anyhow::bail!("tpm2-luks is not implemented yet"),
     }
 
+    // TODO: make this configurable
+    let bootfs_type = Filesystem::Ext4;
+
     // Initialize the /boot filesystem
     let bootdev = &format!("{device}{BOOTPN}");
-    let boot_uuid =
-        mkfs(bootdev, Filesystem::Ext4, Some("boot"), []).context("Initializing /boot")?;
+    let boot_uuid = mkfs(bootdev, bootfs_type, Some("boot"), []).context("Initializing /boot")?;
 
     // Initialize rootfs
     let rootdev = &format!("{device}{ROOTPN}");
@@ -575,11 +606,10 @@ fn install_create_rootfs(state: &State) -> Result<RootSetup> {
 
     // Create the EFI system partition, if applicable
     if let Some(espdev) = espdev {
-        Task::new_and_run(
-            "Creating ESP filesystem",
-            "mkfs.fat",
-            [espdev.as_str(), "-n", "EFI-SYSTEM"],
-        )?;
+        Task::new("Creating ESP filesystem", "mkfs.fat")
+            .args([espdev.as_str(), "-n", "EFI-SYSTEM"])
+            .quiet_output()
+            .run()?;
         let efifs_path = bootfs.join("efi");
         std::fs::create_dir(&efifs_path).context("Creating efi dir")?;
         mount(&espdev, &efifs_path)?;
@@ -588,6 +618,7 @@ fn install_create_rootfs(state: &State) -> Result<RootSetup> {
     Ok(RootSetup {
         device,
         rootfs,
+        bootfs_type,
         boot_uuid,
         kargs,
     })
@@ -715,13 +746,9 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
         kargs.push(crate::bootloader::IGNITION_VARIABLE);
     }
 
-    let aleph = initialize_ostree_root_from_self(
-        &state,
-        &container_state,
-        &rootfs.rootfs,
-        kargs.as_slice(),
-    )
-    .await?;
+    let aleph =
+        initialize_ostree_root_from_self(&state, &container_state, &rootfs, kargs.as_slice())
+            .await?;
 
     let aleph = serde_json::to_string(&aleph)?;
     std::fs::write(rootfs.rootfs.join(BOOTC_ALEPH_PATH), aleph).context("Writing aleph version")?;
