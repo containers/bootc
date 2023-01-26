@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::io::BufWriter;
 use std::io::Write;
@@ -68,8 +69,6 @@ const BOOTPN: u32 = 3;
 // This ensures we end up under 512 to be small-sized.
 const BOOTPN_SIZE_MB: u32 = 510;
 const ROOTPN: u32 = 4;
-// TODO calculate from ostree commit
-const ROOTFS_SIZE_MB: u32 = 5 * 1024;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 const EFIPN: u32 = 2;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -91,10 +90,14 @@ pub(crate) struct InstallOpts {
     #[clap(long)]
     pub(crate) wipe: bool,
 
-    /// Size of the root partition (default specifier: M).  Allowed specifiers: M (mebibytes), G (gibibytes), T (tebibytes)
+    /// Size of the root partition (default specifier: M).  Allowed specifiers: M (mebibytes), G (gibibytes), T (tebibytes).
+    ///
+    /// By default, all remaining space on the disk will be used.
     #[clap(long)]
     pub(crate) root_size: Option<String>,
 
+    // TODO: A size specifier which allocates free space for the root in *addition* to the base container image size
+    // pub(crate) root_additional_size: Option<String>
     /// The transport; e.g. oci, oci-archive.  Defaults to `registry`.
     #[clap(long, default_value = "registry")]
     pub(crate) target_transport: String,
@@ -493,8 +496,7 @@ fn install_create_rootfs(state: &State) -> Result<RootSetup> {
         .as_deref()
         .map(crate::blockdev::parse_size_mib)
         .transpose()
-        .context("Parsing root size")?
-        .unwrap_or(ROOTFS_SIZE_MB as u64);
+        .context("Parsing root size")?;
 
     // Create a temporary directory to use for mount points.  Note that we're
     // in a mount namespace, so these should not be visible on the host.
@@ -553,10 +555,13 @@ fn install_create_rootfs(state: &State) -> Result<RootSetup> {
         "boot",
         None,
     );
+    let root_size = root_size
+        .map(|v| Cow::Owned(format!("0:{v}M")))
+        .unwrap_or_else(|| Cow::Borrowed("0:0"));
     sgdisk_partition(
         &mut sgdisk.cmd,
         ROOTPN,
-        format!("0:{root_size}M"),
+        root_size,
         "root",
         Some("0FC63DAF-8483-4772-8E79-3D69D8477DE4"),
     );
