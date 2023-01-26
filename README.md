@@ -81,7 +81,7 @@ The `bootc install` command will write the current container to a disk, and set 
 For example, booting a Fedora-derivative (including CentOS and RHEL) system, whether a cloud guest or a live ISO, you can invoke:
 
 ```
-$ podman run --privileged --pid=host --net=none --security-opt label=type:unconfined_t --target-no-signature-verification ghcr.io/cgwalters/c9s-oscore bootc install /path/to/disk
+$ podman run --privileged --pid=host --net=none --security-opt label=type:unconfined_t ghcr.io/cgwalters/c9s-oscore bootc install --target-no-signature-verification /path/to/disk
 ```
 
 As noted above though, if you create a *derivative* container image, it also automatically supports `bootc install`.
