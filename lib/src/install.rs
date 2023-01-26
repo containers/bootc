@@ -574,11 +574,10 @@ fn install_create_rootfs(state: &State) -> Result<RootSetup> {
 
     // Create the EFI system partition, if applicable
     if let Some(espdev) = espdev {
-        Task::new_and_run(
-            "Creating ESP filesystem",
-            "mkfs.fat",
-            [espdev.as_str(), "-n", "EFI-SYSTEM"],
-        )?;
+        Task::new("Creating ESP filesystem", "mkfs.fat")
+            .args([espdev.as_str(), "-n", "EFI-SYSTEM"])
+            .quiet_output()
+            .run()?;
         let efifs_path = bootfs.join("efi");
         std::fs::create_dir(&efifs_path).context("Creating efi dir")?;
         mount(&espdev, &efifs_path)?;
