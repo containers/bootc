@@ -306,11 +306,10 @@ async fn initialize_ostree_root_from_self(
 
     let repopath = &rootfs.join("ostree/repo");
     for (k, v) in [("sysroot.bootloader", "none"), ("sysroot.readonly", "true")] {
-        Task::new_and_run(
-            "Configuring ostree repo",
-            "ostree",
-            ["config", "--repo", repopath.as_str(), "set", k, v],
-        )?;
+        Task::new("Configuring ostree repo", "ostree")
+            .args(["config", "--repo", repopath.as_str(), "set", k, v])
+            .quiet()
+            .run()?;
     }
     Task::new_and_run(
         "Initializing sysroot",
