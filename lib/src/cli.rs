@@ -97,6 +97,7 @@ pub(crate) enum Opt {
     /// Display status
     Status(StatusOpts),
     /// Install to the target block device
+    #[cfg(feature = "install")]
     Install(crate::install::InstallOpts),
     /// Internal integration testing helpers.
     #[clap(hide(true), subcommand)]
@@ -333,6 +334,7 @@ where
     match opt {
         Opt::Upgrade(opts) => upgrade(opts).await,
         Opt::Switch(opts) => switch(opts).await,
+        #[cfg(feature = "install")]
         Opt::Install(opts) => crate::install::install(opts).await,
         Opt::Status(opts) => super::status::status(opts).await,
         #[cfg(feature = "internal-testing-api")]

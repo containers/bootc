@@ -49,6 +49,7 @@ where
 }
 
 /// Run a command in the host mount namespace
+#[allow(dead_code)]
 pub(crate) fn run_in_host_mountns(cmd: &str) -> Command {
     let mut c = Command::new("nsenter");
     c.args(["-m", "-t", "1", "--", cmd]);
@@ -57,6 +58,7 @@ pub(crate) fn run_in_host_mountns(cmd: &str) -> Command {
 
 /// Given a possibly tagged image like quay.io/foo/bar:latest and a digest 0ab32..., return
 /// the digested form quay.io/foo/bar@sha256:0ab32...
+#[allow(dead_code)]
 pub(crate) fn digested_pullspec(image: &str, digest: &str) -> String {
     let image = image.rsplit_once(':').map(|v| v.0).unwrap_or(image);
     format!("{image}@{digest}")
