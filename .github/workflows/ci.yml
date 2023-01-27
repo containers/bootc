@@ -21,8 +21,6 @@ jobs:
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
     steps:
       - uses: actions/checkout@v3
-      - name: Code lints
-        run: ./ci/lints.sh
       - name: Install deps
         run: ./ci/installdeps.sh
       # xref containers/containers-image-proxy-rs
@@ -34,6 +32,8 @@ jobs:
         run: cargo test --no-run
       - name: Individual checks
         run: (cd cli && cargo check) && (cd lib && cargo check)
+      - name: Lints
+        run: cargo xtask custom-lints
       - name: Run tests
         run: cargo test -- --nocapture --quiet
       - name: Manpage generation

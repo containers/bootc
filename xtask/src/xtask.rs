@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Cursor, Write};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
@@ -12,15 +12,17 @@ const VENDORPATH: &str = "target/vendor.tar.zstd";
 
 fn main() {
     if let Err(e) = try_main() {
-        eprintln!("{e:?}");
+        eprintln!("error: {e:?}");
         std::process::exit(1);
     }
 }
 
-const TASKS: &[(&'static str, fn(&Shell) -> Result<()>)] = &[
+#[allow(clippy::type_complexity)]
+const TASKS: &[(&str, fn(&Shell) -> Result<()>)] = &[
     ("vendor", vendor),
     ("package", package),
     ("package-srpm", package_srpm),
+    ("custom-lints", custom_lints),
 ];
 
 fn try_main() -> Result<()> {
@@ -28,7 +30,7 @@ fn try_main() -> Result<()> {
     let sh = xshell::Shell::new()?;
     if let Some(cmd) = task.as_deref() {
         let f = TASKS
-            .into_iter()
+            .iter()
             .find_map(|(k, f)| (*k == cmd).then_some(*f))
             .unwrap_or(print_help);
         f(&sh)?;
@@ -167,6 +169,18 @@ fn impl_srpm(sh: &Shell) -> Result<Utf8PathBuf> {
 fn package_srpm(sh: &Shell) -> Result<()> {
     let srpm = impl_srpm(sh)?;
     println!("Generated: {srpm}");
+    Ok(())
+}
+
+fn custom_lints(sh: &Shell) -> Result<()> {
+    // Verify there are no invocations of the dbg macro.
+    let o = cmd!(sh, "git grep dbg\x21 *.rs").ignore_status().read()?;
+    if !o.is_empty() {
+        let mut stderr = std::io::stderr().lock();
+        std::io::copy(&mut Cursor::new(o.as_bytes()), &mut stderr)?;
+        eprintln!();
+        anyhow::bail!("Found dbg\x21 macro");
+    }
     Ok(())
 }
 
