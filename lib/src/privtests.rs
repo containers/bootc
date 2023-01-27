@@ -87,16 +87,41 @@ fn run_bootc_status() -> Result<()> {
 //     Ok(())
 // }
 
-pub(crate) fn impl_run() -> Result<()> {
+/// Tests run an ostree-based host
+#[context("Privileged container tests")]
+pub(crate) fn impl_run_host() -> Result<()> {
     run_bootc_status()?;
     println!("ok bootc status");
     //run_bootc_install()?;
     //println!("ok bootc install");
+    println!("ok host privileged testing");
+    Ok(())
+}
+
+#[context("Container tests")]
+pub(crate) fn impl_run_container() -> Result<()> {
+    assert!(ostree_ext::container_utils::is_ostree_container()?);
+    let sh = Shell::new()?;
+    let stout = cmd!(sh, "bootc status").read()?;
+    assert!(stout.contains("Running in a container (ostree base)."));
+    drop(stout);
+    let o = Command::new("bootc").arg("upgrade").output()?;
+    let st = o.status;
+    assert!(!st.success());
+    let stderr = String::from_utf8(o.stderr)?;
+    assert!(stderr.contains("this command requires a booted host system"));
+    println!("ok container integration testing");
     Ok(())
 }
 
 pub(crate) async fn run(opts: &TestingOpts) -> Result<()> {
     match opts {
-        TestingOpts::RunPrivilegedIntegration {} => tokio::task::spawn_blocking(impl_run).await?,
+        TestingOpts::RunPrivilegedIntegration {} => {
+            crate::cli::ensure_self_unshared_mount_namespace().await?;
+            tokio::task::spawn_blocking(impl_run_host).await?
+        }
+        TestingOpts::RunContainerIntegration {} => {
+            tokio::task::spawn_blocking(impl_run_container).await?
+        }
     }
 }

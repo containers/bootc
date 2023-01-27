@@ -53,6 +53,12 @@ pub(crate) struct DeploymentStatus {
     pub(crate) deploy_serial: Option<u32>,
 }
 
+/// This struct is serialized when we're running in a container image.
+#[derive(serde::Serialize)]
+pub(crate) struct StatusInContainer {
+    pub(crate) is_container: bool,
+}
+
 impl DeploymentStatus {
     /// Gather metadata from an ostree deployment into a Rust structure
     pub(crate) fn from_deployment(deployment: &ostree::Deployment, booted: bool) -> Result<Self> {
@@ -102,6 +108,16 @@ fn get_deployments(
 
 /// Implementation of the `bootc status` CLI command.
 pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
+    if ostree_ext::container_utils::is_ostree_container()? {
+        if opts.json {
+            let mut stdout = std::io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &StatusInContainer { is_container: true })
+                .context("Serializing status")?;
+        } else {
+            println!("Running in a container (ostree base).");
+        }
+        return Ok(());
+    }
     let sysroot = super::cli::get_locked_sysroot().await?;
     let repo = &sysroot.repo().unwrap();
     let booted_deployment = sysroot.booted_deployment();

@@ -125,4 +125,17 @@ jobs:
         run: sudo install bootc /usr/bin && rm -v bootc
       - name: Integration tests
         run: sudo podman run --rm -ti --privileged -v /run/systemd:/run/systemd -v /:/run/host -v /usr/bin/bootc:/usr/bin/bootc --pid=host quay.io/fedora/fedora-coreos:testing-devel bootc internal-tests run-privileged-integration
-
+  container-tests:
+    name: "Container testing"
+    needs: build
+    runs-on: ubuntu-latest
+    container: quay.io/fedora/fedora-coreos:testing-devel
+    steps:
+      - name: Download
+        uses: actions/download-artifact@v2
+        with:
+          name: bootc
+      - name: Install
+        run: install bootc /usr/bin && rm -v bootc
+      - name: Integration tests
+        run: bootc internal-tests run-container-integration

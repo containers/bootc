@@ -80,6 +80,8 @@ pub(crate) struct ManOpts {
 pub(crate) enum TestingOpts {
     /// Execute integration tests that require a privileged container
     RunPrivilegedIntegration {},
+    /// Execute integration tests that target a not-privileged ostree container
+    RunContainerIntegration {},
 }
 
 /// Deploy and upgrade via bootable container images.
@@ -214,6 +216,11 @@ async fn stage(
 /// A few process changes that need to be made for writing.
 #[context("Preparing for write")]
 async fn prepare_for_write() -> Result<()> {
+    if ostree_ext::container_utils::is_ostree_container()? {
+        anyhow::bail!(
+            "Detected container (ostree base); this command requires a booted host system."
+        );
+    }
     ensure_self_unshared_mount_namespace().await?;
     if crate::lsm::selinux_enabled()? {
         crate::lsm::selinux_ensure_install()?;
@@ -329,10 +336,7 @@ where
         Opt::Install(opts) => crate::install::install(opts).await,
         Opt::Status(opts) => super::status::status(opts).await,
         #[cfg(feature = "internal-testing-api")]
-        Opt::InternalTests(ref opts) => {
-            ensure_self_unshared_mount_namespace().await?;
-            crate::privtests::run(opts).await
-        }
+        Opt::InternalTests(ref opts) => crate::privtests::run(opts).await,
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
     }
