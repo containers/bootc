@@ -17,16 +17,20 @@ fn main() {
     }
 }
 
+const TASKS: &[(&'static str, fn(&Shell) -> Result<()>)] = &[
+    ("vendor", vendor),
+    ("package", package),
+    ("package-srpm", package_srpm),
+];
+
 fn try_main() -> Result<()> {
     let task = std::env::args().nth(1);
     let sh = xshell::Shell::new()?;
     if let Some(cmd) = task.as_deref() {
-        let f = match cmd {
-            "vendor" => vendor,
-            "package" => package,
-            "package-srpm" => package_srpm,
-            _ => print_help,
-        };
+        let f = TASKS
+            .into_iter()
+            .find_map(|(k, f)| (*k == cmd).then_some(*f))
+            .unwrap_or(print_help);
         f(&sh)?;
     } else {
         print_help(&sh)?;
@@ -167,10 +171,9 @@ fn package_srpm(sh: &Shell) -> Result<()> {
 }
 
 fn print_help(_sh: &Shell) -> Result<()> {
-    eprintln!(
-        "Tasks:
-  - vendor
-"
-    );
+    println!("Tasks:");
+    for (name, _) in TASKS {
+        println!("  - {name}");
+    }
     Ok(())
 }
