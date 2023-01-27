@@ -5,14 +5,19 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
+#[cfg(feature = "install")]
 use gvariant::{aligned_bytes::TryAsAligned, Marker, Structure};
+#[cfg(feature = "install")]
 use ostree_ext::ostree;
 
+#[cfg(feature = "install")]
 use crate::task::Task;
 
 /// The mount path for selinux
+#[cfg(feature = "install")]
 const SELINUXFS: &str = "/sys/fs/selinux";
 /// The SELinux xattr
+#[cfg(feature = "install")]
 const SELINUX_XATTR: &[u8] = b"security.selinux\0";
 
 #[context("Querying selinux availability")]
@@ -59,6 +64,7 @@ pub(crate) fn selinux_ensure_install() -> Result<()> {
 /// Ensure that /sys/fs/selinux is mounted, and ensure we're running
 /// as install_t.
 #[context("Ensuring selinux mount")]
+#[cfg(feature = "install")]
 pub(crate) fn container_setup_selinux() -> Result<()> {
     let path = Utf8Path::new(SELINUXFS);
     if !path.join("enforce").exists() {
@@ -89,14 +95,18 @@ fn selinux_label_for_path(target: &str) -> Result<String> {
 #[context("Labeling {as_path}")]
 pub(crate) fn lsm_label(target: &Utf8Path, as_path: &Utf8Path, recurse: bool) -> Result<()> {
     let label = selinux_label_for_path(as_path.as_str())?;
-    Task::new("Setting SELinux security context (chcon)", "chcon")
-        .quiet()
-        .args(["-h"])
+    let st = Command::new("chcon")
+        .arg("-h")
         .args(recurse.then_some("-R"))
         .args(["-h", label.as_str(), target.as_str()])
-        .run()
+        .status()?;
+    if !st.success() {
+        anyhow::bail!("Failed to invoke chcon: {st:?}");
+    }
+    Ok(())
 }
 
+#[cfg(feature = "install")]
 pub(crate) fn xattrs_have_selinux(xattrs: &ostree::glib::Variant) -> bool {
     let v = xattrs.data_as_bytes();
     let v = v.try_as_aligned().unwrap();

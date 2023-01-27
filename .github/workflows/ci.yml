@@ -30,6 +30,8 @@ jobs:
           key: "tests"
       - name: Build
         run: cargo test --no-run
+      - name: Build lib without default features
+        run: cd lib && cargo check --no-default-features
       - name: Individual checks
         run: (cd cli && cargo check) && (cd lib && cargo check)
       - name: Lints

@@ -34,6 +34,10 @@ xshell = { version = "0.2", optional = true }
 uuid = { version = "1.2.2", features = ["v4"] }
 
 [features]
-default = []
+default = ["install"]
+# This feature enables `bootc install`.  Disable if you always want to use an external installer.
+install = []
+# Implementation detail of man page generation.
 docgen = ["clap_mangen"]
+# This feature should only be enabled in CI environments.
 internal-testing-api = ["xshell"]
