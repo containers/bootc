@@ -33,6 +33,8 @@ pub(crate) mod ignition;
 #[cfg(feature = "install")]
 mod install;
 #[cfg(feature = "install")]
+pub(crate) mod mount;
+#[cfg(feature = "install")]
 mod podman;
 #[cfg(feature = "install")]
 mod task;

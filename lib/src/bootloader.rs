@@ -15,6 +15,8 @@ pub(crate) const IGNITION_VARIABLE: &str = "$ignition_firstboot";
 const GRUB_BOOT_UUID_FILE: &str = "bootuuid.cfg";
 const STATIC_GRUB_CFG: &str = include_str!("grub.cfg");
 const STATIC_GRUB_CFG_EFI: &str = include_str!("grub-efi.cfg");
+/// The name of the mountpoint for efi (as a subdirectory of /boot, or at the toplevel)
+pub(crate) const EFI_DIR: &str = "efi";
 
 fn install_grub2_efi(efidir: &Dir, uuid: &str) -> Result<()> {
     let mut vendordir = None;
@@ -64,7 +66,7 @@ pub(crate) fn install_via_bootupd(
     let bootfs = &rootfs.join("boot");
 
     {
-        let efidir = Dir::open_ambient_dir(&bootfs.join("efi"), cap_std::ambient_authority())?;
+        let efidir = Dir::open_ambient_dir(bootfs.join("efi"), cap_std::ambient_authority())?;
         install_grub2_efi(&efidir, &grub2_uuid_contents)?;
     }
 

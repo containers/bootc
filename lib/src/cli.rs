@@ -82,6 +82,13 @@ pub(crate) enum TestingOpts {
     RunPrivilegedIntegration {},
     /// Execute integration tests that target a not-privileged ostree container
     RunContainerIntegration {},
+    /// Block device setup for testing
+    PrepTestInstallFilesystem { blockdev: Utf8PathBuf },
+    /// e2e test of install-to-filesystem
+    TestInstallFilesystem {
+        image: String,
+        blockdev: Utf8PathBuf,
+    },
 }
 
 /// Deploy and upgrade via bootable container images.
@@ -99,6 +106,9 @@ pub(crate) enum Opt {
     /// Install to the target block device
     #[cfg(feature = "install")]
     Install(crate::install::InstallOpts),
+    /// Install to the target filesystem.
+    #[cfg(feature = "install")]
+    InstallToFilesystem(crate::install::InstallToFilesystemOpts),
     /// Internal integration testing helpers.
     #[clap(hide(true), subcommand)]
     #[cfg(feature = "internal-testing-api")]
@@ -336,6 +346,8 @@ where
         Opt::Switch(opts) => switch(opts).await,
         #[cfg(feature = "install")]
         Opt::Install(opts) => crate::install::install(opts).await,
+        #[cfg(feature = "install")]
+        Opt::InstallToFilesystem(opts) => crate::install::install_to_filesystem(opts).await,
         Opt::Status(opts) => super::status::status(opts).await,
         #[cfg(feature = "internal-testing-api")]
         Opt::InternalTests(opts) => crate::privtests::run(opts).await,

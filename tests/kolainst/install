@@ -25,6 +25,12 @@ case "${AUTOPKGTEST_REBOOT_MARK:-}" in
     # but for now let's just sanity test that the install command executes.
     lsblk ${DEV}
     echo "ok install"
+
+    # Now test install-to-filesystem
+    # Wipe the device
+    ls ${DEV}* | tac | xargs wipefs -af
+    # This prepares the device and also runs podman directliy
+    bootc internal-tests test-install-filesystem ${IMAGE} ${DEV}
     ;;
   *) echo "unexpected mark: ${AUTOPKGTEST_REBOOT_MARK}"; exit 1;;
 esac
