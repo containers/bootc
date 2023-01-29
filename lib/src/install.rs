@@ -611,7 +611,8 @@ fn install_create_rootfs(state: &State) -> Result<RootSetup> {
     let root_uuid = mkfs(rootdev, opts.filesystem, Some("root"), [])?;
     let rootarg = format!("root=UUID={root_uuid}");
     let bootarg = format!("boot=UUID={boot_uuid}");
-    let kargs = vec![rootarg, RW_KARG.to_string(), bootarg];
+    let mut kargs = opts.config_opts.karg.clone().unwrap_or_default();
+    kargs.extend([rootarg, RW_KARG.to_string(), bootarg]);
 
     mount(rootdev, &rootfs)?;
     lsm_label(&rootfs, "/".into(), false)?;

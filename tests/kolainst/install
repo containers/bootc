@@ -12,15 +12,19 @@ set -xeuo pipefail
 
 # See https://github.com/cgwalters/bootc-base-images
 IMAGE=quay.io/cgwalters/fedora-oscore:latest
+# TODO: better detect this, e.g. look for an empty device
+DEV=/dev/vda
 
 # Always work out of a temporary directory
 cd $(mktemp -d)
 
 case "${AUTOPKGTEST_REBOOT_MARK:-}" in
   "")
-    podman run --rm -ti --privileged --pid=host --net=none -v /usr/bin/bootc:/usr/bin/bootc ${IMAGE} bootc install /dev/vda
+    podman run --rm -ti --privileged --pid=host --net=none -v /usr/bin/bootc:/usr/bin/bootc ${IMAGE} bootc install --karg=foo=bar ${DEV}
     # In theory we could e.g. wipe the bootloader setup on the primary disk, then reboot;
     # but for now let's just sanity test that the install command executes.
+    partprobe ${DEV}
+    lsblk ${DEV}
     echo "ok install"
     ;;
   *) echo "unexpected mark: ${AUTOPKGTEST_REBOOT_MARK}"; exit 1;;
