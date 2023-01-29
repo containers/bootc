@@ -659,6 +659,27 @@ fn gather_source_data() -> Result<SourceData> {
     Ok(SourceData { commit, selinux })
 }
 
+/// Trim, flush outstanding writes, and freeze/thaw the target mounted filesystem;
+/// these steps prepare the filesystem for its first booted use.
+pub(crate) fn finalize_filesystem(fs: &Utf8Path) -> Result<()> {
+    let fsname = fs.file_name().unwrap();
+    // fstrim ensures the underlying block device knows about unused space
+    Task::new_and_run(format!("Trimming {fsname}"), "fstrim", ["-v", fs.as_str()])?;
+    // Remounting readonly will flush outstanding writes and ensure we error out if there were background
+    // writeback problems.
+    Task::new(&format!("Finalizing filesystem {fsname}"), "mount")
+        .args(["-o", "remount,ro", fs.as_str()])
+        .run()?;
+    // Finally, freezing (and thawing) the filesystem will flush the journal, which means the next boot is clean.
+    for a in ["-f", "-u"] {
+        Task::new("Flushing filesystem journal", "xfs_freeze")
+            .quiet()
+            .args([a, fs.as_str()])
+            .run()?;
+    }
+    Ok(())
+}
+
 /// Implementation of the `bootc install` CLI command.
 pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
     // This command currently *must* be run inside a privileged container.
@@ -780,25 +801,17 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
         println!("Installed Ignition config from {ignition_file}");
     }
 
+    // ostree likes to have the immutable bit on the physical sysroot to ensure
+    // that it doesn't accumulate junk; all system state should be in deployments.
     Task::new("Setting root immutable bit", "chattr")
         .root(&rootfs.rootfs_fd)?
         .args(["+i", "."])
         .run()?;
 
-    Task::new_and_run("Trimming filesystems", "fstrim", ["-a", "-v"])?;
-
+    // Finalize mounted filesystems
     let bootfs = rootfs.rootfs.join("boot");
     for fs in [bootfs.as_path(), rootfs.rootfs.as_path()] {
-        let fsname = fs.file_name().unwrap();
-        Task::new(&format!("Finalizing filesystem {fsname}"), "mount")
-            .args(["-o", "remount,ro", fs.as_str()])
-            .run()?;
-        for a in ["-f", "-u"] {
-            Task::new("Flushing filesystem journal", "xfs_freeze")
-                .quiet()
-                .args([a, fs.as_str()])
-                .run()?;
-        }
+        finalize_filesystem(fs)?;
     }
 
     // Drop all data about the root except the path to ensure any file descriptors etc. are closed.
