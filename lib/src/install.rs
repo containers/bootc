@@ -255,6 +255,7 @@ async fn initialize_ostree_root_from_self(
     root_setup: &RootSetup,
     kargs: &[&str],
 ) -> Result<InstallAleph> {
+    let rootfs_dir = &root_setup.rootfs_fd;
     let rootfs = root_setup.rootfs.as_path();
     let opts = &state.opts;
     let cancellable = gio::Cancellable::NONE;
@@ -312,18 +313,17 @@ async fn initialize_ostree_root_from_self(
         ["admin", "init-fs", "--modern", rootfs.as_str()],
     )?;
 
-    let repopath = &rootfs.join("ostree/repo");
     for (k, v) in [("sysroot.bootloader", "none"), ("sysroot.readonly", "true")] {
         Task::new("Configuring ostree repo", "ostree")
-            .args(["config", "--repo", repopath.as_str(), "set", k, v])
+            .args(["config", "--repo", "ostree/repo", "set", k, v])
+            .root(rootfs_dir)?
             .quiet()
             .run()?;
     }
-    Task::new_and_run(
-        "Initializing sysroot",
-        "ostree",
-        ["admin", "os-init", stateroot, "--sysroot", rootfs.as_str()],
-    )?;
+    Task::new("Initializing sysroot", "ostree")
+        .args(["admin", "os-init", stateroot, "--sysroot", "."])
+        .root(rootfs_dir)?
+        .run()?;
 
     // Ensure everything in the ostree repo is labeled
     lsm_label(&rootfs.join("ostree"), "/usr".into(), true)?;
@@ -376,9 +376,7 @@ async fn initialize_ostree_root_from_self(
         .ok_or_else(|| anyhow::anyhow!("Failed to find deployment"))?;
     // SAFETY: There must be a path
     let path = sysroot.deployment_dirpath(&deployment).unwrap();
-    let sysroot_dir = cap_std::fs::Dir::open_ambient_dir(rootfs, cap_std::ambient_authority())
-        .context("Opening rootfs")?;
-    let root = sysroot_dir
+    let root = rootfs_dir
         .open_dir(path.as_str())
         .context("Opening deployment dir")?;
     let mut f = {
@@ -782,11 +780,10 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
         println!("Installed Ignition config from {ignition_file}");
     }
 
-    Task::new_and_run(
-        "Setting root immutable bit",
-        "chattr",
-        ["+i", rootfs.rootfs.as_str()],
-    )?;
+    Task::new("Setting root immutable bit", "chattr")
+        .root(&rootfs.rootfs_fd)?
+        .args(["+i", "."])
+        .run()?;
 
     Task::new_and_run("Trimming filesystems", "fstrim", ["-a", "-v"])?;
 
