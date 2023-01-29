@@ -132,9 +132,9 @@ pub(crate) struct InstallConfigOpts {
     karg: Option<Vec<String>>,
 }
 
-/// Perform an upgrade operation
-#[derive(Debug, Clone, clap::Parser)]
-pub(crate) struct InstallOpts {
+/// Options for installing to a block device
+#[derive(Debug, Clone, clap::Args)]
+pub(crate) struct InstallBlockDeviceOpts {
     /// Target block device for installation.  The entire device will be wiped.
     pub(crate) device: Utf8PathBuf,
 
@@ -149,15 +149,22 @@ pub(crate) struct InstallOpts {
     #[clap(long, value_enum, default_value_t)]
     pub(crate) block_setup: BlockSetup,
 
+    /// Target root filesystem type.
+    #[clap(long, value_enum, default_value_t)]
+    pub(crate) filesystem: Filesystem,
+
     /// Size of the root partition (default specifier: M).  Allowed specifiers: M (mebibytes), G (gibibytes), T (tebibytes).
     ///
     /// By default, all remaining space on the disk will be used.
     #[clap(long)]
     pub(crate) root_size: Option<String>,
+}
 
-    /// Target root filesystem type.
-    #[clap(long, value_enum, default_value_t)]
-    pub(crate) filesystem: Filesystem,
+/// Perform an installation to a block device.
+#[derive(Debug, Clone, clap::Parser)]
+pub(crate) struct InstallOpts {
+    #[clap(flatten)]
+    pub(crate) block_opts: InstallBlockDeviceOpts,
 
     #[clap(flatten)]
     pub(crate) target_opts: InstallTargetOpts,
@@ -168,7 +175,11 @@ pub(crate) struct InstallOpts {
 
 // Shared read-only global state
 struct State {
-    opts: InstallOpts,
+    container_info: ContainerExecutionInfo,
+    /// Force SELinux off in target system
+    override_disable_selinux: bool,
+    config_opts: InstallConfigOpts,
+    target_opts: InstallTargetOpts,
     /// Path to our devtmpfs
     devdir: Utf8PathBuf,
     mntdir: Utf8PathBuf,
@@ -263,23 +274,21 @@ fn bind_mount_from_host(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -
 #[context("Creating ostree deployment")]
 async fn initialize_ostree_root_from_self(
     state: &State,
-    containerstate: &ContainerExecutionInfo,
     root_setup: &RootSetup,
-    kargs: &[&str],
 ) -> Result<InstallAleph> {
     let rootfs_dir = &root_setup.rootfs_fd;
     let rootfs = root_setup.rootfs.as_path();
-    let opts = &state.opts;
+    let opts = &state.target_opts;
     let cancellable = gio::Cancellable::NONE;
 
-    if !containerstate.engine.starts_with("podman") {
+    if !state.container_info.engine.starts_with("podman") {
         anyhow::bail!("Currently this command only supports being executed via podman");
     }
-    if containerstate.imageid.is_empty() {
+    if state.container_info.imageid.is_empty() {
         anyhow::bail!("Invalid empty imageid");
     }
-    let digest = crate::podman::imageid_to_digest(&containerstate.imageid)?;
-    let src_image = crate::utils::digested_pullspec(&containerstate.image, &digest);
+    let digest = crate::podman::imageid_to_digest(&state.container_info.imageid)?;
+    let src_image = crate::utils::digested_pullspec(&state.container_info.image, &digest);
 
     let src_imageref = ostree_container::OstreeImageReference {
         sigverify: ostree_container::SignatureSource::ContainerPolicyAllowInsecure,
@@ -290,16 +299,15 @@ async fn initialize_ostree_root_from_self(
     };
 
     // Parse the target CLI image reference options
-    let target_sigverify = if opts.target_opts.target_no_signature_verification {
+    let target_sigverify = if opts.target_no_signature_verification {
         SignatureSource::ContainerPolicyAllowInsecure
-    } else if let Some(remote) = opts.target_opts.target_ostree_remote.as_deref() {
+    } else if let Some(remote) = opts.target_ostree_remote.as_deref() {
         SignatureSource::OstreeRemote(remote.to_string())
     } else {
         SignatureSource::ContainerPolicy
     };
-    let target_imgref = if let Some(imgref) = opts.target_opts.target_imgref.as_ref() {
-        let transport =
-            ostree_container::Transport::try_from(opts.target_opts.target_transport.as_str())?;
+    let target_imgref = if let Some(imgref) = opts.target_imgref.as_ref() {
+        let transport = ostree_container::Transport::try_from(opts.target_transport.as_str())?;
         let imgref = ostree_container::ImageReference {
             transport,
             name: imgref.to_string(),
@@ -313,7 +321,7 @@ async fn initialize_ostree_root_from_self(
             sigverify: target_sigverify,
             imgref: ostree_container::ImageReference {
                 transport: ostree_container::Transport::Registry,
-                name: containerstate.image.clone(),
+                name: state.container_info.image.clone(),
             },
         }
     };
@@ -362,9 +370,14 @@ async fn initialize_ostree_root_from_self(
         r
     };
 
+    let kargs = root_setup
+        .kargs
+        .iter()
+        .map(|v| v.as_str())
+        .collect::<Vec<_>>();
     #[allow(clippy::needless_update)]
     let options = ostree_container::deploy::DeployOpts {
-        kargs: Some(kargs),
+        kargs: Some(kargs.as_slice()),
         target_imgref: Some(&target_imgref),
         proxy_cfg: Some(proxy_cfg),
         ..Default::default()
@@ -474,8 +487,7 @@ struct RootSetup {
 }
 
 #[context("Creating rootfs")]
-fn install_create_rootfs(state: &State) -> Result<RootSetup> {
-    let opts = &state.opts;
+fn install_create_rootfs(state: &State, opts: InstallBlockDeviceOpts) -> Result<RootSetup> {
     // Verify that the target is empty (if not already wiped in particular, but it's
     // also good to verify that the wipe worked)
     let device = crate::blockdev::list_dev(&opts.device)?;
@@ -611,8 +623,7 @@ fn install_create_rootfs(state: &State) -> Result<RootSetup> {
     let root_uuid = mkfs(rootdev, opts.filesystem, Some("root"), [])?;
     let rootarg = format!("root=UUID={root_uuid}");
     let bootarg = format!("boot=UUID={boot_uuid}");
-    let mut kargs = opts.config_opts.karg.clone().unwrap_or_default();
-    kargs.extend([rootarg, RW_KARG.to_string(), bootarg]);
+    let kargs = vec![rootarg, RW_KARG.to_string(), bootarg];
 
     mount(rootdev, &rootfs)?;
     lsm_label(&rootfs, "/".into(), false)?;
@@ -694,11 +705,11 @@ pub(crate) fn finalize_filesystem(fs: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
-/// Implementation of the `bootc install` CLI command.
-pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
-    // This command currently *must* be run inside a privileged container.
-    let container_state = crate::containerenv::get_container_execution_info()?;
-
+/// Preparation for an install; validates and prepares some (thereafter immutable) global state.
+async fn prepare_install(
+    config_opts: InstallConfigOpts,
+    target_opts: InstallTargetOpts,
+) -> Result<Arc<State>> {
     // We require --pid=host
     let pid = std::fs::read_link("/proc/1/exe").context("reading /proc/1/exe")?;
     let pid = pid
@@ -707,6 +718,9 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
     if !pid.contains("systemd") {
         anyhow::bail!("This command must be run with --pid=host")
     }
+
+    // This command currently *must* be run inside a privileged container.
+    let container_info = crate::containerenv::get_container_execution_info()?;
 
     // Even though we require running in a container, the mounts we create should be specific
     // to this process, so let's enter a private mountns to avoid leaking them.
@@ -739,7 +753,7 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
             crate::lsm::container_setup_selinux()?;
             // This will re-execute the current process (once).
             crate::lsm::selinux_ensure_install()?;
-        } else if opts.config_opts.disable_selinux {
+        } else if config_opts.disable_selinux {
             override_disable_selinux = true;
             println!("notice: Target has SELinux enabled, overriding to disable")
         } else {
@@ -769,31 +783,43 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
     // Overmount /var/tmp with the host's, so we can use it to share state
     bind_mount_from_host("/var/tmp", "/var/tmp")?;
     let state = Arc::new(State {
+        override_disable_selinux,
+        container_info,
         mntdir,
         devdir,
-        opts,
+        config_opts,
+        target_opts,
     });
 
+    Ok(state)
+}
+
+/// Implementation of the `bootc install` CLI command.
+pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
+    let block_opts = opts.block_opts;
+    let state = prepare_install(opts.config_opts, opts.target_opts).await?;
+
     // This is all blocking stuff
-    let rootfs = {
+    let mut rootfs = {
         let state = state.clone();
-        tokio::task::spawn_blocking(move || install_create_rootfs(&state)).await??
+        tokio::task::spawn_blocking(move || install_create_rootfs(&state, block_opts)).await??
     };
-    let mut kargs = rootfs.kargs.iter().map(|v| v.as_str()).collect::<Vec<_>>();
-    if override_disable_selinux {
-        kargs.push("selinux=0");
+    if state.override_disable_selinux {
+        rootfs.kargs.push("selinux=0".to_string());
     }
     // This is interpreted by our GRUB fragment
-    if state.opts.config_opts.ignition_file.is_some() {
-        kargs.push(crate::ignition::PLATFORM_METAL_KARG);
-        kargs.push(crate::bootloader::IGNITION_VARIABLE);
+    if state.config_opts.ignition_file.is_some() {
+        rootfs
+            .kargs
+            .push(crate::ignition::PLATFORM_METAL_KARG.to_string());
+        rootfs
+            .kargs
+            .push(crate::bootloader::IGNITION_VARIABLE.to_string());
     }
 
     // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
     {
-        let aleph =
-            initialize_ostree_root_from_self(&state, &container_state, &rootfs, kargs.as_slice())
-                .await?;
+        let aleph = initialize_ostree_root_from_self(&state, &rootfs).await?;
         rootfs
             .rootfs_fd
             .atomic_replace_with(BOOTC_ALEPH_PATH, |f| {
@@ -806,11 +832,11 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
     crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, &rootfs.boot_uuid)?;
 
     // If Ignition is specified, enable it
-    if let Some(ignition_file) = state.opts.config_opts.ignition_file.as_deref() {
+    if let Some(ignition_file) = state.config_opts.ignition_file.as_deref() {
         let src = std::fs::File::open(ignition_file)
             .with_context(|| format!("Opening {ignition_file}"))?;
         let bootfs = rootfs.rootfs.join("boot");
-        crate::ignition::write_ignition(&bootfs, &state.opts.config_opts.ignition_hash, &src)?;
+        crate::ignition::write_ignition(&bootfs, &state.config_opts.ignition_hash, &src)?;
         crate::ignition::enable_firstboot(&bootfs)?;
         println!("Installed Ignition config from {ignition_file}");
     }
