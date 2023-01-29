@@ -82,22 +82,8 @@ const PREPPN: u32 = 1;
 #[cfg(target_arch = "ppc64")]
 const RESERVEDPN: u32 = 1;
 
-/// Perform an upgrade operation
-#[derive(Debug, Clone, clap::Parser)]
-pub(crate) struct InstallOpts {
-    /// Target block device for installation.  The entire device will be wiped.
-    pub(crate) device: Utf8PathBuf,
-
-    /// Automatically wipe all existing data on device
-    #[clap(long)]
-    pub(crate) wipe: bool,
-
-    /// Size of the root partition (default specifier: M).  Allowed specifiers: M (mebibytes), G (gibibytes), T (tebibytes).
-    ///
-    /// By default, all remaining space on the disk will be used.
-    #[clap(long)]
-    pub(crate) root_size: Option<String>,
-
+#[derive(clap::Args, Debug, Clone)]
+pub(crate) struct InstallTargetOpts {
     // TODO: A size specifier which allocates free space for the root in *addition* to the base container image size
     // pub(crate) root_additional_size: Option<String>
     /// The transport; e.g. oci, oci-archive.  Defaults to `registry`.
@@ -115,11 +101,10 @@ pub(crate) struct InstallOpts {
     /// Enable verification via an ostree remote
     #[clap(long)]
     pub(crate) target_ostree_remote: Option<String>,
+}
 
-    /// Target root filesystem type.
-    #[clap(long, value_enum, default_value_t)]
-    pub(crate) filesystem: Filesystem,
-
+#[derive(clap::Args, Debug, Clone)]
+pub(crate) struct InstallConfigOpts {
     /// Path to an Ignition config file
     #[clap(long, value_parser)]
     pub(crate) ignition_file: Option<Utf8PathBuf>,
@@ -130,13 +115,6 @@ pub(crate) struct InstallOpts {
     /// formatted as <type>-<hexvalue>.  <type> can be sha256 or sha512.
     #[clap(long, value_name = "digest", value_parser)]
     pub(crate) ignition_hash: Option<crate::ignition::IgnitionHash>,
-
-    /// Target root block device setup.
-    ///
-    /// direct: Filesystem written directly to block device
-    /// tpm2-luks: Bind unlock of filesystem to presence of the default tpm2 device.
-    #[clap(long, value_enum, default_value_t)]
-    pub(crate) block_setup: BlockSetup,
 
     /// Disable SELinux in the target (installed) system.
     ///
@@ -152,6 +130,40 @@ pub(crate) struct InstallOpts {
     #[clap(long)]
     /// Add a kernel argument
     karg: Option<Vec<String>>,
+}
+
+/// Perform an upgrade operation
+#[derive(Debug, Clone, clap::Parser)]
+pub(crate) struct InstallOpts {
+    /// Target block device for installation.  The entire device will be wiped.
+    pub(crate) device: Utf8PathBuf,
+
+    /// Automatically wipe all existing data on device
+    #[clap(long)]
+    pub(crate) wipe: bool,
+
+    /// Target root block device setup.
+    ///
+    /// direct: Filesystem written directly to block device
+    /// tpm2-luks: Bind unlock of filesystem to presence of the default tpm2 device.
+    #[clap(long, value_enum, default_value_t)]
+    pub(crate) block_setup: BlockSetup,
+
+    /// Size of the root partition (default specifier: M).  Allowed specifiers: M (mebibytes), G (gibibytes), T (tebibytes).
+    ///
+    /// By default, all remaining space on the disk will be used.
+    #[clap(long)]
+    pub(crate) root_size: Option<String>,
+
+    /// Target root filesystem type.
+    #[clap(long, value_enum, default_value_t)]
+    pub(crate) filesystem: Filesystem,
+
+    #[clap(flatten)]
+    pub(crate) target_opts: InstallTargetOpts,
+
+    #[clap(flatten)]
+    pub(crate) config_opts: InstallConfigOpts,
 }
 
 // Shared read-only global state
@@ -278,15 +290,16 @@ async fn initialize_ostree_root_from_self(
     };
 
     // Parse the target CLI image reference options
-    let target_sigverify = if opts.target_no_signature_verification {
+    let target_sigverify = if opts.target_opts.target_no_signature_verification {
         SignatureSource::ContainerPolicyAllowInsecure
-    } else if let Some(remote) = opts.target_ostree_remote.as_deref() {
+    } else if let Some(remote) = opts.target_opts.target_ostree_remote.as_deref() {
         SignatureSource::OstreeRemote(remote.to_string())
     } else {
         SignatureSource::ContainerPolicy
     };
-    let target_imgref = if let Some(imgref) = opts.target_imgref.as_ref() {
-        let transport = ostree_container::Transport::try_from(opts.target_transport.as_str())?;
+    let target_imgref = if let Some(imgref) = opts.target_opts.target_imgref.as_ref() {
+        let transport =
+            ostree_container::Transport::try_from(opts.target_opts.target_transport.as_str())?;
         let imgref = ostree_container::ImageReference {
             transport,
             name: imgref.to_string(),
@@ -725,7 +738,7 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
             crate::lsm::container_setup_selinux()?;
             // This will re-execute the current process (once).
             crate::lsm::selinux_ensure_install()?;
-        } else if opts.disable_selinux {
+        } else if opts.config_opts.disable_selinux {
             override_disable_selinux = true;
             println!("notice: Target has SELinux enabled, overriding to disable")
         } else {
@@ -770,7 +783,7 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
         kargs.push("selinux=0");
     }
     // This is interpreted by our GRUB fragment
-    if state.opts.ignition_file.is_some() {
+    if state.opts.config_opts.ignition_file.is_some() {
         kargs.push(crate::ignition::PLATFORM_METAL_KARG);
         kargs.push(crate::bootloader::IGNITION_VARIABLE);
     }
@@ -792,11 +805,11 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
     crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, &rootfs.boot_uuid)?;
 
     // If Ignition is specified, enable it
-    if let Some(ignition_file) = state.opts.ignition_file.as_deref() {
+    if let Some(ignition_file) = state.opts.config_opts.ignition_file.as_deref() {
         let src = std::fs::File::open(ignition_file)
             .with_context(|| format!("Opening {ignition_file}"))?;
         let bootfs = rootfs.rootfs.join("boot");
-        crate::ignition::write_ignition(&bootfs, &state.opts.ignition_hash, &src)?;
+        crate::ignition::write_ignition(&bootfs, &state.opts.config_opts.ignition_hash, &src)?;
         crate::ignition::enable_firstboot(&bootfs)?;
         println!("Installed Ignition config from {ignition_file}");
     }
