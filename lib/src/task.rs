@@ -5,6 +5,9 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use cap_std::fs::Dir;
+use cap_std_ext::cap_std;
+use cap_std_ext::prelude::CapStdExtCommandExt;
 
 pub(crate) struct Task {
     description: String,
@@ -16,6 +19,11 @@ pub(crate) struct Task {
 impl Task {
     pub(crate) fn new(description: impl AsRef<str>, exe: impl AsRef<str>) -> Self {
         Self::new_cmd(description, Command::new(exe.as_ref()))
+    }
+
+    pub(crate) fn root(mut self, dir: &Dir) -> Result<Self> {
+        self.cmd.cwd_dir(dir.try_clone()?);
+        Ok(self)
     }
 
     pub(crate) fn new_cmd(description: impl AsRef<str>, mut cmd: Command) -> Self {
