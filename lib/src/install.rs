@@ -9,7 +9,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
+use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
+use cap_std_ext::prelude::CapStdExtDirExt;
 use clap::ArgEnum;
 use fn_error_context::context;
 use ostree::gio;
@@ -454,6 +456,7 @@ fn skopeo_supports_containers_storage() -> Result<bool> {
 struct RootSetup {
     device: Utf8PathBuf,
     rootfs: Utf8PathBuf,
+    rootfs_fd: Dir,
     bootfs_type: Filesystem,
     boot_uuid: uuid::Uuid,
     kargs: Vec<String>,
@@ -601,6 +604,7 @@ fn install_create_rootfs(state: &State) -> Result<RootSetup> {
 
     mount(rootdev, &rootfs)?;
     lsm_label(&rootfs, "/".into(), false)?;
+    let rootfs_fd = Dir::open_ambient_dir(&rootfs, cap_std::ambient_authority())?;
     let bootfs = rootfs.join("boot");
     std::fs::create_dir(&bootfs).context("Creating /boot")?;
     // The underlying directory on the root should be labeled
@@ -623,6 +627,7 @@ fn install_create_rootfs(state: &State) -> Result<RootSetup> {
     Ok(RootSetup {
         device,
         rootfs,
+        rootfs_fd,
         bootfs_type,
         boot_uuid,
         kargs,
@@ -751,12 +756,19 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
         kargs.push(crate::bootloader::IGNITION_VARIABLE);
     }
 
-    let aleph =
-        initialize_ostree_root_from_self(&state, &container_state, &rootfs, kargs.as_slice())
-            .await?;
-
-    let aleph = serde_json::to_string(&aleph)?;
-    std::fs::write(rootfs.rootfs.join(BOOTC_ALEPH_PATH), aleph).context("Writing aleph version")?;
+    // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
+    {
+        let aleph =
+            initialize_ostree_root_from_self(&state, &container_state, &rootfs, kargs.as_slice())
+                .await?;
+        rootfs
+            .rootfs_fd
+            .atomic_replace_with(BOOTC_ALEPH_PATH, |f| {
+                serde_json::to_writer(f, &aleph)?;
+                anyhow::Ok(())
+            })
+            .context("Writing aleph version")?;
+    }
 
     crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, &rootfs.boot_uuid)?;
 
@@ -792,10 +804,14 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
         }
     }
 
+    // Drop all data about the root except the path to ensure any file descriptors etc. are closed.
+    let rootfs_path = rootfs.rootfs.clone();
+    drop(rootfs);
+
     Task::new_and_run(
         "Unmounting filesystems",
         "umount",
-        ["-R", rootfs.rootfs.as_str()],
+        ["-R", rootfs_path.as_str()],
     )?;
 
     println!("Installation complete!");
