@@ -21,7 +21,8 @@ impl Task {
         Self::new_cmd(description, Command::new(exe.as_ref()))
     }
 
-    pub(crate) fn root(mut self, dir: &Dir) -> Result<Self> {
+    /// Set the working directory for this task.
+    pub(crate) fn cwd(mut self, dir: &Dir) -> Result<Self> {
         self.cmd.cwd_dir(dir.try_clone()?);
         Ok(self)
     }
