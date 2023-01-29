@@ -316,13 +316,13 @@ async fn initialize_ostree_root_from_self(
     for (k, v) in [("sysroot.bootloader", "none"), ("sysroot.readonly", "true")] {
         Task::new("Configuring ostree repo", "ostree")
             .args(["config", "--repo", "ostree/repo", "set", k, v])
-            .root(rootfs_dir)?
+            .cwd(rootfs_dir)?
             .quiet()
             .run()?;
     }
     Task::new("Initializing sysroot", "ostree")
         .args(["admin", "os-init", stateroot, "--sysroot", "."])
-        .root(rootfs_dir)?
+        .cwd(rootfs_dir)?
         .run()?;
 
     // Ensure everything in the ostree repo is labeled
@@ -804,7 +804,7 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
     // ostree likes to have the immutable bit on the physical sysroot to ensure
     // that it doesn't accumulate junk; all system state should be in deployments.
     Task::new("Setting root immutable bit", "chattr")
-        .root(&rootfs.rootfs_fd)?
+        .cwd(&rootfs.rootfs_fd)?
         .args(["+i", "."])
         .run()?;
 
