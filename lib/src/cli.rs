@@ -338,7 +338,7 @@ where
         Opt::Install(opts) => crate::install::install(opts).await,
         Opt::Status(opts) => super::status::status(opts).await,
         #[cfg(feature = "internal-testing-api")]
-        Opt::InternalTests(ref opts) => crate::privtests::run(opts).await,
+        Opt::InternalTests(opts) => crate::privtests::run(opts).await,
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
     }
