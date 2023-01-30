@@ -114,7 +114,7 @@ pub(crate) fn impl_run_container() -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn run(opts: &TestingOpts) -> Result<()> {
+pub(crate) async fn run(opts: TestingOpts) -> Result<()> {
     match opts {
         TestingOpts::RunPrivilegedIntegration {} => {
             crate::cli::ensure_self_unshared_mount_namespace().await?;
