@@ -4,9 +4,10 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::process::Command;
 use std::process::Stdio;
+use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use cap_std::fs::Dir;
@@ -197,6 +198,68 @@ struct InstallAleph {
     /// Digested pull spec for installed image
     image: String,
     kernel: String,
+}
+
+/// A mount specification is a subset of a line in `/etc/fstab`.
+///
+/// There are 3 (ASCII) whitespace separated values:
+///
+/// SOURCE TARGET [OPTIONS]
+///
+/// Examples:
+///   - /dev/vda3 /boot ext4 ro
+///   - /dev/nvme0n1p4 /
+///   - /dev/sda2 /var/mnt xfs
+#[derive(Debug, Clone)]
+pub(crate) struct MountSpec {
+    pub(crate) source: String,
+    pub(crate) target: String,
+    pub(crate) fstype: String,
+    pub(crate) options: Option<String>,
+}
+
+impl MountSpec {
+    const AUTO: &'static str = "auto";
+
+    pub(crate) fn new(src: &str, target: &str) -> Self {
+        MountSpec {
+            source: src.to_string(),
+            target: target.to_string(),
+            fstype: Self::AUTO.to_string(),
+            options: None,
+        }
+    }
+
+    pub(crate) fn to_fstab(&self) -> String {
+        let options = self.options.as_deref().unwrap_or("defaults");
+        format!(
+            "{} {} {} {} 0 0",
+            self.source, self.target, self.fstype, options
+        )
+    }
+}
+
+impl FromStr for MountSpec {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let mut parts = s.split_ascii_whitespace().fuse();
+        let source = parts.next().unwrap_or_default();
+        if source.is_empty() {
+            anyhow::bail!("Invalid empty mount specification");
+        }
+        let target = parts
+            .next()
+            .ok_or_else(|| anyhow!("Missing target in mount specification {s}"))?;
+        let fstype = parts.next().unwrap_or(Self::AUTO);
+        let options = parts.next().map(ToOwned::to_owned);
+        Ok(Self {
+            source: source.to_string(),
+            fstype: fstype.to_string(),
+            target: target.to_string(),
+            options,
+        })
+    }
 }
 
 fn sgdisk_partition(
@@ -411,9 +474,7 @@ async fn initialize_ostree_root_from_self(
             .context("Opening etc/fstab")
             .map(BufWriter::new)?
     };
-    let boot_uuid = &root_setup.boot_uuid;
-    let bootfs_type_str = root_setup.bootfs_type.to_string();
-    writeln!(f, "UUID={boot_uuid} /boot {bootfs_type_str} defaults 1 2")?;
+    writeln!(f, "{}", root_setup.boot.to_fstab())?;
     f.flush()?;
 
     let uname = cap_std_ext::rustix::process::uname();
@@ -481,9 +542,22 @@ struct RootSetup {
     device: Utf8PathBuf,
     rootfs: Utf8PathBuf,
     rootfs_fd: Dir,
-    bootfs_type: Filesystem,
-    boot_uuid: uuid::Uuid,
+    boot: MountSpec,
     kargs: Vec<String>,
+}
+
+impl RootSetup {
+    /// Get the UUID= mount specifier for the /boot filesystem.  At the current time this is
+    /// required.
+    fn get_boot_uuid(&self) -> Result<&str> {
+        let bootsrc = &self.boot.source;
+        if let Some((t, rest)) = bootsrc.split_once('=') {
+            if t.eq_ignore_ascii_case("uuid") {
+                return Ok(rest);
+            }
+        }
+        anyhow::bail!("/boot is not specified via UUID= (this is currently required): {bootsrc}")
+    }
 }
 
 #[context("Creating rootfs")]
@@ -622,7 +696,9 @@ fn install_create_rootfs(state: &State, opts: InstallBlockDeviceOpts) -> Result<
     let rootdev = &format!("{device}{ROOTPN}");
     let root_uuid = mkfs(rootdev, opts.filesystem, Some("root"), [])?;
     let rootarg = format!("root=UUID={root_uuid}");
-    let bootarg = format!("boot=UUID={boot_uuid}");
+    let bootsrc = format!("UUID={boot_uuid}");
+    let bootarg = format!("boot={bootsrc}");
+    let boot = MountSpec::new(bootsrc.as_str(), "/boot");
     let kargs = vec![rootarg, RW_KARG.to_string(), bootarg];
 
     mount(rootdev, &rootfs)?;
@@ -651,8 +727,7 @@ fn install_create_rootfs(state: &State, opts: InstallBlockDeviceOpts) -> Result<
         device,
         rootfs,
         rootfs_fd,
-        bootfs_type,
-        boot_uuid,
+        boot,
         kargs,
     })
 }
@@ -829,7 +904,8 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
             .context("Writing aleph version")?;
     }
 
-    crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, &rootfs.boot_uuid)?;
+    let boot_uuid = rootfs.get_boot_uuid()?;
+    crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, boot_uuid)?;
 
     // If Ignition is specified, enable it
     if let Some(ignition_file) = state.config_opts.ignition_file.as_deref() {
