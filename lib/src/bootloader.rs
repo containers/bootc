@@ -51,7 +51,7 @@ fn install_grub2_efi(efidir: &Dir, uuid: &str) -> Result<()> {
 pub(crate) fn install_via_bootupd(
     device: &Utf8Path,
     rootfs: &Utf8Path,
-    boot_uuid: &uuid::Uuid,
+    boot_uuid: &str,
 ) -> Result<()> {
     Task::new_and_run(
         "Running bootupctl to install bootloader",
