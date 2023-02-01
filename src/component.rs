@@ -16,6 +16,7 @@ use crate::model::*;
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ValidationResult {
     Valid,
+    Skip,
     Errors(Vec<String>),
 }
 
@@ -50,7 +51,6 @@ pub(crate) trait Component {
         dest_root: &str,
         device: &str,
     ) -> Result<InstalledContent>;
-        
 
     /// Implementation of `bootupd generate-update-metadata` for a given component.
     /// This expects to be run during an "image update build" process.  For CoreOS

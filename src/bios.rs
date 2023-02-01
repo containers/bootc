@@ -153,7 +153,7 @@ impl Component for Bios {
         })
     }
 
-    fn validate(&self, current: &InstalledContent) -> Result<ValidationResult> {
-        todo!();
+    fn validate(&self, _: &InstalledContent) -> Result<ValidationResult> {
+        Ok(ValidationResult::Skip)
     }
 }

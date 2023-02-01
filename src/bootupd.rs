@@ -39,13 +39,13 @@ pub(crate) fn install(source_root: &str, dest_root: &str, device: &str) -> Resul
     for component in components.values() {
         // skip for BIOS if device is empty
         if component.name() == "BIOS" && device.trim().is_empty() {
-                println!(
-                    "Skip installing component {} without target device",
-                    component.name()
-                );
-                continue;
-            }
-    
+            println!(
+                "Skip installing component {} without target device",
+                component.name()
+            );
+            continue;
+        }
+
         let meta = component
             .install(&source_root, dest_root, device)
             .with_context(|| format!("installing component {}", component.name()))?;
@@ -394,6 +394,9 @@ pub(crate) fn client_run_validate(c: &mut ipc::ClientToDaemonConnection) -> Resu
         })? {
             ValidationResult::Valid => {
                 println!("Validated: {}", name);
+            }
+            ValidationResult::Skip => {
+                println!("Skipped: {}", name);
             }
             ValidationResult::Errors(errs) => {
                 for err in errs {
