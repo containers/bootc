@@ -24,7 +24,7 @@ pub(crate) enum ClientRequest {
     Status,
 }
 
-pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
+pub(crate) fn install(source_root: &str, dest_root: &str, device: &str) -> Result<()> {
     let source_root = openat::Dir::open(source_root)?;
     SavedState::ensure_not_present(dest_root)
         .context("failed to install, invalid re-install attempted")?;
@@ -37,8 +37,17 @@ pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
 
     let mut state = SavedState::default();
     for component in components.values() {
+        // skip for BIOS if device is empty
+        if component.name() == "BIOS" && device.trim().is_empty() {
+                println!(
+                    "Skip installing component {} without target device",
+                    component.name()
+                );
+                continue;
+            }
+    
         let meta = component
-            .install(&source_root, dest_root)
+            .install(&source_root, dest_root, device)
             .with_context(|| format!("installing component {}", component.name()))?;
         state.installed.insert(component.name().into(), meta);
     }

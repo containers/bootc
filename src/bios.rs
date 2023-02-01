@@ -13,13 +13,60 @@ pub(crate) const GRUB_BIN: &str = "usr/sbin/grub2-install";
 #[derive(Default)]
 pub(crate) struct Bios {}
 
+impl Bios {
+    // Run grub2-install
+    fn run_grub_install(&self, dest_root: &str, device: &str) -> Result<()> {
+        let grub_install = Path::new("/").join(GRUB_BIN);
+        if !grub_install.exists() {
+            bail!("Failed to find {:?}", grub_install);
+        }
+
+        let mut cmd = Command::new(grub_install);
+        let boot_dir = Path::new(dest_root).join("boot");
+        #[cfg(target_arch = "x86_64")]
+        cmd.args(&["--target", "i386-pc"])
+            .args(&["--boot-directory", boot_dir.to_str().unwrap()])
+            .args(&["--modules", "mdraid1x"])
+            .arg(device);
+
+        #[cfg(target_arch = "powerpc64")]
+        cmd.args(&["--target", "powerpc-ieee1275"])
+            .args(&["--boot-directory", boot_dir.to_str().unwrap()])
+            .arg("--no-nvram")
+            .arg(device);
+
+        let cmdout = cmd.output()?;
+        if !cmdout.status.success() {
+            std::io::stderr().write_all(&cmdout.stderr)?;
+            bail!("Failed to run {:?}", cmd);
+        }
+        Ok(())
+    }
+}
+
 impl Component for Bios {
     fn name(&self) -> &'static str {
         "BIOS"
     }
 
-    fn install(&self, src_root: &openat::Dir, dest_root: &str) -> Result<InstalledContent> {
-        todo!();
+    fn install(
+        &self,
+        src_root: &openat::Dir,
+        dest_root: &str,
+        device: &str,
+    ) -> Result<InstalledContent> {
+        let meta = if let Some(meta) = get_component_update(src_root, self)? {
+            meta
+        } else {
+            anyhow::bail!("No update metadata for component {} found", self.name());
+        };
+
+        self.run_grub_install(dest_root, device)?;
+        Ok(InstalledContent {
+            meta,
+            filetree: None,
+            adopted_from: None,
+        })
     }
 
     fn generate_update_metadata(&self, sysroot_path: &str) -> Result<ContentMetadata> {

@@ -176,7 +176,12 @@ impl Component for Efi {
     }
 
     // TODO: Remove dest_root; it was never actually used
-    fn install(&self, src_root: &openat::Dir, dest_root: &str) -> Result<InstalledContent> {
+    fn install(
+        &self,
+        src_root: &openat::Dir,
+        dest_root: &str,
+        _: &str,
+    ) -> Result<InstalledContent> {
         let meta = if let Some(meta) = get_component_update(src_root, self)? {
             meta
         } else {

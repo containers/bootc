@@ -47,6 +47,9 @@ pub struct InstallOpts {
     /// Target root
     #[clap(value_parser)]
     dest_root: String,
+    /// Target device, used by bios bootloader installation
+    #[clap(long, value_parser, default_value_t = String::from(""))]
+    device: String,
 }
 
 #[derive(Debug, Parser)]
@@ -74,7 +77,7 @@ impl DCommand {
 
     /// Runner for `install` verb.
     pub(crate) fn run_install(opts: InstallOpts) -> Result<()> {
-        bootupd::install(&opts.src_root, &opts.dest_root)
+        bootupd::install(&opts.src_root, &opts.dest_root, &opts.device)
             .context("boot data installation failed")?;
         Ok(())
     }

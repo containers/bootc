@@ -44,7 +44,13 @@ pub(crate) trait Component {
     /// of a filesystem root, the component should query the mount point to
     /// determine the block device.
     /// This will be run during a disk image build process.
-    fn install(&self, src_root: &openat::Dir, dest_root: &str) -> Result<InstalledContent>;
+    fn install(
+        &self,
+        src_root: &openat::Dir,
+        dest_root: &str,
+        device: &str,
+    ) -> Result<InstalledContent>;
+        
 
     /// Implementation of `bootupd generate-update-metadata` for a given component.
     /// This expects to be run during an "image update build" process.  For CoreOS
