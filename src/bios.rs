@@ -124,9 +124,10 @@ impl Component for Bios {
     }
 
     fn query_adopt(&self) -> Result<Option<Adoptable>> {
-        todo!();
+        Ok(None)
     }
 
+    #[allow(unused_variables)]
     fn adopt_update(
         &self,
         sysroot: &openat::Dir,
