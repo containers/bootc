@@ -1,5 +1,6 @@
 use std::io::prelude::*;
 use std::path::Path;
+use std::process::Command;
 
 use crate::component::*;
 use crate::model::*;
@@ -14,6 +15,40 @@ pub(crate) const GRUB_BIN: &str = "usr/sbin/grub2-install";
 pub(crate) struct Bios {}
 
 impl Bios {
+    // get target device for running update
+    fn get_device(&self) -> Result<String> {
+        let mut cmd: Command;
+        #[cfg(target_arch = "x86_64")]
+        {
+            // find /boot partition
+            let boot_dir = Path::new("/").join("boot");
+            cmd = Command::new("findmnt");
+            cmd.arg("--noheadings")
+                .arg("--output")
+                .arg("SOURCE")
+                .arg(boot_dir);
+            let partition = util::cmd_output(&mut cmd)?;
+
+            // lsblk to find parent device
+            cmd = Command::new("lsblk");
+            cmd.arg("--paths")
+                .arg("--noheadings")
+                .arg("--output")
+                .arg("PKNAME")
+                .arg(partition.trim());
+        }
+
+        #[cfg(target_arch = "powerpc64")]
+        {
+            // get PowerPC-PReP-boot partition
+            cmd = Command::new("realpath");
+            cmd.arg("/dev/disk/by-partlabel/PowerPC-PReP-boot");
+        }
+
+        let device = util::cmd_output(&mut cmd)?;
+        Ok(device)
+    }
+
     // Run grub2-install
     fn run_grub_install(&self, dest_root: &str, device: &str) -> Result<()> {
         let grub_install = Path::new("/").join(GRUB_BIN);
@@ -101,15 +136,21 @@ impl Component for Bios {
     }
 
     fn query_update(&self, sysroot: &openat::Dir) -> Result<Option<ContentMetadata>> {
-        todo!();
+        get_component_update(sysroot, self)
     }
 
-    fn run_update(
-        &self,
-        sysroot: &openat::Dir,
-        current: &InstalledContent,
-    ) -> Result<InstalledContent> {
-        todo!();
+    fn run_update(&self, sysroot: &openat::Dir, _: &InstalledContent) -> Result<InstalledContent> {
+        let updatemeta = self.query_update(sysroot)?.expect("update available");
+        let device = self.get_device()?;
+        let device = device.trim();
+        self.run_grub_install("/", device)?;
+
+        let adopted_from = None;
+        Ok(InstalledContent {
+            meta: updatemeta,
+            filetree: None,
+            adopted_from,
+        })
     }
 
     fn validate(&self, current: &InstalledContent) -> Result<ValidationResult> {
