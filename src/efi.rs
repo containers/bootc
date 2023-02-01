@@ -257,10 +257,6 @@ impl Component for Efi {
 
             // Fork off mv() because on overlayfs one can't rename() a lower level
             // directory today, and this will handle the copy fallback.
-            let parent = dest_efidir
-                .parent()
-                .ok_or_else(|| anyhow::anyhow!("Expected parent directory"))?;
-            std::fs::create_dir_all(&parent)?;
             Command::new("mv").args(&[&efisrc, &dest_efidir]).run()?;
         }
 

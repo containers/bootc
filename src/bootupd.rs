@@ -70,6 +70,10 @@ pub(crate) fn get_components() -> Components {
 }
 
 pub(crate) fn generate_update_metadata(sysroot_path: &str) -> Result<()> {
+    // create bootupd update dir which will save component metadata files for both components
+    let updates_dir = Path::new(sysroot_path).join(crate::model::BOOTUPD_UPDATES_DIR);
+    std::fs::create_dir_all(&updates_dir)
+        .with_context(|| format!("Failed to create updates dir {:?}", &updates_dir))?;
     for component in get_components().values() {
         let v = component.generate_update_metadata(sysroot_path)?;
         println!(
