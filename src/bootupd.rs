@@ -1,3 +1,4 @@
+use crate::bios;
 use crate::component::{Component, ValidationResult};
 use crate::coreos;
 use crate::efi;
@@ -63,8 +64,8 @@ pub(crate) fn get_components() -> Components {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     insert_component(&mut components, Box::new(efi::Efi::default()));
 
-    // #[cfg(target_arch = "x86_64")]
-    // components.push(Box::new(bios::BIOS::new()));
+    #[cfg(any(target_arch = "x86_64", target_arch = "powerpc64"))]
+    insert_component(&mut components, Box::new(bios::Bios::default()));
 
     components
 }
