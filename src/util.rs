@@ -138,9 +138,28 @@ pub(crate) fn rpm_query(sysroot_path: &str, path: &Path) -> Result<Command> {
                 f
             }));
         }
+        Some("grub2-install") => {
+            c.arg(&path);
+        }
         _ => {
             bail!("Unsupported file/directory {:?}", path)
         }
     }
     Ok(c)
+}
+
+/// Runs the provided Command object, captures its stdout, and swallows its stderr except on
+/// failure. Returns a Result<String> describing whether the command failed, and if not, its
+/// standard output. Output is assumed to be UTF-8. Errors are adequately prefixed with the full
+/// command.
+pub(crate) fn cmd_output(cmd: &mut Command) -> Result<String> {
+    let result = cmd
+        .output()
+        .with_context(|| format!("running {:#?}", cmd))?;
+    if !result.status.success() {
+        eprintln!("{}", String::from_utf8_lossy(&result.stderr));
+        bail!("{:#?} failed with {}", cmd, result.status);
+    }
+    String::from_utf8(result.stdout)
+        .with_context(|| format!("decoding as UTF-8 output of `{:#?}`", cmd))
 }
