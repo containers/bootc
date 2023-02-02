@@ -76,7 +76,9 @@ pub(crate) trait Component {
 /// Given a component name, create an implementation.
 pub(crate) fn new_from_name(name: &str) -> Result<Box<dyn Component>> {
     let r: Box<dyn Component> = match name {
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         "EFI" => Box::new(crate::efi::Efi::default()),
+        #[cfg(any(target_arch = "x86_64", target_arch = "powerpc64"))]
         "BIOS" => Box::new(crate::bios::Bios::default()),
         _ => anyhow::bail!("No component {}", name),
     };
@@ -85,12 +87,14 @@ pub(crate) fn new_from_name(name: &str) -> Result<Box<dyn Component>> {
 
 /// Returns the path to the payload directory for an available update for
 /// a component.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(crate) fn component_updatedirname(component: &dyn Component) -> PathBuf {
     Path::new(BOOTUPD_UPDATES_DIR).join(component.name())
 }
 
 /// Returns the path to the payload directory for an available update for
 /// a component.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(crate) fn component_updatedir(sysroot: &str, component: &dyn Component) -> PathBuf {
     Path::new(sysroot).join(component_updatedirname(component))
 }

@@ -1,6 +1,8 @@
+#[cfg(any(target_arch = "x86_64", target_arch = "powerpc64"))]
 use crate::bios;
 use crate::component::{Component, ValidationResult};
 use crate::coreos;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::efi;
 use crate::model::{ComponentStatus, ComponentUpdatable, ContentMetadata, SavedState, Status};
 use crate::util;
