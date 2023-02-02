@@ -14,6 +14,8 @@ Refs:
 #![deny(unused_must_use)]
 
 mod backend;
+#[cfg(any(target_arch = "x86_64", target_arch = "powerpc64"))]
+mod bios;
 mod bootupd;
 mod cli;
 mod component;

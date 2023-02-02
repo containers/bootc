@@ -16,6 +16,7 @@ use crate::model::*;
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ValidationResult {
     Valid,
+    Skip,
     Errors(Vec<String>),
 }
 
@@ -44,7 +45,12 @@ pub(crate) trait Component {
     /// of a filesystem root, the component should query the mount point to
     /// determine the block device.
     /// This will be run during a disk image build process.
-    fn install(&self, src_root: &openat::Dir, dest_root: &str) -> Result<InstalledContent>;
+    fn install(
+        &self,
+        src_root: &openat::Dir,
+        dest_root: &str,
+        device: &str,
+    ) -> Result<InstalledContent>;
 
     /// Implementation of `bootupd generate-update-metadata` for a given component.
     /// This expects to be run during an "image update build" process.  For CoreOS
@@ -70,7 +76,10 @@ pub(crate) trait Component {
 /// Given a component name, create an implementation.
 pub(crate) fn new_from_name(name: &str) -> Result<Box<dyn Component>> {
     let r: Box<dyn Component> = match name {
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         "EFI" => Box::new(crate::efi::Efi::default()),
+        #[cfg(any(target_arch = "x86_64", target_arch = "powerpc64"))]
+        "BIOS" => Box::new(crate::bios::Bios::default()),
         _ => anyhow::bail!("No component {}", name),
     };
     Ok(r)
@@ -78,12 +87,14 @@ pub(crate) fn new_from_name(name: &str) -> Result<Box<dyn Component>> {
 
 /// Returns the path to the payload directory for an available update for
 /// a component.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(crate) fn component_updatedirname(component: &dyn Component) -> PathBuf {
     Path::new(BOOTUPD_UPDATES_DIR).join(component.name())
 }
 
 /// Returns the path to the payload directory for an available update for
 /// a component.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(crate) fn component_updatedir(sysroot: &str, component: &dyn Component) -> PathBuf {
     Path::new(sysroot).join(component_updatedirname(component))
 }

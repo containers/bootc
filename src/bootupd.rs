@@ -1,5 +1,8 @@
+#[cfg(any(target_arch = "x86_64", target_arch = "powerpc64"))]
+use crate::bios;
 use crate::component::{Component, ValidationResult};
 use crate::coreos;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::efi;
 use crate::model::{ComponentStatus, ComponentUpdatable, ContentMetadata, SavedState, Status};
 use crate::util;
@@ -23,7 +26,7 @@ pub(crate) enum ClientRequest {
     Status,
 }
 
-pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
+pub(crate) fn install(source_root: &str, dest_root: &str, device: &str) -> Result<()> {
     let source_root = openat::Dir::open(source_root)?;
     SavedState::ensure_not_present(dest_root)
         .context("failed to install, invalid re-install attempted")?;
@@ -36,8 +39,17 @@ pub(crate) fn install(source_root: &str, dest_root: &str) -> Result<()> {
 
     let mut state = SavedState::default();
     for component in components.values() {
+        // skip for BIOS if device is empty
+        if component.name() == "BIOS" && device.trim().is_empty() {
+            println!(
+                "Skip installing component {} without target device",
+                component.name()
+            );
+            continue;
+        }
+
         let meta = component
-            .install(&source_root, dest_root)
+            .install(&source_root, dest_root, device)
             .with_context(|| format!("installing component {}", component.name()))?;
         state.installed.insert(component.name().into(), meta);
     }
@@ -63,13 +75,17 @@ pub(crate) fn get_components() -> Components {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     insert_component(&mut components, Box::new(efi::Efi::default()));
 
-    // #[cfg(target_arch = "x86_64")]
-    // components.push(Box::new(bios::BIOS::new()));
+    #[cfg(any(target_arch = "x86_64", target_arch = "powerpc64"))]
+    insert_component(&mut components, Box::new(bios::Bios::default()));
 
     components
 }
 
 pub(crate) fn generate_update_metadata(sysroot_path: &str) -> Result<()> {
+    // create bootupd update dir which will save component metadata files for both components
+    let updates_dir = Path::new(sysroot_path).join(crate::model::BOOTUPD_UPDATES_DIR);
+    std::fs::create_dir_all(&updates_dir)
+        .with_context(|| format!("Failed to create updates dir {:?}", &updates_dir))?;
     for component in get_components().values() {
         let v = component.generate_update_metadata(sysroot_path)?;
         println!(
@@ -380,6 +396,9 @@ pub(crate) fn client_run_validate(c: &mut ipc::ClientToDaemonConnection) -> Resu
         })? {
             ValidationResult::Valid => {
                 println!("Validated: {}", name);
+            }
+            ValidationResult::Skip => {
+                println!("Skipped: {}", name);
             }
             ValidationResult::Errors(errs) => {
                 for err in errs {

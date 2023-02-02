@@ -18,6 +18,7 @@ impl fmt::Display for SHA512String {
 }
 
 impl SHA512String {
+    #[allow(dead_code)]
     pub(crate) fn from_hasher(hasher: &mut Hasher) -> Self {
         Self(format!(
             "sha512:{}",
