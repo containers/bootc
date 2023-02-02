@@ -152,6 +152,7 @@ pub(crate) fn rpm_query(sysroot_path: &str, path: &Path) -> Result<Command> {
 /// failure. Returns a Result<String> describing whether the command failed, and if not, its
 /// standard output. Output is assumed to be UTF-8. Errors are adequately prefixed with the full
 /// command.
+#[allow(dead_code)]
 pub(crate) fn cmd_output(cmd: &mut Command) -> Result<String> {
     let result = cmd
         .output()
