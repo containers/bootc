@@ -3,7 +3,7 @@
 FROM quay.io/coreos-assembler/fcos-buildroot:testing-devel as builder
 WORKDIR /src
 COPY . .
-RUN make bin-archive
+RUN make test-bin-archive
 
 FROM quay.io/fedora/fedora-coreos:testing-devel
 COPY --from=builder /src/bootc.tar.zst /tmp
