@@ -66,6 +66,17 @@ fn gitrev(sh: &Shell) -> Result<String> {
     }
 }
 
+/// Return a string formatted version of the git commit timestamp, up to the minute
+/// but not second because, well, we're not going to build more than once a second.
+#[context("Finding git timestamp")]
+fn git_timestamp(sh: &Shell) -> Result<String> {
+    let ts = cmd!(sh, "git show --format=%ct").read()?;
+    let ts = ts.trim().parse::<i64>()?;
+    let ts = chrono::NaiveDateTime::from_timestamp_opt(ts, 0)
+        .ok_or_else(|| anyhow::anyhow!("Failed to parse timestamp"))?;
+    Ok(ts.format("%Y%m%d%H%M").to_string())
+}
+
 struct Package {
     version: String,
     srcpath: Utf8PathBuf,
@@ -74,6 +85,9 @@ struct Package {
 #[context("Packaging")]
 fn impl_package(sh: &Shell) -> Result<Package> {
     let v = gitrev(sh)?;
+    let timestamp = git_timestamp(sh)?;
+    // We always inject the timestamp first to ensure that newer is better.
+    let v = format!("{timestamp}.{v}");
     let namev = format!("{NAME}-{v}");
     let p = Utf8Path::new("target").join(format!("{namev}.tar.zstd"));
     let o = File::create(&p)?;
