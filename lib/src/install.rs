@@ -22,7 +22,7 @@ use ostree_ext::container as ostree_container;
 use ostree_ext::container::SignatureSource;
 use ostree_ext::ostree;
 use ostree_ext::prelude::Cast;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::containerenv::ContainerExecutionInfo;
 use crate::lsm::lsm_label;
@@ -38,7 +38,8 @@ const RUN_BOOTC: &str = "/run/bootc";
 /// This is an ext4 special directory we need to ignore.
 const LOST_AND_FOUND: &str = "lost+found";
 
-#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum BlockSetup {
     Direct,
     Tpm2Luks,
@@ -50,7 +51,7 @@ impl Default for BlockSetup {
     }
 }
 
-#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Filesystem {
     Xfs,
     Ext4,
@@ -88,12 +89,13 @@ const PREPPN: u32 = 1;
 #[cfg(target_arch = "ppc64")]
 const RESERVEDPN: u32 = 1;
 
-#[derive(clap::Args, Debug, Clone)]
+#[derive(clap::Args, Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct InstallTargetOpts {
     // TODO: A size specifier which allocates free space for the root in *addition* to the base container image size
     // pub(crate) root_additional_size: Option<String>
     /// The transport; e.g. oci, oci-archive.  Defaults to `registry`.
     #[clap(long, default_value = "registry")]
+    #[serde(default)]
     pub(crate) target_transport: String,
 
     /// Specify the image to fetch for subsequent updates
@@ -102,6 +104,7 @@ pub(crate) struct InstallTargetOpts {
 
     /// Explicitly opt-out of requiring any form of signature verification.
     #[clap(long)]
+    #[serde(default)]
     pub(crate) target_no_signature_verification: bool,
 
     /// Enable verification via an ostree remote
@@ -109,7 +112,7 @@ pub(crate) struct InstallTargetOpts {
     pub(crate) target_ostree_remote: Option<String>,
 }
 
-#[derive(clap::Args, Debug, Clone)]
+#[derive(clap::Args, Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct InstallConfigOpts {
     /// Path to an Ignition config file
     #[clap(long, value_parser)]
@@ -127,6 +130,7 @@ pub(crate) struct InstallConfigOpts {
     /// This is currently necessary to install *from* a system with SELinux disabled
     /// but where the target does have SELinux enabled.
     #[clap(long)]
+    #[serde(default)]
     pub(crate) disable_selinux: bool,
 
     // Only occupy at most this much space (if no units are provided, GB is assumed).
@@ -139,13 +143,15 @@ pub(crate) struct InstallConfigOpts {
 }
 
 /// Options for installing to a block device
-#[derive(Debug, Clone, clap::Args)]
+#[derive(Debug, Clone, clap::Args, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) struct InstallBlockDeviceOpts {
     /// Target block device for installation.  The entire device will be wiped.
     pub(crate) device: Utf8PathBuf,
 
     /// Automatically wipe all existing data on device
     #[clap(long)]
+    #[serde(default)]
     pub(crate) wipe: bool,
 
     /// Target root block device setup.
@@ -153,10 +159,12 @@ pub(crate) struct InstallBlockDeviceOpts {
     /// direct: Filesystem written directly to block device
     /// tpm2-luks: Bind unlock of filesystem to presence of the default tpm2 device.
     #[clap(long, value_enum, default_value_t)]
+    #[serde(default)]
     pub(crate) block_setup: BlockSetup,
 
     /// Target root filesystem type.
     #[clap(long, value_enum, default_value_t)]
+    #[serde(default)]
     pub(crate) filesystem: Filesystem,
 
     /// Size of the root partition (default specifier: M).  Allowed specifiers: M (mebibytes), G (gibibytes), T (tebibytes).
@@ -167,15 +175,18 @@ pub(crate) struct InstallBlockDeviceOpts {
 }
 
 /// Perform an installation to a block device.
-#[derive(Debug, Clone, clap::Parser)]
+#[derive(Debug, Clone, clap::Parser, Serialize, Deserialize)]
 pub(crate) struct InstallOpts {
     #[clap(flatten)]
+    #[serde(flatten)]
     pub(crate) block_opts: InstallBlockDeviceOpts,
 
     #[clap(flatten)]
+    #[serde(flatten)]
     pub(crate) target_opts: InstallTargetOpts,
 
     #[clap(flatten)]
+    #[serde(flatten)]
     pub(crate) config_opts: InstallConfigOpts,
 }
 
@@ -1162,4 +1173,13 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     installation_complete();
 
     Ok(())
+}
+
+#[test]
+fn install_opts_serializable() {
+    let c: InstallOpts = serde_json::from_value(serde_json::json!({
+        "device": "/dev/vda"
+    }))
+    .unwrap();
+    assert_eq!(c.block_opts.device, "/dev/vda");
 }

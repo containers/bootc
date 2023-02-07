@@ -10,7 +10,7 @@ rust-version = "1.63.0"
 
 [dependencies]
 anyhow = "1.0"
-camino = "1.0.4"
+camino = { version = "1.0.4", features = ["serde1"] }
 ostree-ext = "0.10.5"
 clap = { version= "3.2", features = ["derive"] }
 clap_mangen = { version = "0.1", optional = true }
