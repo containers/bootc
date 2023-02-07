@@ -102,6 +102,8 @@ pub(crate) enum TestingOpts {
     RunPrivilegedIntegration {},
     /// Execute integration tests that target a not-privileged ostree container
     RunContainerIntegration {},
+    /// Copy the container as ostree commit to target root
+    CopySelfTo { target: Utf8PathBuf },
     /// Block device setup for testing
     PrepTestInstallFilesystem { blockdev: Utf8PathBuf },
     /// e2e test of install-to-filesystem
@@ -461,6 +463,16 @@ where
     I: IntoIterator,
     I::Item: Into<OsString> + Clone,
 {
+    let args = args
+        .into_iter()
+        .map(|v| Into::<OsString>::into(v))
+        .collect::<Vec<_>>();
+    if matches!(
+        args.get(0).and_then(|v| v.to_str()),
+        Some(crate::systemtakeover::BIN_NAME)
+    ) {
+        return crate::systemtakeover::run().await;
+    }
     run_from_opt(Opt::parse_from(args)).await
 }
 

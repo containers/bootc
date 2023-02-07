@@ -2,6 +2,8 @@ use std::process::Command;
 
 use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
+use cap_std::fs::Dir;
+use cap_std_ext::cap_std;
 use fn_error_context::context;
 use rustix::fd::AsFd;
 use xshell::{cmd, Shell};
@@ -168,6 +170,18 @@ pub(crate) async fn run(opts: TestingOpts) -> Result<()> {
         }
         TestingOpts::RunContainerIntegration {} => {
             tokio::task::spawn_blocking(impl_run_container).await?
+        }
+        TestingOpts::CopySelfTo { target } => {
+            let src_root = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+            let target = &Dir::open_ambient_dir(target, cap_std::ambient_authority())?;
+            let container_info = crate::containerenv::get_container_execution_info(src_root)?;
+            let srcdata = crate::install::SourceInfo::from_container(&container_info)?;
+            let (did_override, _guard) =
+                crate::install::reexecute_self_for_selinux_if_needed(&srcdata, false)?;
+            // Right now we don't expose an override flow
+            assert!(!did_override);
+            crate::systemtakeover::copy_self_to(&srcdata, target).await?;
+            Ok(())
         }
         TestingOpts::PrepTestInstallFilesystem { blockdev } => {
             tokio::task::spawn_blocking(move || prep_test_install_filesystem(&blockdev).map(|_| ()))

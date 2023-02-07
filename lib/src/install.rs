@@ -6,7 +6,7 @@
 
 // This sub-module is the "basic" installer that handles creating basic block device
 // and filesystem setup.
-mod baseline;
+pub(crate) mod baseline;
 
 use std::io::BufWriter;
 use std::io::Write;
@@ -36,6 +36,9 @@ use self::baseline::InstallBlockDeviceOpts;
 use crate::containerenv::ContainerExecutionInfo;
 use crate::task::Task;
 use crate::utils::run_in_host_mountns;
+
+/// The path we use to access files on the host
+pub(crate) const HOST_RUNDIR: &str = "/run/host";
 
 /// The default "stateroot" or "osname"; see https://github.com/ostreedev/ostree/issues/2794
 const STATEROOT_DEFAULT: &str = "default";
@@ -196,6 +199,8 @@ pub(crate) struct SourceInfo {
     pub(crate) commit: String,
     /// Whether or not SELinux appears to be enabled in the source commit
     pub(crate) selinux: bool,
+    /// If we should find the image in sysroot/repo, not in containers/storage
+    pub(crate) from_ostree_repo: bool,
 }
 
 // Shared read-only global state
@@ -345,11 +350,13 @@ impl SourceInfo {
         let root = root.downcast_ref::<ostree::RepoFile>().unwrap();
         let xattrs = root.xattrs(cancellable)?;
         let selinux = crate::lsm::xattrs_have_selinux(&xattrs);
+        let from_ostree_repo = false;
         Ok(Self {
             imageref,
             digest,
             commit,
             selinux,
+            from_ostree_repo,
         })
     }
 }
@@ -424,6 +431,14 @@ pub(crate) mod config {
     }
 }
 
+pub(crate) fn import_config_from_host() -> ostree_container::store::ImageProxyConfig {
+    let skopeo_cmd = run_in_host_mountns("skopeo");
+    ostree_container::store::ImageProxyConfig {
+        skopeo_cmd: Some(skopeo_cmd),
+        ..Default::default()
+    }
+}
+
 #[context("Creating ostree deployment")]
 async fn initialize_ostree_root_from_self(
     state: &State,
@@ -492,36 +507,10 @@ async fn initialize_ostree_root_from_self(
 
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
+    let dest_repo = &sysroot.repo();
 
     // We need to fetch the container image from the root mount namespace
-    let skopeo_cmd = run_in_host_mountns("skopeo");
-    let proxy_cfg = ostree_container::store::ImageProxyConfig {
-        skopeo_cmd: Some(skopeo_cmd),
-        ..Default::default()
-    };
-
-    let mut temporary_dir = None;
-    let src_imageref = if skopeo_supports_containers_storage()? {
-        // We always use exactly the digest of the running image to ensure predictability.
-        let spec =
-            crate::utils::digested_pullspec(&state.source.imageref.name, &state.source.digest);
-        ostree_container::ImageReference {
-            transport: ostree_container::Transport::ContainerStorage,
-            name: spec,
-        }
-    } else {
-        let td = tempfile::tempdir_in("/var/tmp")?;
-        let path: &Utf8Path = td.path().try_into().unwrap();
-        let r = copy_to_oci(&state.source.imageref, path)?;
-        temporary_dir = Some(td);
-        r
-    };
-    let src_imageref = ostree_container::OstreeImageReference {
-        // There are no signatures to verify since we're fetching the already
-        // pulled container.
-        sigverify: ostree_container::SignatureSource::ContainerPolicyAllowInsecure,
-        imgref: src_imageref,
-    };
+    let proxy_cfg = import_config_from_host();
 
     let kargs = root_setup
         .kargs
@@ -532,6 +521,56 @@ async fn initialize_ostree_root_from_self(
     options.kargs = Some(kargs.as_slice());
     options.target_imgref = Some(&target_imgref);
     options.proxy_cfg = Some(proxy_cfg);
+
+    // Default image reference pulls from the running container image.
+    let mut src_imageref = ostree_container::OstreeImageReference {
+        // There are no signatures to verify since we're fetching the already
+        // pulled container.
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: state.source.imageref.clone(),
+    };
+
+    let mut temporary_dir = None;
+    if state.source.from_ostree_repo {
+        let root = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+        let host_repo = {
+            let repodir = root
+                .open_dir("sysroot/repo")
+                .context("Opening sysroot/repo")?;
+            ostree::Repo::open_at_dir(repodir.as_fd(), ".")?
+        };
+        ostree_container::store::copy_as(
+            &host_repo,
+            &state.source.imageref,
+            &dest_repo,
+            &target_imgref.imgref,
+        )
+        .await
+        .context("Copying image from host repo")?;
+        // We already copied the image, so src == target
+        src_imageref = target_imgref.clone();
+        options.target_imgref = None;
+    } else {
+        if skopeo_supports_containers_storage()? {
+            // We always use exactly the digest of the running image to ensure predictability.
+            let spec =
+                crate::utils::digested_pullspec(&state.source.imageref.name, &state.source.digest);
+            ostree_container::ImageReference {
+                transport: ostree_container::Transport::ContainerStorage,
+                name: spec,
+            }
+        } else {
+            let td = tempfile::tempdir_in("/var/tmp")?;
+            let path: &Utf8Path = td.path().try_into().unwrap();
+            let r = copy_to_oci(&state.source.imageref, path)?;
+            temporary_dir = Some(td);
+            r
+        };
+        // In this case the deploy code is pulling the container, so set it up to
+        // generate a target image reference.
+        options.target_imgref = Some(&target_imgref);
+    }
+
     println!("Creating initial deployment");
     let state =
         ostree_container::deploy::deploy(&sysroot, stateroot, &src_imageref, Some(options)).await?;
@@ -884,11 +923,16 @@ fn installation_complete() {
     println!("Installation complete!");
 }
 
-/// Implementation of the `bootc install` CLI command.
-pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
-    let block_opts = opts.block_opts;
-    let state = prepare_install(opts.config_opts, opts.target_opts).await?;
+pub(crate) async fn install_takeover(
+    opts: InstallBlockDeviceOpts,
+    state: Arc<State>,
+) -> Result<()> {
+    // The takeover code should have unset this
+    assert!(!opts.takeover);
+    block_install_impl(opts, state).await
+}
 
+async fn block_install_impl(block_opts: InstallBlockDeviceOpts, state: Arc<State>) -> Result<()> {
     // This is all blocking stuff
     let mut rootfs = {
         let state = state.clone();
@@ -912,6 +956,18 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
     installation_complete();
 
     Ok(())
+}
+
+/// Implementation of the `bootc install` CLI command.
+pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
+    let block_opts = opts.block_opts;
+    let state = prepare_install(opts.config_opts, opts.target_opts).await?;
+    if block_opts.takeover {
+        tracing::debug!("Performing takeover installation from host");
+        return crate::systemtakeover::run_from_host(block_opts, state).await;
+    }
+
+    block_install_impl(block_opts, state).await
 }
 
 #[context("Verifying empty rootfs")]

@@ -75,6 +75,13 @@ pub(crate) struct InstallBlockDeviceOpts {
     #[serde(default)]
     pub(crate) wipe: bool,
 
+    /// Write to the block device containing the running root filesystem.
+    /// This is implemented by moving the container into memory and switching
+    /// root (terminating all other processes).
+    #[clap(long)]
+    #[serde(default)]
+    pub(crate) takeover: bool,
+
     /// Target root block device setup.
     ///
     /// direct: Filesystem written directly to block device
