@@ -803,12 +803,12 @@ fn install_create_rootfs(state: &State, opts: InstallBlockDeviceOpts) -> Result<
     })
 }
 
-struct SourceData {
+pub(crate) struct SourceData {
     /// The embedded base OSTree commit checksum
     #[allow(dead_code)]
-    commit: String,
+    pub(crate) commit: String,
     /// Whether or not SELinux appears to be enabled in the source commit
-    selinux: bool,
+    pub(crate) selinux: bool,
 }
 
 #[context("Gathering source data")]
@@ -828,6 +828,42 @@ fn gather_source_data() -> Result<SourceData> {
     let xattrs = root.xattrs(cancellable)?;
     let selinux = crate::lsm::xattrs_have_selinux(&xattrs);
     Ok(SourceData { commit, selinux })
+}
+
+/// If we detect that the target ostree commit has SELinux labels,
+/// and we aren't passed an override to disable it, then ensure
+/// the running process is labeled with install_t so it can
+/// write arbitrary labels.
+pub(crate) fn reexecute_self_for_selinux_if_needed(
+    srcdata: &SourceData,
+    override_disable_selinux: bool,
+) -> Result<bool> {
+    let mut ret_did_override = false;
+    // If the target state has SELinux enabled, we need to check the host state.
+    if srcdata.selinux {
+        let host_selinux = crate::lsm::selinux_enabled()?;
+        tracing::debug!("Target has SELinux, host={host_selinux}");
+        if host_selinux {
+            // /sys/fs/selinuxfs is not normally mounted, so we do that now.
+            // Because SELinux enablement status is cached process-wide and was very likely
+            // already queried by something else (e.g. glib's constructor), we would also need
+            // to re-exec.  But, selinux_ensure_install does that unconditionally right now too,
+            // so let's just fall through to that.
+            crate::lsm::container_setup_selinux()?;
+            // This will re-execute the current process (once).
+            crate::lsm::selinux_ensure_install()?;
+        } else if override_disable_selinux {
+            ret_did_override = true;
+            println!("notice: Target has SELinux enabled, overriding to disable")
+        } else {
+            anyhow::bail!(
+                "Host kernel does not have SELinux support, but target enables it by default"
+            );
+        }
+    } else {
+        tracing::debug!("Target does not enable SELinux");
+    }
+    Ok(ret_did_override)
 }
 
 /// Trim, flush outstanding writes, and freeze/thaw the target mounted filesystem;
@@ -885,31 +921,8 @@ async fn prepare_install(
 
     // Now, deal with SELinux state.
     let srcdata = gather_source_data()?;
-    let mut override_disable_selinux = false;
-    // If the target state has SELinux enabled, we need to check the host state.
-    if srcdata.selinux {
-        let host_selinux = crate::lsm::selinux_enabled()?;
-        tracing::debug!("Target has SELinux, host={host_selinux}");
-        if host_selinux {
-            // /sys/fs/selinuxfs is not normally mounted, so we do that now.
-            // Because SELinux enablement status is cached process-wide and was very likely
-            // already queried by something else (e.g. glib's constructor), we would also need
-            // to re-exec.  But, selinux_ensure_install does that unconditionally right now too,
-            // so let's just fall through to that.
-            crate::lsm::container_setup_selinux()?;
-            // This will re-execute the current process (once).
-            crate::lsm::selinux_ensure_install()?;
-        } else if config_opts.disable_selinux {
-            override_disable_selinux = true;
-            println!("notice: Target has SELinux enabled, overriding to disable")
-        } else {
-            anyhow::bail!(
-                "Host kernel does not have SELinux support, but target enables it by default"
-            );
-        }
-    } else {
-        tracing::debug!("Target does not enable SELinux");
-    }
+    let override_disable_selinux =
+        reexecute_self_for_selinux_if_needed(&srcdata, config_opts.disable_selinux)?;
 
     // Create our global (read-only) state which gets wrapped in an Arc
     // so we can pass it to worker threads too. Right now this just
