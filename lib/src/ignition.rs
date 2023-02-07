@@ -313,7 +313,7 @@ mod tests {
             (false, "sha512-cdaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f")
         ];
         for (valid, hash_arg) in &hash_args {
-            let hasher = IgnitionHash::from_str(&hash_arg).unwrap();
+            let hasher = IgnitionHash::from_str(hash_arg).unwrap();
             let mut rd = std::io::Cursor::new(&input);
             assert!(hasher.validate(&mut rd).is_ok() == *valid);
         }

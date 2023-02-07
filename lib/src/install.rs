@@ -7,12 +7,14 @@ use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use anyhow::Ok;
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtDirExt;
+use cap_std_ext::rustix::fs::MetadataExt;
 use clap::ArgEnum;
 use fn_error_context::context;
 use ostree::gio;
@@ -29,9 +31,12 @@ use crate::utils::run_in_host_mountns;
 
 /// The default "stateroot" or "osname"; see https://github.com/ostreedev/ostree/issues/2794
 const STATEROOT_DEFAULT: &str = "default";
-
+/// The toplevel boot directory
+const BOOT: &str = "boot";
 /// Directory for transient runtime state
 const RUN_BOOTC: &str = "/run/bootc";
+/// This is an ext4 special directory we need to ignore.
+const LOST_AND_FOUND: &str = "lost+found";
 
 #[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum BlockSetup {
@@ -174,6 +179,48 @@ pub(crate) struct InstallOpts {
     pub(crate) config_opts: InstallConfigOpts,
 }
 
+/// Options for installing to a filesystem
+#[derive(Debug, Clone, clap::Args)]
+pub(crate) struct InstallTargetFilesystemOpts {
+    /// Path to the mounted root filesystem.
+    ///
+    /// By default, the filesystem UUID will be discovered and used for mounting.
+    /// To override this, use `--root-mount-spec`.
+    pub(crate) root_path: Utf8PathBuf,
+
+    /// Source device specification for the root filesystem.  For example, UUID=2e9f4241-229b-4202-8429-62d2302382e1
+    #[clap(long)]
+    pub(crate) root_mount_spec: Option<String>,
+
+    /// Comma-separated mount options for the root filesystem.  For example: rw,prjquota
+    #[clap(long)]
+    pub(crate) root_options: Option<String>,
+
+    /// Mount specification for the /boot filesystem.
+    ///
+    /// At the current time, a separate /boot is required.  This restriction will be lifted in
+    /// future versions.  If not specified, the filesystem UUID will be used.
+    #[clap(long)]
+    pub(crate) boot_mount_spec: Option<String>,
+
+    /// Automatically wipe existing data on the filesystems.
+    #[clap(long)]
+    pub(crate) wipe: bool,
+}
+
+/// Perform an installation to a mounted filesystem.
+#[derive(Debug, Clone, clap::Parser)]
+pub(crate) struct InstallToFilesystemOpts {
+    #[clap(flatten)]
+    pub(crate) filesystem_opts: InstallTargetFilesystemOpts,
+
+    #[clap(flatten)]
+    pub(crate) target_opts: InstallTargetOpts,
+
+    #[clap(flatten)]
+    pub(crate) config_opts: InstallConfigOpts,
+}
+
 // Shared read-only global state
 struct State {
     container_info: ContainerExecutionInfo,
@@ -228,6 +275,20 @@ impl MountSpec {
             fstype: Self::AUTO.to_string(),
             options: None,
         }
+    }
+
+    /// Construct a new mount that uses the provided uuid as a source.
+    pub(crate) fn new_uuid_src(uuid: &str, target: &str) -> Self {
+        Self::new(&format!("UUID={uuid}"), target)
+    }
+
+    pub(crate) fn get_source_uuid(&self) -> Option<&str> {
+        if let Some((t, rest)) = self.source.split_once('=') {
+            if t.eq_ignore_ascii_case("uuid") {
+                return Some(rest);
+            }
+        }
+        None
     }
 
     pub(crate) fn to_fstab(&self) -> String {
@@ -286,7 +347,7 @@ fn mkfs<'a>(
     opts: impl IntoIterator<Item = &'a str>,
 ) -> Result<uuid::Uuid> {
     let u = uuid::Uuid::new_v4();
-    let mut t = Task::new("Creating filesystem", &format!("mkfs.{fs}"));
+    let mut t = Task::new("Creating filesystem", format!("mkfs.{fs}"));
     match fs {
         Filesystem::Xfs => {
             t.cmd.arg("-m");
@@ -311,7 +372,7 @@ fn mkfs<'a>(
 
 fn mount(dev: &str, target: &Utf8Path) -> Result<()> {
     Task::new_and_run(
-        &format!("Mounting {target}"),
+        format!("Mounting {target}"),
         "mount",
         [dev, target.as_str()],
     )
@@ -328,7 +389,7 @@ fn bind_mount_from_host(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -
     // the host's mount namespace, then give `mount` our own pid (from which it finds the mount namespace).
     let desc = format!("Bind mounting {src} from host");
     let target = format!("{}", nix::unistd::getpid());
-    Task::new_cmd(&desc, run_in_host_mountns("mount"))
+    Task::new_cmd(desc, run_in_host_mountns("mount"))
         .quiet()
         .args(["--bind", "-N", target.as_str(), src.as_str(), dest.as_str()])
         .run()
@@ -546,17 +607,16 @@ struct RootSetup {
     kargs: Vec<String>,
 }
 
+fn require_boot_uuid(spec: &MountSpec) -> Result<&str> {
+    spec.get_source_uuid()
+        .ok_or_else(|| anyhow!("/boot is not specified via UUID= (this is currently required)"))
+}
+
 impl RootSetup {
     /// Get the UUID= mount specifier for the /boot filesystem.  At the current time this is
     /// required.
     fn get_boot_uuid(&self) -> Result<&str> {
-        let bootsrc = &self.boot.source;
-        if let Some((t, rest)) = bootsrc.split_once('=') {
-            if t.eq_ignore_ascii_case("uuid") {
-                return Ok(rest);
-            }
-        }
-        anyhow::bail!("/boot is not specified via UUID= (this is currently required): {bootsrc}")
+        require_boot_uuid(&self.boot)
     }
 }
 
@@ -603,7 +663,7 @@ fn install_create_rootfs(state: &State, opts: InstallBlockDeviceOpts) -> Result<
     let rootfs = state.mntdir.join("rootfs");
     std::fs::create_dir_all(&rootfs)?;
     let bootfs = state.mntdir.join("boot");
-    std::fs::create_dir_all(&bootfs)?;
+    std::fs::create_dir_all(bootfs)?;
 
     // Run sgdisk to create partitions.
     let mut sgdisk = Task::new("Initializing partitions", "sgdisk");
@@ -718,7 +778,7 @@ fn install_create_rootfs(state: &State, opts: InstallBlockDeviceOpts) -> Result<
             .args([espdev.as_str(), "-n", "EFI-SYSTEM"])
             .quiet_output()
             .run()?;
-        let efifs_path = bootfs.join("efi");
+        let efifs_path = bootfs.join(crate::bootloader::EFI_DIR);
         std::fs::create_dir(&efifs_path).context("Creating efi dir")?;
         mount(&espdev, &efifs_path)?;
     }
@@ -767,7 +827,7 @@ pub(crate) fn finalize_filesystem(fs: &Utf8Path) -> Result<()> {
     Task::new_and_run(format!("Trimming {fsname}"), "fstrim", ["-v", fs.as_str()])?;
     // Remounting readonly will flush outstanding writes and ensure we error out if there were background
     // writeback problems.
-    Task::new(&format!("Finalizing filesystem {fsname}"), "mount")
+    Task::new(format!("Finalizing filesystem {fsname}"), "mount")
         .args(["-o", "remount,ro", fs.as_str()])
         .run()?;
     // Finally, freezing (and thawing) the filesystem will flush the journal, which means the next boot is clean.
@@ -869,16 +929,7 @@ async fn prepare_install(
     Ok(state)
 }
 
-/// Implementation of the `bootc install` CLI command.
-pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
-    let block_opts = opts.block_opts;
-    let state = prepare_install(opts.config_opts, opts.target_opts).await?;
-
-    // This is all blocking stuff
-    let mut rootfs = {
-        let state = state.clone();
-        tokio::task::spawn_blocking(move || install_create_rootfs(&state, block_opts)).await??
-    };
+async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Result<()> {
     if state.override_disable_selinux {
         rootfs.kargs.push("selinux=0".to_string());
     }
@@ -894,7 +945,7 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
 
     // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
     {
-        let aleph = initialize_ostree_root_from_self(&state, &rootfs).await?;
+        let aleph = initialize_ostree_root_from_self(state, rootfs).await?;
         rootfs
             .rootfs_fd
             .atomic_replace_with(BOOTC_ALEPH_PATH, |f| {
@@ -906,6 +957,7 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
 
     let boot_uuid = rootfs.get_boot_uuid()?;
     crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, boot_uuid)?;
+    tracing::debug!("Installed bootloader");
 
     // If Ignition is specified, enable it
     if let Some(ignition_file) = state.config_opts.ignition_file.as_deref() {
@@ -930,6 +982,26 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
         finalize_filesystem(fs)?;
     }
 
+    Ok(())
+}
+
+fn installation_complete() {
+    println!("Installation complete!");
+}
+
+/// Implementation of the `bootc install` CLI command.
+pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
+    let block_opts = opts.block_opts;
+    let state = prepare_install(opts.config_opts, opts.target_opts).await?;
+
+    // This is all blocking stuff
+    let mut rootfs = {
+        let state = state.clone();
+        tokio::task::spawn_blocking(move || install_create_rootfs(&state, block_opts)).await??
+    };
+
+    install_to_filesystem_impl(&state, &mut rootfs).await?;
+
     // Drop all data about the root except the path to ensure any file descriptors etc. are closed.
     let rootfs_path = rootfs.rootfs.clone();
     drop(rootfs);
@@ -940,7 +1012,154 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
         ["-R", rootfs_path.as_str()],
     )?;
 
-    println!("Installation complete!");
+    installation_complete();
+
+    Ok(())
+}
+
+#[context("Verifying empty rootfs")]
+fn require_empty_rootdir(rootfs_fd: &Dir) -> Result<()> {
+    for e in rootfs_fd.entries()? {
+        let e = e?;
+        let name = e.file_name();
+        let name = name
+            .to_str()
+            .ok_or_else(|| anyhow!("Invalid non-UTF8 filename: {name:?}"))?;
+        if name == LOST_AND_FOUND {
+            continue;
+        }
+        // There must be a boot directory (that is empty)
+        if name == BOOT {
+            let mut entries = rootfs_fd.read_dir(BOOT)?;
+            if let Some(e) = entries.next() {
+                let e = e?;
+                let name = e.file_name();
+                let name = name
+                    .to_str()
+                    .ok_or_else(|| anyhow!("Invalid non-UTF8 filename: {name:?}"))?;
+                if matches!(name, LOST_AND_FOUND | crate::bootloader::EFI_DIR) {
+                    continue;
+                }
+                anyhow::bail!("Non-empty boot directory, found {name:?}");
+            }
+        } else {
+            anyhow::bail!("Non-empty root filesystem; found {name:?}");
+        }
+    }
+    Ok(())
+}
+
+/// Implementation of the `bootc install-to-filsystem` CLI command.
+pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Result<()> {
+    // Gather global state, destructuring the provided options
+    let state = prepare_install(opts.config_opts, opts.target_opts).await?;
+    let fsopts = opts.filesystem_opts;
+
+    let root_path = &fsopts.root_path;
+    let rootfs_fd = Dir::open_ambient_dir(root_path, cap_std::ambient_authority())
+        .with_context(|| format!("Opening target root directory {root_path}"))?;
+    if fsopts.wipe {
+        let rootfs_fd = rootfs_fd.try_clone()?;
+        println!("Wiping contents of root");
+        tokio::task::spawn_blocking(move || {
+            for e in rootfs_fd.entries()? {
+                let e = e?;
+                rootfs_fd.remove_all_optional(e.file_name())?;
+            }
+            anyhow::Ok(())
+        })
+        .await??;
+    } else {
+        require_empty_rootdir(&rootfs_fd)?;
+    }
+
+    // Gather data about the root filesystem
+    let inspect = crate::mount::inspect_filesystem(&fsopts.root_path)?;
+
+    // We support overriding the mount specification for root (i.e. LABEL vs UUID versus
+    // raw paths).
+    let root_mount_spec = if let Some(s) = fsopts.root_mount_spec {
+        s
+    } else {
+        let mut uuid = inspect
+            .uuid
+            .ok_or_else(|| anyhow!("No filesystem uuid found in target root"))?;
+        uuid.insert_str(0, "UUID=");
+        tracing::debug!("root {uuid}");
+        uuid
+    };
+    tracing::debug!("Root mount spec: {root_mount_spec}");
+
+    // Verify /boot is a separate mount
+    {
+        let root_dev = rootfs_fd.dir_metadata()?.dev();
+        let boot_dev = rootfs_fd
+            .symlink_metadata_optional(BOOT)?
+            .ok_or_else(|| {
+                anyhow!("No /{BOOT} directory found in root; this is is currently required")
+            })?
+            .dev();
+        tracing::debug!("root_dev={root_dev} boot_dev={boot_dev}");
+        if root_dev == boot_dev {
+            anyhow::bail!("/{BOOT} must currently be a separate mounted filesystem");
+        }
+    }
+    // Find the UUID of /boot because we need it for GRUB.
+    let boot_path = fsopts.root_path.join(BOOT);
+    let boot_uuid = crate::mount::inspect_filesystem(&boot_path)
+        .context("Inspecting /{BOOT}")?
+        .uuid
+        .ok_or_else(|| anyhow!("No UUID found for /{BOOT}"))?;
+    tracing::debug!("boot UUID: {boot_uuid}");
+
+    // Find the real underlying backing device for the root.  This is currently just required
+    // for GRUB (BIOS) and in the future zipl (I think).
+    let backing_device = {
+        let mut dev = inspect.source;
+        loop {
+            tracing::debug!("Finding parents for {dev}");
+            let mut parents = crate::blockdev::find_parent_devices(&dev)?.into_iter();
+            let parent = if let Some(f) = parents.next() {
+                f
+            } else {
+                break;
+            };
+            if let Some(next) = parents.next() {
+                anyhow::bail!(
+                    "Found multiple parent devices {parent} and {next}; not currently supported"
+                );
+            }
+            dev = parent;
+        }
+        dev
+    };
+    tracing::debug!("Backing device: {backing_device}");
+
+    let rootarg = format!("root={root_mount_spec}");
+    let boot = if let Some(spec) = fsopts.boot_mount_spec {
+        MountSpec::new(&spec, "/boot")
+    } else {
+        MountSpec::new_uuid_src(&boot_uuid, "/boot")
+    };
+    // By default, we inject a boot= karg because things like FIPS compliance currently
+    // require checking in the initramfs.
+    let bootarg = format!("boot={}", &boot.source);
+    let kargs = vec![rootarg, RW_KARG.to_string(), bootarg];
+
+    let mut rootfs = RootSetup {
+        device: backing_device.into(),
+        rootfs: fsopts.root_path,
+        rootfs_fd,
+        boot,
+        kargs,
+    };
+
+    install_to_filesystem_impl(&state, &mut rootfs).await?;
+
+    // Drop all data about the root except the path to ensure any file descriptors etc. are closed.
+    drop(rootfs);
+
+    installation_complete();
 
     Ok(())
 }

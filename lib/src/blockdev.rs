@@ -4,7 +4,10 @@ use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use fn_error_context::context;
 use nix::errno::Errno;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::fs::File;
 use std::os::unix::io::AsRawFd;
 use std::process::Command;
@@ -39,7 +42,7 @@ impl Device {
 
 pub(crate) fn wipefs(dev: &Utf8Path) -> Result<()> {
     Task::new_and_run(
-        &format!("Wiping device {dev}"),
+        format!("Wiping device {dev}"),
         "wipefs",
         ["-a", dev.as_str()],
     )
@@ -107,6 +110,67 @@ pub(crate) fn reread_partition_table(file: &mut File, retry: bool) -> Result<()>
         }
     }
     Ok(())
+}
+
+/// Runs the provided Command object, captures its stdout, and swallows its stderr except on
+/// failure. Returns a Result<String> describing whether the command failed, and if not, its
+/// standard output. Output is assumed to be UTF-8. Errors are adequately prefixed with the full
+/// command.
+pub(crate) fn cmd_output(cmd: &mut Command) -> Result<String> {
+    let result = cmd
+        .output()
+        .with_context(|| format!("running {:#?}", cmd))?;
+    if !result.status.success() {
+        eprint!("{}", String::from_utf8_lossy(&result.stderr));
+        anyhow::bail!("{:#?} failed with {}", cmd, result.status);
+    }
+    String::from_utf8(result.stdout)
+        .with_context(|| format!("decoding as UTF-8 output of `{:#?}`", cmd))
+}
+
+/// Parse key-value pairs from lsblk --pairs.
+/// Newer versions of lsblk support JSON but the one in CentOS 7 doesn't.
+fn split_lsblk_line(line: &str) -> HashMap<String, String> {
+    static REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"([A-Z-_]+)="([^"]+)""#).unwrap());
+    let mut fields: HashMap<String, String> = HashMap::new();
+    for cap in REGEX.captures_iter(line) {
+        fields.insert(cap[1].to_string(), cap[2].to_string());
+    }
+    fields
+}
+
+/// This is a bit fuzzy, but... this function will return every block device in the parent
+/// hierarchy of `device` capable of containing other partitions. So e.g. parent devices of type
+/// "part" doesn't match, but "disk" and "mpath" does.
+pub(crate) fn find_parent_devices(device: &str) -> Result<Vec<String>> {
+    let mut cmd = Command::new("lsblk");
+    // Older lsblk, e.g. in CentOS 7.6, doesn't support PATH, but --paths option
+    cmd.arg("--pairs")
+        .arg("--paths")
+        .arg("--inverse")
+        .arg("--output")
+        .arg("NAME,TYPE")
+        .arg(device);
+    let output = cmd_output(&mut cmd)?;
+    let mut parents = Vec::new();
+    // skip first line, which is the device itself
+    for line in output.lines().skip(1) {
+        let dev = split_lsblk_line(line);
+        let name = dev
+            .get("NAME")
+            .with_context(|| format!("device in hierarchy of {device} missing NAME"))?;
+        let kind = dev
+            .get("TYPE")
+            .with_context(|| format!("device in hierarchy of {device} missing TYPE"))?;
+        if kind == "disk" {
+            parents.push(name.clone());
+        } else if kind == "mpath" {
+            parents.push(name.clone());
+            // we don't need to know what disks back the multipath
+            break;
+        }
+    }
+    Ok(parents)
 }
 
 // create unsafe ioctl wrappers

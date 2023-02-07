@@ -34,6 +34,6 @@ if test -z "${BASE_QEMU_IMAGE:-}"; then
     coreos-installer download -p qemu -f qcow2.xz --decompress
     BASE_QEMU_IMAGE="$(echo *.qcow2)"
 fi
-kola run --oscontainer ostree-unverified-registry:${TARGET_IMAGE} --qemu-image "./${BASE_QEMU_IMAGE}" "${kola_args[@]}" ext.bootc.'*'
+cosa kola run --oscontainer ostree-unverified-registry:${TARGET_IMAGE} --qemu-image "./${BASE_QEMU_IMAGE}" "${kola_args[@]}" ext.bootc.'*'
 
 echo "ok kola bootc"
