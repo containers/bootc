@@ -7,6 +7,8 @@ use camino::Utf8Path;
 use fn_error_context::context;
 use serde::Deserialize;
 
+use crate::task::Task;
+
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct Filesystem {
@@ -35,4 +37,13 @@ pub(crate) fn inspect_filesystem(path: &Utf8Path) -> Result<Filesystem> {
         .into_iter()
         .next()
         .ok_or_else(|| anyhow!("findmnt returned no data for {path}"))
+}
+
+/// Mount a device to the target path.
+pub(crate) fn mount(dev: &str, target: &Utf8Path) -> Result<()> {
+    Task::new_and_run(
+        format!("Mounting {target}"),
+        "mount",
+        [dev, target.as_str()],
+    )
 }
