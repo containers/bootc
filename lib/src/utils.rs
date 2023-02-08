@@ -57,9 +57,27 @@ pub(crate) fn run_in_host_mountns(cmd: &str) -> Command {
 }
 
 /// Given a possibly tagged image like quay.io/foo/bar:latest and a digest 0ab32..., return
-/// the digested form quay.io/foo/bar@sha256:0ab32...
+/// the digested form quay.io/foo/bar:latest@sha256:0ab32...
+/// If the image already has a digest, it will be replaced.
 #[allow(dead_code)]
 pub(crate) fn digested_pullspec(image: &str, digest: &str) -> String {
-    let image = image.rsplit_once(':').map(|v| v.0).unwrap_or(image);
+    let image = image.rsplit_once('@').map(|v| v.0).unwrap_or(image);
     format!("{image}@{digest}")
+}
+
+#[test]
+fn test_digested_pullspec() {
+    let digest = "ebe3bdccc041864e5a485f1e755e242535c3b83d110c0357fe57f110b73b143e";
+    assert_eq!(
+        digested_pullspec("quay.io/example/foo:bar", digest),
+        format!("quay.io/example/foo:bar@{digest}")
+    );
+    assert_eq!(
+        digested_pullspec("quay.io/example/foo@sha256:otherdigest", digest),
+        format!("quay.io/example/foo@{digest}")
+    );
+    assert_eq!(
+        digested_pullspec("quay.io/example/foo", digest),
+        format!("quay.io/example/foo@{digest}")
+    );
 }

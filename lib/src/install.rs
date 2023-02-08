@@ -24,7 +24,6 @@ use ostree_ext::ostree;
 use ostree_ext::prelude::Cast;
 use serde::{Deserialize, Serialize};
 
-use crate::containerenv::ContainerExecutionInfo;
 use crate::lsm::lsm_label;
 use crate::task::Task;
 use crate::utils::run_in_host_mountns;
@@ -234,7 +233,10 @@ pub(crate) struct InstallToFilesystemOpts {
 
 // Shared read-only global state
 struct State {
-    container_info: ContainerExecutionInfo,
+    /// Image reference we'll pull from (today always containers-storage: type)
+    source_imageref: ostree_container::ImageReference,
+    /// The digest to use for pulls
+    source_digest: String,
     /// Force SELinux off in target system
     override_disable_selinux: bool,
     config_opts: InstallConfigOpts,
@@ -416,20 +418,6 @@ async fn initialize_ostree_root_from_self(
     let opts = &state.target_opts;
     let cancellable = gio::Cancellable::NONE;
 
-    if !state.container_info.engine.starts_with("podman") {
-        anyhow::bail!("Currently this command only supports being executed via podman");
-    }
-    if state.container_info.imageid.is_empty() {
-        anyhow::bail!("Invalid empty imageid");
-    }
-    let digest = crate::podman::imageid_to_digest(&state.container_info.imageid)?;
-    let src_image = crate::utils::digested_pullspec(&state.container_info.image, &digest);
-
-    let src_imageref = ostree_container::ImageReference {
-        transport: ostree_container::Transport::ContainerStorage,
-        name: src_image.clone(),
-    };
-
     // Parse the target CLI image reference options
     let target_sigverify = if opts.target_no_signature_verification {
         SignatureSource::ContainerPolicyAllowInsecure
@@ -451,10 +439,7 @@ async fn initialize_ostree_root_from_self(
     } else {
         ostree_container::OstreeImageReference {
             sigverify: target_sigverify,
-            imgref: ostree_container::ImageReference {
-                transport: ostree_container::Transport::Registry,
-                name: state.container_info.image.clone(),
-            },
+            imgref: state.source_imageref.clone(),
         }
     };
 
@@ -493,11 +478,17 @@ async fn initialize_ostree_root_from_self(
 
     let mut temporary_dir = None;
     let src_imageref = if skopeo_supports_containers_storage()? {
-        src_imageref
+        // We always use exactly the digest of the running image to ensure predictability.
+        let spec =
+            crate::utils::digested_pullspec(&state.source_imageref.name, &state.source_digest);
+        ostree_container::ImageReference {
+            transport: ostree_container::Transport::ContainerStorage,
+            name: spec,
+        }
     } else {
         let td = tempfile::tempdir_in("/var/tmp")?;
         let path: &Utf8Path = td.path().try_into().unwrap();
-        let r = copy_to_oci(&src_imageref, path)?;
+        let r = copy_to_oci(&state.source_imageref, path)?;
         temporary_dir = Some(td);
         r
     };
@@ -555,7 +546,7 @@ async fn initialize_ostree_root_from_self(
     let uname = cap_std_ext::rustix::process::uname();
 
     let aleph = InstallAleph {
-        image: src_image,
+        image: src_imageref.imgref.name.clone(),
         kernel: uname.release().to_str()?.to_string(),
     };
 
@@ -903,6 +894,18 @@ async fn prepare_install(
 
     // This command currently *must* be run inside a privileged container.
     let container_info = crate::containerenv::get_container_execution_info()?;
+    if !container_info.engine.starts_with("podman") {
+        anyhow::bail!("Currently this command only supports being executed via podman");
+    }
+    if container_info.imageid.is_empty() {
+        anyhow::bail!("Invalid empty imageid");
+    }
+    let source_imageref = ostree_container::ImageReference {
+        transport: ostree_container::Transport::ContainerStorage,
+        name: container_info.image.clone(),
+    };
+    // Find the exact digested image we are running
+    let source_digest = crate::podman::imageid_to_digest(&container_info.imageid)?;
 
     // Even though we require running in a container, the mounts we create should be specific
     // to this process, so let's enter a private mountns to avoid leaking them.
@@ -943,7 +946,8 @@ async fn prepare_install(
     bind_mount_from_host("/var/tmp", "/var/tmp")?;
     let state = Arc::new(State {
         override_disable_selinux,
-        container_info,
+        source_imageref,
+        source_digest,
         mntdir,
         devdir,
         config_opts,
