@@ -809,7 +809,8 @@ where
                 } => {
                     let src_repo = parse_repo(&src_repo)?;
                     let dest_repo = parse_repo(&dest_repo)?;
-                    crate::container::store::copy(&src_repo, &dest_repo, &imgref).await
+                    let imgref = &imgref.imgref;
+                    crate::container::store::copy_as(&src_repo, imgref, &dest_repo, imgref).await
                 }
                 ContainerImageOpts::ReplaceDetachedMetadata {
                     src,

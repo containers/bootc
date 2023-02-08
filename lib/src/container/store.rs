@@ -982,19 +982,36 @@ fn manifest_for_image(repo: &ostree::Repo, imgref: &ImageReference) -> Result<Im
 
 /// Copy a downloaded image from one repository to another.
 #[context("Copying image")]
+#[deprecated = "Use copy_as instead"]
 pub async fn copy(
     src_repo: &ostree::Repo,
     dest_repo: &ostree::Repo,
     imgref: &OstreeImageReference,
 ) -> Result<()> {
-    let ostree_ref = ref_for_image(&imgref.imgref)?;
-    let manifest = manifest_for_image(src_repo, &imgref.imgref)?;
+    // For historical reasons, this function takes an ostree refernece
+    // as input, but the storage only operaties on image references.
+    let imgref = &imgref.imgref;
+    copy_as(src_repo, imgref, dest_repo, imgref).await
+}
+
+/// Copy a downloaded image from one repository to another, while also
+/// optionally changing the image reference type.
+#[context("Copying image")]
+pub async fn copy_as(
+    src_repo: &ostree::Repo,
+    src_imgref: &ImageReference,
+    dest_repo: &ostree::Repo,
+    dest_imgref: &ImageReference,
+) -> Result<()> {
+    let src_ostree_ref = ref_for_image(src_imgref)?;
+    let src_commit = src_repo.require_rev(&src_ostree_ref)?;
+    let manifest = manifest_for_image(src_repo, src_imgref)?;
     // Create a task to copy each layer, plus the final ref
     let layer_refs = manifest
         .layers()
         .iter()
         .map(ref_for_layer)
-        .chain(std::iter::once(Ok(ostree_ref)));
+        .chain(std::iter::once(Ok(src_commit.to_string())));
     for ostree_ref in layer_refs {
         let ostree_ref = ostree_ref?;
         let src_repo = src_repo.clone();
@@ -1015,6 +1032,15 @@ pub async fn copy(
         })
         .await?;
     }
+
+    let dest_ostree_ref = ref_for_image(dest_imgref)?;
+    dest_repo.set_ref_immediate(
+        None,
+        &dest_ostree_ref,
+        Some(&src_commit),
+        gio::Cancellable::NONE,
+    )?;
+
     Ok(())
 }
 
