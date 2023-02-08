@@ -425,12 +425,9 @@ async fn initialize_ostree_root_from_self(
     let digest = crate::podman::imageid_to_digest(&state.container_info.imageid)?;
     let src_image = crate::utils::digested_pullspec(&state.container_info.image, &digest);
 
-    let src_imageref = ostree_container::OstreeImageReference {
-        sigverify: ostree_container::SignatureSource::ContainerPolicyAllowInsecure,
-        imgref: ostree_container::ImageReference {
-            transport: ostree_container::Transport::ContainerStorage,
-            name: src_image.clone(),
-        },
+    let src_imageref = ostree_container::ImageReference {
+        transport: ostree_container::Transport::ContainerStorage,
+        name: src_image.clone(),
     };
 
     // Parse the target CLI image reference options
@@ -504,6 +501,12 @@ async fn initialize_ostree_root_from_self(
         temporary_dir = Some(td);
         r
     };
+    let src_imageref = ostree_container::OstreeImageReference {
+        // There are no signatures to verify since we're fetching the already
+        // pulled container.
+        sigverify: ostree_container::SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: src_imageref,
+    };
 
     let kargs = root_setup
         .kargs
@@ -561,11 +564,11 @@ async fn initialize_ostree_root_from_self(
 
 #[context("Copying to oci")]
 fn copy_to_oci(
-    src_imageref: &ostree_container::OstreeImageReference,
+    src_imageref: &ostree_container::ImageReference,
     dir: &Utf8Path,
-) -> Result<ostree_container::OstreeImageReference> {
+) -> Result<ostree_container::ImageReference> {
     tracing::debug!("Copying {src_imageref}");
-    let src_imageref = &src_imageref.imgref.to_string();
+    let src_imageref = src_imageref.to_string();
     let dest_imageref = ostree_container::ImageReference {
         transport: ostree_container::Transport::OciDir,
         name: dir.to_string(),
@@ -582,10 +585,7 @@ fn copy_to_oci(
         dest_imageref_str.as_str(),
     ])
     .run()?;
-    Ok(ostree_container::OstreeImageReference {
-        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
-        imgref: dest_imageref,
-    })
+    Ok(dest_imageref)
 }
 
 #[context("Querying skopeo version")]
