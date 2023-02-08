@@ -168,9 +168,6 @@ pub(crate) struct State {
     override_disable_selinux: bool,
     config_opts: InstallConfigOpts,
     target_opts: InstallTargetOpts,
-    /// Path to our devtmpfs
-    devdir: Utf8PathBuf,
-    mntdir: Utf8PathBuf,
 }
 
 /// Path to initially deployed version information
@@ -630,26 +627,12 @@ async fn prepare_install(
     // Create our global (read-only) state which gets wrapped in an Arc
     // so we can pass it to worker threads too. Right now this just
     // combines our command line options along with some bind mounts from the host.
-    let run_bootc = Utf8Path::new(RUN_BOOTC);
-    let mntdir = run_bootc.join("mounts");
-    if mntdir.exists() {
-        std::fs::remove_dir_all(&mntdir)?;
-    }
-    let devdir = mntdir.join("dev");
-    std::fs::create_dir_all(&devdir)?;
-    Task::new_and_run(
-        "Mounting devtmpfs",
-        "mount",
-        ["devtmpfs", "-t", "devtmpfs", devdir.as_str()],
-    )?;
     // Overmount /var/tmp with the host's, so we can use it to share state
     bind_mount_from_host("/var/tmp", "/var/tmp")?;
     let state = Arc::new(State {
         override_disable_selinux,
         source_imageref,
         source_digest,
-        mntdir,
-        devdir,
         config_opts,
         target_opts,
     });
@@ -724,9 +707,7 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
 
     // This is all blocking stuff
     let mut rootfs = {
-        let state = Arc::clone(&state);
-        tokio::task::spawn_blocking(move || baseline::install_create_rootfs(&state, block_opts))
-            .await??
+        tokio::task::spawn_blocking(move || baseline::install_create_rootfs(block_opts)).await??
     };
 
     install_to_filesystem_impl(&state, &mut rootfs).await?;

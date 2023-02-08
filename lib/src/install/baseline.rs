@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use super::MountSpec;
 use super::RootSetup;
-use super::State;
+use super::RUN_BOOTC;
 use super::RW_KARG;
 use crate::lsm::lsm_label;
 use crate::mount;
@@ -156,10 +156,7 @@ fn mkfs<'a>(
 }
 
 #[context("Creating rootfs")]
-pub(crate) fn install_create_rootfs(
-    state: &State,
-    opts: InstallBlockDeviceOpts,
-) -> Result<RootSetup> {
+pub(crate) fn install_create_rootfs(opts: InstallBlockDeviceOpts) -> Result<RootSetup> {
     // Verify that the target is empty (if not already wiped in particular, but it's
     // also good to verify that the wipe worked)
     let device = crate::blockdev::list_dev(&opts.device)?;
@@ -181,13 +178,26 @@ pub(crate) fn install_create_rootfs(
         );
     }
 
+    let run_bootc = Utf8Path::new(RUN_BOOTC);
+    let mntdir = run_bootc.join("mounts");
+    if mntdir.exists() {
+        std::fs::remove_dir_all(&mntdir)?;
+    }
+    let devdir = mntdir.join("dev");
+    std::fs::create_dir_all(&devdir)?;
+    Task::new_and_run(
+        "Mounting devtmpfs",
+        "mount",
+        ["devtmpfs", "-t", "devtmpfs", devdir.as_str()],
+    )?;
+
     // Now at this point, our /dev is a stale snapshot because we don't have udev running.
     // So from hereon after, we prefix devices with our temporary devtmpfs mount.
     let reldevice = opts
         .device
         .strip_prefix("/dev/")
         .context("Absolute device path in /dev/ required")?;
-    let device = state.devdir.join(reldevice);
+    let device = devdir.join(reldevice);
 
     let root_size = opts
         .root_size
@@ -198,9 +208,9 @@ pub(crate) fn install_create_rootfs(
 
     // Create a temporary directory to use for mount points.  Note that we're
     // in a mount namespace, so these should not be visible on the host.
-    let rootfs = state.mntdir.join("rootfs");
+    let rootfs = mntdir.join("rootfs");
     std::fs::create_dir_all(&rootfs)?;
-    let bootfs = state.mntdir.join("boot");
+    let bootfs = mntdir.join("boot");
     std::fs::create_dir_all(bootfs)?;
 
     // Run sgdisk to create partitions.
