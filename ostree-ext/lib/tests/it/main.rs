@@ -1084,11 +1084,34 @@ async fn test_container_write_derive() -> Result<()> {
         None,
         gio::Cancellable::NONE,
     )?;
-    store::copy(fixture.destrepo(), &destrepo2, &derived_ref).await?;
+    #[allow(deprecated)]
+    store::copy(fixture.destrepo(), &destrepo2, &derived_ref)
+        .await
+        .context("Copying")?;
 
     let images = store::list_images(&destrepo2)?;
     assert_eq!(images.len(), 1);
     assert_eq!(images[0], derived_ref.imgref.to_string());
+
+    // And test copy_as
+    let target_name = "quay.io/exampleos/centos:stream9";
+    let registry_ref = ImageReference {
+        transport: Transport::Registry,
+        name: target_name.to_string(),
+    };
+    store::copy_as(
+        fixture.destrepo(),
+        &derived_ref.imgref,
+        &destrepo2,
+        &registry_ref,
+    )
+    .await
+    .context("Copying")?;
+
+    let mut images = store::list_images(&destrepo2)?;
+    images.sort_unstable();
+    assert_eq!(images[0], registry_ref.to_string());
+    assert_eq!(images[1], derived_ref.imgref.to_string());
 
     Ok(())
 }
