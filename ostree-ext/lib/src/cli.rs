@@ -147,6 +147,17 @@ pub(crate) enum ContainerOpts {
     /// Commands for working with (possibly layered, non-encapsulated) container images.
     #[clap(subcommand)]
     Image(ContainerImageOpts),
+
+    /// Compare the contents of two OCI compliant images.
+    Compare {
+        /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
+        #[clap(value_parser = parse_imgref)]
+        imgref_old: OstreeImageReference,
+
+        /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
+        #[clap(value_parser = parse_imgref)]
+        imgref_new: OstreeImageReference,
+    },
 }
 
 /// Options for container image fetching.
@@ -874,6 +885,16 @@ where
                     Ok(())
                 }
             },
+            ContainerOpts::Compare {
+                imgref_old,
+                imgref_new,
+            } => {
+                let (manifest_old, _) = crate::container::fetch_manifest(&imgref_old).await?;
+                let (manifest_new, _) = crate::container::fetch_manifest(&imgref_new).await?;
+                let manifest_diff = crate::container::manifest_diff(&manifest_old, &manifest_new);
+                manifest_diff.print();
+                Ok(())
+            }
         },
         Opt::ImaSign(ref opts) => ima_sign(opts),
         #[cfg(feature = "internal-testing-api")]
