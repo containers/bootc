@@ -20,6 +20,9 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use tracing::instrument;
 
+/// The label which may be used in addition to the standard OCI label.
+pub const LEGACY_VERSION_LABEL: &str = "version";
+
 /// Type of container image generated
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ExportLayout {
@@ -220,7 +223,10 @@ fn build_oci(
         .unwrap_or_else(|| crate::chunking::Chunking::new(repo, commit))?;
 
     if let Some(version) = commit_meta.lookup::<String>("version")? {
-        labels.insert("version".into(), version);
+        if !opts.no_legacy_version_label {
+            labels.insert(LEGACY_VERSION_LABEL.into(), version.clone());
+        }
+        labels.insert(oci_image::ANNOTATION_VERSION.into(), version);
     }
     labels.insert(OSTREE_COMMIT_LABEL.into(), commit.into());
 
@@ -356,6 +362,9 @@ pub struct ExportOpts {
     pub max_layers: Option<NonZeroU32>,
     /// The container image layout
     pub format: ExportLayout,
+    // TODO semver-break: remove this
+    /// Use only the standard OCI version label
+    pub no_legacy_version_label: bool,
 }
 
 impl ExportOpts {
