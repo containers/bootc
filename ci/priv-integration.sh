@@ -69,4 +69,8 @@ fi
 grep "skopeo too old to pull from containers-storage" err.txt
 echo "ok pulled from containers storage failed"
 
+ostree-ext-cli container compare ${imgref} ${imgref} > compare.txt
+grep "Removed layers: 0  Size: 0 bytes" compare.txt
+grep "Added layers: 0  Size: 0 bytes" compare.txt
+
 echo ok privileged integration
