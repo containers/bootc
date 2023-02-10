@@ -27,6 +27,7 @@
 
 use anyhow::anyhow;
 
+use ostree::glib;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -243,6 +244,64 @@ impl std::fmt::Display for SignatureSource {
 impl std::fmt::Display for OstreeImageReference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.sigverify, self.imgref)
+    }
+}
+
+/// Represent the difference in content between two OCI compliant Images
+#[derive(Debug, Default)]
+pub struct ManifestDiff {
+    all_layers_in_new: Vec<oci_spec::image::Descriptor>,
+    removed: Vec<oci_spec::image::Descriptor>,
+    added: Vec<oci_spec::image::Descriptor>,
+}
+
+/// Computes the difference between two OCI compliant images
+pub fn manifest_diff(
+    src: &oci_spec::image::ImageManifest,
+    dest: &oci_spec::image::ImageManifest,
+) -> ManifestDiff {
+    let src_layers = src
+        .layers()
+        .iter()
+        .map(|l| (l.digest(), l))
+        .collect::<HashMap<_, _>>();
+    let dest_layers = dest
+        .layers()
+        .iter()
+        .map(|l| (l.digest(), l))
+        .collect::<HashMap<_, _>>();
+    let mut diff = ManifestDiff::default();
+    for (blobid, &descriptor) in src_layers.iter() {
+        if !dest_layers.contains_key(blobid) {
+            diff.removed.push(descriptor.clone());
+        }
+    }
+    for (blobid, &descriptor) in dest_layers.iter() {
+        diff.all_layers_in_new.push(descriptor.clone());
+        if !src_layers.contains_key(blobid) {
+            diff.added.push(descriptor.clone());
+        }
+    }
+    diff
+}
+
+impl ManifestDiff {
+    /// Prints the total, removed and added content between two OCI images
+    pub fn print(&self) {
+        let layersum = |layers: &Vec<oci_spec::image::Descriptor>| -> u64 {
+            layers.iter().map(|layer| layer.size() as u64).sum()
+        };
+        let new_total = &self.all_layers_in_new.len();
+        let new_total_size = glib::format_size(layersum(&self.all_layers_in_new));
+        let n_removed = &self.removed.len();
+        let n_added = &self.added.len();
+        let removed_size = layersum(&self.removed);
+        let removed_size_str = glib::format_size(removed_size);
+        let added_size = layersum(&self.removed);
+        let added_size_str = glib::format_size(added_size);
+        println!("Total new layers: {new_total}  Size: {new_total_size}");
+        println!("Removed layers: {n_removed}  Size: {removed_size_str}");
+        println!("Added layers: {n_added}  Size: {added_size_str}");
     }
 }
 
