@@ -95,15 +95,6 @@ pub(crate) fn object_path(objtype: ostree::ObjectType, checksum: &str) -> Utf8Pa
     format!("{}/repo/objects/{}/{}.{}", OSTREEDIR, first, rest, suffix).into()
 }
 
-fn v0_xattrs_path(checksum: &str) -> Utf8PathBuf {
-    format!("{}/repo/xattrs/{}", OSTREEDIR, checksum).into()
-}
-
-fn v0_xattrs_object_path(checksum: &str) -> Utf8PathBuf {
-    let (first, rest) = checksum.split_at(2);
-    format!("{}/repo/objects/{}/{}.file.xattrs", OSTREEDIR, first, rest).into()
-}
-
 fn v1_xattrs_object_path(checksum: &str) -> Utf8PathBuf {
     let (first, rest) = checksum.split_at(2);
     format!("{}/repo/objects/{}/{}.file-xattrs", OSTREEDIR, first, rest).into()
@@ -173,11 +164,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     /// The ostree mode bits include the format, tar does not.
     /// Historically in format version 0 we injected them, so we need to keep doing so.
     fn filter_mode(&self, mode: u32) -> u32 {
-        if self.options.format_version == 0 {
-            mode
-        } else {
-            mode & !libc::S_IFMT
-        }
+        mode & !libc::S_IFMT
     }
 
     /// Add a directory entry with default permissions (root/root 0755)
@@ -250,16 +237,9 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             self.append_default_dir(&path)?;
         }
 
-        // The special `repo/xattrs` directory used in v0 format.
-        if self.options.format_version == 0 {
-            let path: Utf8PathBuf = format!("{}/repo/xattrs", OSTREEDIR).into();
-            self.append_default_dir(&path)?;
-        }
-
         // Repository configuration file.
         {
             let path = match self.options.format_version {
-                0 => format!("{}/config", SYSROOT),
                 1 => format!("{}/repo/config", OSTREEDIR),
                 n => anyhow::bail!("Unsupported ostree tar format version {}", n),
             };
@@ -363,30 +343,13 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
     fn append_xattrs(&mut self, checksum: &str, xattrs: &glib::Variant) -> Result<bool> {
         let xattrs_data = xattrs.data_as_bytes();
         let xattrs_data = xattrs_data.as_ref();
-        if xattrs_data.is_empty() && self.options.format_version == 0 {
-            return Ok(false);
-        }
 
         let xattrs_checksum = {
             let digest = openssl::hash::hash(openssl::hash::MessageDigest::sha256(), xattrs_data)?;
             hex::encode(digest)
         };
 
-        if self.options.format_version == 0 {
-            let path = v0_xattrs_path(&xattrs_checksum);
-
-            // Write xattrs content into a separate directory.
-            if !self.wrote_xattrs.contains(&xattrs_checksum) {
-                let inserted = self.wrote_xattrs.insert(xattrs_checksum);
-                debug_assert!(inserted);
-                self.append_default_data(&path, xattrs_data)?;
-            }
-            // Hardlink the object in the repo.
-            {
-                let objpath = v0_xattrs_object_path(checksum);
-                self.append_default_hardlink(&objpath, &path)?;
-            }
-        } else if self.options.format_version == 1 {
+        if self.options.format_version == 1 {
             let path = v1_xattrs_object_path(&xattrs_checksum);
 
             // Write xattrs content into a separate `.file-xattrs` object.
@@ -816,22 +779,6 @@ mod tests {
         for path in denormal {
             assert!(symlink_is_denormal(path));
         }
-    }
-
-    #[test]
-    fn test_v0_xattrs_path() {
-        let checksum = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
-        let expected = "sysroot/ostree/repo/xattrs/b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
-        let output = v0_xattrs_path(checksum);
-        assert_eq!(&output, expected);
-    }
-
-    #[test]
-    fn test_v0_xattrs_object_path() {
-        let checksum = "b8627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7";
-        let expected = "sysroot/ostree/repo/objects/b8/627e3ef0f255a322d2bd9610cfaaacc8f122b7f8d17c0e7e3caafa160f9fc7.file.xattrs";
-        let output = v0_xattrs_object_path(checksum);
-        assert_eq!(&output, expected);
     }
 
     #[test]
