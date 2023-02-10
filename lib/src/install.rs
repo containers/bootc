@@ -1,9 +1,15 @@
-use std::borrow::Cow;
-use std::fmt::Display;
+//! # Writing a container to a block device in a bootable way
+//!
+//! This module supports installing a bootc-compatible image to
+//! a block device directly via the `install` verb, or to an externally
+//! set up filesystem via `install-to-filesystem`.
+
+// This sub-module is the "basic" installer that handles creating basic block device
+// and filesystem setup.
+mod baseline;
+
 use std::io::BufWriter;
 use std::io::Write;
-use std::process::Command;
-use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -15,7 +21,7 @@ use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtDirExt;
 use cap_std_ext::rustix::fs::MetadataExt;
-use clap::ArgEnum;
+
 use fn_error_context::context;
 use ostree::gio;
 use ostree_ext::container as ostree_container;
@@ -24,7 +30,7 @@ use ostree_ext::ostree;
 use ostree_ext::prelude::Cast;
 use serde::{Deserialize, Serialize};
 
-use crate::containerenv::ContainerExecutionInfo;
+use self::baseline::InstallBlockDeviceOpts;
 use crate::lsm::lsm_label;
 use crate::task::Task;
 use crate::utils::run_in_host_mountns;
@@ -38,56 +44,8 @@ const RUN_BOOTC: &str = "/run/bootc";
 /// This is an ext4 special directory we need to ignore.
 const LOST_AND_FOUND: &str = "lost+found";
 
-#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum BlockSetup {
-    Direct,
-    Tpm2Luks,
-}
-
-impl Default for BlockSetup {
-    fn default() -> Self {
-        Self::Direct
-    }
-}
-
-#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum Filesystem {
-    Xfs,
-    Ext4,
-    Btrfs,
-}
-
-impl Default for Filesystem {
-    fn default() -> Self {
-        // Obviously this should be configurable.
-        Self::Xfs
-    }
-}
-
-impl Display for Filesystem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.to_possible_value().unwrap().get_name().fmt(f)
-    }
-}
-
 /// Kernel argument used to specify we want the rootfs mounted read-write by default
 const RW_KARG: &str = "rw";
-
-const BOOTPN: u32 = 3;
-// This ensures we end up under 512 to be small-sized.
-const BOOTPN_SIZE_MB: u32 = 510;
-const ROOTPN: u32 = 4;
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-const EFIPN: u32 = 2;
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-const EFIPN_SIZE_MB: u32 = 512;
-#[cfg(target_arch = "aarch64")]
-const RESERVEDPN: u32 = 1;
-#[cfg(target_arch = "ppc64")]
-const PREPPN: u32 = 1;
-#[cfg(target_arch = "ppc64")]
-const RESERVEDPN: u32 = 1;
 
 #[derive(clap::Args, Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct InstallTargetOpts {
@@ -140,38 +98,6 @@ pub(crate) struct InstallConfigOpts {
     #[clap(long)]
     /// Add a kernel argument
     karg: Option<Vec<String>>,
-}
-
-/// Options for installing to a block device
-#[derive(Debug, Clone, clap::Args, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct InstallBlockDeviceOpts {
-    /// Target block device for installation.  The entire device will be wiped.
-    pub(crate) device: Utf8PathBuf,
-
-    /// Automatically wipe all existing data on device
-    #[clap(long)]
-    #[serde(default)]
-    pub(crate) wipe: bool,
-
-    /// Target root block device setup.
-    ///
-    /// direct: Filesystem written directly to block device
-    /// tpm2-luks: Bind unlock of filesystem to presence of the default tpm2 device.
-    #[clap(long, value_enum, default_value_t)]
-    #[serde(default)]
-    pub(crate) block_setup: BlockSetup,
-
-    /// Target root filesystem type.
-    #[clap(long, value_enum, default_value_t)]
-    #[serde(default)]
-    pub(crate) filesystem: Filesystem,
-
-    /// Size of the root partition (default specifier: M).  Allowed specifiers: M (mebibytes), G (gibibytes), T (tebibytes).
-    ///
-    /// By default, all remaining space on the disk will be used.
-    #[clap(long)]
-    pub(crate) root_size: Option<String>,
 }
 
 /// Perform an installation to a block device.
@@ -233,15 +159,15 @@ pub(crate) struct InstallToFilesystemOpts {
 }
 
 // Shared read-only global state
-struct State {
-    container_info: ContainerExecutionInfo,
+pub(crate) struct State {
+    /// Image reference we'll pull from (today always containers-storage: type)
+    source_imageref: ostree_container::ImageReference,
+    /// The digest to use for pulls
+    source_digest: String,
     /// Force SELinux off in target system
     override_disable_selinux: bool,
     config_opts: InstallConfigOpts,
     target_opts: InstallTargetOpts,
-    /// Path to our devtmpfs
-    devdir: Utf8PathBuf,
-    mntdir: Utf8PathBuf,
 }
 
 /// Path to initially deployed version information
@@ -334,61 +260,6 @@ impl FromStr for MountSpec {
     }
 }
 
-fn sgdisk_partition(
-    sgdisk: &mut Command,
-    n: u32,
-    part: impl AsRef<str>,
-    name: impl AsRef<str>,
-    typecode: Option<&str>,
-) {
-    sgdisk.arg("-n");
-    sgdisk.arg(format!("{n}:{}", part.as_ref()));
-    sgdisk.arg("-c");
-    sgdisk.arg(format!("{n}:{}", name.as_ref()));
-    if let Some(typecode) = typecode {
-        sgdisk.arg("-t");
-        sgdisk.arg(format!("{n}:{typecode}"));
-    }
-}
-
-fn mkfs<'a>(
-    dev: &str,
-    fs: Filesystem,
-    label: Option<&'_ str>,
-    opts: impl IntoIterator<Item = &'a str>,
-) -> Result<uuid::Uuid> {
-    let u = uuid::Uuid::new_v4();
-    let mut t = Task::new("Creating filesystem", format!("mkfs.{fs}"));
-    match fs {
-        Filesystem::Xfs => {
-            t.cmd.arg("-m");
-            t.cmd.arg(format!("uuid={u}"));
-        }
-        Filesystem::Btrfs | Filesystem::Ext4 => {
-            t.cmd.arg("-U");
-            t.cmd.arg(u.to_string());
-        }
-    };
-    // Today all the above mkfs commands take -L
-    if let Some(label) = label {
-        t.cmd.args(["-L", label]);
-    }
-    t.cmd.args(opts);
-    t.cmd.arg(dev);
-    // All the mkfs commands are unnecessarily noisy by default
-    t.cmd.stdout(Stdio::null());
-    t.run()?;
-    Ok(u)
-}
-
-fn mount(dev: &str, target: &Utf8Path) -> Result<()> {
-    Task::new_and_run(
-        format!("Mounting {target}"),
-        "mount",
-        [dev, target.as_str()],
-    )
-}
-
 fn bind_mount_from_host(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Result<()> {
     let src = src.as_ref();
     let dest = dest.as_ref();
@@ -416,23 +287,6 @@ async fn initialize_ostree_root_from_self(
     let opts = &state.target_opts;
     let cancellable = gio::Cancellable::NONE;
 
-    if !state.container_info.engine.starts_with("podman") {
-        anyhow::bail!("Currently this command only supports being executed via podman");
-    }
-    if state.container_info.imageid.is_empty() {
-        anyhow::bail!("Invalid empty imageid");
-    }
-    let digest = crate::podman::imageid_to_digest(&state.container_info.imageid)?;
-    let src_image = crate::utils::digested_pullspec(&state.container_info.image, &digest);
-
-    let src_imageref = ostree_container::OstreeImageReference {
-        sigverify: ostree_container::SignatureSource::ContainerPolicyAllowInsecure,
-        imgref: ostree_container::ImageReference {
-            transport: ostree_container::Transport::ContainerStorage,
-            name: src_image.clone(),
-        },
-    };
-
     // Parse the target CLI image reference options
     let target_sigverify = if opts.target_no_signature_verification {
         SignatureSource::ContainerPolicyAllowInsecure
@@ -454,10 +308,7 @@ async fn initialize_ostree_root_from_self(
     } else {
         ostree_container::OstreeImageReference {
             sigverify: target_sigverify,
-            imgref: ostree_container::ImageReference {
-                transport: ostree_container::Transport::Registry,
-                name: state.container_info.image.clone(),
-            },
+            imgref: state.source_imageref.clone(),
         }
     };
 
@@ -496,13 +347,25 @@ async fn initialize_ostree_root_from_self(
 
     let mut temporary_dir = None;
     let src_imageref = if skopeo_supports_containers_storage()? {
-        src_imageref
+        // We always use exactly the digest of the running image to ensure predictability.
+        let spec =
+            crate::utils::digested_pullspec(&state.source_imageref.name, &state.source_digest);
+        ostree_container::ImageReference {
+            transport: ostree_container::Transport::ContainerStorage,
+            name: spec,
+        }
     } else {
         let td = tempfile::tempdir_in("/var/tmp")?;
         let path: &Utf8Path = td.path().try_into().unwrap();
-        let r = copy_to_oci(&src_imageref, path)?;
+        let r = copy_to_oci(&state.source_imageref, path)?;
         temporary_dir = Some(td);
         r
+    };
+    let src_imageref = ostree_container::OstreeImageReference {
+        // There are no signatures to verify since we're fetching the already
+        // pulled container.
+        sigverify: ostree_container::SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: src_imageref,
     };
 
     let kargs = root_setup
@@ -552,7 +415,7 @@ async fn initialize_ostree_root_from_self(
     let uname = cap_std_ext::rustix::process::uname();
 
     let aleph = InstallAleph {
-        image: src_image,
+        image: src_imageref.imgref.name.clone(),
         kernel: uname.release().to_str()?.to_string(),
     };
 
@@ -561,11 +424,11 @@ async fn initialize_ostree_root_from_self(
 
 #[context("Copying to oci")]
 fn copy_to_oci(
-    src_imageref: &ostree_container::OstreeImageReference,
+    src_imageref: &ostree_container::ImageReference,
     dir: &Utf8Path,
-) -> Result<ostree_container::OstreeImageReference> {
+) -> Result<ostree_container::ImageReference> {
     tracing::debug!("Copying {src_imageref}");
-    let src_imageref = &src_imageref.imgref.to_string();
+    let src_imageref = src_imageref.to_string();
     let dest_imageref = ostree_container::ImageReference {
         transport: ostree_container::Transport::OciDir,
         name: dir.to_string(),
@@ -582,10 +445,7 @@ fn copy_to_oci(
         dest_imageref_str.as_str(),
     ])
     .run()?;
-    Ok(ostree_container::OstreeImageReference {
-        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
-        imgref: dest_imageref,
-    })
+    Ok(dest_imageref)
 }
 
 #[context("Querying skopeo version")]
@@ -610,7 +470,7 @@ fn skopeo_supports_containers_storage() -> Result<bool> {
     Ok(major > 1 || minor > 10)
 }
 
-struct RootSetup {
+pub(crate) struct RootSetup {
     device: Utf8PathBuf,
     rootfs: Utf8PathBuf,
     rootfs_fd: Dir,
@@ -629,178 +489,6 @@ impl RootSetup {
     fn get_boot_uuid(&self) -> Result<&str> {
         require_boot_uuid(&self.boot)
     }
-}
-
-#[context("Creating rootfs")]
-fn install_create_rootfs(state: &State, opts: InstallBlockDeviceOpts) -> Result<RootSetup> {
-    // Verify that the target is empty (if not already wiped in particular, but it's
-    // also good to verify that the wipe worked)
-    let device = crate::blockdev::list_dev(&opts.device)?;
-
-    // Handle wiping any existing data
-    if opts.wipe {
-        let dev = &opts.device;
-        for child in device.children.iter().flatten() {
-            let child = child.path();
-            println!("Wiping {child}");
-            crate::blockdev::wipefs(Utf8Path::new(&child))?;
-        }
-        println!("Wiping {dev}");
-        crate::blockdev::wipefs(dev)?;
-    } else if device.has_children() {
-        anyhow::bail!(
-            "Detected existing partitions on {}; use e.g. `wipefs` if you intend to overwrite",
-            opts.device
-        );
-    }
-
-    // Now at this point, our /dev is a stale snapshot because we don't have udev running.
-    // So from hereon after, we prefix devices with our temporary devtmpfs mount.
-    let reldevice = opts
-        .device
-        .strip_prefix("/dev/")
-        .context("Absolute device path in /dev/ required")?;
-    let device = state.devdir.join(reldevice);
-
-    let root_size = opts
-        .root_size
-        .as_deref()
-        .map(crate::blockdev::parse_size_mib)
-        .transpose()
-        .context("Parsing root size")?;
-
-    // Create a temporary directory to use for mount points.  Note that we're
-    // in a mount namespace, so these should not be visible on the host.
-    let rootfs = state.mntdir.join("rootfs");
-    std::fs::create_dir_all(&rootfs)?;
-    let bootfs = state.mntdir.join("boot");
-    std::fs::create_dir_all(bootfs)?;
-
-    // Run sgdisk to create partitions.
-    let mut sgdisk = Task::new("Initializing partitions", "sgdisk");
-    // sgdisk is too verbose
-    sgdisk.cmd.stdout(Stdio::null());
-    sgdisk.cmd.arg("-Z");
-    sgdisk.cmd.arg(&device);
-    sgdisk.cmd.args(["-U", "R"]);
-    #[allow(unused_assignments)]
-    if cfg!(target_arch = "x86_64") {
-        // BIOS-BOOT
-        sgdisk_partition(
-            &mut sgdisk.cmd,
-            1,
-            "0:+1M",
-            "BIOS-BOOT",
-            Some("21686148-6449-6E6F-744E-656564454649"),
-        );
-    } else if cfg!(target_arch = "aarch64") {
-        // reserved
-        sgdisk_partition(
-            &mut sgdisk.cmd,
-            1,
-            "0:+1M",
-            "reserved",
-            Some("8DA63339-0007-60C0-C436-083AC8230908"),
-        );
-    } else {
-        anyhow::bail!("Unsupported architecture: {}", std::env::consts::ARCH);
-    }
-
-    let espdev = if cfg!(any(target_arch = "x86_64", target_arch = "aarch64")) {
-        sgdisk_partition(
-            &mut sgdisk.cmd,
-            EFIPN,
-            format!("0:+{EFIPN_SIZE_MB}M"),
-            "EFI-SYSTEM",
-            Some("C12A7328-F81F-11D2-BA4B-00A0C93EC93B"),
-        );
-        Some(format!("{device}{EFIPN}"))
-    } else {
-        None
-    };
-
-    sgdisk_partition(
-        &mut sgdisk.cmd,
-        BOOTPN,
-        format!("0:+{BOOTPN_SIZE_MB}M"),
-        "boot",
-        None,
-    );
-    let root_size = root_size
-        .map(|v| Cow::Owned(format!("0:{v}M")))
-        .unwrap_or_else(|| Cow::Borrowed("0:0"));
-    sgdisk_partition(
-        &mut sgdisk.cmd,
-        ROOTPN,
-        root_size,
-        "root",
-        Some("0FC63DAF-8483-4772-8E79-3D69D8477DE4"),
-    );
-    sgdisk.run()?;
-
-    // Reread the partition table
-    {
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .open(&device)
-            .with_context(|| format!("opening {device}"))?;
-        crate::blockdev::reread_partition_table(&mut f, true)
-            .context("Rereading partition table")?;
-    }
-
-    crate::blockdev::udev_settle()?;
-
-    match opts.block_setup {
-        BlockSetup::Direct => {}
-        // TODO
-        BlockSetup::Tpm2Luks => anyhow::bail!("tpm2-luks is not implemented yet"),
-    }
-
-    // TODO: make this configurable
-    let bootfs_type = Filesystem::Ext4;
-
-    // Initialize the /boot filesystem
-    let bootdev = &format!("{device}{BOOTPN}");
-    let boot_uuid = mkfs(bootdev, bootfs_type, Some("boot"), []).context("Initializing /boot")?;
-
-    // Initialize rootfs
-    let rootdev = &format!("{device}{ROOTPN}");
-    let root_uuid = mkfs(rootdev, opts.filesystem, Some("root"), [])?;
-    let rootarg = format!("root=UUID={root_uuid}");
-    let bootsrc = format!("UUID={boot_uuid}");
-    let bootarg = format!("boot={bootsrc}");
-    let boot = MountSpec::new(bootsrc.as_str(), "/boot");
-    let kargs = vec![rootarg, RW_KARG.to_string(), bootarg];
-
-    mount(rootdev, &rootfs)?;
-    lsm_label(&rootfs, "/".into(), false)?;
-    let rootfs_fd = Dir::open_ambient_dir(&rootfs, cap_std::ambient_authority())?;
-    let bootfs = rootfs.join("boot");
-    std::fs::create_dir(&bootfs).context("Creating /boot")?;
-    // The underlying directory on the root should be labeled
-    lsm_label(&bootfs, "/boot".into(), false)?;
-    mount(bootdev, &bootfs)?;
-    // And we want to label the root mount of /boot
-    lsm_label(&bootfs, "/boot".into(), false)?;
-
-    // Create the EFI system partition, if applicable
-    if let Some(espdev) = espdev {
-        Task::new("Creating ESP filesystem", "mkfs.fat")
-            .args([espdev.as_str(), "-n", "EFI-SYSTEM"])
-            .quiet_output()
-            .run()?;
-        let efifs_path = bootfs.join(crate::bootloader::EFI_DIR);
-        std::fs::create_dir(&efifs_path).context("Creating efi dir")?;
-        mount(&espdev, &efifs_path)?;
-    }
-
-    Ok(RootSetup {
-        device,
-        rootfs,
-        rootfs_fd,
-        boot,
-        kargs,
-    })
 }
 
 pub(crate) struct SourceData {
@@ -903,6 +591,18 @@ async fn prepare_install(
 
     // This command currently *must* be run inside a privileged container.
     let container_info = crate::containerenv::get_container_execution_info()?;
+    if !container_info.engine.starts_with("podman") {
+        anyhow::bail!("Currently this command only supports being executed via podman");
+    }
+    if container_info.imageid.is_empty() {
+        anyhow::bail!("Invalid empty imageid");
+    }
+    let source_imageref = ostree_container::ImageReference {
+        transport: ostree_container::Transport::ContainerStorage,
+        name: container_info.image.clone(),
+    };
+    // Find the exact digested image we are running
+    let source_digest = crate::podman::imageid_to_digest(&container_info.imageid)?;
 
     // Even though we require running in a container, the mounts we create should be specific
     // to this process, so let's enter a private mountns to avoid leaking them.
@@ -927,25 +627,12 @@ async fn prepare_install(
     // Create our global (read-only) state which gets wrapped in an Arc
     // so we can pass it to worker threads too. Right now this just
     // combines our command line options along with some bind mounts from the host.
-    let run_bootc = Utf8Path::new(RUN_BOOTC);
-    let mntdir = run_bootc.join("mounts");
-    if mntdir.exists() {
-        std::fs::remove_dir_all(&mntdir)?;
-    }
-    let devdir = mntdir.join("dev");
-    std::fs::create_dir_all(&devdir)?;
-    Task::new_and_run(
-        "Mounting devtmpfs",
-        "mount",
-        ["devtmpfs", "-t", "devtmpfs", devdir.as_str()],
-    )?;
     // Overmount /var/tmp with the host's, so we can use it to share state
     bind_mount_from_host("/var/tmp", "/var/tmp")?;
     let state = Arc::new(State {
         override_disable_selinux,
-        container_info,
-        mntdir,
-        devdir,
+        source_imageref,
+        source_digest,
         config_opts,
         target_opts,
     });
@@ -1020,8 +707,7 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
 
     // This is all blocking stuff
     let mut rootfs = {
-        let state = state.clone();
-        tokio::task::spawn_blocking(move || install_create_rootfs(&state, block_opts)).await??
+        tokio::task::spawn_blocking(move || baseline::install_create_rootfs(block_opts)).await??
     };
 
     install_to_filesystem_impl(&state, &mut rootfs).await?;
