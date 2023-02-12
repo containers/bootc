@@ -92,27 +92,28 @@ fn boot_entry_from_deployment(
     deployment: &ostree::Deployment,
 ) -> Result<BootEntry> {
     let repo = &sysroot.repo();
-    let (image, incompatible) = if let Some(origin) = deployment.origin().as_ref() {
-        if let Some(image) = get_image_origin(origin)? {
-            let image = ImageReference::from(image);
+    let mut incompatible = false;
+    let configmaps = crate::config::configs_for_deployment(sysroot, deployment)?
+        .into_iter()
+        .map(|v| v.name)
+        .collect();
+    let mut image = None;
+    if let Some(origin) = deployment.origin().as_ref() {
+        if let Some(imgref) = get_image_origin(origin)? {
+            let imgref = ImageReference::from(imgref);
             let csum = deployment.csum();
-            let incompatible = crate::utils::origin_has_rpmostree_stuff(origin);
+            incompatible = crate::utils::origin_has_rpmostree_stuff(origin);
             let imgstate = ostree_container::store::query_image_commit(repo, &csum)?;
-            (
-                Some(ImageStatus {
-                    image,
-                    image_digest: imgstate.manifest_digest,
-                }),
-                incompatible,
-            )
-        } else {
-            (None, false)
+            image = Some(ImageStatus {
+                image: imgref,
+                image_digest: imgstate.manifest_digest,
+            });
         }
-    } else {
-        (None, false)
-    };
+    }
+
     let r = BootEntry {
         image,
+        configmaps,
         incompatible,
         pinned: deployment.is_pinned(),
         ostree: Some(crate::spec::BootEntryOstree {
@@ -173,9 +174,15 @@ pub(crate) fn get_status(
     let spec = staged
         .as_ref()
         .or(booted.as_ref())
-        .and_then(|entry| entry.image.as_ref())
-        .map(|img| HostSpec {
-            image: Some(img.image.clone()),
+        .and_then(|entry| {
+            if let Some(img) = entry.image.as_ref() {
+                Some(HostSpec {
+                    image: Some(img.image.clone()),
+                    configmap_sources: entry.configmaps.iter().cloned().collect(),
+                })
+            } else {
+                None
+            }
         })
         .unwrap_or_default();
     let mut host = Host::new(OBJECT_NAME, spec);
@@ -195,7 +202,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
             is_container: true,
             ..Default::default()
         };
-        let mut r = Host::new(OBJECT_NAME, HostSpec { image: None });
+        let mut r = Host::new(OBJECT_NAME, HostSpec::default());
         r.status = Some(status);
         r
     } else {

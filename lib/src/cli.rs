@@ -14,6 +14,7 @@ use ostree_ext::container as ostree_container;
 use ostree_ext::container::SignatureSource;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
+use ostree_ext::sysroot::SysrootLock;
 use std::ffi::OsString;
 use std::io::Seek;
 use std::os::unix::process::CommandExt;
@@ -129,6 +130,9 @@ pub(crate) enum Opt {
     /// Add a transient writable overlayfs on `/usr` that will be discarded on reboot.
     #[clap(alias = "usroverlay")]
     UsrOverlay,
+    /// Manipulate configuration
+    #[clap(subcommand)]
+    Config(crate::config::ConfigOpts),
     /// Install to the target block device
     #[cfg(feature = "install")]
     Install(crate::install::InstallOpts),
@@ -252,6 +256,11 @@ pub(crate) async fn prepare_for_write() -> Result<()> {
         crate::lsm::selinux_ensure_install()?;
     }
     Ok(())
+}
+
+pub(crate) fn target_deployment(sysroot: &SysrootLock) -> Result<ostree::Deployment> {
+    let booted_deployment = sysroot.require_booted_deployment()?;
+    Ok(sysroot.staged_deployment().unwrap_or(booted_deployment))
 }
 
 /// Implementation of the `bootc upgrade` CLI command.
@@ -435,6 +444,7 @@ where
         Opt::Switch(opts) => switch(opts).await,
         Opt::Edit(opts) => edit(opts).await,
         Opt::UsrOverlay => usroverlay().await,
+        Opt::Config(opts) => crate::config::run(opts).await,
         #[cfg(feature = "install")]
         Opt::Install(opts) => crate::install::install(opts).await,
         #[cfg(feature = "install")]

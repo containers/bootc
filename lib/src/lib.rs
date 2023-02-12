@@ -20,6 +20,9 @@ mod reexec;
 mod status;
 mod utils;
 
+pub(crate) mod config;
+pub(crate) mod ostree_generation;
+
 #[cfg(feature = "internal-testing-api")]
 mod privtests;
 
