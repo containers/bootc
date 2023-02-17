@@ -11,7 +11,7 @@
 set -xeuo pipefail
 
 # See https://github.com/cgwalters/bootc-base-images
-IMAGE=quay.io/cgwalters/fedora-oscore:latest
+IMAGE=ghcr.io/cgwalters/fedora-oscore:latest
 # TODO: better detect this, e.g. look for an empty device
 DEV=/dev/vda
 
