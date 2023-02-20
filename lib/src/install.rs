@@ -580,6 +580,8 @@ async fn prepare_install(
     config_opts: InstallConfigOpts,
     target_opts: InstallTargetOpts,
 ) -> Result<Arc<State>> {
+    // We need full root privileges, i.e. --privileged in podman
+    crate::cli::require_root()?;
     // We require --pid=host
     let pid = std::fs::read_link("/proc/1/exe").context("reading /proc/1/exe")?;
     let pid = pid

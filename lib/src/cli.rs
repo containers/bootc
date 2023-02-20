@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
+use cap_std_ext::rustix;
 use clap::Parser;
 use fn_error_context::context;
 use ostree::{gio, glib};
@@ -124,7 +125,7 @@ pub(crate) enum Opt {
 /// we can depend on a new enough ostree
 #[context("Ensuring mountns")]
 pub(crate) async fn ensure_self_unshared_mount_namespace() -> Result<()> {
-    let uid = cap_std_ext::rustix::process::getuid();
+    let uid = rustix::process::getuid();
     if !uid.is_root() {
         tracing::debug!("Not root, assuming no need to unshare");
         return Ok(());
@@ -221,6 +222,18 @@ async fn stage(
         cancellable,
     )?;
     println!("Queued for next boot: {imgref}");
+    Ok(())
+}
+
+#[context("Querying root privilege")]
+pub(crate) fn require_root() -> Result<()> {
+    let uid = rustix::process::getuid();
+    if !uid.is_root() {
+        anyhow::bail!("This command requires root privileges");
+    }
+    if !rustix::thread::is_in_capability_bounding_set(rustix::thread::Capability::SystemAdmin)? {
+        anyhow::bail!("This command requires full root privileges (CAP_SYS_ADMIN)");
+    }
     Ok(())
 }
 
