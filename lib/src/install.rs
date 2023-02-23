@@ -168,6 +168,7 @@ pub(crate) struct State {
     override_disable_selinux: bool,
     config_opts: InstallConfigOpts,
     target_opts: InstallTargetOpts,
+    install_config: config::InstallConfiguration,
 }
 
 /// Path to initially deployed version information
@@ -257,6 +258,76 @@ impl FromStr for MountSpec {
             target: target.to_string(),
             options,
         })
+    }
+}
+
+mod config {
+    use super::*;
+
+    /// The toplevel config entry for installation configs stored
+    /// in bootc/install (e.g. /etc/bootc/install/05-custom.toml)
+    #[derive(Debug, Deserialize, Default)]
+    #[serde(deny_unknown_fields)]
+    pub(crate) struct InstallConfigurationToplevel {
+        pub(crate) install: Option<InstallConfiguration>,
+    }
+
+    /// The serialized [install] section
+    #[derive(Debug, Deserialize, Default)]
+    #[serde(rename = "install", rename_all = "kebab-case", deny_unknown_fields)]
+    pub(crate) struct InstallConfiguration {
+        pub(crate) root_fs_type: Option<super::baseline::Filesystem>,
+    }
+
+    impl InstallConfiguration {
+        /// Apply any values in other, overriding any existing values in `self`.
+        fn merge(&mut self, other: Self) {
+            fn mergeopt<T>(s: &mut Option<T>, o: Option<T>) {
+                if let Some(o) = o {
+                    *s = Some(o);
+                }
+            }
+            mergeopt(&mut self.root_fs_type, other.root_fs_type)
+        }
+    }
+
+    #[context("Loading configuration")]
+    /// Load the install configuration, merging all found configuration files.
+    pub(crate) fn load_config() -> Result<InstallConfiguration> {
+        const SYSTEMD_CONVENTIONAL_BASES: &[&str] = &["/usr/lib", "/usr/local/lib", "/etc", "/run"];
+        let fragments =
+            liboverdrop::scan(SYSTEMD_CONVENTIONAL_BASES, "bootc/install", &["toml"], true);
+        let mut config: Option<InstallConfiguration> = None;
+        for (_name, path) in fragments {
+            let buf = std::fs::read_to_string(&path)?;
+            let c: InstallConfigurationToplevel =
+                toml::from_str(&buf).with_context(|| format!("Parsing {path:?}"))?;
+            if let Some(config) = config.as_mut() {
+                if let Some(install) = c.install {
+                    config.merge(install);
+                }
+            } else {
+                config = c.install;
+            }
+        }
+        config.ok_or_else(|| anyhow::anyhow!("Failed to find any installation config files"))
+    }
+
+    #[test]
+    /// Verify that we can parse our default config file
+    fn test_parse_config() {
+        use super::baseline::Filesystem;
+        let buf = include_str!("install/00-defaults.toml");
+        let c: InstallConfigurationToplevel = toml::from_str(buf).unwrap();
+        let mut install = c.install.unwrap();
+        assert_eq!(install.root_fs_type.unwrap(), Filesystem::Xfs);
+        let other = InstallConfigurationToplevel {
+            install: Some(InstallConfiguration {
+                root_fs_type: Some(Filesystem::Ext4),
+            }),
+        };
+        install.merge(other.install.unwrap());
+        assert_eq!(install.root_fs_type.unwrap(), Filesystem::Ext4);
     }
 }
 
@@ -626,6 +697,8 @@ async fn prepare_install(
     let override_disable_selinux =
         reexecute_self_for_selinux_if_needed(&srcdata, config_opts.disable_selinux)?;
 
+    let install_config = config::load_config()?;
+
     // Create our global (read-only) state which gets wrapped in an Arc
     // so we can pass it to worker threads too. Right now this just
     // combines our command line options along with some bind mounts from the host.
@@ -637,6 +710,7 @@ async fn prepare_install(
         source_digest,
         config_opts,
         target_opts,
+        install_config,
     });
 
     Ok(state)
@@ -709,7 +783,9 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
 
     // This is all blocking stuff
     let mut rootfs = {
-        tokio::task::spawn_blocking(move || baseline::install_create_rootfs(block_opts)).await??
+        let state = state.clone();
+        tokio::task::spawn_blocking(move || baseline::install_create_rootfs(&state, block_opts))
+            .await??
     };
 
     install_to_filesystem_impl(&state, &mut rootfs).await?;
