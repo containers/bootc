@@ -52,12 +52,12 @@ jobs:
         with:
           key: "build"
       - name: Build
-        run: cargo build --release --features internal-testing-api
+        run: make test-bin-archive
       - name: Upload binary
         uses: actions/upload-artifact@v2
         with:
-          name: bootc
-          path: target/release/bootc
+          name: bootc.tar.zst
+          path: target/bootc.tar.zst
   build-minimum-toolchain:
     name: "Build using MSRV"
     runs-on: ubuntu-latest
@@ -122,9 +122,9 @@ jobs:
       - name: Download
         uses: actions/download-artifact@v2
         with:
-          name: bootc
+          name: bootc.tar.zst
       - name: Install
-        run: sudo install bootc /usr/bin && rm -v bootc
+        run: sudo tar -C / -xvf bootc.tar.zst
       - name: Integration tests
         run: sudo podman run --rm -ti --privileged -v /run/systemd:/run/systemd -v /:/run/host -v /usr/bin/bootc:/usr/bin/bootc --pid=host quay.io/fedora/fedora-coreos:testing-devel bootc internal-tests run-privileged-integration
   container-tests:
@@ -136,8 +136,8 @@ jobs:
       - name: Download
         uses: actions/download-artifact@v2
         with:
-          name: bootc
+          name: bootc.tar.zst
       - name: Install
-        run: install bootc /usr/bin && rm -v bootc
+        run: sudo tar -C / -xvf bootc.tar.zst
       - name: Integration tests
         run: bootc internal-tests run-container-integration
