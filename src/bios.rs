@@ -58,10 +58,13 @@ impl Bios {
 
         let mut cmd = Command::new(grub_install);
         let boot_dir = Path::new(dest_root).join("boot");
+        // We forcibly inject mdraid1x because it's needed by CoreOS's default of "install raw disk image"
+        // We also add part_gpt because in some cases probing of the partition map can fail such
+        // as in a container, but we always use GPT.
         #[cfg(target_arch = "x86_64")]
         cmd.args(&["--target", "i386-pc"])
             .args(&["--boot-directory", boot_dir.to_str().unwrap()])
-            .args(&["--modules", "mdraid1x"])
+            .args(&["--modules", "mdraid1x part_gpt"])
             .arg(device);
 
         #[cfg(target_arch = "powerpc64")]
