@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use super::MountSpec;
 use super::RootSetup;
+use super::State;
 use super::RUN_BOOTC;
 use super::RW_KARG;
 use crate::lsm::lsm_label;
@@ -44,6 +45,7 @@ pub(crate) const PREPPN: u32 = 1;
 pub(crate) const RESERVEDPN: u32 = 1;
 
 #[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum Filesystem {
     Xfs,
     Ext4,
@@ -97,9 +99,8 @@ pub(crate) struct InstallBlockDeviceOpts {
     pub(crate) block_setup: BlockSetup,
 
     /// Target root filesystem type.
-    #[clap(long, value_enum, default_value_t)]
-    #[serde(default)]
-    pub(crate) filesystem: Filesystem,
+    #[clap(long, value_enum)]
+    pub(crate) filesystem: Option<Filesystem>,
 
     /// Size of the root partition (default specifier: M).  Allowed specifiers: M (mebibytes), G (gibibytes), T (tebibytes).
     ///
@@ -156,7 +157,10 @@ fn mkfs<'a>(
 }
 
 #[context("Creating rootfs")]
-pub(crate) fn install_create_rootfs(opts: InstallBlockDeviceOpts) -> Result<RootSetup> {
+pub(crate) fn install_create_rootfs(
+    state: &State,
+    opts: InstallBlockDeviceOpts,
+) -> Result<RootSetup> {
     // Verify that the target is empty (if not already wiped in particular, but it's
     // also good to verify that the wipe worked)
     let device = crate::blockdev::list_dev(&opts.device)?;
@@ -302,7 +306,11 @@ pub(crate) fn install_create_rootfs(opts: InstallBlockDeviceOpts) -> Result<Root
 
     // Initialize rootfs
     let rootdev = &format!("{device}{ROOTPN}");
-    let root_uuid = mkfs(rootdev, opts.filesystem, Some("root"), [])?;
+    let root_filesystem = opts
+        .filesystem
+        .or(state.install_config.root_fs_type)
+        .ok_or_else(|| anyhow::anyhow!("No root filesystem specified"))?;
+    let root_uuid = mkfs(rootdev, root_filesystem, Some("root"), [])?;
     let rootarg = format!("root=UUID={root_uuid}");
     let bootsrc = format!("UUID={boot_uuid}");
     let bootarg = format!("boot={bootsrc}");

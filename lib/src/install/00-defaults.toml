@@ -1,0 +1,3 @@
+# The default configuration for installations.
+[install]
+root-fs-type = "xfs"

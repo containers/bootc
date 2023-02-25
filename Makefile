@@ -8,6 +8,7 @@ all-test:
 
 install:
 	install -D -t $(DESTDIR)$(prefix)/bin target/release/bootc
+	install -D -t $(DESTDIR)$(prefix)/lib/bootc/install lib/src/install/*.toml
 
 bin-archive: all
 	$(MAKE) install DESTDIR=tmp-install && tar --zstd -C tmp-install -cf bootc.tar.zst . && rm tmp-install -rf
