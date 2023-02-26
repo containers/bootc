@@ -70,7 +70,7 @@ fn gitrev(sh: &Shell) -> Result<String> {
 /// but not second because, well, we're not going to build more than once a second.
 #[context("Finding git timestamp")]
 fn git_timestamp(sh: &Shell) -> Result<String> {
-    let ts = cmd!(sh, "git show --format=%ct").read()?;
+    let ts = cmd!(sh, "git show -s --format=%ct").read()?;
     let ts = ts.trim().parse::<i64>()?;
     let ts = chrono::NaiveDateTime::from_timestamp_opt(ts, 0)
         .ok_or_else(|| anyhow::anyhow!("Failed to parse timestamp"))?;
