@@ -646,13 +646,7 @@ pub(crate) fn finalize_filesystem(fs: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
-/// Preparation for an install; validates and prepares some (thereafter immutable) global state.
-async fn prepare_install(
-    config_opts: InstallConfigOpts,
-    target_opts: InstallTargetOpts,
-) -> Result<Arc<State>> {
-    // We need full root privileges, i.e. --privileged in podman
-    crate::cli::require_root()?;
+fn require_systemd_pid1() -> Result<()> {
     // We require --pid=host
     let pid = std::fs::read_link("/proc/1/exe").context("reading /proc/1/exe")?;
     let pid = pid
@@ -661,6 +655,17 @@ async fn prepare_install(
     if !pid.contains("systemd") {
         anyhow::bail!("This command must be run with --pid=host")
     }
+    Ok(())
+}
+
+/// Preparation for an install; validates and prepares some (thereafter immutable) global state.
+async fn prepare_install(
+    config_opts: InstallConfigOpts,
+    target_opts: InstallTargetOpts,
+) -> Result<Arc<State>> {
+    // We need full root privileges, i.e. --privileged in podman
+    crate::cli::require_root()?;
+    require_systemd_pid1()?;
 
     // This command currently *must* be run inside a privileged container.
     let container_info = crate::containerenv::get_container_execution_info()?;
