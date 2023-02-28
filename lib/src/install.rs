@@ -31,6 +31,7 @@ use ostree_ext::prelude::Cast;
 use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
+use crate::containerenv::ContainerExecutionInfo;
 use crate::lsm::lsm_label;
 use crate::task::Task;
 use crate::utils::run_in_host_mountns;
@@ -158,17 +159,28 @@ pub(crate) struct InstallToFilesystemOpts {
     pub(crate) config_opts: InstallConfigOpts,
 }
 
+/// Global state captured from the container.
+#[derive(Debug, Clone)]
+pub(crate) struct SourceInfo {
+    /// Image reference we'll pull from (today always containers-storage: type)
+    pub(crate) imageref: ostree_container::ImageReference,
+    /// The digest to use for pulls
+    pub(crate) digest: String,
+    /// The embedded base OSTree commit checksum
+    #[allow(dead_code)]
+    pub(crate) commit: String,
+    /// Whether or not SELinux appears to be enabled in the source commit
+    pub(crate) selinux: bool,
+}
+
 // Shared read-only global state
 pub(crate) struct State {
-    /// Image reference we'll pull from (today always containers-storage: type)
-    source_imageref: ostree_container::ImageReference,
-    /// The digest to use for pulls
-    source_digest: String,
+    pub(crate) source: SourceInfo,
     /// Force SELinux off in target system
-    override_disable_selinux: bool,
-    config_opts: InstallConfigOpts,
-    target_opts: InstallTargetOpts,
-    install_config: config::InstallConfiguration,
+    pub(crate) override_disable_selinux: bool,
+    pub(crate) config_opts: InstallConfigOpts,
+    pub(crate) target_opts: InstallTargetOpts,
+    pub(crate) install_config: config::InstallConfiguration,
 }
 
 /// Path to initially deployed version information
@@ -257,6 +269,45 @@ impl FromStr for MountSpec {
             fstype: fstype.to_string(),
             target: target.to_string(),
             options,
+        })
+    }
+}
+
+impl SourceInfo {
+    // Inspect container information and convert it to an ostree image reference
+    // that pulls from containers-storage.
+    #[context("Gathering source info from container env")]
+    pub(crate) fn from_container(container_info: &ContainerExecutionInfo) -> Result<Self> {
+        if !container_info.engine.starts_with("podman") {
+            anyhow::bail!("Currently this command only supports being executed via podman");
+        }
+        if container_info.imageid.is_empty() {
+            anyhow::bail!("Invalid empty imageid");
+        }
+        let imageref = ostree_container::ImageReference {
+            transport: ostree_container::Transport::ContainerStorage,
+            name: container_info.image.clone(),
+        };
+        let digest = crate::podman::imageid_to_digest(&container_info.imageid)?;
+        let cancellable = ostree::gio::Cancellable::NONE;
+        let commit = Task::new("Reading ostree commit", "ostree")
+            .args(["--repo=/ostree/repo", "rev-parse", "--single"])
+            .quiet()
+            .read()?;
+        let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+        let repo = ostree::Repo::open_at_dir(&root, "ostree/repo")?;
+        let root = repo
+            .read_commit(commit.trim(), cancellable)
+            .context("Reading commit")?
+            .0;
+        let root = root.downcast_ref::<ostree::RepoFile>().unwrap();
+        let xattrs = root.xattrs(cancellable)?;
+        let selinux = crate::lsm::xattrs_have_selinux(&xattrs);
+        Ok(Self {
+            imageref,
+            digest,
+            commit,
+            selinux,
         })
     }
 }
@@ -379,7 +430,7 @@ async fn initialize_ostree_root_from_self(
     } else {
         ostree_container::OstreeImageReference {
             sigverify: target_sigverify,
-            imgref: state.source_imageref.clone(),
+            imgref: state.source.imageref.clone(),
         }
     };
 
@@ -420,7 +471,7 @@ async fn initialize_ostree_root_from_self(
     let src_imageref = if skopeo_supports_containers_storage()? {
         // We always use exactly the digest of the running image to ensure predictability.
         let spec =
-            crate::utils::digested_pullspec(&state.source_imageref.name, &state.source_digest);
+            crate::utils::digested_pullspec(&state.source.imageref.name, &state.source.digest);
         ostree_container::ImageReference {
             transport: ostree_container::Transport::ContainerStorage,
             name: spec,
@@ -428,7 +479,7 @@ async fn initialize_ostree_root_from_self(
     } else {
         let td = tempfile::tempdir_in("/var/tmp")?;
         let path: &Utf8Path = td.path().try_into().unwrap();
-        let r = copy_to_oci(&state.source_imageref, path)?;
+        let r = copy_to_oci(&state.source.imageref, path)?;
         temporary_dir = Some(td);
         r
     };
@@ -562,39 +613,12 @@ impl RootSetup {
     }
 }
 
-pub(crate) struct SourceData {
-    /// The embedded base OSTree commit checksum
-    #[allow(dead_code)]
-    pub(crate) commit: String,
-    /// Whether or not SELinux appears to be enabled in the source commit
-    pub(crate) selinux: bool,
-}
-
-#[context("Gathering source data")]
-fn gather_source_data() -> Result<SourceData> {
-    let cancellable = ostree::gio::Cancellable::NONE;
-    let commit = Task::new("Reading ostree commit", "ostree")
-        .args(["--repo=/ostree/repo", "rev-parse", "--single"])
-        .quiet()
-        .read()?;
-    let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-    let repo = ostree::Repo::open_at_dir(&root, "ostree/repo")?;
-    let root = repo
-        .read_commit(commit.trim(), cancellable)
-        .context("Reading commit")?
-        .0;
-    let root = root.downcast_ref::<ostree::RepoFile>().unwrap();
-    let xattrs = root.xattrs(cancellable)?;
-    let selinux = crate::lsm::xattrs_have_selinux(&xattrs);
-    Ok(SourceData { commit, selinux })
-}
-
 /// If we detect that the target ostree commit has SELinux labels,
 /// and we aren't passed an override to disable it, then ensure
 /// the running process is labeled with install_t so it can
 /// write arbitrary labels.
 pub(crate) fn reexecute_self_for_selinux_if_needed(
-    srcdata: &SourceData,
+    srcdata: &SourceInfo,
     override_disable_selinux: bool,
 ) -> Result<bool> {
     let mut ret_did_override = false;
@@ -646,13 +670,7 @@ pub(crate) fn finalize_filesystem(fs: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
-/// Preparation for an install; validates and prepares some (thereafter immutable) global state.
-async fn prepare_install(
-    config_opts: InstallConfigOpts,
-    target_opts: InstallTargetOpts,
-) -> Result<Arc<State>> {
-    // We need full root privileges, i.e. --privileged in podman
-    crate::cli::require_root()?;
+fn require_systemd_pid1() -> Result<()> {
     // We require --pid=host
     let pid = std::fs::read_link("/proc/1/exe").context("reading /proc/1/exe")?;
     let pid = pid
@@ -661,21 +679,21 @@ async fn prepare_install(
     if !pid.contains("systemd") {
         anyhow::bail!("This command must be run with --pid=host")
     }
+    Ok(())
+}
+
+/// Preparation for an install; validates and prepares some (thereafter immutable) global state.
+async fn prepare_install(
+    config_opts: InstallConfigOpts,
+    target_opts: InstallTargetOpts,
+) -> Result<Arc<State>> {
+    // We need full root privileges, i.e. --privileged in podman
+    crate::cli::require_root()?;
+    require_systemd_pid1()?;
 
     // This command currently *must* be run inside a privileged container.
     let container_info = crate::containerenv::get_container_execution_info()?;
-    if !container_info.engine.starts_with("podman") {
-        anyhow::bail!("Currently this command only supports being executed via podman");
-    }
-    if container_info.imageid.is_empty() {
-        anyhow::bail!("Invalid empty imageid");
-    }
-    let source_imageref = ostree_container::ImageReference {
-        transport: ostree_container::Transport::ContainerStorage,
-        name: container_info.image.clone(),
-    };
-    // Find the exact digested image we are running
-    let source_digest = crate::podman::imageid_to_digest(&container_info.imageid)?;
+    let source = SourceInfo::from_container(&container_info)?;
 
     // Even though we require running in a container, the mounts we create should be specific
     // to this process, so let's enter a private mountns to avoid leaking them.
@@ -693,9 +711,8 @@ async fn prepare_install(
     }
 
     // Now, deal with SELinux state.
-    let srcdata = gather_source_data()?;
     let override_disable_selinux =
-        reexecute_self_for_selinux_if_needed(&srcdata, config_opts.disable_selinux)?;
+        reexecute_self_for_selinux_if_needed(&source, config_opts.disable_selinux)?;
 
     let install_config = config::load_config()?;
 
@@ -706,8 +723,7 @@ async fn prepare_install(
     bind_mount_from_host("/var/tmp", "/var/tmp")?;
     let state = Arc::new(State {
         override_disable_selinux,
-        source_imageref,
-        source_digest,
+        source,
         config_opts,
         target_opts,
         install_config,
