@@ -28,6 +28,7 @@ BuildRequires: systemd-devel
 %license LICENSE-APACHE LICENSE-MIT
 %doc README.md
 %{_bindir}/bootc
+%{_prefix}/lib/bootc
 
 %prep
 %autosetup -p1 -Sgit
