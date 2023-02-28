@@ -382,23 +382,6 @@ mod config {
     }
 }
 
-fn bind_mount_from_host(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Result<()> {
-    let src = src.as_ref();
-    let dest = dest.as_ref();
-    tracing::debug!("Mounting host {src} to {dest}");
-    std::fs::create_dir_all(dest).with_context(|| format!("Creating {dest}"))?;
-    // Here's the magic trick; modern versions of the `mount` command support a `-N` argument
-    // to perform the mount in a distinct target namespace.  But, what we want to is the inverse
-    // of this - we want to grab a host/root filesystem mount point.  So we explicitly enter
-    // the host's mount namespace, then give `mount` our own pid (from which it finds the mount namespace).
-    let desc = format!("Bind mounting {src} from host");
-    let target = format!("{}", nix::unistd::getpid());
-    Task::new_cmd(desc, run_in_host_mountns("mount"))
-        .quiet()
-        .args(["--bind", "-N", target.as_str(), src.as_str(), dest.as_str()])
-        .run()
-}
-
 #[context("Creating ostree deployment")]
 async fn initialize_ostree_root_from_self(
     state: &State,
@@ -682,6 +665,41 @@ fn require_systemd_pid1() -> Result<()> {
     Ok(())
 }
 
+/// We want to have proper /tmp and /var/tmp without requiring the caller to set them up
+/// in advance by manually specifying them via `podman run -v /tmp:/tmp` etc.
+/// Unfortunately, it's quite complex right now to "gracefully" dynamically reconfigure
+/// the mount setup for a container.  See https://brauner.io/2023/02/28/mounting-into-mount-namespaces.html
+/// So the brutal hack we do here is to rely on the fact that we're running in the host
+/// pid namespace, and so the magic link for /proc/1/root will escape our mount namespace.
+/// We can't bind mount though - we need to symlink it so that each calling process
+/// will traverse the link.
+#[context("Linking tmp mounts to host")]
+pub(crate) fn propagate_tmp_mounts_to_host() -> Result<()> {
+    // Point our /tmp and /var/tmp at the host, via the /proc/1/root magic link
+    for path in ["/tmp", "/var/tmp"].map(Utf8Path::new) {
+        let target = format!("/proc/1/root/{path}");
+        let tmp = format!("{path}.tmp");
+        // Ensure idempotence in case we're re-executed
+        if path.is_symlink() {
+            continue;
+        }
+        std::os::unix::fs::symlink(&target, &tmp)
+            .with_context(|| format!("Symlinking {target} to {tmp}"))?;
+        let cwd = rustix::fs::cwd();
+        rustix::fs::renameat_with(
+            cwd,
+            path.as_os_str(),
+            cwd,
+            &tmp,
+            rustix::fs::RenameFlags::EXCHANGE,
+        )
+        .with_context(|| format!("Exchanging {path} <=> {tmp}"))?;
+        std::fs::rename(&tmp, format!("{path}.old"))
+            .with_context(|| format!("Renaming old {tmp}"))?;
+    }
+    Ok(())
+}
+
 /// Preparation for an install; validates and prepares some (thereafter immutable) global state.
 async fn prepare_install(
     config_opts: InstallConfigOpts,
@@ -695,19 +713,12 @@ async fn prepare_install(
     let container_info = crate::containerenv::get_container_execution_info()?;
     let source = SourceInfo::from_container(&container_info)?;
 
+    propagate_tmp_mounts_to_host()?;
+
     // Even though we require running in a container, the mounts we create should be specific
     // to this process, so let's enter a private mountns to avoid leaking them.
     if std::env::var_os("BOOTC_SKIP_UNSHARE").is_none() {
         super::cli::ensure_self_unshared_mount_namespace().await?;
-    }
-
-    // Let's ensure we have a tmpfs on /tmp, because we need that to write the SELinux label
-    // (it won't work on the default overlayfs)
-    if nix::sys::statfs::statfs("/tmp")?.filesystem_type() != nix::sys::statfs::TMPFS_MAGIC {
-        Task::new("Creating tmpfs on /tmp", "mount")
-            .quiet()
-            .args(["-t", "tmpfs", "tmpfs", "/tmp"])
-            .run()?;
     }
 
     // Now, deal with SELinux state.
@@ -719,8 +730,6 @@ async fn prepare_install(
     // Create our global (read-only) state which gets wrapped in an Arc
     // so we can pass it to worker threads too. Right now this just
     // combines our command line options along with some bind mounts from the host.
-    // Overmount /var/tmp with the host's, so we can use it to share state
-    bind_mount_from_host("/var/tmp", "/var/tmp")?;
     let state = Arc::new(State {
         override_disable_selinux,
         source,
