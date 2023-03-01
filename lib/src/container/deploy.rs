@@ -10,6 +10,10 @@ use ostree::glib;
 /// The key in the OSTree origin which holds a serialized [`super::OstreeImageReference`].
 pub const ORIGIN_CONTAINER: &str = "container-image-reference";
 
+/// The name of the default stateroot.
+// xref https://github.com/ostreedev/ostree/issues/2794
+pub const STATEROOT_DEFAULT: &str = "default";
+
 /// Options configuring deployment.
 #[derive(Debug, Default)]
 pub struct DeployOpts<'a> {
