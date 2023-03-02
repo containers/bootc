@@ -62,12 +62,8 @@ grep 'layers already present: ' logs.txt
 
 podman pull ${image}
 ostree --repo="${sysroot}/ostree/repo" init --mode=bare-user
-if ostree-ext-cli container image pull ${sysroot}/ostree/repo ostree-unverified-image:containers-storage:${image} 2>err.txt; then
-  echo "unexpectedly pulled from containers storage?"
-  exit 1
-fi
-grep "skopeo too old to pull from containers-storage" err.txt
-echo "ok pulled from containers storage failed"
+ostree-ext-cli container image pull ${sysroot}/ostree/repo ostree-unverified-image:containers-storage:${image}
+echo "ok pulled from containers storage"
 
 ostree-ext-cli container compare ${imgref} ${imgref} > compare.txt
 grep "Removed layers: 0  Size: 0 bytes" compare.txt
