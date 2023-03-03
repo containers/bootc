@@ -281,7 +281,7 @@ pub(crate) enum ContainerImageOpts {
         sysroot: String,
 
         /// Name for the state directory, also known as "osname".
-        #[clap(long)]
+        #[clap(long, default_value = ostree_container::deploy::STATEROOT_DEFAULT)]
         stateroot: String,
 
         /// Source image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos@sha256:abcd...
