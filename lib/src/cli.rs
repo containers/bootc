@@ -285,9 +285,26 @@ pub(crate) enum ContainerImageOpts {
         stateroot: String,
 
         /// Source image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos@sha256:abcd...
+        /// This conflicts with `--image`.
+        #[clap(long, required_unless_present = "image")]
+        imgref: Option<String>,
+
+        /// Name of the container image; for the `registry` transport this would be e.g. `quay.io/exampleos/foo:latest`.
+        /// This conflicts with `--imgref`.
+        #[clap(long, required_unless_present = "imgref")]
+        image: Option<String>,
+
+        /// The transport; e.g. registry, oci, oci-archive.  The default is `registry`.
         #[clap(long)]
-        #[clap(value_parser = parse_imgref)]
-        imgref: OstreeImageReference,
+        transport: Option<String>,
+
+        /// Explicitly opt-out of requiring any form of signature verification.
+        #[clap(long)]
+        no_signature_verification: bool,
+
+        /// Enable verification via an ostree remote
+        #[clap(long)]
+        ostree_remote: Option<String>,
 
         #[clap(flatten)]
         proxyopts: ContainerProxyOpts,
@@ -842,6 +859,10 @@ where
                     sysroot,
                     stateroot,
                     imgref,
+                    image,
+                    transport,
+                    no_signature_verification,
+                    ostree_remote,
                     target_imgref,
                     no_imgref,
                     karg,
@@ -856,6 +877,29 @@ where
                         let r: Vec<_> = v.iter().map(|s| s.as_str()).collect();
                         r
                     });
+
+                    let imgref = if let Some(image) = image {
+                        let transport = transport.as_deref().unwrap_or("registry");
+                        let transport = ostree_container::Transport::try_from(transport)?;
+                        let imgref = ostree_container::ImageReference {
+                            transport,
+                            name: image,
+                        };
+                        let sigverify = if no_signature_verification {
+                            ostree_container::SignatureSource::ContainerPolicyAllowInsecure
+                        } else if let Some(remote) = ostree_remote.as_ref() {
+                            ostree_container::SignatureSource::OstreeRemote(remote.to_string())
+                        } else {
+                            ostree_container::SignatureSource::ContainerPolicy
+                        };
+                        ostree_container::OstreeImageReference { sigverify, imgref }
+                    } else {
+                        // SAFETY: We use the clap required_unless_present flag, so this must be set
+                        // because --image is not.
+                        let imgref = imgref.expect("imgref option should be set");
+                        imgref.as_str().try_into()?
+                    };
+
                     #[allow(clippy::needless_update)]
                     let options = crate::container::deploy::DeployOpts {
                         kargs: kargs.as_deref(),

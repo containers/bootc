@@ -23,11 +23,19 @@ fi
 if test '!' -d "${sysroot}/ostree/deploy/${stateroot}"; then
     ostree admin os-init "${stateroot}" --sysroot "${sysroot}"
 fi
+# Test the syntax which uses full imgrefs.
 ostree-ext-cli container image deploy --sysroot "${sysroot}" \
     --stateroot "${stateroot}" --imgref "${imgref}"
 ostree admin --sysroot="${sysroot}" status
 ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"${image}"
 ostree admin --sysroot="${sysroot}" undeploy 0
+# Now test the new syntax which has a nicer --image that defaults to registry.
+ostree-ext-cli container image deploy --transport registry --sysroot "${sysroot}" \
+    --stateroot "${stateroot}" --image "${image}" --no-signature-verification
+ostree admin --sysroot="${sysroot}" status
+ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"${image}"
+ostree admin --sysroot="${sysroot}" undeploy 0
+
 for img in "${image}"; do
     ostree-ext-cli container image deploy --sysroot "${sysroot}" \
         --stateroot "${stateroot}" --imgref ostree-unverified-registry:"${img}"
