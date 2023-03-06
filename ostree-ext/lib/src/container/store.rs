@@ -29,6 +29,11 @@ pub use containers_image_proxy::ImageProxyConfig;
 const LAYER_PREFIX: &str = "ostree/container/blob";
 /// The ostree ref prefix for image references.
 const IMAGE_PREFIX: &str = "ostree/container/image";
+/// The ostree ref prefix for "base" image references that are used by derived images.
+/// If you maintain tooling which is locally building derived commits, write a ref
+/// with this prefix that is owned by your code.  It's a best practice to prefix the
+/// ref with the project name, so the final ref may be of the form e.g. `ostree/container/baseimage/bootc/foo`.
+const BASE_IMAGE_PREFIX: &str = "ostree/container/baseimage";
 
 /// The key injected into the merge commit for the manifest digest.
 const META_MANIFEST_DIGEST: &str = "ostree.manifest-digest";
@@ -1056,6 +1061,7 @@ fn list_container_deployment_manifests(
     let commits = OSTREE_BASE_DEPLOYMENT_REFS
         .iter()
         .chain(RPMOSTREE_BASE_REFS)
+        .chain(std::iter::once(&BASE_IMAGE_PREFIX))
         .try_fold(
             std::collections::HashSet::new(),
             |mut acc, &p| -> Result<_> {
