@@ -52,13 +52,6 @@ pub(crate) enum Filesystem {
     Btrfs,
 }
 
-impl Default for Filesystem {
-    fn default() -> Self {
-        // Obviously this should be configurable.
-        Self::Xfs
-    }
-}
-
 impl Display for Filesystem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.to_possible_value().unwrap().get_name().fmt(f)
