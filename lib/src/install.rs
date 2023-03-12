@@ -576,6 +576,7 @@ fn skopeo_supports_containers_storage() -> Result<bool> {
 }
 
 pub(crate) struct RootSetup {
+    luks_device: Option<String>,
     device: Utf8PathBuf,
     rootfs: Utf8PathBuf,
     rootfs_fd: Dir,
@@ -593,6 +594,11 @@ impl RootSetup {
     /// required.
     fn get_boot_uuid(&self) -> Result<&str> {
         require_boot_uuid(&self.boot)
+    }
+
+    // Drop any open file descriptors and return just the mount path and backing luks device, if any
+    fn into_storage(self) -> (Utf8PathBuf, Option<String>) {
+        (self.rootfs, self.luks_device)
     }
 }
 
@@ -637,7 +643,11 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
 pub(crate) fn finalize_filesystem(fs: &Utf8Path) -> Result<()> {
     let fsname = fs.file_name().unwrap();
     // fstrim ensures the underlying block device knows about unused space
-    Task::new_and_run(format!("Trimming {fsname}"), "fstrim", ["-v", fs.as_str()])?;
+    Task::new_and_run(
+        format!("Trimming {fsname}"),
+        "fstrim",
+        ["--quiet-unsupported", "-v", fs.as_str()],
+    )?;
     // Remounting readonly will flush outstanding writes and ensure we error out if there were background
     // writeback problems.
     Task::new(format!("Finalizing filesystem {fsname}"), "mount")
@@ -815,15 +825,16 @@ pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
 
     install_to_filesystem_impl(&state, &mut rootfs).await?;
 
-    // Drop all data about the root except the path to ensure any file descriptors etc. are closed.
-    let rootfs_path = rootfs.rootfs.clone();
-    drop(rootfs);
-
+    // Drop all data about the root except the bits we need to ensure any file descriptors etc. are closed.
+    let (root_path, luksdev) = rootfs.into_storage();
     Task::new_and_run(
         "Unmounting filesystems",
         "umount",
-        ["-R", rootfs_path.as_str()],
+        ["-R", root_path.as_str()],
     )?;
+    if let Some(luksdev) = luksdev.as_deref() {
+        Task::new_and_run("Closing root LUKS device", "cryptsetup", ["close", luksdev])?;
+    }
 
     installation_complete();
 
@@ -960,6 +971,7 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     let kargs = vec![rootarg, RW_KARG.to_string(), bootarg];
 
     let mut rootfs = RootSetup {
+        luks_device: None,
         device: backing_device.into(),
         rootfs: fsopts.root_path,
         rootfs_fd,
