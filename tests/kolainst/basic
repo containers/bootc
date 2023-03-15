@@ -17,10 +17,12 @@ case "${AUTOPKGTEST_REBOOT_MARK:-}" in
     bootc status --json > status.json
     image=$(jq -r '.[0].image.image' < status.json)
     echo "booted into $image"
-
-    # TODO more tests here
-
     echo "ok status test"
+
+    test '!' -w /usr
+    bootc usroverlay
+    test -w /usr
+    echo "ok usroverlay"
     ;;
   *) echo "unexpected mark: ${AUTOPKGTEST_REBOOT_MARK}"; exit 1;;
 esac
