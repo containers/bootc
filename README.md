@@ -31,8 +31,18 @@ that's for tools like `grubby` and `ostree`.
 
 ## Status
 
-Currently a work in progress and is not ready to ship for production
-updates, but early feedback on the design is appreciated!
+bootupd supports updating GRUB and shim for UEFI firmware on
+x86_64 and aarch64, and GRUB for BIOS firmware on x86_64.
+The project is [deployed in Fedora CoreOS](https://docs.fedoraproject.org/en-US/fedora-coreos/bootloader-updates/) and derivatives,
+and is also used by the new [`bootc install`](https://github.com/containers/bootc/#using-bootc-install)
+functionality.  The bootupd CLI should be considered stable.
+
+bootupd does not yet perform updates in a way that is safe
+against a power failure at the wrong moment, or
+against a buggy bootloader update that fails to boot
+the system.
+
+Therefore, by default, bootupd updates the bootloader only when manually instructed to do so.
 
 ## Relationship to other projects
 
