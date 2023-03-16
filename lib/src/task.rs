@@ -1,6 +1,6 @@
 use std::{
     ffi::OsStr,
-    io::Seek,
+    io::{Seek, Write},
     process::{Command, Stdio},
 };
 
@@ -57,6 +57,11 @@ impl Task {
 
     /// Run the command, returning an error if the command does not exit successfully.
     pub(crate) fn run(self) -> Result<()> {
+        self.run_with_stdin_buf(None)
+    }
+
+    /// Run the command with optional stdin buffer, returning an error if the command does not exit successfully.
+    pub(crate) fn run_with_stdin_buf(self, stdin: Option<&[u8]>) -> Result<()> {
         let description = self.description;
         let mut cmd = self.cmd;
         if !self.quiet {
@@ -70,7 +75,23 @@ impl Task {
             output = Some(tmpf);
         }
         tracing::debug!("exec: {cmd:?}");
-        let st = cmd.status()?;
+        let st = if let Some(stdin_value) = stdin {
+            cmd.stdin(Stdio::piped());
+            let mut child = cmd.spawn()?;
+            // SAFETY: We used piped for stdin
+            let mut stdin = child.stdin.take().unwrap();
+            // If this was async, we could avoid spawning a thread here
+            std::thread::scope(|s| {
+                s.spawn(move || stdin.write_all(stdin_value))
+                    .join()
+                    .map_err(|e| anyhow::anyhow!("Failed to spawn thread: {e:?}"))?
+                    .context("Failed to write to cryptsetup stdin")
+            })?;
+            child.wait()?
+        } else {
+            cmd.status()?
+        };
+        tracing::trace!("{st:?}");
         if !st.success() {
             if let Some(mut output) = output {
                 output.seek(std::io::SeekFrom::Start(0))?;

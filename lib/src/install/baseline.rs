@@ -7,6 +7,7 @@
 
 use std::borrow::Cow;
 use std::fmt::Display;
+use std::io::Write;
 use std::process::Command;
 use std::process::Stdio;
 
@@ -50,13 +51,6 @@ pub(crate) enum Filesystem {
     Xfs,
     Ext4,
     Btrfs,
-}
-
-impl Default for Filesystem {
-    fn default() -> Self {
-        // Obviously this should be configurable.
-        Self::Xfs
-    }
 }
 
 impl Display for Filesystem {
@@ -161,6 +155,7 @@ pub(crate) fn install_create_rootfs(
     state: &State,
     opts: InstallBlockDeviceOpts,
 ) -> Result<RootSetup> {
+    let luks_name = "root";
     // Verify that the target is empty (if not already wiped in particular, but it's
     // also good to verify that the wipe worked)
     let device = crate::blockdev::list_dev(&opts.device)?;
@@ -291,11 +286,41 @@ pub(crate) fn install_create_rootfs(
 
     crate::blockdev::udev_settle()?;
 
-    match opts.block_setup {
-        BlockSetup::Direct => {}
-        // TODO
-        BlockSetup::Tpm2Luks => anyhow::bail!("tpm2-luks is not implemented yet"),
-    }
+    let base_rootdev = format!("{device}{ROOTPN}");
+    let (rootdev, root_blockdev_kargs) = match opts.block_setup {
+        BlockSetup::Direct => (base_rootdev, None),
+        BlockSetup::Tpm2Luks => {
+            let uuid = uuid::Uuid::new_v4().to_string();
+            // This will be replaced via --wipe-slot=all when binding to tpm below
+            let dummy_passphrase = uuid::Uuid::new_v4().to_string();
+            let mut tmp_keyfile = tempfile::NamedTempFile::new()?;
+            tmp_keyfile.write_all(dummy_passphrase.as_bytes())?;
+            tmp_keyfile.flush()?;
+            let tmp_keyfile = tmp_keyfile.path();
+            let dummy_passphrase_input = Some(dummy_passphrase.as_bytes());
+
+            Task::new("Initializing LUKS for root", "cryptsetup")
+                .args(["luksFormat", "--uuid", uuid.as_str(), "--key-file"])
+                .args([tmp_keyfile])
+                .args([base_rootdev.as_str()])
+                .run()?;
+            // The --wipe-slot=all removes our temporary passphrase, and binds to the local TPM device.
+            Task::new("Enrolling root device with TPM", "systemd-cryptenroll")
+                .args(["--wipe-slot=all", "--tpm2-device=auto", "--unlock-key-file"])
+                .args([tmp_keyfile])
+                .args([base_rootdev.as_str()])
+                .run_with_stdin_buf(dummy_passphrase_input)?;
+            Task::new("Opening root LUKS device", "cryptsetup")
+                .args(["luksOpen", base_rootdev.as_str(), luks_name])
+                .run()?;
+            let rootdev = format!("/dev/mapper/{luks_name}");
+            let kargs = vec![
+                format!("luks.uuid={uuid}"),
+                format!("luks.options=tpm2-device=auto,headless=true"),
+            ];
+            (rootdev, Some(kargs))
+        }
+    };
 
     // TODO: make this configurable
     let bootfs_type = Filesystem::Ext4;
@@ -305,19 +330,22 @@ pub(crate) fn install_create_rootfs(
     let boot_uuid = mkfs(bootdev, bootfs_type, Some("boot"), []).context("Initializing /boot")?;
 
     // Initialize rootfs
-    let rootdev = &format!("{device}{ROOTPN}");
     let root_filesystem = opts
         .filesystem
         .or(state.install_config.root_fs_type)
         .ok_or_else(|| anyhow::anyhow!("No root filesystem specified"))?;
-    let root_uuid = mkfs(rootdev, root_filesystem, Some("root"), [])?;
+    let root_uuid = mkfs(&rootdev, root_filesystem, Some("root"), [])?;
     let rootarg = format!("root=UUID={root_uuid}");
     let bootsrc = format!("UUID={boot_uuid}");
     let bootarg = format!("boot={bootsrc}");
     let boot = MountSpec::new(bootsrc.as_str(), "/boot");
-    let kargs = vec![rootarg, RW_KARG.to_string(), bootarg];
+    let kargs = root_blockdev_kargs
+        .into_iter()
+        .flatten()
+        .chain([rootarg, RW_KARG.to_string(), bootarg].into_iter())
+        .collect::<Vec<_>>();
 
-    mount::mount(rootdev, &rootfs)?;
+    mount::mount(&rootdev, &rootfs)?;
     lsm_label(&rootfs, "/".into(), false)?;
     let rootfs_fd = Dir::open_ambient_dir(&rootfs, cap_std::ambient_authority())?;
     let bootfs = rootfs.join("boot");
@@ -339,7 +367,12 @@ pub(crate) fn install_create_rootfs(
         mount::mount(&espdev, &efifs_path)?;
     }
 
+    let luks_device = match opts.block_setup {
+        BlockSetup::Direct => None,
+        BlockSetup::Tpm2Luks => Some(luks_name.to_string()),
+    };
     Ok(RootSetup {
+        luks_device,
         device,
         rootfs,
         rootfs_fd,
