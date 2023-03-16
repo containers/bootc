@@ -17,6 +17,8 @@ use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
 use ostree_ext::sysroot::SysrootLock;
 use std::ffi::OsString;
+use std::os::unix::process::CommandExt;
+use std::process::Command;
 
 /// Perform an upgrade operation
 #[derive(Debug, Parser)]
@@ -104,6 +106,9 @@ pub(crate) enum Opt {
     Switch(SwitchOpts),
     /// Display status
     Status(StatusOpts),
+    /// Add a transient writable overlayfs on `/usr` that will be discarded on reboot.
+    #[clap(alias = "usroverlay")]
+    UsrOverlay,
     /// Install to the target block device
     #[cfg(feature = "install")]
     Install(crate::install::InstallOpts),
@@ -346,6 +351,16 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     Ok(())
 }
 
+/// Implementation of `bootc usroverlay`
+async fn usroverlay() -> Result<()> {
+    // This is just a pass-through today.  At some point we may make this a libostree API
+    // or even oxidize it.
+    return Err(Command::new("ostree")
+        .args(["admin", "unlock"])
+        .exec()
+        .into());
+}
+
 /// Parse the provided arguments and execute.
 /// Calls [`structopt::clap::Error::exit`] on failure, printing the error message and aborting the program.
 pub async fn run_from_iter<I>(args: I) -> Result<()>
@@ -357,6 +372,7 @@ where
     match opt {
         Opt::Upgrade(opts) => upgrade(opts).await,
         Opt::Switch(opts) => switch(opts).await,
+        Opt::UsrOverlay => usroverlay().await,
         #[cfg(feature = "install")]
         Opt::Install(opts) => crate::install::install(opts).await,
         #[cfg(feature = "install")]
