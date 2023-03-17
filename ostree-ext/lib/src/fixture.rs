@@ -241,7 +241,7 @@ pub fn create_dirmeta(path: &Utf8Path, selinux: bool) -> glib::Variant {
         None
     };
     let xattrs = label.map(|v| v.new_xattrs());
-    ostree::create_directory_metadata(&finfo, xattrs.as_ref()).unwrap()
+    ostree::create_directory_metadata(&finfo, xattrs.as_ref())
 }
 
 /// Wraps [`create_dirmeta`] and commits it.
@@ -320,7 +320,7 @@ fn build_mapping_recurse(
                     });
                 }
 
-                let checksum = child.checksum().unwrap().to_string();
+                let checksum = child.checksum().to_string();
                 match ret.map.entry(checksum) {
                     Entry::Vacant(v) => {
                         v.insert(owner);
