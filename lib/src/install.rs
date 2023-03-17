@@ -312,19 +312,19 @@ impl SourceInfo {
     }
 }
 
-mod config {
+pub(crate) mod config {
     use super::*;
 
     /// The toplevel config entry for installation configs stored
     /// in bootc/install (e.g. /etc/bootc/install/05-custom.toml)
-    #[derive(Debug, Deserialize, Default)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Default)]
     #[serde(deny_unknown_fields)]
     pub(crate) struct InstallConfigurationToplevel {
         pub(crate) install: Option<InstallConfiguration>,
     }
 
     /// The serialized [install] section
-    #[derive(Debug, Deserialize, Default)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Default)]
     #[serde(rename = "install", rename_all = "kebab-case", deny_unknown_fields)]
     pub(crate) struct InstallConfiguration {
         pub(crate) root_fs_type: Option<super::baseline::Filesystem>,
