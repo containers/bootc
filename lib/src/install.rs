@@ -675,6 +675,12 @@ fn require_systemd_pid1() -> Result<()> {
     Ok(())
 }
 
+// Ensure the `/var` directory exists.
+fn ensure_var() -> Result<()> {
+    std::fs::create_dir_all("/var")?;
+    Ok(())
+}
+
 /// We want to have proper /tmp and /var/tmp without requiring the caller to set them up
 /// in advance by manually specifying them via `podman run -v /tmp:/tmp` etc.
 /// Unfortunately, it's quite complex right now to "gracefully" dynamically reconfigure
@@ -693,19 +699,24 @@ pub(crate) fn propagate_tmp_mounts_to_host() -> Result<()> {
         if path.is_symlink() {
             continue;
         }
-        std::os::unix::fs::symlink(&target, &tmp)
-            .with_context(|| format!("Symlinking {target} to {tmp}"))?;
-        let cwd = rustix::fs::cwd();
-        rustix::fs::renameat_with(
-            cwd,
-            path.as_os_str(),
-            cwd,
-            &tmp,
-            rustix::fs::RenameFlags::EXCHANGE,
-        )
-        .with_context(|| format!("Exchanging {path} <=> {tmp}"))?;
-        std::fs::rename(&tmp, format!("{path}.old"))
-            .with_context(|| format!("Renaming old {tmp}"))?;
+        if path.try_exists()? {
+            std::os::unix::fs::symlink(&target, &tmp)
+                .with_context(|| format!("Symlinking {target} to {tmp}"))?;
+            let cwd = rustix::fs::cwd();
+            rustix::fs::renameat_with(
+                cwd,
+                path.as_os_str(),
+                cwd,
+                &tmp,
+                rustix::fs::RenameFlags::EXCHANGE,
+            )
+            .with_context(|| format!("Exchanging {path} <=> {tmp}"))?;
+            std::fs::rename(&tmp, format!("{path}.old"))
+                .with_context(|| format!("Renaming old {tmp}"))?;
+        } else {
+            std::os::unix::fs::symlink(&target, path)
+                .with_context(|| format!("Symlinking {target} to {path}"))?;
+        };
     }
     Ok(())
 }
@@ -723,6 +734,7 @@ async fn prepare_install(
     let container_info = crate::containerenv::get_container_execution_info()?;
     let source = SourceInfo::from_container(&container_info)?;
 
+    ensure_var()?;
     propagate_tmp_mounts_to_host()?;
 
     // Even though we require running in a container, the mounts we create should be specific
