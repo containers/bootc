@@ -77,14 +77,11 @@ First, build a derived container using any container build tooling.
 #### Using `bootc install`
 
 The `bootc install` command will write the current container to a disk, and set it up for booting.
+In brief, the idea is that every container image shipping `bootc` also comes with a simple
+installer that can set a system up to boot from it.  Crucially, if you create a 
+*derivative* container image from a stock OS container image, it also automatically supports `bootc install`.
 
-For example, booting a Fedora-derivative (including CentOS and RHEL) system, whether a cloud guest or a live ISO, you can invoke:
-
-```
-$ podman run --privileged --pid=host --net=none --security-opt label=type:unconfined_t ghcr.io/cgwalters/c9s-oscore bootc install --target-no-signature-verification /path/to/disk
-```
-
-As noted above though, if you create a *derivative* container image, it also automatically supports `bootc install`.
+For more information, please see [docs/install.md](docs/install.md).
 
 #### Switching from an existing ostree-based system
 
