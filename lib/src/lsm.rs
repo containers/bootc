@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::Write;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
@@ -76,6 +78,20 @@ pub(crate) fn container_setup_selinux() -> Result<()> {
             .args(["selinuxfs", "-t", "selinuxfs", path.as_str()])
             .run()?;
     }
+    Ok(())
+}
+
+#[context("Setting SELinux permissive mode")]
+#[allow(dead_code)]
+#[cfg(feature = "install")]
+pub(crate) fn selinux_set_permissive() -> Result<()> {
+    let enforce_path = &Utf8Path::new(SELINUXFS).join("enforce");
+    if !enforce_path.exists() {
+        return Ok(());
+    }
+    let mut f = File::open(enforce_path)?;
+    f.write_all(b"0")?;
+    tracing::debug!("Set SELinux permissive mode");
     Ok(())
 }
 
