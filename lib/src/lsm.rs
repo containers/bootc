@@ -1,4 +1,4 @@
-use std::fs::File;
+#[cfg(feature = "install")]
 use std::io::Write;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -31,6 +31,9 @@ pub(crate) fn selinux_enabled() -> Result<bool> {
 #[context("Ensuring selinux install_t type")]
 pub(crate) fn selinux_ensure_install() -> Result<()> {
     let guardenv = "_bootc_selinuxfs_mounted";
+    let current = std::fs::read_to_string("/proc/self/attr/current")
+        .context("Reading /proc/self/attr/current")?;
+    tracing::debug!("Current security context is {current}");
     if let Some(p) = std::env::var_os(guardenv) {
         let p = Path::new(&p);
         if p.exists() {
@@ -59,8 +62,40 @@ pub(crate) fn selinux_ensure_install() -> Result<()> {
     let mut cmd = Command::new(&tmpf);
     cmd.env(guardenv, tmpf);
     cmd.args(std::env::args_os().skip(1));
-    tracing::debug!("Re-executing");
+    tracing::debug!("Re-executing {cmd:?}");
     Err(anyhow::Error::msg(cmd.exec()).context("execve"))
+}
+
+/// A type which will reset SELinux back to enforcing mode when dropped.
+/// This is a workaround for the deep difficulties in trying to reliably
+/// gain the `mac_admin` permission (install_t).
+#[cfg(feature = "install")]
+#[must_use]
+pub(crate) struct SetEnforceGuard;
+
+#[cfg(feature = "install")]
+impl Drop for SetEnforceGuard {
+    fn drop(&mut self) {
+        let _ = selinux_set_permissive(false);
+    }
+}
+
+/// Try to enter the install_t domain, but if we can't do that, then
+/// just setenforce 0.
+#[context("Ensuring selinux install_t type")]
+#[cfg(feature = "install")]
+pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforceGuard>> {
+    selinux_ensure_install()?;
+    let current = std::fs::read_to_string("/proc/self/attr/current")
+        .context("Reading /proc/self/attr/current")?;
+    let g = if !current.contains("install_t") {
+        tracing::warn!("Failed to enter install_t; temporarily setting permissive mode");
+        selinux_set_permissive(true)?;
+        Some(SetEnforceGuard)
+    } else {
+        None
+    };
+    Ok(g)
 }
 
 /// Ensure that /sys/fs/selinux is mounted, and ensure we're running
@@ -84,13 +119,13 @@ pub(crate) fn container_setup_selinux() -> Result<()> {
 #[context("Setting SELinux permissive mode")]
 #[allow(dead_code)]
 #[cfg(feature = "install")]
-pub(crate) fn selinux_set_permissive() -> Result<()> {
+pub(crate) fn selinux_set_permissive(permissive: bool) -> Result<()> {
     let enforce_path = &Utf8Path::new(SELINUXFS).join("enforce");
     if !enforce_path.exists() {
         return Ok(());
     }
-    let mut f = File::open(enforce_path)?;
-    f.write_all(b"0")?;
+    let mut f = std::fs::File::options().write(true).open(enforce_path)?;
+    f.write_all(if permissive { b"0" } else { b"1" })?;
     tracing::debug!("Set SELinux permissive mode");
     Ok(())
 }
@@ -111,6 +146,7 @@ fn selinux_label_for_path(target: &str) -> Result<String> {
 #[context("Labeling {as_path}")]
 pub(crate) fn lsm_label(target: &Utf8Path, as_path: &Utf8Path, recurse: bool) -> Result<()> {
     let label = selinux_label_for_path(as_path.as_str())?;
+    tracing::debug!("Label for {target} is {label}");
     let st = Command::new("chcon")
         .arg("-h")
         .args(recurse.then_some("-R"))

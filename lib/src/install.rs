@@ -178,6 +178,8 @@ pub(crate) struct State {
     pub(crate) source: SourceInfo,
     /// Force SELinux off in target system
     pub(crate) override_disable_selinux: bool,
+    #[allow(dead_code)]
+    pub(crate) setenforce_guard: Option<crate::lsm::SetEnforceGuard>,
     pub(crate) config_opts: InstallConfigOpts,
     pub(crate) target_opts: InstallTargetOpts,
     pub(crate) install_config: config::InstallConfiguration,
@@ -609,9 +611,10 @@ impl RootSetup {
 pub(crate) fn reexecute_self_for_selinux_if_needed(
     srcdata: &SourceInfo,
     override_disable_selinux: bool,
-) -> Result<bool> {
+) -> Result<(bool, Option<crate::lsm::SetEnforceGuard>)> {
     let mut ret_did_override = false;
     // If the target state has SELinux enabled, we need to check the host state.
+    let mut g = None;
     if srcdata.selinux {
         let host_selinux = crate::lsm::selinux_enabled()?;
         tracing::debug!("Target has SELinux, host={host_selinux}");
@@ -623,7 +626,7 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
             // so let's just fall through to that.
             crate::lsm::container_setup_selinux()?;
             // This will re-execute the current process (once).
-            crate::lsm::selinux_ensure_install()?;
+            g = crate::lsm::selinux_ensure_install_or_setenforce()?;
         } else if override_disable_selinux {
             ret_did_override = true;
             println!("notice: Target has SELinux enabled, overriding to disable")
@@ -635,7 +638,7 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
     } else {
         tracing::debug!("Target does not enable SELinux");
     }
-    Ok(ret_did_override)
+    Ok((ret_did_override, g))
 }
 
 /// Trim, flush outstanding writes, and freeze/thaw the target mounted filesystem;
@@ -744,7 +747,7 @@ async fn prepare_install(
     }
 
     // Now, deal with SELinux state.
-    let override_disable_selinux =
+    let (override_disable_selinux, setenforce_guard) =
         reexecute_self_for_selinux_if_needed(&source, config_opts.disable_selinux)?;
 
     let install_config = config::load_config()?;
@@ -754,6 +757,7 @@ async fn prepare_install(
     // combines our command line options along with some bind mounts from the host.
     let state = Arc::new(State {
         override_disable_selinux,
+        setenforce_guard,
         source,
         config_opts,
         target_opts,
