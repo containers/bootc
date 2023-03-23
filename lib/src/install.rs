@@ -406,7 +406,7 @@ async fn initialize_ostree_root_from_self(
     let target_imgname = opts
         .target_imgref
         .as_deref()
-        .unwrap_or_else(|| state.source.imageref.name.as_str());
+        .unwrap_or(state.source.imageref.name.as_str());
     let target_transport = ostree_container::Transport::try_from(opts.target_transport.as_str())?;
     let target_imgref = ostree_container::OstreeImageReference {
         sigverify: target_sigverify,
