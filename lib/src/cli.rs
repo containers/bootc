@@ -101,6 +101,7 @@ pub(crate) enum TestingOpts {
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Opt {
     /// Look for updates to the booted container image.
+    #[clap(alias = "update")]
     Upgrade(UpgradeOpts),
     /// Target a new container image reference to boot.
     Switch(SwitchOpts),
