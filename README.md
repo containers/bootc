@@ -164,9 +164,16 @@ Further, bootc does aim to [include some of the functionality of zincati](https:
 But all this said: *It will be supported to use both bootc and rpm-ostree together*; they are not exclusive.
 For example, `bootc status` at least will still function even if packages are layered.
 
+### Relationship with Fedora CoreOS (and Silverblue, etc.)
+
+Per above, it is a toplevel goal to support a seamless, transactional update from existing OSTree based systems, which includes these Fedora derivatives.
+
+For Fedora CoreOS specifically, see [this tracker issue](https://github.com/coreos/fedora-coreos-tracker/issues/1446).
+
+See also [OstreeNativeContainerStable](https://fedoraproject.org/wiki/Changes/OstreeNativeContainerStable).
+
 # More links
 
-- https://fedoraproject.org/wiki/Changes/OstreeNativeContainerStable
 - https://coreos.github.io/rpm-ostree/container/
 - https://github.com/coreos/layering-examples
 
