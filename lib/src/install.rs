@@ -394,7 +394,8 @@ async fn initialize_ostree_root_from_self(
     let opts = &state.target_opts;
     let cancellable = gio::Cancellable::NONE;
 
-    // Parse the target CLI image reference options
+    // Parse the target CLI image reference options and create the *target* image
+    // reference, which defaults to pulling from a registry.
     let target_sigverify = if opts.target_no_signature_verification {
         SignatureSource::ContainerPolicyAllowInsecure
     } else if let Some(remote) = opts.target_ostree_remote.as_deref() {
@@ -402,22 +403,19 @@ async fn initialize_ostree_root_from_self(
     } else {
         SignatureSource::ContainerPolicy
     };
-    let target_imgref = if let Some(imgref) = opts.target_imgref.as_ref() {
-        let transport = ostree_container::Transport::try_from(opts.target_transport.as_str())?;
-        let imgref = ostree_container::ImageReference {
-            transport,
-            name: imgref.to_string(),
-        };
-        ostree_container::OstreeImageReference {
-            sigverify: target_sigverify,
-            imgref,
-        }
-    } else {
-        ostree_container::OstreeImageReference {
-            sigverify: target_sigverify,
-            imgref: state.source.imageref.clone(),
-        }
+    let target_imgname = opts
+        .target_imgref
+        .as_deref()
+        .unwrap_or_else(|| state.source.imageref.name.as_str());
+    let target_transport = ostree_container::Transport::try_from(opts.target_transport.as_str())?;
+    let target_imgref = ostree_container::OstreeImageReference {
+        sigverify: target_sigverify,
+        imgref: ostree_container::ImageReference {
+            transport: target_transport,
+            name: target_imgname.to_string(),
+        },
     };
+    tracing::debug!("Target image reference: {target_imgref}");
 
     // TODO: make configurable?
     let stateroot = STATEROOT_DEFAULT;
