@@ -10,6 +10,7 @@ use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt;
 use cap_std_ext::rustix::fs::MetadataExt;
+use std::borrow::Cow;
 use std::convert::TryInto;
 use std::path::Path;
 use std::path::PathBuf;
@@ -18,16 +19,26 @@ use tokio::task;
 /// Directories for which we will always remove all content.
 const FORCE_CLEAN_PATHS: &[&str] = &["run", "tmp", "var/tmp", "var/cache"];
 
-/// Gather count of non-empty directories.  Empty directories are removed.
-fn process_dir_recurse(
+/// Gather count of non-empty directories.  Empty directories are removed,
+/// except for var/tmp.
+fn process_vardir_recurse(
     root: &Dir,
     rootdev: u64,
     path: &Utf8Path,
     error_count: &mut i32,
 ) -> Result<bool> {
-    let context = || format!("Validating: {path}");
+    let prefix = "var";
+    let tmp_name = "tmp";
+    let empty_path = path.as_str().is_empty();
+    let context = || format!("Validating: {prefix}/{path}");
     let mut validated = true;
-    for entry in root.read_dir(path).with_context(context)? {
+    let entries = if empty_path {
+        root.entries()
+    } else {
+        root.read_dir(path)
+    };
+
+    for entry in entries.with_context(context)? {
         let entry = entry?;
         let metadata = entry.metadata()?;
         if metadata.dev() != rootdev {
@@ -36,21 +47,25 @@ fn process_dir_recurse(
         let name = entry.file_name();
         let name = Path::new(&name);
         let name: &Utf8Path = name.try_into()?;
-        let path = &path.join(name);
+        let path = &*if empty_path {
+            Cow::Borrowed(name)
+        } else {
+            Cow::Owned(path.join(name))
+        };
 
         if metadata.is_dir() {
-            if !process_dir_recurse(root, rootdev, path, error_count)? {
+            if !process_vardir_recurse(root, rootdev, path, error_count)? {
                 validated = false;
             }
         } else {
             validated = false;
             *error_count += 1;
             if *error_count < 20 {
-                eprintln!("Found file: {:?}", path)
+                eprintln!("Found file: {prefix}/{path}")
             }
         }
     }
-    if validated {
+    if validated && !empty_path && path != tmp_name {
         root.remove_dir(path).with_context(context)?;
     }
     Ok(validated)
@@ -116,8 +131,8 @@ fn clean_paths_in(root: &Dir, rootdev: u64) -> Result<()> {
 fn process_var(root: &Dir, rootdev: u64, strict: bool) -> Result<()> {
     let var = Utf8Path::new("var");
     let mut error_count = 0;
-    if root.try_exists(var)? {
-        if !process_dir_recurse(root, rootdev, var, &mut error_count)? && strict {
+    if let Some(vardir) = root.open_dir_optional(var)? {
+        if !process_vardir_recurse(&vardir, rootdev, "".into(), &mut error_count)? && strict {
             anyhow::bail!("Found content in {var}");
         }
     }
@@ -180,18 +195,25 @@ mod tests {
         td.create_dir_all(runsystemd)?;
         td.write(resolvstub, "stub resolv")?;
         prepare_ostree_commit_in(td).unwrap();
-        assert!(!td.try_exists(var)?);
+        assert!(td.try_exists(var)?);
+        assert!(td.try_exists(var.join("tmp"))?);
+        assert!(!td.try_exists(vartmp_foobar)?);
         assert!(td.try_exists(run)?);
         assert!(!td.try_exists(runsystemd)?);
 
         let systemd = run.join("systemd");
         td.create_dir_all(&systemd)?;
         prepare_ostree_commit_in(td).unwrap();
-        assert!(!td.try_exists(var)?);
+        assert!(td.try_exists(var)?);
+        assert!(!td.try_exists(&systemd)?);
 
+        td.remove_dir_all(&var)?;
         td.create_dir(&var)?;
         td.write(var.join("foo"), "somefile")?;
         assert!(prepare_ostree_commit_in(td).is_err());
+        // Right now we don't auto-create var/tmp if it didn't exist, but maybe
+        // we will in the future.
+        assert!(!td.try_exists(var.join("tmp"))?);
         assert!(td.try_exists(var)?);
 
         td.write(var.join("foo"), "somefile")?;
