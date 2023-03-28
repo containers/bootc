@@ -105,11 +105,13 @@ pub(crate) fn impl_run_container() -> Result<()> {
     let stout = cmd!(sh, "bootc status").read()?;
     assert!(stout.contains("Running in a container (ostree base)."));
     drop(stout);
-    let o = Command::new("bootc").arg("upgrade").output()?;
-    let st = o.status;
-    assert!(!st.success());
-    let stderr = String::from_utf8(o.stderr)?;
-    assert!(stderr.contains("this command requires a booted host system"));
+    for c in ["upgrade", "update"] {
+        let o = Command::new("bootc").arg(c).output()?;
+        let st = o.status;
+        assert!(!st.success());
+        let stderr = String::from_utf8(o.stderr)?;
+        assert!(stderr.contains("this command requires a booted host system"));
+    }
     println!("ok container integration testing");
     Ok(())
 }
