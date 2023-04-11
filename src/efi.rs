@@ -22,7 +22,7 @@ use crate::util;
 use crate::util::CommandRunExt;
 
 /// Well-known paths to the ESP that may have been mounted external to us.
-pub(crate) const ESP_MOUNTS: &[&str] = &["boot/efi", "efi"];
+pub(crate) const ESP_MOUNTS: &[&str] = &["boot", "boot/efi", "efi"];
 
 /// The ESP partition label on Fedora CoreOS derivatives
 pub(crate) const COREOS_ESP_PART_LABEL: &str = "EFI-SYSTEM";
