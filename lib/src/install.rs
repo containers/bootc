@@ -32,7 +32,6 @@ use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
 use crate::containerenv::ContainerExecutionInfo;
-use crate::lsm::lsm_label;
 use crate::task::Task;
 use crate::utils::run_in_host_mountns;
 
@@ -183,6 +182,21 @@ pub(crate) struct State {
     pub(crate) config_opts: InstallConfigOpts,
     pub(crate) target_opts: InstallTargetOpts,
     pub(crate) install_config: config::InstallConfiguration,
+}
+
+impl State {
+    // Wraps core lsm labeling functionality, conditionalizing based on source state
+    pub(crate) fn lsm_label(
+        &self,
+        target: &Utf8Path,
+        as_path: &Utf8Path,
+        recurse: bool,
+    ) -> Result<()> {
+        if !self.source.selinux {
+            return Ok(());
+        }
+        crate::lsm::lsm_label(target, as_path, recurse)
+    }
 }
 
 /// Path to initially deployed version information
@@ -438,7 +452,7 @@ async fn initialize_ostree_root_from_self(
         .run()?;
 
     // Ensure everything in the ostree repo is labeled
-    lsm_label(&rootfs.join("ostree"), "/usr".into(), true)?;
+    state.lsm_label(&rootfs.join("ostree"), "/usr".into(), true)?;
 
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
