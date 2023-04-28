@@ -26,7 +26,6 @@ use super::RootSetup;
 use super::State;
 use super::RUN_BOOTC;
 use super::RW_KARG;
-use crate::lsm::lsm_label;
 use crate::mount;
 use crate::task::Task;
 
@@ -346,15 +345,15 @@ pub(crate) fn install_create_rootfs(
         .collect::<Vec<_>>();
 
     mount::mount(&rootdev, &rootfs)?;
-    lsm_label(&rootfs, "/".into(), false)?;
+    state.lsm_label(&rootfs, "/".into(), false)?;
     let rootfs_fd = Dir::open_ambient_dir(&rootfs, cap_std::ambient_authority())?;
     let bootfs = rootfs.join("boot");
     std::fs::create_dir(&bootfs).context("Creating /boot")?;
     // The underlying directory on the root should be labeled
-    lsm_label(&bootfs, "/boot".into(), false)?;
+    state.lsm_label(&bootfs, "/boot".into(), false)?;
     mount::mount(bootdev, &bootfs)?;
     // And we want to label the root mount of /boot
-    lsm_label(&bootfs, "/boot".into(), false)?;
+    state.lsm_label(&bootfs, "/boot".into(), false)?;
 
     // Create the EFI system partition, if applicable
     if let Some(espdev) = espdev {
