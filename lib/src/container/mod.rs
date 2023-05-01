@@ -26,8 +26,9 @@
 //! for this is [planned but not implemented](https://github.com/ostreedev/ostree-rs-ext/issues/12).
 
 use anyhow::anyhow;
-
+use containers_image_proxy::oci_spec;
 use ostree::glib;
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Deref;

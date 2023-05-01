@@ -7,6 +7,7 @@ use anyhow::Result;
 use camino::Utf8Path;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
+use containers_image_proxy::oci_spec;
 use fn_error_context::context;
 use gio::prelude::*;
 use oci_spec::image as oci_image;
