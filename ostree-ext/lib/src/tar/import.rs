@@ -752,7 +752,7 @@ impl Importer {
         finfo.set_attribute_uint32("unix::gid", 0);
         finfo.set_attribute_uint32("unix::mode", libc::S_IFDIR | 0o755);
         // SAFETY: TODO: This is not a nullable return, fix it in ostree
-        ostree::create_directory_metadata(&finfo, None).unwrap()
+        ostree::create_directory_metadata(&finfo, None)
     }
 
     pub(crate) fn finish_import_object_set(self) -> Result<String> {

@@ -101,21 +101,20 @@ fn diff_recurse(
             from_child.ensure_resolved()?;
 
             if is_dir {
-                let from_contents_checksum =
-                    from_child.tree_get_contents_checksum().expect("checksum");
-                let to_contents_checksum = to_child.tree_get_contents_checksum().expect("checksum");
+                let from_contents_checksum = from_child.tree_get_contents_checksum();
+                let to_contents_checksum = to_child.tree_get_contents_checksum();
                 if from_contents_checksum != to_contents_checksum {
                     let subpath = format!("{}/", path);
                     diff_recurse(&subpath, diff, &from_child, &to_child)?;
                 }
-                let from_meta_checksum = from_child.tree_get_metadata_checksum().expect("checksum");
-                let to_meta_checksum = to_child.tree_get_metadata_checksum().expect("checksum");
+                let from_meta_checksum = from_child.tree_get_metadata_checksum();
+                let to_meta_checksum = to_child.tree_get_metadata_checksum();
                 if from_meta_checksum != to_meta_checksum {
                     diff.changed_dirs.insert(path);
                 }
             } else {
-                let from_checksum = from_child.checksum().expect("checksum");
-                let to_checksum = to_child.checksum().expect("checksum");
+                let from_checksum = from_child.checksum();
+                let to_checksum = to_child.checksum();
                 if from_checksum != to_checksum {
                     diff.changed_files.insert(path);
                 }
