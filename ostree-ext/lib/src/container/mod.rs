@@ -315,7 +315,7 @@ pub fn merge_default_container_proxy_opts(
 ) -> Result<()> {
     let user = cap_std_ext::rustix::process::getuid()
         .is_root()
-        .then(|| isolation::DEFAULT_UNPRIVILEGED_USER);
+        .then_some(isolation::DEFAULT_UNPRIVILEGED_USER);
     merge_default_container_proxy_opts_with_isolation(config, user)
 }
 
@@ -341,7 +341,7 @@ pub fn merge_default_container_proxy_opts_with_isolation(
     let isolation_user = config
         .skopeo_cmd
         .is_none()
-        .then(|| isolation_user.as_ref())
+        .then_some(isolation_user.as_ref())
         .flatten();
     if let Some(user) = isolation_user {
         // Read the default authfile if it exists and pass it via file descriptor
