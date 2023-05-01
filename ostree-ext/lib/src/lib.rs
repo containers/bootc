@@ -16,7 +16,7 @@
 // Re-export our dependencies.  See https://gtk-rs.org/blog/2021/06/22/new-release.html
 // "Dependencies are re-exported".  Users will need e.g. `gio::File`, so this avoids
 // them needing to update matching versions.
-pub use oci_spec;
+pub use containers_image_proxy::oci_spec;
 pub use ostree;
 pub use ostree::gio;
 pub use ostree::gio::glib;

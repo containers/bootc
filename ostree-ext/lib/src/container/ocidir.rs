@@ -9,6 +9,7 @@ use camino::Utf8Path;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt;
+use containers_image_proxy::oci_spec;
 use flate2::write::GzEncoder;
 use fn_error_context::context;
 use oci_image::MediaType;
