@@ -51,7 +51,7 @@ pub async fn deploy(
 ) -> Result<Box<LayeredImageState>> {
     let cancellable = ostree::gio::Cancellable::NONE;
     let options = options.unwrap_or_default();
-    let repo = &sysroot.repo().unwrap();
+    let repo = &sysroot.repo();
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
     let mut imp =
         super::store::ImageImporter::new(repo, imgref, options.proxy_cfg.unwrap_or_default())

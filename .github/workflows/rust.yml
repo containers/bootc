@@ -16,7 +16,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   # Pinned toolchain for linting
-  ACTION_LINTS_TOOLCHAIN: 1.63.0
+  ACTION_LINTS_TOOLCHAIN: 1.64.0
 
 jobs:
   tests:

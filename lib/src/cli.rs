@@ -871,7 +871,7 @@ where
                 } => {
                     let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
                     sysroot.load(gio::Cancellable::NONE)?;
-                    let repo = &sysroot.repo().unwrap();
+                    let repo = &sysroot.repo();
                     let kargs = karg.as_deref();
                     let kargs = kargs.map(|v| {
                         let r: Vec<_> = v.iter().map(|s| s.as_str()).collect();
