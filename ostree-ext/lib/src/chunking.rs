@@ -300,7 +300,7 @@ impl Chunking {
                 0 => unreachable!(),
                 1 => Cow::Borrowed(first_name),
                 2..=5 => {
-                    let r = bin.iter().map(|v| &*v.meta.name).fold(
+                    let r = bin.iter().map(|v| &*v.meta.name).skip(1).fold(
                         String::from(first_name),
                         |mut acc, v| {
                             write!(acc, " and {}", v).unwrap();
