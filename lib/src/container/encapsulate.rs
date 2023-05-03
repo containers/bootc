@@ -9,6 +9,7 @@ use crate::tar as ostree_tar;
 use anyhow::{anyhow, Context, Result};
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
+use containers_image_proxy::oci_spec;
 use flate2::Compression;
 use fn_error_context::context;
 use gio::glib;

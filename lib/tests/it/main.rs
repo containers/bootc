@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use cap_std::fs::{Dir, DirBuilder};
+use containers_image_proxy::oci_spec;
 use once_cell::sync::Lazy;
 use ostree::cap_std;
 use ostree_ext::chunking::ObjectMetaSized;
