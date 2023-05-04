@@ -77,8 +77,10 @@ pub(crate) trait Component {
 pub(crate) fn new_from_name(name: &str) -> Result<Box<dyn Component>> {
     let r: Box<dyn Component> = match name {
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        #[allow(clippy::box_default)]
         "EFI" => Box::new(crate::efi::Efi::default()),
         #[cfg(any(target_arch = "x86_64", target_arch = "powerpc64"))]
+        #[allow(clippy::box_default)]
         "BIOS" => Box::new(crate::bios::Bios::default()),
         _ => anyhow::bail!("No component {}", name),
     };
