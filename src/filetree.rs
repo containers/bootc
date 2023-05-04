@@ -437,7 +437,7 @@ mod tests {
         assert_eq!(diff.count(), 0);
         {
             let mut bar = a.write_file("foo/bar", 0o644)?;
-            bar.write("foobarcontents".as_bytes())?;
+            bar.write_all("foobarcontents".as_bytes())?;
         }
         let diff = run_diff(&a, &b)?;
         assert_eq!(diff.count(), 1);
@@ -456,14 +456,14 @@ mod tests {
         b.create_dir("foo", 0o755)?;
         {
             let mut bar = b.write_file("foo/bar", 0o644)?;
-            bar.write("foobarcontents".as_bytes())?;
+            bar.write_all("foobarcontents".as_bytes())?;
         }
         let diff = run_diff(&a, &b)?;
         assert_eq!(diff.count(), 0);
         test_apply(&pa, &pb).context("testing apply 2")?;
         {
             let mut bar2 = b.write_file("foo/bar", 0o644)?;
-            bar2.write("foobarcontents2".as_bytes())?;
+            bar2.write_all("foobarcontents2".as_bytes())?;
         }
         let diff = run_diff(&a, &b)?;
         assert_eq!(diff.count(), 1);
