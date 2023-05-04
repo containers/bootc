@@ -80,7 +80,7 @@ pub(crate) fn ensure_writable_mount<P: AsRef<Path>>(p: P) -> Result<()> {
         return Ok(());
     }
     let status = std::process::Command::new("mount")
-        .args(&["-o", "remount,rw"])
+        .args(["-o", "remount,rw"])
         .arg(p)
         .status()?;
     if !status.success() {
@@ -128,7 +128,7 @@ pub(crate) fn parse_rpm_metadata(stdout: Vec<u8>) -> Result<ContentMetadata> {
 /// files in the EFI system partition, or for grub2-install file
 pub(crate) fn rpm_query(sysroot_path: &str, path: &Path) -> Result<Command> {
     let mut c = ostreeutil::rpm_cmd(sysroot_path);
-    c.args(&["-q", "--queryformat", "%{nevra},%{buildtime} ", "-f"]);
+    c.args(["-q", "--queryformat", "%{nevra},%{buildtime} ", "-f"]);
 
     match path.file_name().expect("filename").to_str() {
         Some("EFI") => {
@@ -139,7 +139,7 @@ pub(crate) fn rpm_query(sysroot_path: &str, path: &Path) -> Result<Command> {
             }));
         }
         Some("grub2-install") => {
-            c.arg(&path);
+            c.arg(path);
         }
         _ => {
             bail!("Unsupported file/directory {:?}", path)

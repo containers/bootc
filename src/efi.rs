@@ -198,9 +198,9 @@ impl Component for Efi {
         // TODO - add some sort of API that allows directly setting the working
         // directory to a file descriptor.
         let r = std::process::Command::new("cp")
-            .args(&["-rp", "--reflink=auto"])
+            .args(["-rp", "--reflink=auto"])
             .arg(&srcdir_name)
-            .arg(&destdir)
+            .arg(destdir)
             .current_dir(format!("/proc/self/fd/{}", src_root.as_raw_fd()))
             .status()?;
         if !r.success() {
@@ -262,7 +262,7 @@ impl Component for Efi {
 
             // Fork off mv() because on overlayfs one can't rename() a lower level
             // directory today, and this will handle the copy fallback.
-            Command::new("mv").args(&[&efisrc, &dest_efidir]).run()?;
+            Command::new("mv").args([&efisrc, &dest_efidir]).run()?;
         }
 
         // Query the rpm database and list the package and build times for all the

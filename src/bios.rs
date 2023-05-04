@@ -62,9 +62,9 @@ impl Bios {
         // We also add part_gpt because in some cases probing of the partition map can fail such
         // as in a container, but we always use GPT.
         #[cfg(target_arch = "x86_64")]
-        cmd.args(&["--target", "i386-pc"])
-            .args(&["--boot-directory", boot_dir.to_str().unwrap()])
-            .args(&["--modules", "mdraid1x part_gpt"])
+        cmd.args(["--target", "i386-pc"])
+            .args(["--boot-directory", boot_dir.to_str().unwrap()])
+            .args(["--modules", "mdraid1x part_gpt"])
             .arg(device);
 
         #[cfg(target_arch = "powerpc64")]

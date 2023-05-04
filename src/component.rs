@@ -116,7 +116,7 @@ pub(crate) fn write_update_metadata(
     let sysroot = openat::Dir::open(sysroot)?;
     let dir = sysroot.sub_dir(BOOTUPD_UPDATES_DIR)?;
     let name = component_update_data_name(component);
-    dir.write_file_with(&name, 0o644, |w| -> Result<_> {
+    dir.write_file_with(name, 0o644, |w| -> Result<_> {
         Ok(serde_json::to_writer(w, &meta)?)
     })?;
     Ok(())
