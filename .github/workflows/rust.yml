@@ -13,7 +13,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   # Pinned toolchain for linting
-  ACTION_LINTS_TOOLCHAIN: 1.59.0
+  ACTION_LINTS_TOOLCHAIN: 1.66.0
 
 jobs:
   tests-stable:

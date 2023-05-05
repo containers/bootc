@@ -276,7 +276,7 @@ pub(crate) struct ApplyUpdateOptions {
 pub(crate) fn syncfs(d: &openat::Dir) -> Result<()> {
     let d = d.sub_dir(".").expect("subdir");
     let mut c = std::process::Command::new("sync");
-    let c = c.args(&["-f", "."]);
+    let c = c.args(["-f", "."]);
     unsafe {
         c.pre_exec(move || {
             nix::unistd::fchdir(d.as_raw_fd()).expect("fchdir");
@@ -357,8 +357,8 @@ mod tests {
     use std::io::Write;
 
     fn run_diff(a: &openat::Dir, b: &openat::Dir) -> Result<FileTreeDiff> {
-        let ta = FileTree::new_from_dir(&a)?;
-        let tb = FileTree::new_from_dir(&b)?;
+        let ta = FileTree::new_from_dir(a)?;
+        let tb = FileTree::new_from_dir(b)?;
         let diff = ta.diff(&tb)?;
         Ok(diff)
     }
@@ -374,7 +374,7 @@ mod tests {
         let c = t.path().join("c");
         let r = std::process::Command::new("cp")
             .arg("-rp")
-            .args(&[a, &c])
+            .args([a, &c])
             .status()?;
         if !r.success() {
             bail!("failed to cp");
@@ -415,9 +415,8 @@ mod tests {
             skip_removals: true,
             ..Default::default()
         };
-        test_one_apply(&a, &b, None).context("testing apply (with removals)")?;
-        test_one_apply(&a, &b, Some(&skip_removals))
-            .context("testing apply (skipping removals)")?;
+        test_one_apply(a, b, None).context("testing apply (with removals)")?;
+        test_one_apply(a, b, Some(&skip_removals)).context("testing apply (skipping removals)")?;
         Ok(())
     }
 
@@ -438,7 +437,7 @@ mod tests {
         assert_eq!(diff.count(), 0);
         {
             let mut bar = a.write_file("foo/bar", 0o644)?;
-            bar.write("foobarcontents".as_bytes())?;
+            bar.write_all("foobarcontents".as_bytes())?;
         }
         let diff = run_diff(&a, &b)?;
         assert_eq!(diff.count(), 1);
@@ -457,14 +456,14 @@ mod tests {
         b.create_dir("foo", 0o755)?;
         {
             let mut bar = b.write_file("foo/bar", 0o644)?;
-            bar.write("foobarcontents".as_bytes())?;
+            bar.write_all("foobarcontents".as_bytes())?;
         }
         let diff = run_diff(&a, &b)?;
         assert_eq!(diff.count(), 0);
         test_apply(&pa, &pb).context("testing apply 2")?;
         {
             let mut bar2 = b.write_file("foo/bar", 0o644)?;
-            bar2.write("foobarcontents2".as_bytes())?;
+            bar2.write_all("foobarcontents2".as_bytes())?;
         }
         let diff = run_diff(&a, &b)?;
         assert_eq!(diff.count(), 1);
@@ -496,7 +495,7 @@ mod tests {
         let newsubp = Path::new(relp).join("subdir");
         fs::create_dir_all(b.join(&newsubp))?;
         fs::write(b.join(&newsubp).join("newgrub.x64"), "newgrub data")?;
-        fs::remove_file(b.join(&relp).join("shim.x64"))?;
+        fs::remove_file(b.join(relp).join("shim.x64"))?;
         {
             let a = openat::Dir::open(&a)?;
             let b = openat::Dir::open(&b)?;
@@ -516,7 +515,7 @@ mod tests {
             String::from_utf8(std::fs::read(a.join(&newsubp).join("newgrub.x64"))?)?,
             "newgrub data"
         );
-        assert!(!a.join(&relp).join("shim.x64").exists());
+        assert!(!a.join(relp).join("shim.x64").exists());
         Ok(())
     }
 }
