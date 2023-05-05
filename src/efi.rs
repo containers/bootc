@@ -12,6 +12,7 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use openat_ext::OpenatDirExt;
+use widestring::U16CString;
 
 use crate::component::*;
 use crate::filetree;
@@ -21,11 +22,15 @@ use crate::util;
 use crate::util::CommandRunExt;
 
 /// Well-known paths to the ESP that may have been mounted external to us.
-pub(crate) const ESP_MOUNTS: &[&str] = &["boot/efi", "efi"];
+pub(crate) const ESP_MOUNTS: &[&str] = &["boot", "boot/efi", "efi"];
 
 /// The ESP partition label on Fedora CoreOS derivatives
 pub(crate) const COREOS_ESP_PART_LABEL: &str = "EFI-SYSTEM";
 pub(crate) const ANACONDA_ESP_PART_LABEL: &str = "EFI\\x20System\\x20Partition";
+
+/// Systemd boot loader info EFI variable names
+const LOADER_INFO_VAR_STR: &str = "LoaderInfo-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f";
+const STUB_INFO_VAR_STR: &str = "StubInfo-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f";
 
 #[derive(Default)]
 pub(crate) struct Efi {
@@ -105,6 +110,70 @@ impl Efi {
     }
 }
 
+/// Convert a nul-terminated UTF-16 byte array to a String.
+fn string_from_utf16_bytes(slice: &[u8]) -> String {
+    // For some reason, systemd appends 3 nul bytes after the string.
+    // Drop the last byte if there's an odd number.
+    let size = slice.len() / 2;
+    let v: Vec<u16> = (0..size)
+        .map(|i| u16::from_ne_bytes([slice[2 * i], slice[2 * i + 1]]))
+        .collect();
+    U16CString::from_vec(v).unwrap().to_string_lossy()
+}
+
+/// Read a nul-terminated UTF-16 string from an EFI variable.
+fn read_efi_var_utf16_string(name: &str) -> Option<String> {
+    let efivars = Path::new("/sys/firmware/efi/efivars");
+    if !efivars.exists() {
+        log::warn!("No efivars mount at {:?}", efivars);
+        return None;
+    }
+    let path = efivars.join(name);
+    if !path.exists() {
+        log::trace!("No EFI variable {name}");
+        return None;
+    }
+    match std::fs::read(&path) {
+        Ok(buf) => {
+            // Skip the first 4 bytes, those are the EFI variable attributes.
+            if buf.len() < 4 {
+                log::warn!("Read less than 4 bytes from {:?}", path);
+                return None;
+            }
+            Some(string_from_utf16_bytes(&buf[4..]))
+        }
+        Err(reason) => {
+            log::warn!("Failed reading {:?}: {reason}", path);
+            None
+        }
+    }
+}
+
+/// Read the LoaderInfo EFI variable if it exists.
+fn get_loader_info() -> Option<String> {
+    read_efi_var_utf16_string(LOADER_INFO_VAR_STR)
+}
+
+/// Read the StubInfo EFI variable if it exists.
+fn get_stub_info() -> Option<String> {
+    read_efi_var_utf16_string(STUB_INFO_VAR_STR)
+}
+
+/// Whether to skip adoption if a systemd bootloader is found.
+fn skip_systemd_bootloaders() -> bool {
+    if let Some(loader_info) = get_loader_info() {
+        if loader_info.starts_with("systemd") {
+            log::trace!("Skipping adoption for {:?}", loader_info);
+            return true;
+        }
+    }
+    if let Some(stub_info) = get_stub_info() {
+        log::trace!("Skipping adoption for {:?}", stub_info);
+        return true;
+    }
+    false
+}
+
 impl Component for Efi {
     fn name(&self) -> &'static str {
         "EFI"
@@ -129,6 +198,11 @@ impl Component for Efi {
             }));
         } else {
             log::trace!("No CoreOS aleph detected");
+        }
+        // Don't adopt if the system is booted with systemd-boot or
+        // systemd-stub since those will be managed with bootctl.
+        if skip_systemd_bootloaders() {
+            return Ok(None);
         }
         let ostree_deploy_dir = Path::new("/ostree/deploy");
         if ostree_deploy_dir.exists() {
