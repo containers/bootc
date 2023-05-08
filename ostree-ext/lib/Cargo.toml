@@ -46,7 +46,7 @@ tokio-stream = { features = ["sync"], version = "0.1.8" }
 tracing = "0.1"
 
 indoc = { version = "1.0.3", optional = true }
-sh-inline = { version = "0.4", features = ["cap-std-ext"], optional = true }
+xshell = { version = "0.2", optional = true }
 
 [dev-dependencies]
 quickcheck = "1"
@@ -60,4 +60,4 @@ features = ["dox"]
 [features]
 docgen = ["clap_mangen"]
 dox = ["ostree/dox"]
-internal-testing-api = ["sh-inline", "indoc"]
+internal-testing-api = ["xshell", "indoc"]
