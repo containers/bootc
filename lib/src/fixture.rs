@@ -415,6 +415,12 @@ impl Fixture {
         &self.destrepo
     }
 
+    pub fn new_shell(&self) -> Result<xshell::Shell> {
+        let sh = xshell::Shell::new()?;
+        sh.change_dir(&self.path);
+        Ok(sh)
+    }
+
     // Delete all objects in the destrepo
     pub fn clear_destrepo(&self) -> Result<()> {
         self.destrepo()
