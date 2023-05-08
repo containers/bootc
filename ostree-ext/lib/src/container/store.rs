@@ -799,7 +799,7 @@ impl ImageImporter {
         let repo = self.repo;
         let state = crate::tokio_util::spawn_blocking_cancellable_flatten(
             move |cancellable| -> Result<Box<LayeredImageState>> {
-                use cap_std_ext::rustix::fd::AsRawFd;
+                use rustix::fd::AsRawFd;
 
                 let cancellable = Some(cancellable);
                 let repo = &repo;

@@ -9,7 +9,7 @@ use camino::Utf8Path;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt;
-use cap_std_ext::rustix::fs::MetadataExt;
+use rustix::fs::MetadataExt;
 use std::borrow::Cow;
 use std::convert::TryInto;
 use std::path::Path;

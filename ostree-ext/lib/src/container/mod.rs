@@ -314,7 +314,7 @@ impl ManifestDiff {
 pub fn merge_default_container_proxy_opts(
     config: &mut containers_image_proxy::ImageProxyConfig,
 ) -> Result<()> {
-    let user = cap_std_ext::rustix::process::getuid()
+    let user = rustix::process::getuid()
         .is_root()
         .then_some(isolation::DEFAULT_UNPRIVILEGED_USER);
     merge_default_container_proxy_opts_with_isolation(config, user)
