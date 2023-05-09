@@ -12,6 +12,7 @@ use fn_error_context::context;
 use gio::prelude::*;
 use oci_spec::image as oci_image;
 use ostree::gio;
+use xshell::cmd;
 
 pub(crate) fn detectenv() -> Result<&'static str> {
     let r = if is_ostree_container()? {
@@ -163,12 +164,15 @@ pub(crate) fn test_ima() -> Result<()> {
     authorityKeyIdentifier=keyid
     "#};
     std::fs::write(fixture.path.join("genkey.config"), config)?;
-    sh_inline::bash_in!(
-        &fixture.dir,
-        "openssl req -new -nodes -utf8 -sha256 -days 36500 -batch \
-        -x509 -config genkey.config \
-        -outform DER -out ima.der -keyout privkey_ima.pem &>/dev/null"
-    )?;
+    let sh = xshell::Shell::new()?;
+    sh.change_dir(&fixture.path);
+    cmd!(
+        sh,
+        "openssl req -new -nodes -utf8 -sha256 -days 36500 -batch -x509 -config genkey.config -outform DER -out ima.der -keyout privkey_ima.pem"
+    )
+    .ignore_stderr()
+    .ignore_stdout()
+    .run()?;
 
     let imaopts = crate::ima::ImaOpts {
         algorithm: "sha256".into(),
