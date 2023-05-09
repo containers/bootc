@@ -5,7 +5,6 @@
 use crate::objgv::*;
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
-use cap_std_ext::rustix::fd::BorrowedFd;
 use fn_error_context::context;
 use gio::glib;
 use gio::prelude::*;
@@ -14,6 +13,7 @@ use glib::Variant;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{gv, Marker, Structure};
 use ostree::gio;
+use rustix::fd::BorrowedFd;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::CString;
 use std::fs::File;
