@@ -1,7 +1,6 @@
 //! SELinux-related helper APIs.
 
 use anyhow::Result;
-use cap_std_ext::rustix;
 use fn_error_context::context;
 use std::path::Path;
 
