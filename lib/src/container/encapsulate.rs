@@ -26,7 +26,7 @@ pub const LEGACY_VERSION_LABEL: &str = "version";
 
 /// Type of container image generated
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ExportLayout {
+pub(crate) enum ExportLayout {
     /// Actually the second layout now, but the true first one can be parsed as either
     V0,
     /// The hopefully final (optionally chunked) container image layout
@@ -134,42 +134,34 @@ fn export_chunked(
     let layers = export_chunks(repo, commit, ociw, chunking.take_chunks(), opts)?;
     let compression = Some(opts.compression());
 
-    match opts.format {
-        ExportLayout::V0 => {
-            let label = opts.format.label();
-            anyhow::bail!("This legacy format using the {label} label is no longer supported");
-        }
-        ExportLayout::V1 => {
-            // In V1, the ostree layer comes first
-            let mut w = ociw.create_layer(compression)?;
-            ostree_tar::export_final_chunk(repo, commit, chunking.remainder, &mut w)?;
-            let w = w.into_inner()?;
-            let ostree_layer = w.complete()?;
+    // In V1, the ostree layer comes first
+    let mut w = ociw.create_layer(compression)?;
+    ostree_tar::export_final_chunk(repo, commit, chunking.remainder, &mut w)?;
+    let w = w.into_inner()?;
+    let ostree_layer = w.complete()?;
 
-            // Then, we have a label that points to the last chunk.
-            // Note in the pathological case of a single layer chunked v1 image, this could be the ostree layer.
-            let last_digest = layers
-                .last()
-                .map(|v| &v.0)
-                .unwrap_or(&ostree_layer)
-                .uncompressed_sha256
-                .clone();
+    // Then, we have a label that points to the last chunk.
+    // Note in the pathological case of a single layer chunked v1 image, this could be the ostree layer.
+    let last_digest = layers
+        .last()
+        .map(|v| &v.0)
+        .unwrap_or(&ostree_layer)
+        .uncompressed_sha256
+        .clone();
 
-            // Add the ostree layer
-            ociw.push_layer(manifest, imgcfg, ostree_layer, description);
-            // Add the component/content layers
-            for (layer, name) in layers {
-                ociw.push_layer(manifest, imgcfg, layer, name.as_str());
-            }
-            // This label (mentioned above) points to the last layer that is part of
-            // the ostree commit.
-            labels.insert(
-                opts.format.label().into(),
-                format!("sha256:{}", last_digest),
-            );
-            Ok(())
-        }
+    // Add the ostree layer
+    ociw.push_layer(manifest, imgcfg, ostree_layer, description);
+    // Add the component/content layers
+    for (layer, name) in layers {
+        ociw.push_layer(manifest, imgcfg, layer, name.as_str());
     }
+    // This label (mentioned above) points to the last layer that is part of
+    // the ostree commit.
+    labels.insert(
+        ExportLayout::V1.label().into(),
+        format!("sha256:{}", last_digest),
+    );
+    Ok(())
 }
 
 /// Generate an OCI image from a given ostree root
@@ -361,8 +353,6 @@ pub struct ExportOpts {
     pub copy_meta_opt_keys: Vec<String>,
     /// Maximum number of layers to use
     pub max_layers: Option<NonZeroU32>,
-    /// The container image layout
-    pub format: ExportLayout,
     // TODO semver-break: remove this
     /// Use only the standard OCI version label
     pub no_legacy_version_label: bool,
