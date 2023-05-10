@@ -184,8 +184,6 @@ impl ManifestLayerState {
 /// Information about which layers need to be downloaded.
 #[derive(Debug)]
 pub struct PreparedImport {
-    /// The format we found from metadata
-    pub export_layout: ExportLayout,
     /// The manifest digest that was found
     pub manifest_digest: String,
     /// The deserialized manifest.
@@ -220,10 +218,7 @@ impl PreparedImport {
 
     /// If this image is using any deprecated features, return a message saying so.
     pub fn deprecated_warning(&self) -> Option<&'static str> {
-        match self.export_layout {
-            ExportLayout::V0 => Some("Image is using v0 export layout, this is deprecated and support will be dropped in the future"),
-            ExportLayout::V1 => None,
-        }
+        None
     }
 
     /// Iterate over all layers paired with their history entry.
@@ -347,12 +342,7 @@ fn layer_from_diffid<'a>(
 pub(crate) fn parse_manifest_layout<'a>(
     manifest: &'a ImageManifest,
     config: &ImageConfiguration,
-) -> Result<(
-    ExportLayout,
-    &'a Descriptor,
-    Vec<&'a Descriptor>,
-    Vec<&'a Descriptor>,
-)> {
+) -> Result<(&'a Descriptor, Vec<&'a Descriptor>, Vec<&'a Descriptor>)> {
     let config_labels = super::labels_of(config);
     let bootable_key = *ostree::METADATA_KEY_BOOTABLE;
     let bootable = config_labels.map_or(false, |l| l.contains_key(bootable_key));
@@ -375,52 +365,49 @@ pub(crate) fn parse_manifest_layout<'a>(
             })
     });
 
-    // Look for the format v1 label
-    if let Some((layout, target_diffid)) = info {
-        let target_layer = layer_from_diffid(layout, manifest, config, target_diffid.as_str())?;
-        let mut chunk_layers = Vec::new();
-        let mut derived_layers = Vec::new();
-        let mut after_target = false;
-        // Gather the ostree layer
-        let ostree_layer = match layout {
-            ExportLayout::V0 => target_layer,
-            ExportLayout::V1 => first_layer,
-        };
-        // Now, we need to handle the split differently in chunked v1 vs v0
-        match layout {
-            ExportLayout::V0 => {
-                let label = layout.label();
-                anyhow::bail!("This legacy format using the {label} label is no longer supported");
-            }
-            ExportLayout::V1 => {
-                for layer in manifest.layers() {
-                    if layer == target_layer {
-                        if after_target {
-                            anyhow::bail!("Multiple entries for {}", layer.digest());
-                        }
-                        after_target = true;
-                        if layer != ostree_layer {
-                            chunk_layers.push(layer);
-                        }
-                    } else if !after_target {
-                        if layer != ostree_layer {
-                            chunk_layers.push(layer);
-                        }
-                    } else {
-                        derived_layers.push(layer);
+    let (layout, target_diffid) = info.ok_or_else(|| {
+        anyhow!(
+            "No {} label found, not an ostree-bootable container",
+            ExportLayout::V1.label()
+        )
+    })?;
+    let target_layer = layer_from_diffid(layout, manifest, config, target_diffid.as_str())?;
+    let mut chunk_layers = Vec::new();
+    let mut derived_layers = Vec::new();
+    let mut after_target = false;
+    // Gather the ostree layer
+    let ostree_layer = match layout {
+        ExportLayout::V0 => target_layer,
+        ExportLayout::V1 => first_layer,
+    };
+    // Now, we need to handle the split differently in chunked v1 vs v0
+    match layout {
+        ExportLayout::V0 => {
+            let label = layout.label();
+            anyhow::bail!("This legacy format using the {label} label is no longer supported");
+        }
+        ExportLayout::V1 => {
+            for layer in manifest.layers() {
+                if layer == target_layer {
+                    if after_target {
+                        anyhow::bail!("Multiple entries for {}", layer.digest());
                     }
+                    after_target = true;
+                    if layer != ostree_layer {
+                        chunk_layers.push(layer);
+                    }
+                } else if !after_target {
+                    if layer != ostree_layer {
+                        chunk_layers.push(layer);
+                    }
+                } else {
+                    derived_layers.push(layer);
                 }
             }
         }
-
-        let r = (layout, ostree_layer, chunk_layers, derived_layers);
-        return Ok(r);
     }
 
-    // For backwards compatibility, if there's only 1 layer, don't require labels.
-    // This can be dropped when we drop format version 0 support.
-    let rest = manifest.layers().iter().skip(1).collect();
-    Ok((ExportLayout::V0, first_layer, Vec::new(), rest))
+    Ok((ostree_layer, chunk_layers, derived_layers))
 }
 
 impl ImageImporter {
@@ -538,7 +525,7 @@ impl ImageImporter {
 
         let config = self.proxy.fetch_config(&self.proxy_img).await?;
 
-        let (export_layout, commit_layer, component_layers, remaining_layers) =
+        let (commit_layer, component_layers, remaining_layers) =
             parse_manifest_layout(&manifest, &config)?;
 
         let query = |l: &Descriptor| query_layer(&self.repo, l.clone());
@@ -553,7 +540,6 @@ impl ImageImporter {
             .collect::<Result<Vec<_>>>()?;
 
         let imp = PreparedImport {
-            export_layout,
             manifest,
             manifest_digest,
             config,
