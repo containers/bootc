@@ -90,7 +90,7 @@ fn diff_recurse(
         let name = from_info.name();
         let name = name.to_str().expect("UTF-8 ostree name");
         let path = format!("{prefix}{name}");
-        let to_child = to.child(&name);
+        let to_child = to.child(name);
         let to_info = query_info_optional(&to_child, queryattrs, queryflags)
             .context("querying optional to")?;
         let is_dir = matches!(from_info.file_type(), gio::FileType::Directory);

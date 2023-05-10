@@ -28,7 +28,7 @@ pub(crate) fn unprivileged_subprocess(binary: &str, user: &str) -> Command {
         return Command::new(binary);
     }
     let mut cmd = Command::new("setpriv");
-    cmd.args(&[
+    cmd.args([
         "--no-new-privs",
         "--init-groups",
         "--reuid",
