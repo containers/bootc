@@ -70,7 +70,7 @@ impl Hash for ObjectSourceMeta {
 
 impl Borrow<str> for ObjectSourceMeta {
     fn borrow(&self) -> &str {
-        &*self.identifier
+        &self.identifier
     }
 }
 

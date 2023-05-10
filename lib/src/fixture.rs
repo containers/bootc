@@ -386,7 +386,7 @@ impl Fixture {
         let st = std::process::Command::new("tar")
             .cwd_dir(gpghome)
             .stdin(Stdio::from(gpgtar))
-            .args(&["-azxf", "-"])
+            .args(["-azxf", "-"])
             .status()?;
         assert!(st.success());
 

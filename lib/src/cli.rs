@@ -659,7 +659,7 @@ async fn container_history(repo: &ostree::Repo, imgref: &ImageReference) -> Resu
         {
             let mut remaining = width;
             for (name, width) in columns.iter() {
-                print_column(name, *width as usize, &mut remaining);
+                print_column(name, *width, &mut remaining);
             }
             println!();
         }

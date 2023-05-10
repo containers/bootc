@@ -299,7 +299,7 @@ pub async fn write_tar(
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .args(&["commit"]);
+            .args(["commit"]);
         c.take_fd_n(repofd.clone(), 3);
         c.arg("--repo=/proc/self/fd/3");
         if let Some(sepolicy) = sepolicy.as_ref() {
@@ -310,7 +310,7 @@ pub async fn write_tar(
             "--add-metadata-string=ostree.importer.version={}",
             env!("CARGO_PKG_VERSION")
         ));
-        c.args(&[
+        c.args([
             "--no-bindings",
             "--tar-autocreate-parents",
             "--tree=tar=/proc/self/fd/0",

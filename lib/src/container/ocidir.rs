@@ -256,7 +256,7 @@ impl OciDir {
     pub fn read_blob(&self, desc: &oci_spec::image::Descriptor) -> Result<File> {
         let path = Self::parse_descriptor_to_path(desc)?;
         self.dir
-            .open(&path)
+            .open(path)
             .map_err(Into::into)
             .map(|f| f.into_std())
     }
