@@ -935,7 +935,8 @@ where
             } => {
                 let (manifest_old, _) = crate::container::fetch_manifest(&imgref_old).await?;
                 let (manifest_new, _) = crate::container::fetch_manifest(&imgref_new).await?;
-                let manifest_diff = crate::container::manifest_diff(&manifest_old, &manifest_new);
+                let manifest_diff =
+                    crate::container::ManifestDiff::new(&manifest_old, &manifest_new);
                 manifest_diff.print();
                 Ok(())
             }

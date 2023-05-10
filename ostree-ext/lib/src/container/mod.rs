@@ -251,39 +251,44 @@ impl std::fmt::Display for OstreeImageReference {
 /// Represent the difference in content between two OCI compliant Images
 #[derive(Debug, Default)]
 pub struct ManifestDiff {
+    /// All layers present in the new image.
     all_layers_in_new: Vec<oci_spec::image::Descriptor>,
+    /// Layers which are present in the old image but not the new image.
     removed: Vec<oci_spec::image::Descriptor>,
+    /// Layers which are present in the new image but not the old image.
     added: Vec<oci_spec::image::Descriptor>,
 }
 
-/// Computes the difference between two OCI compliant images
-pub fn manifest_diff(
-    src: &oci_spec::image::ImageManifest,
-    dest: &oci_spec::image::ImageManifest,
-) -> ManifestDiff {
-    let src_layers = src
-        .layers()
-        .iter()
-        .map(|l| (l.digest(), l))
-        .collect::<HashMap<_, _>>();
-    let dest_layers = dest
-        .layers()
-        .iter()
-        .map(|l| (l.digest(), l))
-        .collect::<HashMap<_, _>>();
-    let mut diff = ManifestDiff::default();
-    for (blobid, &descriptor) in src_layers.iter() {
-        if !dest_layers.contains_key(blobid) {
-            diff.removed.push(descriptor.clone());
+impl ManifestDiff {
+    /// Compute the layer difference between two OCI image manifests.
+    pub fn new(
+        src: &oci_spec::image::ImageManifest,
+        dest: &oci_spec::image::ImageManifest,
+    ) -> Self {
+        let src_layers = src
+            .layers()
+            .iter()
+            .map(|l| (l.digest(), l))
+            .collect::<HashMap<_, _>>();
+        let dest_layers = dest
+            .layers()
+            .iter()
+            .map(|l| (l.digest(), l))
+            .collect::<HashMap<_, _>>();
+        let mut diff = ManifestDiff::default();
+        for (blobid, &descriptor) in src_layers.iter() {
+            if !dest_layers.contains_key(blobid) {
+                diff.removed.push(descriptor.clone());
+            }
         }
-    }
-    for (blobid, &descriptor) in dest_layers.iter() {
-        diff.all_layers_in_new.push(descriptor.clone());
-        if !src_layers.contains_key(blobid) {
-            diff.added.push(descriptor.clone());
+        for (blobid, &descriptor) in dest_layers.iter() {
+            diff.all_layers_in_new.push(descriptor.clone());
+            if !src_layers.contains_key(blobid) {
+                diff.added.push(descriptor.clone());
+            }
         }
+        diff
     }
-    diff
 }
 
 impl ManifestDiff {
