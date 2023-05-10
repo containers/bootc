@@ -31,6 +31,8 @@ mod rcstr_serialize {
 }
 
 /// Identifier for content (e.g. package/layer).  Not necessarily human readable.
+/// For example in RPMs, this may be a full "NEVRA" i.e. name-epoch:version-release.architecture e.g. kernel-6.2-2.fc38.aarch64
+/// But that's not strictly required as this string should only live in memory and not be persisted.
 pub type ContentID = Rc<str>;
 
 /// Metadata about a component/package.
@@ -40,7 +42,8 @@ pub struct ObjectSourceMeta {
     #[serde(with = "rcstr_serialize")]
     pub identifier: ContentID,
     /// Identifier for this source (e.g. package name-version, git repo).
-    /// Unlike the [`ContentID`], this should be human readable.
+    /// Unlike the [`ContentID`], this should be human readable.  It likely comes from an external source,
+    /// and may be re-serialized.
     #[serde(with = "rcstr_serialize")]
     pub name: Rc<str>,
     /// Identifier for the *source* of this content; for example, if multiple binary
