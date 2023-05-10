@@ -62,8 +62,7 @@ pub async fn update_detached_metadata(
             .ok_or_else(|| anyhow!("Image is missing container configuration"))?;
 
         // Find the OSTree commit layer we want to replace
-        let (export_layout, commit_layer, _, _) =
-            container_store::parse_manifest_layout(&manifest, &config)?;
+        let (commit_layer, _, _) = container_store::parse_manifest_layout(&manifest, &config)?;
         let commit_layer_idx = manifest
             .layers()
             .iter()
@@ -104,17 +103,10 @@ pub async fn update_detached_metadata(
         config.rootfs_mut().diff_ids_mut()[commit_layer_idx] = out_layer_diffid.clone();
 
         let labels = ctrcfg.labels_mut().get_or_insert_with(Default::default);
-        match export_layout {
-            ExportLayout::V0 => {
-                labels.insert(export_layout.label().into(), out_layer_diffid);
-            }
-            ExportLayout::V1 => {
-                // Nothing to do except in the special case where there's somehow only one
-                // chunked layer.
-                if manifest.layers().len() == 1 {
-                    labels.insert(export_layout.label().into(), out_layer_diffid);
-                }
-            }
+        // Nothing to do except in the special case where there's somehow only one
+        // chunked layer.
+        if manifest.layers().len() == 1 {
+            labels.insert(ExportLayout::V1.label().into(), out_layer_diffid);
         }
         config.set_config(Some(ctrcfg));
 
