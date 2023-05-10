@@ -251,8 +251,11 @@ impl std::fmt::Display for OstreeImageReference {
 /// Represent the difference in content between two OCI compliant Images
 #[derive(Debug, Default)]
 pub struct ManifestDiff {
+    /// All layers present in the new image.
     all_layers_in_new: Vec<oci_spec::image::Descriptor>,
+    /// Layers which are present in the old image but not the new image.
     removed: Vec<oci_spec::image::Descriptor>,
+    /// Layers which are present in the new image but not the old image.
     added: Vec<oci_spec::image::Descriptor>,
 }
 
