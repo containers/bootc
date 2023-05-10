@@ -56,8 +56,8 @@ pub(crate) struct ExportOpts {
     #[clap(long, value_parser)]
     repo: Utf8PathBuf,
 
-    /// The format version.  Must be 0 or 1.
-    #[clap(long)]
+    /// The format version.  Must be 1.
+    #[clap(long, hidden(true))]
     format_version: u32,
 
     /// The ostree ref or commit to export
@@ -430,13 +430,9 @@ async fn tar_import(opts: &ImportOpts) -> Result<()> {
 
 /// Export a tar archive containing an ostree commit.
 fn tar_export(opts: &ExportOpts) -> Result<()> {
-    if !crate::tar::FORMAT_VERSIONS.contains(&opts.format_version) {
-        anyhow::bail!("Invalid format version: {}", opts.format_version);
-    }
     let repo = parse_repo(&opts.repo)?;
     #[allow(clippy::needless_update)]
     let subopts = crate::tar::ExportOptions {
-        format_version: opts.format_version,
         ..Default::default()
     };
     crate::tar::export_commit(&repo, opts.rev.as_str(), std::io::stdout(), Some(subopts))?;
