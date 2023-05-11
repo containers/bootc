@@ -353,7 +353,7 @@ pub fn merge_default_container_proxy_opts_with_isolation(
         // Read the default authfile if it exists and pass it via file descriptor
         // which will ensure it's readable when we drop privileges.
         if let Some(authfile) = config.authfile.take() {
-            config.auth_data = Some(std::fs::File::open(&authfile)?);
+            config.auth_data = Some(std::fs::File::open(authfile)?);
         }
         let cmd = crate::isolation::unprivileged_subprocess("skopeo", user);
         config.skopeo_cmd = Some(cmd);
@@ -510,8 +510,10 @@ mod tests {
         assert!(c.skopeo_cmd.is_none());
 
         // Verify interaction with explicit isolation
-        let mut c = ImageProxyConfig::default();
-        c.skopeo_cmd = Some(Command::new("skopeo"));
+        let mut c = ImageProxyConfig {
+            skopeo_cmd: Some(Command::new("skopeo")),
+            ..Default::default()
+        };
         super::merge_default_container_proxy_opts_with_isolation(&mut c, Some("foo")).unwrap();
         assert_eq!(c.skopeo_cmd.unwrap().get_program(), "skopeo");
     }

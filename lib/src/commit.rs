@@ -91,7 +91,7 @@ fn remove_all_on_mount_recurse(root: &Dir, rootdev: u64, path: &Path) -> Result<
         }
     }
     if !skipped {
-        root.remove_dir(&path)?;
+        root.remove_dir(path)?;
     }
     Ok(skipped)
 }
@@ -207,8 +207,8 @@ mod tests {
         assert!(td.try_exists(var)?);
         assert!(!td.try_exists(&systemd)?);
 
-        td.remove_dir_all(&var)?;
-        td.create_dir(&var)?;
+        td.remove_dir_all(var)?;
+        td.create_dir(var)?;
         td.write(var.join("foo"), "somefile")?;
         assert!(prepare_ostree_commit_in(td).is_err());
         // Right now we don't auto-create var/tmp if it didn't exist, but maybe
@@ -221,7 +221,7 @@ mod tests {
         assert!(td.try_exists(var)?);
 
         let nested = Utf8Path::new("var/lib/nested");
-        td.create_dir_all(&nested)?;
+        td.create_dir_all(nested)?;
         td.write(nested.join("foo"), "test1")?;
         td.write(nested.join("foo2"), "test2")?;
         assert!(prepare_ostree_commit_in(td).is_err());

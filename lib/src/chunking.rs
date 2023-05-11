@@ -311,7 +311,7 @@ impl Chunking {
                 }
                 n => Cow::Owned(format!("{n} components")),
             };
-            let mut chunk = Chunk::new(&*name);
+            let mut chunk = Chunk::new(&name);
             for szmeta in bin {
                 for &obj in rmap.get(&szmeta.meta.identifier).unwrap() {
                     self.remainder.move_obj(&mut chunk, obj.as_str());

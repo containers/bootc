@@ -132,8 +132,8 @@ impl<'a> CommitRewriter<'a> {
         proc.current_dir(self.tempdir.path())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
-            .args(&["ima_sign", "--xattr-user", "--key", self.ima.key.as_str()])
-            .args(&["--hashalgo", self.ima.algorithm.as_str()])
+            .args(["ima_sign", "--xattr-user", "--key", self.ima.key.as_str()])
+            .args(["--hashalgo", self.ima.algorithm.as_str()])
             .arg(tempf.path().file_name().unwrap());
         let status = proc.output().context("Spawning evmctl")?;
         if !status.status.success() {

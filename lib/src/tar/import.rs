@@ -198,7 +198,7 @@ impl Importer {
             return Ok(None);
         }
         let orig_path = e.path()?;
-        let path = Utf8Path::from_path(&*orig_path)
+        let path = Utf8Path::from_path(&orig_path)
             .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", orig_path))?;
         // Ignore the regular non-object file hardlinks we inject
         if let Ok(path) = path.strip_prefix(REPO_PREFIX) {
@@ -475,7 +475,7 @@ impl Importer {
                 let link_target = entry
                     .link_name()?
                     .ok_or_else(|| anyhow!("No xattrs link content for {}", checksum))?;
-                let xattr_target = Utf8Path::from_path(&*link_target)
+                let xattr_target = Utf8Path::from_path(&link_target)
                     .ok_or_else(|| anyhow!("Invalid non-UTF8 xattrs link {}", checksum))?;
                 parse_xattrs_link_target(xattr_target)?
             }
@@ -515,7 +515,7 @@ impl Importer {
         let xattr_target = entry
             .link_name()?
             .ok_or_else(|| anyhow!("No xattrs link content for {}", target))?;
-        let xattr_target = Utf8Path::from_path(&*xattr_target)
+        let xattr_target = Utf8Path::from_path(&xattr_target)
             .ok_or_else(|| anyhow!("Invalid non-UTF8 xattrs link {}", target))?;
         let xattr_target = xattr_target
             .file_name()
