@@ -171,7 +171,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         h.set_gid(0);
         h.set_mode(0o755);
         h.set_size(0);
-        self.out.append_data(&mut h, &path, &mut std::io::empty())?;
+        self.out.append_data(&mut h, path, &mut std::io::empty())?;
         Ok(())
     }
 
@@ -188,7 +188,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         h.set_gid(0);
         h.set_mode(0o644);
         h.set_size(0);
-        self.out.append_link(&mut h, &path, &link_target)?;
+        self.out.append_link(&mut h, path, link_target)?;
         Ok(())
     }
 
@@ -488,7 +488,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                 let (objpath, h) = self.append_content(checksum)?;
                 let subpath = &dirpath.join(name);
                 let subpath = map_path(subpath);
-                self.append_content_hardlink(&objpath, h, &*subpath)?;
+                self.append_content_hardlink(&objpath, h, &subpath)?;
             }
         }
 
@@ -517,8 +517,8 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             let dirtree_csum = hex::encode(contents_csum);
             let subpath = &dirpath.join(name);
             let subpath = map_path(subpath);
-            self.append_dir(&*subpath, &metadata)?;
-            self.append_dirtree(&*subpath, dirtree_csum, false, cancellable)?;
+            self.append_dir(&subpath, &metadata)?;
+            self.append_dirtree(&subpath, dirtree_csum, false, cancellable)?;
         }
 
         Ok(())
@@ -671,7 +671,7 @@ pub(crate) fn reinject_detached_metadata<C: IsA<gio::Cancellable>>(
     }
     let commit_ent = commit_ent.ok_or_else(|| anyhow!("Missing commit object"))?;
     let commit_path = commit_ent.path()?;
-    let commit_path = Utf8Path::from_path(&*commit_path)
+    let commit_path = Utf8Path::from_path(&commit_path)
         .ok_or_else(|| anyhow!("Invalid non-utf8 path {:?}", commit_path))?;
     let (checksum, objtype) = crate::tar::import::Importer::parse_metadata_entry(commit_path)?;
     assert_eq!(objtype, ostree::ObjectType::Commit); // Should have been verified above

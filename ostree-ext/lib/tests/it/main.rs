@@ -434,7 +434,7 @@ async fn test_tar_write_tar_layer() -> Result<()> {
 
 fn skopeo_inspect(imgref: &str) -> Result<String> {
     let out = Command::new("skopeo")
-        .args(&["inspect", imgref])
+        .args(["inspect", imgref])
         .stdout(std::process::Stdio::piped())
         .output()?;
     Ok(String::from_utf8(out.stdout)?)
@@ -442,7 +442,7 @@ fn skopeo_inspect(imgref: &str) -> Result<String> {
 
 fn skopeo_inspect_config(imgref: &str) -> Result<oci_spec::image::ImageConfiguration> {
     let out = Command::new("skopeo")
-        .args(&["inspect", "--config", imgref])
+        .args(["inspect", "--config", imgref])
         .stdout(std::process::Stdio::piped())
         .output()?;
     Ok(serde_json::from_slice(&out.stdout)?)
@@ -685,7 +685,7 @@ async fn test_container_chunked() -> Result<()> {
     assert_eq!(prep.version(), Some("42.0"));
     let digest = prep.manifest_digest.clone();
     assert!(prep.ostree_commit_layer.commit.is_none());
-    assert_eq!(prep.ostree_layers.len(), nlayers as usize);
+    assert_eq!(prep.ostree_layers.len(), nlayers);
     assert_eq!(prep.layers.len(), 0);
     for layer in prep.layers.iter() {
         assert!(layer.commit.is_none());
@@ -721,7 +721,7 @@ r usr/bin/bash bash-v0
     assert_eq!(to_fetch.len(), 2);
     assert_eq!(expected_digest, prep.manifest_digest.as_str());
     assert!(prep.ostree_commit_layer.commit.is_none());
-    assert_eq!(prep.ostree_layers.len(), nlayers as usize);
+    assert_eq!(prep.ostree_layers.len(), nlayers);
     let (first, second) = (to_fetch[0], to_fetch[1]);
     assert!(first.0.commit.is_none());
     assert!(second.0.commit.is_none());
@@ -774,7 +774,7 @@ r usr/bin/bash bash-v0
     let to_fetch = prep.layers_to_fetch().collect::<Result<Vec<_>>>()?;
     assert_eq!(to_fetch.len(), 1);
     assert!(prep.ostree_commit_layer.commit.is_some());
-    assert_eq!(prep.ostree_layers.len(), nlayers as usize);
+    assert_eq!(prep.ostree_layers.len(), nlayers);
 
     // We want to test explicit layer pruning
     imp.disable_gc();
@@ -875,8 +875,8 @@ async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Res
     // For now we just fork off `cp` and rely on reflinks, but we could and should
     // explicitly hardlink blobs/sha256 e.g.
     let cmd = tokio::process::Command::new("cp")
-        .args(&["-a", "--reflink=auto"])
-        .args(&[src, dest])
+        .args(["-a", "--reflink=auto"])
+        .args([src, dest])
         .status()
         .await?;
     if !cmd.success() {
@@ -920,7 +920,7 @@ async fn test_container_write_derive() -> Result<()> {
     let derived_path = &fixture.path.join("derived.oci");
     oci_clone(base_oci_path, derived_path).await?;
     let temproot = &fixture.path.join("temproot");
-    std::fs::create_dir_all(&temproot.join("usr/bin"))?;
+    std::fs::create_dir_all(temproot.join("usr/bin"))?;
     let newderivedfile_contents = "newderivedfile v0";
     std::fs::write(
         temproot.join("usr/bin/newderivedfile"),
@@ -944,7 +944,7 @@ async fn test_container_write_derive() -> Result<()> {
     let derived2_path = &fixture.path.join("derived2.oci");
     oci_clone(base_oci_path, derived2_path).await?;
     std::fs::remove_dir_all(temproot)?;
-    std::fs::create_dir_all(&temproot.join("usr/bin"))?;
+    std::fs::create_dir_all(temproot.join("usr/bin"))?;
     std::fs::write(temproot.join("usr/bin/newderivedfile"), "newderivedfile v1")?;
     std::fs::write(
         temproot.join("usr/bin/newderivedfile2"),
@@ -1204,7 +1204,7 @@ async fn test_container_write_derive_sysroot_hardlink() -> Result<()> {
         },
     };
     let mut imp =
-        store::ImageImporter::new(fixture.destrepo(), &derived_ref, Default::default()).await?;
+        store::ImageImporter::new(fixture.destrepo(), derived_ref, Default::default()).await?;
     let prep = match imp.prepare().await.context("Init prep derived")? {
         store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         store::PrepareResult::Ready(r) => r,
@@ -1247,7 +1247,7 @@ async fn test_old_code_parses_new_export() -> Result<()> {
     fixture.clear_destrepo()?;
     let destrepo_path = fixture.path.join("dest/repo");
     let s = Command::new("ostree")
-        .args(&[
+        .args([
             "container",
             "unencapsulate",
             "--repo",

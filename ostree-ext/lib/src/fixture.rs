@@ -386,7 +386,7 @@ impl Fixture {
         let st = std::process::Command::new("tar")
             .cwd_dir(gpghome)
             .stdin(Stdio::from(gpgtar))
-            .args(&["-azxf", "-"])
+            .args(["-azxf", "-"])
             .status()?;
         assert!(st.success());
 
@@ -496,6 +496,7 @@ impl Fixture {
         );
         metadata.insert("ostree.container-cmd", &vec!["/usr/bin/bash"]);
         metadata.insert("version", &"42.0");
+        #[allow(clippy::explicit_auto_deref)]
         metadata.insert(*ostree::METADATA_KEY_BOOTABLE, &true);
         let metadata = metadata.to_variant();
         let commit = self.srcrepo.write_commit_with_time(
