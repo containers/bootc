@@ -52,6 +52,8 @@ pub(crate) mod objgv;
 #[cfg(feature = "internal-testing-api")]
 pub mod ostree_manual;
 
+mod utils;
+
 #[cfg(feature = "docgen")]
 mod docgen;
 
