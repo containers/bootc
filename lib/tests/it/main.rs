@@ -725,7 +725,10 @@ r usr/bin/bash bash-v0
     let (first, second) = (to_fetch[0], to_fetch[1]);
     assert!(first.0.commit.is_none());
     assert!(second.0.commit.is_none());
-    assert_eq!(first.1, "testlink");
+    assert_eq!(
+        first.1,
+        "ostree export of commit 38ab1f9da373a0184b0b48db6e280076ab4b5d4691773475ae24825aae2272d4"
+    );
     assert_eq!(second.1, "bash");
 
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
