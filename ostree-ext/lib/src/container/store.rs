@@ -204,11 +204,10 @@ pub struct PreparedImport {
 }
 
 impl PreparedImport {
-    /// Iterate over all layers; the ostree split object layers, the commit layer, and any non-ostree layers.
+    /// Iterate over all layers; the commit layer, the ostree split object layers, and any non-ostree layers.
     pub fn all_layers(&self) -> impl Iterator<Item = &ManifestLayerState> {
-        self.ostree_layers
-            .iter()
-            .chain(std::iter::once(&self.ostree_commit_layer))
+        std::iter::once(&self.ostree_commit_layer)
+            .chain(self.ostree_layers.iter())
             .chain(self.layers.iter())
     }
 
