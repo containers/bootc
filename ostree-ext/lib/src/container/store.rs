@@ -883,7 +883,7 @@ impl ImageImporter {
                         None,
                         Some(&metadata),
                         &merged_root,
-                        timestamp as u64,
+                        timestamp,
                         cancellable,
                     )
                     .context("Writing commit")?;
