@@ -37,6 +37,10 @@ use std::str::FromStr;
 /// The label injected into a container image that contains the ostree commit SHA-256.
 pub const OSTREE_COMMIT_LABEL: &str = "ostree.commit";
 
+/// The name of an annotation attached to a layer which names the packages/components
+/// which are part of it.
+pub(crate) const CONTENT_ANNOTATION: &str = "ostree.components";
+
 /// Our generic catchall fatal error, expected to be converted
 /// to a string to output to a terminal or logs.
 type Result<T> = anyhow::Result<T>;
