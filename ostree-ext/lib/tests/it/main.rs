@@ -691,7 +691,8 @@ async fn test_container_chunked() -> Result<()> {
         assert!(layer.commit.is_none());
     }
     assert_eq!(digest, expected_digest);
-    let _import = imp.import(prep).await.context("Init pull derived").unwrap();
+    let import = imp.import(prep).await.context("Init pull derived").unwrap();
+    assert_eq!(import.manifest_digest.as_str(), digest);
 
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
 
