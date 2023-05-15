@@ -411,18 +411,17 @@ fn packing_size(packing: &[Vec<&ObjectSourceMetaSized>]) -> u64 {
     packing.iter().map(|v| components_size(v)).sum()
 }
 
-///Given a certain threshold, divide a list of packages into all combinations
-///of (high, medium, low) size and (high,medium,low) using the following
-///outlier detection methods:
-///- Median and Median Absolute Deviation Method
-///     Aggressively detects outliers in size and classifies them by
-///     high, medium, low. The high size and low size are separate partitions
-///     and deserve bins of their own
-///- Mean and Standard Deviation Method
-///     The medium partition from the previous step is less aggressively
-///     classified by using mean for both size and frequency
-
-//Assumes components is sorted by descending size
+/// Given a certain threshold, divide a list of packages into all combinations
+/// of (high, medium, low) size and (high,medium,low) using the following
+/// outlier detection methods:
+/// - Median and Median Absolute Deviation Method
+///      Aggressively detects outliers in size and classifies them by
+///      high, medium, low. The high size and low size are separate partitions
+///      and deserve bins of their own
+/// - Mean and Standard Deviation Method
+///      The medium partition from the previous step is less aggressively
+///      classified by using mean for both size and frequency
+/// Note: Assumes components is sorted by descending size
 fn get_partitions_with_threshold(
     components: Vec<&ObjectSourceMetaSized>,
     limit_hs_bins: usize,
@@ -435,39 +434,39 @@ fn get_partitions_with_threshold(
     let mut sizes: Vec<u64> = components.iter().map(|a| a.size).collect();
     let (median_size, mad_size) = statistics::median_absolute_deviation(&mut sizes)?;
 
-    //Avoids lower limit being negative
+    // We use abs here to ensure the lower limit stays positive
     let size_low_limit = 0.5 * f64::abs(median_size - threshold * mad_size);
     let size_high_limit = median_size + threshold * mad_size;
 
     for pkg in components {
         let size = pkg.size as f64;
 
-        //high size (hs)
+        // high size (hs)
         if size >= size_high_limit {
             high_size.push(pkg);
         }
-        //low size (ls)
+        // low size (ls)
         else if size <= size_low_limit {
             partitions
                 .entry(LOW_PARTITION.to_string())
                 .and_modify(|bin| bin.push(pkg))
                 .or_insert_with(|| vec![pkg]);
         }
-        //medium size (ms)
+        // medium size (ms)
         else {
             med_size.push(pkg);
         }
     }
 
-    //Extra hs packages
+    // Extra high-size packages
     let mut remaining_pkgs: Vec<_> = high_size.drain(limit_hs_bins..).collect();
     assert_eq!(high_size.len(), limit_hs_bins);
 
-    //Concatenate extra hs packages + med_sizes to keep it descending sorted
+    // Concatenate extra high-size packages + med_sizes to keep it descending sorted
     remaining_pkgs.append(&mut med_size);
     partitions.insert(HIGH_PARTITION.to_string(), high_size);
 
-    //Ascending sorted by frequency, so each partition within ms is freq sorted
+    // Ascending sorted by frequency, so each partition within medium-size is freq sorted
     remaining_pkgs.sort_by(|a, b| {
         a.meta
             .change_frequency
@@ -485,7 +484,7 @@ fn get_partitions_with_threshold(
     let med_mean_size = statistics::mean(&med_sizes)?;
     let med_stddev_size = statistics::std_deviation(&med_sizes)?;
 
-    //Avoids lower limit being negative
+    // We use abs to avoid the lower limit being negative
     let med_freq_low_limit = 0.5f64 * f64::abs(med_mean_freq - threshold * med_stddev_freq);
     let med_freq_high_limit = med_mean_freq + threshold * med_stddev_freq;
     let med_size_low_limit = 0.5f64 * f64::abs(med_mean_size - threshold * med_stddev_size);
@@ -504,7 +503,7 @@ fn get_partitions_with_threshold(
             size_name = "ms";
         }
 
-        //Numbered to maintain order of partitions in a BTreeMap of hf, mf, lf
+        // Numbered to maintain order of partitions in a BTreeMap of hf, mf, lf
         let freq_name;
         if freq >= med_freq_high_limit {
             freq_name = "3hf";
@@ -531,19 +530,18 @@ fn get_partitions_with_threshold(
 /// Given a set of components with size metadata (e.g. boxes of a certain size)
 /// and a number of bins (possible container layers) to use, determine which components
 /// go in which bin.  This algorithm is pretty simple:
-
-// Total available bins = n
-//
-// 1 bin for all the u32_max frequency pkgs
-// 1 bin for all newly added pkgs
-// 1 bin for all low size pkgs
-//
-// 60% of n-3 bins for high size pkgs
-// 40% of n-3 bins for medium size pkgs
-//
-// If HS bins > limit, spillover to MS to package
-// If MS bins > limit, fold by merging 2 bins from the end
-//
+/// Total available bins = n
+///
+/// 1 bin for all the u32_max frequency pkgs
+/// 1 bin for all newly added pkgs
+/// 1 bin for all low size pkgs
+///
+/// 60% of n-3 bins for high size pkgs
+/// 40% of n-3 bins for medium size pkgs
+///
+/// If HS bins > limit, spillover to MS to package
+/// If MS bins > limit, fold by merging 2 bins from the end
+///
 fn basic_packing<'a>(
     components: &'a [ObjectSourceMetaSized],
     bin_size: NonZeroU32,
@@ -553,7 +551,7 @@ fn basic_packing<'a>(
     let mut components: Vec<_> = components.iter().collect();
     let before_processing_pkgs_len = components.len();
 
-    //If the current rpm-ostree commit to be encapsulated is not the one in which packing structure changes, then
+    // If the current rpm-ostree commit to be encapsulated is not the one in which packing structure changes, then
     //  Flatten out prior_build_metadata to view all the packages in prior build as a single vec
     //  Compare the flattened vector to components to see if pkgs added, updated,
     //  removed or kept same
@@ -561,13 +559,14 @@ fn basic_packing<'a>(
     //  if pkgs removed, then remove them from the prior[i]
     //  iterate through prior[i] and make bins according to the name in nevra of pkgs to update
     //  required packages
-    //else if pkg structure to be changed || prior build not specified
+    // else if pkg structure to be changed || prior build not specified
     //  Recompute optimal packaging strcuture (Compute partitions, place packages and optimize build)
 
     if let Some(prior_build) = prior_build_metadata {
         tracing::debug!("Keeping old package structure");
 
-        //1st layer is skipped as packing doesn't manage ostree_commit layer
+        // The first layer is the ostree commit, which will always be different for different builds,
+        // so we ignore it.  For the remaining layers, extract the components/packages in each one.
         let curr_build: Result<Vec<Vec<String>>> = prior_build
             .layers()
             .iter()
@@ -594,7 +593,7 @@ fn basic_packing<'a>(
             .map(|pkg| pkg.meta.name.to_string())
             .collect();
 
-        //Handle added packages
+        // Added packages are included in the last bin which was reserved space.
         if let Some(last_bin) = curr_build.last_mut() {
             let added = curr_pkgs_set.difference(&prev_pkgs_set);
             last_bin.retain(|name| !name.is_empty());
@@ -603,13 +602,13 @@ fn basic_packing<'a>(
             panic!("No empty last bin for added packages");
         }
 
-        //Handle removed packages
+        // Handle removed packages
         let removed: HashSet<&String> = prev_pkgs_set.difference(&curr_pkgs_set).collect();
         for bin in curr_build.iter_mut() {
             bin.retain(|pkg| !removed.contains(pkg));
         }
 
-        //Handle updated packages
+        // Handle updated packages
         let mut name_to_component: HashMap<String, &ObjectSourceMetaSized> = HashMap::new();
         for component in &components {
             name_to_component
@@ -625,7 +624,7 @@ fn basic_packing<'a>(
             modified_build.push(mod_bin);
         }
 
-        //Verify all packages are included
+        // Verify all packages are included
         let after_processing_pkgs_len: usize = modified_build.iter().map(|b| b.len()).sum();
         assert_eq!(after_processing_pkgs_len, before_processing_pkgs_len);
         assert!(modified_build.len() <= bin_size.get() as usize);
@@ -634,7 +633,8 @@ fn basic_packing<'a>(
 
     tracing::debug!("Creating new packing structure");
 
-    //Handle trivial case of no pkgs < bins
+    // If there are fewer packages/components than there are bins, then we don't need to do
+    // any "bin packing" at all; just assign a single component to each and we're done.
     if before_processing_pkgs_len < bin_size.get() as usize {
         components.into_iter().for_each(|pkg| r.push(vec![pkg]));
         if before_processing_pkgs_len > 0 {
@@ -656,7 +656,8 @@ fn basic_packing<'a>(
     match components_len_after_max_freq {
         0 => (),
         _ => {
-            //Defining Limits of each bins
+            // Given a total number of bins (layers), compute how many should be assigned to our
+            // partitioning based on size and frequency.
             let limit_ls_bins = 1usize;
             let limit_new_bins = 1usize;
             let _limit_new_pkgs = 0usize;
@@ -683,7 +684,7 @@ fn basic_packing<'a>(
                     .checked_div(limit_ms_bins)
                     .expect("number of bins should be >= 4");
 
-            //Bins assignment
+            // Bins assignment
             for (partition, pkgs) in partitions.iter() {
                 if partition == HIGH_PARTITION {
                     for pkg in pkgs {
@@ -714,15 +715,15 @@ fn basic_packing<'a>(
             }
             tracing::debug!("Bins before unoptimized build: {}", r.len());
 
-            //Despite allocation certain number of pkgs per bin in MS partitions, the
-            //hard limit of number of MS bins can be exceeded. This is because the pkg_per_bin_ms
-            //is only upper limit and there is no lower limit. Thus, if a partition in MS has only 1 pkg
-            //but pkg_per_bin_ms > 1, then the entire bin will have 1 pkg. This prevents partition
-            //mixing.
+            // Despite allocation certain number of pkgs per bin in medium-size partitions, the
+            // hard limit of number of medium-size bins can be exceeded. This is because the pkg_per_bin_ms
+            // is only upper limit and there is no lower limit. Thus, if a partition in medium-size has only 1 pkg
+            // but pkg_per_bin_ms > 1, then the entire bin will have 1 pkg. This prevents partition
+            // mixing.
             //
-            //Addressing MS bins limit breach by mergin internal MS partitions
-            //The partitions in MS are merged beginnign from the end so to not mix hf bins with lf bins. The
-            //bins are kept in this order: hf, mf, lf by design.
+            // Addressing medium-size bins limit breach by mergin internal MS partitions
+            // The partitions in medium-size are merged beginning from the end so to not mix high-frequency bins with low-frequency bins. The
+            // bins are kept in this order: high-frequency, medium-frequency, low-frequency.
             while r.len() > (bin_size.get() as usize - limit_new_bins - limit_max_frequency_bins) {
                 for i in (limit_ls_bins + limit_hs_bins..r.len() - 1)
                     .step_by(2)
@@ -840,7 +841,7 @@ mod test {
 
     #[test]
     fn test_advanced_packing() -> Result<()> {
-        //Step1 : Initial build (Packing sructure computed)
+        // Step1 : Initial build (Packing sructure computed)
         let contentmeta_v0: Vec<ObjectSourceMetaSized> = vec![
             vec![1, u32::MAX, 100000],
             vec![2, u32::MAX, 99999],
@@ -886,14 +887,14 @@ mod test {
         ];
         assert_eq!(structure, v0_expected_structure);
 
-        //Step 2: Derive packing structure from last build
+        // Step 2: Derive packing structure from last build
 
         let mut contentmeta_v1: Vec<ObjectSourceMetaSized> = contentmeta_v0;
-        //Upgrade pkg1.0 to 1.1
+        // Upgrade pkg1.0 to 1.1
         contentmeta_v1[0].meta.identifier = RcStr::from("pkg1.1");
-        //Remove pkg7
+        // Remove pkg7
         contentmeta_v1.remove(contentmeta_v1.len() - 1);
-        //Add pkg5
+        // Add pkg5
         contentmeta_v1.push(ObjectSourceMetaSized {
             meta: ObjectSourceMeta {
                 identifier: RcStr::from("pkg5.0"),
@@ -927,12 +928,12 @@ mod test {
 
         assert_eq!(structure_derived, v1_expected_structure);
 
-        //Step 3: Another update on derived where the pkg in the last bin updates
+        // Step 3: Another update on derived where the pkg in the last bin updates
 
         let mut contentmeta_v2: Vec<ObjectSourceMetaSized> = contentmeta_v1;
-        //Upgrade pkg5.0 to 5.1
+        // Upgrade pkg5.0 to 5.1
         contentmeta_v2[9].meta.identifier = RcStr::from("pkg5.1");
-        //Add pkg12
+        // Add pkg12
         contentmeta_v2.push(ObjectSourceMetaSized {
             meta: ObjectSourceMeta {
                 identifier: RcStr::from("pkg12.0"),
