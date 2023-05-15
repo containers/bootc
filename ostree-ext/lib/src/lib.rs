@@ -51,6 +51,7 @@ pub mod objectsource;
 pub(crate) mod objgv;
 #[cfg(feature = "internal-testing-api")]
 pub mod ostree_manual;
+pub(crate) mod statistics;
 
 mod utils;
 
