@@ -704,14 +704,16 @@ async fn test_container_chunked() -> Result<()> {
             .as_ref()
             .unwrap()
             .starts_with("ostree export"));
-        assert!(layer_history
-            .nth(6)
-            .unwrap()?
-            .1
-            .created_by()
-            .as_ref()
-            .unwrap()
-            .starts_with("testlink"));
+        assert_eq!(
+            layer_history
+                .next()
+                .unwrap()?
+                .1
+                .created_by()
+                .as_ref()
+                .unwrap(),
+            "7 components"
+        );
     }
     let import = imp.import(prep).await.context("Init pull derived").unwrap();
     assert_eq!(import.manifest_digest.as_str(), digest);
