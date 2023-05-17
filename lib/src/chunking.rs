@@ -652,16 +652,11 @@ fn basic_packing<'a>(
         return Ok(r);
     }
 
-    let mut components: Vec<_> = components.iter().collect();
     let mut r = Vec::new();
-    let mut max_freq_components: Vec<&ObjectSourceMetaSized> = Vec::new();
-    components.retain(|pkg| {
-        let retain: bool = pkg.meta.change_frequency != u32::MAX;
-        if !retain {
-            max_freq_components.push(pkg);
-        }
-        retain
-    });
+    // Split off the components which are "max frequency".
+    let (components, max_freq_components) = components
+        .iter()
+        .partition::<Vec<_>, _>(|pkg| pkg.meta.change_frequency != u32::MAX);
     let components_len_after_max_freq = components.len();
     match components_len_after_max_freq {
         0 => (),
