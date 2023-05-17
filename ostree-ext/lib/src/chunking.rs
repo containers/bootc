@@ -631,12 +631,10 @@ fn basic_packing<'a>(
 
     tracing::debug!("Creating new packing structure");
 
-    let mut r = Vec::new();
-
     // If there are fewer packages/components than there are bins, then we don't need to do
     // any "bin packing" at all; just assign a single component to each and we're done.
     if before_processing_pkgs_len < bin_size.get() as usize {
-        components.into_iter().for_each(|pkg| r.push(vec![pkg]));
+        let mut r = components.iter().map(|pkg| vec![pkg]).collect::<Vec<_>>();
         if before_processing_pkgs_len > 0 {
             let new_pkgs_bin: Vec<&ObjectSourceMetaSized> = Vec::new();
             r.push(new_pkgs_bin);
@@ -645,6 +643,7 @@ fn basic_packing<'a>(
     }
 
     let mut components: Vec<_> = components.iter().collect();
+    let mut r = Vec::new();
     let mut max_freq_components: Vec<&ObjectSourceMetaSized> = Vec::new();
     components.retain(|pkg| {
         let retain: bool = pkg.meta.change_frequency != u32::MAX;
