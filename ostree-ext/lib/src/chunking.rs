@@ -547,8 +547,6 @@ fn basic_packing<'a>(
     bin_size: NonZeroU32,
     prior_build_metadata: Option<&oci_spec::image::ImageManifest>,
 ) -> Result<Vec<Vec<&'a ObjectSourceMetaSized>>> {
-    let mut r = Vec::new();
-    let mut components: Vec<_> = components.iter().collect();
     let before_processing_pkgs_len = components.len();
 
     // If the current rpm-ostree commit to be encapsulated is not the one in which packing structure changes, then
@@ -610,7 +608,7 @@ fn basic_packing<'a>(
 
         // Handle updated packages
         let mut name_to_component: HashMap<String, &ObjectSourceMetaSized> = HashMap::new();
-        for component in &components {
+        for component in components.iter() {
             name_to_component
                 .entry(component.meta.name.to_string())
                 .or_insert(component);
@@ -633,6 +631,8 @@ fn basic_packing<'a>(
 
     tracing::debug!("Creating new packing structure");
 
+    let mut r = Vec::new();
+
     // If there are fewer packages/components than there are bins, then we don't need to do
     // any "bin packing" at all; just assign a single component to each and we're done.
     if before_processing_pkgs_len < bin_size.get() as usize {
@@ -644,6 +644,7 @@ fn basic_packing<'a>(
         return Ok(r);
     }
 
+    let mut components: Vec<_> = components.iter().collect();
     let mut max_freq_components: Vec<&ObjectSourceMetaSized> = Vec::new();
     components.retain(|pkg| {
         let retain: bool = pkg.meta.change_frequency != u32::MAX;
