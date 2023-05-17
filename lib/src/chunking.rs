@@ -764,10 +764,7 @@ fn basic_packing<'a>(
 
     let new_pkgs_bin: Vec<&ObjectSourceMetaSized> = Vec::new();
     r.push(new_pkgs_bin);
-    let mut after_processing_pkgs_len = 0;
-    r.iter().for_each(|bin| {
-        after_processing_pkgs_len += bin.len();
-    });
+    let after_processing_pkgs_len = r.iter().map(|b| b.len()).sum::<usize>();
     assert_eq!(after_processing_pkgs_len, before_processing_pkgs_len);
     assert!(r.len() <= bin_size.get() as usize);
     Ok(r)
