@@ -507,6 +507,9 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
         r#""buildsys.checksum": "41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3""#
     ));
     let cfg = skopeo_inspect_config(&srcoci_imgref.to_string())?;
+    let creation_time =
+        chrono::NaiveDateTime::parse_from_str(cfg.created().as_deref().unwrap(), "%+").unwrap();
+    assert_eq!(creation_time.timestamp(), 872879442);
     // unwrap.  Unwrap.  UnWrap.  UNWRAP!!!!!!!
     assert_eq!(
         cfg.config()
