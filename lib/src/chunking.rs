@@ -527,6 +527,91 @@ fn get_partitions_with_threshold(
     Some(partitions)
 }
 
+/// If the current rpm-ostree commit to be encapsulated is not the one in which packing structure changes, then
+///  Flatten out prior_build_metadata to view all the packages in prior build as a single vec
+///  Compare the flattened vector to components to see if pkgs added, updated,
+///  removed or kept same
+///  if pkgs added, then add them to the last bin of prior
+///  if pkgs removed, then remove them from the prior[i]
+///  iterate through prior[i] and make bins according to the name in nevra of pkgs to update
+///  required packages
+/// else if pkg structure to be changed || prior build not specified
+///  Recompute optimal packaging strcuture (Compute partitions, place packages and optimize build)
+fn basic_packing_with_prior_build<'a>(
+    components: &'a [ObjectSourceMetaSized],
+    bin_size: NonZeroU32,
+    prior_build: &oci_spec::image::ImageManifest,
+) -> Result<Vec<Vec<&'a ObjectSourceMetaSized>>> {
+    let before_processing_pkgs_len = components.len();
+
+    tracing::debug!("Keeping old package structure");
+
+    // The first layer is the ostree commit, which will always be different for different builds,
+    // so we ignore it.  For the remaining layers, extract the components/packages in each one.
+    let curr_build: Result<Vec<Vec<String>>> = prior_build
+        .layers()
+        .iter()
+        .skip(1)
+        .map(|layer| -> Result<_> {
+            let annotation_layer = layer
+                .annotations()
+                .as_ref()
+                .and_then(|annos| annos.get(CONTENT_ANNOTATION))
+                .ok_or_else(|| anyhow!("Missing {CONTENT_ANNOTATION} on prior build"))?;
+            Ok(annotation_layer.split(',').map(ToOwned::to_owned).collect())
+        })
+        .collect();
+    let mut curr_build = curr_build?;
+
+    // View the packages as unordered sets for lookups and differencing
+    let prev_pkgs_set: HashSet<String> = curr_build
+        .iter()
+        .flat_map(|v| v.iter().cloned())
+        .filter(|name| !name.is_empty())
+        .collect();
+    let curr_pkgs_set: HashSet<String> = components
+        .iter()
+        .map(|pkg| pkg.meta.name.to_string())
+        .collect();
+
+    // Added packages are included in the last bin which was reserved space.
+    if let Some(last_bin) = curr_build.last_mut() {
+        let added = curr_pkgs_set.difference(&prev_pkgs_set);
+        last_bin.retain(|name| !name.is_empty());
+        last_bin.extend(added.into_iter().cloned());
+    } else {
+        panic!("No empty last bin for added packages");
+    }
+
+    // Handle removed packages
+    let removed: HashSet<&String> = prev_pkgs_set.difference(&curr_pkgs_set).collect();
+    for bin in curr_build.iter_mut() {
+        bin.retain(|pkg| !removed.contains(pkg));
+    }
+
+    // Handle updated packages
+    let mut name_to_component: HashMap<String, &ObjectSourceMetaSized> = HashMap::new();
+    for component in components.iter() {
+        name_to_component
+            .entry(component.meta.name.to_string())
+            .or_insert(component);
+    }
+    let mut modified_build: Vec<Vec<&ObjectSourceMetaSized>> = Vec::new();
+    for bin in curr_build {
+        let mut mod_bin = Vec::new();
+        for pkg in bin {
+            mod_bin.push(name_to_component[&pkg]);
+        }
+        modified_build.push(mod_bin);
+    }
+
+    // Verify all packages are included
+    let after_processing_pkgs_len: usize = modified_build.iter().map(|b| b.len()).sum();
+    assert_eq!(after_processing_pkgs_len, before_processing_pkgs_len);
+    assert!(modified_build.len() <= bin_size.get() as usize);
+    Ok(modified_build)
+}
+
 /// Given a set of components with size metadata (e.g. boxes of a certain size)
 /// and a number of bins (possible container layers) to use, determine which components
 /// go in which bin.  This algorithm is pretty simple:
@@ -547,88 +632,11 @@ fn basic_packing<'a>(
     bin_size: NonZeroU32,
     prior_build_metadata: Option<&oci_spec::image::ImageManifest>,
 ) -> Result<Vec<Vec<&'a ObjectSourceMetaSized>>> {
-    let mut r = Vec::new();
-    let mut components: Vec<_> = components.iter().collect();
     let before_processing_pkgs_len = components.len();
 
-    // If the current rpm-ostree commit to be encapsulated is not the one in which packing structure changes, then
-    //  Flatten out prior_build_metadata to view all the packages in prior build as a single vec
-    //  Compare the flattened vector to components to see if pkgs added, updated,
-    //  removed or kept same
-    //  if pkgs added, then add them to the last bin of prior
-    //  if pkgs removed, then remove them from the prior[i]
-    //  iterate through prior[i] and make bins according to the name in nevra of pkgs to update
-    //  required packages
-    // else if pkg structure to be changed || prior build not specified
-    //  Recompute optimal packaging strcuture (Compute partitions, place packages and optimize build)
-
+    // If we have a prior build, then use that
     if let Some(prior_build) = prior_build_metadata {
-        tracing::debug!("Keeping old package structure");
-
-        // The first layer is the ostree commit, which will always be different for different builds,
-        // so we ignore it.  For the remaining layers, extract the components/packages in each one.
-        let curr_build: Result<Vec<Vec<String>>> = prior_build
-            .layers()
-            .iter()
-            .skip(1)
-            .map(|layer| -> Result<_> {
-                let annotation_layer = layer
-                    .annotations()
-                    .as_ref()
-                    .and_then(|annos| annos.get(CONTENT_ANNOTATION))
-                    .ok_or_else(|| anyhow!("Missing {CONTENT_ANNOTATION} on prior build"))?;
-                Ok(annotation_layer.split(',').map(ToOwned::to_owned).collect())
-            })
-            .collect();
-        let mut curr_build = curr_build?;
-
-        // View the packages as unordered sets for lookups and differencing
-        let prev_pkgs_set: HashSet<String> = curr_build
-            .iter()
-            .flat_map(|v| v.iter().cloned())
-            .filter(|name| !name.is_empty())
-            .collect();
-        let curr_pkgs_set: HashSet<String> = components
-            .iter()
-            .map(|pkg| pkg.meta.name.to_string())
-            .collect();
-
-        // Added packages are included in the last bin which was reserved space.
-        if let Some(last_bin) = curr_build.last_mut() {
-            let added = curr_pkgs_set.difference(&prev_pkgs_set);
-            last_bin.retain(|name| !name.is_empty());
-            last_bin.extend(added.into_iter().cloned());
-        } else {
-            panic!("No empty last bin for added packages");
-        }
-
-        // Handle removed packages
-        let removed: HashSet<&String> = prev_pkgs_set.difference(&curr_pkgs_set).collect();
-        for bin in curr_build.iter_mut() {
-            bin.retain(|pkg| !removed.contains(pkg));
-        }
-
-        // Handle updated packages
-        let mut name_to_component: HashMap<String, &ObjectSourceMetaSized> = HashMap::new();
-        for component in &components {
-            name_to_component
-                .entry(component.meta.name.to_string())
-                .or_insert(component);
-        }
-        let mut modified_build: Vec<Vec<&ObjectSourceMetaSized>> = Vec::new();
-        for bin in curr_build {
-            let mut mod_bin = Vec::new();
-            for pkg in bin {
-                mod_bin.push(name_to_component[&pkg]);
-            }
-            modified_build.push(mod_bin);
-        }
-
-        // Verify all packages are included
-        let after_processing_pkgs_len: usize = modified_build.iter().map(|b| b.len()).sum();
-        assert_eq!(after_processing_pkgs_len, before_processing_pkgs_len);
-        assert!(modified_build.len() <= bin_size.get() as usize);
-        return Ok(modified_build);
+        return basic_packing_with_prior_build(components, bin_size, prior_build);
     }
 
     tracing::debug!("Creating new packing structure");
@@ -636,7 +644,7 @@ fn basic_packing<'a>(
     // If there are fewer packages/components than there are bins, then we don't need to do
     // any "bin packing" at all; just assign a single component to each and we're done.
     if before_processing_pkgs_len < bin_size.get() as usize {
-        components.into_iter().for_each(|pkg| r.push(vec![pkg]));
+        let mut r = components.iter().map(|pkg| vec![pkg]).collect::<Vec<_>>();
         if before_processing_pkgs_len > 0 {
             let new_pkgs_bin: Vec<&ObjectSourceMetaSized> = Vec::new();
             r.push(new_pkgs_bin);
@@ -644,6 +652,8 @@ fn basic_packing<'a>(
         return Ok(r);
     }
 
+    let mut components: Vec<_> = components.iter().collect();
+    let mut r = Vec::new();
     let mut max_freq_components: Vec<&ObjectSourceMetaSized> = Vec::new();
     components.retain(|pkg| {
         let retain: bool = pkg.meta.change_frequency != u32::MAX;
@@ -754,10 +764,7 @@ fn basic_packing<'a>(
 
     let new_pkgs_bin: Vec<&ObjectSourceMetaSized> = Vec::new();
     r.push(new_pkgs_bin);
-    let mut after_processing_pkgs_len = 0;
-    r.iter().for_each(|bin| {
-        after_processing_pkgs_len += bin.len();
-    });
+    let after_processing_pkgs_len = r.iter().map(|b| b.len()).sum::<usize>();
     assert_eq!(after_processing_pkgs_len, before_processing_pkgs_len);
     assert!(r.len() <= bin_size.get() as usize);
     Ok(r)
