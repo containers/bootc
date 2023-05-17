@@ -752,8 +752,8 @@ fn basic_packing<'a>(
         r.push(max_freq_components);
     }
 
-    let new_pkgs_bin: Vec<&ObjectSourceMetaSized> = Vec::new();
-    r.push(new_pkgs_bin);
+    // Allocate an empty bin for new packages
+    r.push(Vec::new());
     let after_processing_pkgs_len = r.iter().map(|b| b.len()).sum::<usize>();
     assert_eq!(after_processing_pkgs_len, before_processing_pkgs_len);
     assert!(r.len() <= bin_size.get() as usize);
