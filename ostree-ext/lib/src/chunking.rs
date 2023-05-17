@@ -422,11 +422,11 @@ fn packing_size(packing: &[Vec<&ObjectSourceMetaSized>]) -> u64 {
 ///      The medium partition from the previous step is less aggressively
 ///      classified by using mean for both size and frequency
 /// Note: Assumes components is sorted by descending size
-fn get_partitions_with_threshold(
-    components: Vec<&ObjectSourceMetaSized>,
+fn get_partitions_with_threshold<'a>(
+    components: &[&'a ObjectSourceMetaSized],
     limit_hs_bins: usize,
     threshold: f64,
-) -> Option<BTreeMap<String, Vec<&ObjectSourceMetaSized>>> {
+) -> Option<BTreeMap<String, Vec<&'a ObjectSourceMetaSized>>> {
     let mut partitions: BTreeMap<String, Vec<&ObjectSourceMetaSized>> = BTreeMap::new();
     let mut med_size: Vec<&ObjectSourceMetaSized> = Vec::new();
     let mut high_size: Vec<&ObjectSourceMetaSized> = Vec::new();
@@ -676,7 +676,7 @@ fn basic_packing<'a>(
             let limit_ms_bins = (bin_size.get()
                 - (limit_hs_bins + limit_ls_bins + limit_new_bins + limit_max_frequency_bins)
                     as u32) as usize;
-            let partitions = get_partitions_with_threshold(components, limit_hs_bins, 2f64)
+            let partitions = get_partitions_with_threshold(&components, limit_hs_bins, 2f64)
                 .expect("Partitioning components into sets");
 
             let limit_ls_pkgs = match partitions.get(LOW_PARTITION) {
