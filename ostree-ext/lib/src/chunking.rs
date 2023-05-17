@@ -675,12 +675,14 @@ fn basic_packing<'a>(
         let partitions = get_partitions_with_threshold(&components, limit_hs_bins, 2f64)
             .expect("Partitioning components into sets");
 
-        let limit_ls_pkgs = match partitions.get(LOW_PARTITION) {
-            Some(n) => n.len(),
-            None => 0usize,
-        };
+        // Compute how many low-sized package/components we have.
+        let low_sized_component_count = partitions
+            .get(LOW_PARTITION)
+            .map(|p| p.len())
+            .unwrap_or_default();
 
-        let pkg_per_bin_ms: usize = (components.len() - limit_hs_bins - limit_ls_pkgs)
+        // Approximate number of components we should have per medium-size bin.
+        let pkg_per_bin_ms: usize = (components.len() - limit_hs_bins - low_sized_component_count)
             .checked_div(limit_ms_bins)
             .expect("number of bins should be >= 4");
 
