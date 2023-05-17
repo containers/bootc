@@ -666,13 +666,12 @@ fn basic_packing<'a>(
         let _limit_new_pkgs = 0usize;
         let limit_max_frequency_pkgs = max_freq_components.len();
         let limit_max_frequency_bins = limit_max_frequency_pkgs.min(1);
+        let low_and_other_bin_limit = limit_ls_bins + limit_new_bins + limit_max_frequency_bins;
         let limit_hs_bins = (HIGH_SIZE_CUTOFF
-            * (bin_size.get() - (limit_ls_bins + limit_new_bins + limit_max_frequency_bins) as u32)
-                as f32)
+            * (bin_size.get() - low_and_other_bin_limit as u32) as f32)
             .floor() as usize;
-        let limit_ms_bins = (bin_size.get()
-            - (limit_hs_bins + limit_ls_bins + limit_new_bins + limit_max_frequency_bins) as u32)
-            as usize;
+        let limit_ms_bins =
+            (bin_size.get() - (limit_hs_bins + low_and_other_bin_limit) as u32) as usize;
         let partitions = get_partitions_with_threshold(&components, limit_hs_bins, 2f64)
             .expect("Partitioning components into sets");
 
