@@ -632,6 +632,7 @@ fn basic_packing<'a>(
     bin_size: NonZeroU32,
     prior_build_metadata: Option<&oci_spec::image::ImageManifest>,
 ) -> Result<Vec<Vec<&'a ObjectSourceMetaSized>>> {
+    const HIGH_SIZE_CUTOFF: f32 = 0.6;
     let before_processing_pkgs_len = components.len();
 
     // If we have a prior build, then use that
@@ -665,7 +666,7 @@ fn basic_packing<'a>(
         let _limit_new_pkgs = 0usize;
         let limit_max_frequency_pkgs = max_freq_components.len();
         let limit_max_frequency_bins = limit_max_frequency_pkgs.min(1);
-        let limit_hs_bins = (0.6
+        let limit_hs_bins = (HIGH_SIZE_CUTOFF
             * (bin_size.get() - (limit_ls_bins + limit_new_bins + limit_max_frequency_bins) as u32)
                 as f32)
             .floor() as usize;
