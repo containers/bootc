@@ -9,6 +9,7 @@ use crate::tar as ostree_tar;
 use anyhow::{anyhow, Context, Result};
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
+use chrono::NaiveDateTime;
 use containers_image_proxy::oci_spec;
 use flate2::Compression;
 use fn_error_context::context;
@@ -196,6 +197,11 @@ fn build_oci(
     let commit = repo.require_rev(rev)?;
     let commit = commit.as_str();
     let (commit_v, _) = repo.load_commit(commit)?;
+    let commit_timestamp = NaiveDateTime::from_timestamp_opt(
+        ostree::commit_get_timestamp(&commit_v).try_into().unwrap(),
+        0,
+    )
+    .unwrap();
     let commit_subject = commit_v.child_value(3);
     let commit_subject = commit_subject.str().ok_or_else(|| {
         anyhow::anyhow!(
@@ -208,6 +214,9 @@ fn build_oci(
 
     let mut ctrcfg = oci_image::Config::default();
     let mut imgcfg = oci_image::ImageConfiguration::default();
+    imgcfg.set_created(Some(
+        commit_timestamp.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+    ));
     let labels = ctrcfg.labels_mut().get_or_insert_with(Default::default);
 
     commit_meta_to_labels(
