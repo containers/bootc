@@ -252,22 +252,24 @@ impl std::fmt::Display for OstreeImageReference {
     }
 }
 
-/// Represent the difference in content between two OCI compliant Images
-#[derive(Debug, Default)]
-pub struct ManifestDiff {
-    /// All layers present in the new image.
-    all_layers_in_new: Vec<oci_spec::image::Descriptor>,
+/// Represents the difference in layer/blob content between two OCI image manifests.
+#[derive(Debug)]
+pub struct ManifestDiff<'from, 'to> {
+    /// The source container image manifest.
+    pub from: &'from oci_spec::image::ImageManifest,
+    /// The target container image manifest.
+    pub to: &'to oci_spec::image::ImageManifest,
     /// Layers which are present in the old image but not the new image.
-    removed: Vec<oci_spec::image::Descriptor>,
+    pub removed: Vec<&'from oci_spec::image::Descriptor>,
     /// Layers which are present in the new image but not the old image.
-    added: Vec<oci_spec::image::Descriptor>,
+    pub added: Vec<&'to oci_spec::image::Descriptor>,
 }
 
-impl ManifestDiff {
+impl<'from, 'to> ManifestDiff<'from, 'to> {
     /// Compute the layer difference between two OCI image manifests.
     pub fn new(
-        src: &oci_spec::image::ImageManifest,
-        dest: &oci_spec::image::ImageManifest,
+        src: &'from oci_spec::image::ImageManifest,
+        dest: &'to oci_spec::image::ImageManifest,
     ) -> Self {
         let src_layers = src
             .layers()
@@ -279,39 +281,44 @@ impl ManifestDiff {
             .iter()
             .map(|l| (l.digest(), l))
             .collect::<HashMap<_, _>>();
-        let mut diff = ManifestDiff::default();
+        let mut removed = Vec::new();
+        let mut added = Vec::new();
         for (blobid, &descriptor) in src_layers.iter() {
             if !dest_layers.contains_key(blobid) {
-                diff.removed.push(descriptor.clone());
+                removed.push(descriptor);
             }
         }
         for (blobid, &descriptor) in dest_layers.iter() {
-            diff.all_layers_in_new.push(descriptor.clone());
             if !src_layers.contains_key(blobid) {
-                diff.added.push(descriptor.clone());
+                added.push(descriptor);
             }
         }
-        diff
+        ManifestDiff {
+            from: src,
+            to: dest,
+            removed,
+            added,
+        }
     }
 }
 
-impl ManifestDiff {
+impl<'from, 'to> ManifestDiff<'from, 'to> {
     /// Prints the total, removed and added content between two OCI images
     pub fn print(&self) {
-        let layersum = |layers: &Vec<oci_spec::image::Descriptor>| -> u64 {
-            layers.iter().map(|layer| layer.size() as u64).sum()
-        };
-        let new_total = &self.all_layers_in_new.len();
-        let new_total_size = glib::format_size(layersum(&self.all_layers_in_new));
-        let n_removed = &self.removed.len();
-        let n_added = &self.added.len();
-        let removed_size = layersum(&self.removed);
+        fn layersum<'a, I: Iterator<Item = &'a oci_spec::image::Descriptor>>(layers: I) -> u64 {
+            layers.map(|layer| layer.size() as u64).sum()
+        }
+        let new_total = self.to.layers().len();
+        let new_total_size = glib::format_size(layersum(self.to.layers().iter()));
+        let n_removed = self.removed.len();
+        let n_added = self.added.len();
+        let removed_size = layersum(self.removed.iter().copied());
         let removed_size_str = glib::format_size(removed_size);
-        let added_size = layersum(&self.added);
+        let added_size = layersum(self.added.iter().copied());
         let added_size_str = glib::format_size(added_size);
-        println!("Total new layers: {new_total}  Size: {new_total_size}");
-        println!("Removed layers: {n_removed}  Size: {removed_size_str}");
-        println!("Added layers: {n_added}  Size: {added_size_str}");
+        println!("Total new layers: {new_total:<4}  Size: {new_total_size}");
+        println!("Removed layers:   {n_removed:<4}  Size: {removed_size_str}");
+        println!("Added layers:     {n_added:<4}  Size: {added_size_str}");
     }
 }
 
