@@ -288,11 +288,13 @@ impl<'from, 'to> ManifestDiff<'from, 'to> {
                 removed.push(descriptor);
             }
         }
+        removed.sort_by(|a, b| a.digest().cmp(b.digest()));
         for (blobid, &descriptor) in dest_layers.iter() {
             if !src_layers.contains_key(blobid) {
                 added.push(descriptor);
             }
         }
+        added.sort_by(|a, b| a.digest().cmp(b.digest()));
         ManifestDiff {
             from: src,
             to: dest,
