@@ -67,8 +67,8 @@ ostree-ext-cli container image pull ${sysroot}/ostree/repo ostree-unverified-ima
 echo "ok pulled from containers storage"
 
 ostree-ext-cli container compare ${imgref} ${imgref} > compare.txt
-grep "Removed layers: 0  Size: 0 bytes" compare.txt
-grep "Added layers: 0  Size: 0 bytes" compare.txt
+grep "Removed layers: *0 *Size: 0 bytes" compare.txt
+grep "Added layers: *0 *Size: 0 bytes" compare.txt
 
 mkdir build
 cd build
