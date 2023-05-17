@@ -307,7 +307,7 @@ impl ManifestDiff {
         let n_added = &self.added.len();
         let removed_size = layersum(&self.removed);
         let removed_size_str = glib::format_size(removed_size);
-        let added_size = layersum(&self.removed);
+        let added_size = layersum(&self.added);
         let added_size_str = glib::format_size(added_size);
         println!("Total new layers: {new_total}  Size: {new_total_size}");
         println!("Removed layers: {n_removed}  Size: {removed_size_str}");
