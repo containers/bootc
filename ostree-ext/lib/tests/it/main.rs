@@ -2,10 +2,11 @@ use anyhow::{Context, Result};
 use camino::Utf8Path;
 use cap_std::fs::{Dir, DirBuilder};
 use containers_image_proxy::oci_spec;
+use containers_image_proxy::oci_spec::image::ImageManifest;
 use once_cell::sync::Lazy;
 use ostree::cap_std;
 use ostree_ext::chunking::ObjectMetaSized;
-use ostree_ext::container::store;
+use ostree_ext::container::{store, ManifestDiff};
 use ostree_ext::container::{
     Config, ExportOpts, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
@@ -1379,4 +1380,32 @@ d /usr/share
     assert_eq!(diff.removed_files.len(), 1);
     assert_eq!(diff.removed_files.iter().next().unwrap(), "/bin/bash");
     Ok(())
+}
+
+#[test]
+fn test_manifest_diff() {
+    let a: ImageManifest = serde_json::from_str(include_str!("fixtures/manifest1.json")).unwrap();
+    let b: ImageManifest = serde_json::from_str(include_str!("fixtures/manifest2.json")).unwrap();
+
+    let d = ManifestDiff::new(&a, &b);
+    assert_eq!(d.from, &a);
+    assert_eq!(d.to, &b);
+    assert_eq!(d.added.len(), 4);
+    assert_eq!(
+        d.added[0].digest(),
+        "sha256:0b5d930ffc92d444b0a7b39beed322945a3038603fbe2a56415a6d02d598df1f"
+    );
+    assert_eq!(
+        d.added[3].digest(),
+        "sha256:cb9b8a4ac4a8df62df79e6f0348a14b3ec239816d42985631c88e76d4e3ff815"
+    );
+    assert_eq!(d.removed.len(), 4);
+    assert_eq!(
+        d.removed[0].digest(),
+        "sha256:0ff8b1fdd38e5cfb6390024de23ba4b947cd872055f62e70f2c21dad5c928925"
+    );
+    assert_eq!(
+        d.removed[3].digest(),
+        "sha256:76b83eea62b7b93200a056b5e0201ef486c67f1eeebcf2c7678ced4d614cece2"
+    );
 }
