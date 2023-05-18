@@ -57,7 +57,7 @@ pub(crate) struct ExportOpts {
     repo: Utf8PathBuf,
 
     /// The format version.  Must be 1.
-    #[clap(long, hidden(true))]
+    #[clap(long, hide(true))]
     format_version: u32,
 
     /// The ostree ref or commit to export
@@ -139,7 +139,6 @@ pub(crate) enum ContainerOpts {
         compression_fast: bool,
     },
 
-    #[clap(alias = "commit")]
     /// Perform build-time checking and canonicalization.
     /// This is presently an optional command, but may become required in the future.
     Commit,
