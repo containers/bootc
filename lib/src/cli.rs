@@ -139,7 +139,6 @@ pub(crate) enum ContainerOpts {
         compression_fast: bool,
     },
 
-    #[clap(alias = "commit")]
     /// Perform build-time checking and canonicalization.
     /// This is presently an optional command, but may become required in the future.
     Commit,
