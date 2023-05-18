@@ -1,7 +1,7 @@
 //! APIs for creating container images from OSTree commits
 
 use super::ocidir::{Layer, OciDir};
-use super::{ocidir, OstreeImageReference, Transport, CONTENT_ANNOTATION};
+use super::{ocidir, OstreeImageReference, Transport, COMPONENT_SEPARATOR, CONTENT_ANNOTATION};
 use super::{ImageReference, SignatureSource, OSTREE_COMMIT_LABEL};
 use crate::chunking::{Chunk, Chunking, ObjectMetaSized};
 use crate::container::skopeo;
@@ -154,9 +154,11 @@ fn export_chunked(
     // Add the ostree layer
     ociw.push_layer(manifest, imgcfg, ostree_layer, description, None);
     // Add the component/content layers
+    let mut buf = [0; 8];
+    let sep = COMPONENT_SEPARATOR.encode_utf8(&mut buf);
     for (layer, name, packages) in layers {
         let mut annotation_component_layer = HashMap::new();
-        annotation_component_layer.insert(CONTENT_ANNOTATION.to_string(), packages.join(","));
+        annotation_component_layer.insert(CONTENT_ANNOTATION.to_string(), packages.join(sep));
         ociw.push_layer(
             manifest,
             imgcfg,

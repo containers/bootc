@@ -10,7 +10,7 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::Instant;
 
-use crate::container::CONTENT_ANNOTATION;
+use crate::container::{COMPONENT_SEPARATOR, CONTENT_ANNOTATION};
 use crate::objectsource::{ContentID, ObjectMeta, ObjectMetaMap, ObjectSourceMeta};
 use crate::objgv::*;
 use crate::statistics;
@@ -558,7 +558,10 @@ fn basic_packing_with_prior_build<'a>(
                 .as_ref()
                 .and_then(|annos| annos.get(CONTENT_ANNOTATION))
                 .ok_or_else(|| anyhow!("Missing {CONTENT_ANNOTATION} on prior build"))?;
-            Ok(annotation_layer.split(',').map(ToOwned::to_owned).collect())
+            Ok(annotation_layer
+                .split(COMPONENT_SEPARATOR)
+                .map(ToOwned::to_owned)
+                .collect())
         })
         .collect();
     let mut curr_build = curr_build?;
@@ -797,7 +800,7 @@ mod test {
             .iter()
             .map(|b| {
                 b.iter()
-                    .map(|p| p.split(".").collect::<Vec<&str>>()[0].to_string())
+                    .map(|p| p.split('.').collect::<Vec<&str>>()[0].to_string())
                     .collect()
             })
             .collect();
@@ -814,13 +817,15 @@ mod test {
         let layers: Vec<oci_spec::image::Descriptor> = metadata_with_ostree_commit
             .iter()
             .map(|l| {
+                let mut buf = [0; 8];
+                let sep = COMPONENT_SEPARATOR.encode_utf8(&mut buf);
                 oci_spec::image::DescriptorBuilder::default()
                     .media_type(oci_spec::image::MediaType::ImageLayerGzip)
                     .size(100)
                     .digest(format!("sha256:{}", l.len()))
                     .annotations(HashMap::from([(
                         CONTENT_ANNOTATION.to_string(),
-                        l.join(","),
+                        l.join(sep),
                     )]))
                     .build()
                     .expect("build layer")
