@@ -254,22 +254,22 @@ impl std::fmt::Display for OstreeImageReference {
 
 /// Represents the difference in layer/blob content between two OCI image manifests.
 #[derive(Debug)]
-pub struct ManifestDiff<'from, 'to> {
+pub struct ManifestDiff<'a> {
     /// The source container image manifest.
-    pub from: &'from oci_spec::image::ImageManifest,
+    pub from: &'a oci_spec::image::ImageManifest,
     /// The target container image manifest.
-    pub to: &'to oci_spec::image::ImageManifest,
+    pub to: &'a oci_spec::image::ImageManifest,
     /// Layers which are present in the old image but not the new image.
-    pub removed: Vec<&'from oci_spec::image::Descriptor>,
+    pub removed: Vec<&'a oci_spec::image::Descriptor>,
     /// Layers which are present in the new image but not the old image.
-    pub added: Vec<&'to oci_spec::image::Descriptor>,
+    pub added: Vec<&'a oci_spec::image::Descriptor>,
 }
 
-impl<'from, 'to> ManifestDiff<'from, 'to> {
+impl<'a> ManifestDiff<'a> {
     /// Compute the layer difference between two OCI image manifests.
     pub fn new(
-        src: &'from oci_spec::image::ImageManifest,
-        dest: &'to oci_spec::image::ImageManifest,
+        src: &'a oci_spec::image::ImageManifest,
+        dest: &'a oci_spec::image::ImageManifest,
     ) -> Self {
         let src_layers = src
             .layers()
@@ -304,7 +304,7 @@ impl<'from, 'to> ManifestDiff<'from, 'to> {
     }
 }
 
-impl<'from, 'to> ManifestDiff<'from, 'to> {
+impl<'a> ManifestDiff<'a> {
     /// Prints the total, removed and added content between two OCI images
     pub fn print(&self) {
         fn layersum<'a, I: Iterator<Item = &'a oci_spec::image::Descriptor>>(layers: I) -> u64 {
