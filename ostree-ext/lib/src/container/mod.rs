@@ -40,6 +40,8 @@ pub const OSTREE_COMMIT_LABEL: &str = "ostree.commit";
 /// The name of an annotation attached to a layer which names the packages/components
 /// which are part of it.
 pub(crate) const CONTENT_ANNOTATION: &str = "ostree.components";
+/// The character we use to separate values in [`CONTENT_ANNOTATION`].
+pub(crate) const COMPONENT_SEPARATOR: char = ',';
 
 /// Our generic catchall fatal error, expected to be converted
 /// to a string to output to a terminal or logs.
