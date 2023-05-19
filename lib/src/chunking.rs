@@ -10,7 +10,7 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::Instant;
 
-use crate::container::CONTENT_ANNOTATION;
+use crate::container::{COMPONENT_SEPARATOR, CONTENT_ANNOTATION};
 use crate::objectsource::{ContentID, ObjectMeta, ObjectMetaMap, ObjectSourceMeta};
 use crate::objgv::*;
 use crate::statistics;
@@ -422,11 +422,11 @@ fn packing_size(packing: &[Vec<&ObjectSourceMetaSized>]) -> u64 {
 ///      The medium partition from the previous step is less aggressively
 ///      classified by using mean for both size and frequency
 /// Note: Assumes components is sorted by descending size
-fn get_partitions_with_threshold(
-    components: Vec<&ObjectSourceMetaSized>,
+fn get_partitions_with_threshold<'a>(
+    components: &[&'a ObjectSourceMetaSized],
     limit_hs_bins: usize,
     threshold: f64,
-) -> Option<BTreeMap<String, Vec<&ObjectSourceMetaSized>>> {
+) -> Option<BTreeMap<String, Vec<&'a ObjectSourceMetaSized>>> {
     let mut partitions: BTreeMap<String, Vec<&ObjectSourceMetaSized>> = BTreeMap::new();
     let mut med_size: Vec<&ObjectSourceMetaSized> = Vec::new();
     let mut high_size: Vec<&ObjectSourceMetaSized> = Vec::new();
@@ -558,7 +558,10 @@ fn basic_packing_with_prior_build<'a>(
                 .as_ref()
                 .and_then(|annos| annos.get(CONTENT_ANNOTATION))
                 .ok_or_else(|| anyhow!("Missing {CONTENT_ANNOTATION} on prior build"))?;
-            Ok(annotation_layer.split(',').map(ToOwned::to_owned).collect())
+            Ok(annotation_layer
+                .split(COMPONENT_SEPARATOR)
+                .map(ToOwned::to_owned)
+                .collect())
         })
         .collect();
     let mut curr_build = curr_build?;
@@ -632,6 +635,7 @@ fn basic_packing<'a>(
     bin_size: NonZeroU32,
     prior_build_metadata: Option<&oci_spec::image::ImageManifest>,
 ) -> Result<Vec<Vec<&'a ObjectSourceMetaSized>>> {
+    const HIGH_SIZE_CUTOFF: f32 = 0.6;
     let before_processing_pkgs_len = components.len();
 
     // If we have a prior build, then use that
@@ -652,118 +656,107 @@ fn basic_packing<'a>(
         return Ok(r);
     }
 
-    let mut components: Vec<_> = components.iter().collect();
     let mut r = Vec::new();
-    let mut max_freq_components: Vec<&ObjectSourceMetaSized> = Vec::new();
-    components.retain(|pkg| {
-        let retain: bool = pkg.meta.change_frequency != u32::MAX;
-        if !retain {
-            max_freq_components.push(pkg);
-        }
-        retain
-    });
-    let components_len_after_max_freq = components.len();
-    match components_len_after_max_freq {
-        0 => (),
-        _ => {
-            // Given a total number of bins (layers), compute how many should be assigned to our
-            // partitioning based on size and frequency.
-            let limit_ls_bins = 1usize;
-            let limit_new_bins = 1usize;
-            let _limit_new_pkgs = 0usize;
-            let limit_max_frequency_pkgs = max_freq_components.len();
-            let limit_max_frequency_bins = limit_max_frequency_pkgs.min(1);
-            let limit_hs_bins = (0.6
-                * (bin_size.get()
-                    - (limit_ls_bins + limit_new_bins + limit_max_frequency_bins) as u32)
-                    as f32)
-                .floor() as usize;
-            let limit_ms_bins = (bin_size.get()
-                - (limit_hs_bins + limit_ls_bins + limit_new_bins + limit_max_frequency_bins)
-                    as u32) as usize;
-            let partitions = get_partitions_with_threshold(components, limit_hs_bins, 2f64)
-                .expect("Partitioning components into sets");
+    // Split off the components which are "max frequency".
+    let (components, max_freq_components) = components
+        .iter()
+        .partition::<Vec<_>, _>(|pkg| pkg.meta.change_frequency != u32::MAX);
+    if !components.is_empty() {
+        // Given a total number of bins (layers), compute how many should be assigned to our
+        // partitioning based on size and frequency.
+        let limit_ls_bins = 1usize;
+        let limit_new_bins = 1usize;
+        let _limit_new_pkgs = 0usize;
+        let limit_max_frequency_pkgs = max_freq_components.len();
+        let limit_max_frequency_bins = limit_max_frequency_pkgs.min(1);
+        let low_and_other_bin_limit = limit_ls_bins + limit_new_bins + limit_max_frequency_bins;
+        let limit_hs_bins = (HIGH_SIZE_CUTOFF
+            * (bin_size.get() - low_and_other_bin_limit as u32) as f32)
+            .floor() as usize;
+        let limit_ms_bins =
+            (bin_size.get() - (limit_hs_bins + low_and_other_bin_limit) as u32) as usize;
+        let partitions = get_partitions_with_threshold(&components, limit_hs_bins, 2f64)
+            .expect("Partitioning components into sets");
 
-            let limit_ls_pkgs = match partitions.get(LOW_PARTITION) {
-                Some(n) => n.len(),
-                None => 0usize,
-            };
+        // Compute how many low-sized package/components we have.
+        let low_sized_component_count = partitions
+            .get(LOW_PARTITION)
+            .map(|p| p.len())
+            .unwrap_or_default();
 
-            let pkg_per_bin_ms: usize =
-                (components_len_after_max_freq - limit_hs_bins - limit_ls_pkgs)
-                    .checked_div(limit_ms_bins)
-                    .expect("number of bins should be >= 4");
+        // Approximate number of components we should have per medium-size bin.
+        let pkg_per_bin_ms: usize = (components.len() - limit_hs_bins - low_sized_component_count)
+            .checked_div(limit_ms_bins)
+            .expect("number of bins should be >= 4");
 
-            // Bins assignment
-            for (partition, pkgs) in partitions.iter() {
-                if partition == HIGH_PARTITION {
-                    for pkg in pkgs {
-                        r.push(vec![*pkg]);
-                    }
-                } else if partition == LOW_PARTITION {
-                    let mut bin: Vec<&ObjectSourceMetaSized> = Vec::new();
-                    for pkg in pkgs {
+        // Bins assignment
+        for (partition, pkgs) in partitions.iter() {
+            if partition == HIGH_PARTITION {
+                for pkg in pkgs {
+                    r.push(vec![*pkg]);
+                }
+            } else if partition == LOW_PARTITION {
+                let mut bin: Vec<&ObjectSourceMetaSized> = Vec::new();
+                for pkg in pkgs {
+                    bin.push(*pkg);
+                }
+                r.push(bin);
+            } else {
+                let mut bin: Vec<&ObjectSourceMetaSized> = Vec::new();
+                for (i, pkg) in pkgs.iter().enumerate() {
+                    if bin.len() < pkg_per_bin_ms {
+                        bin.push(*pkg);
+                    } else {
+                        r.push(bin.clone());
+                        bin.clear();
                         bin.push(*pkg);
                     }
-                    r.push(bin);
-                } else {
-                    let mut bin: Vec<&ObjectSourceMetaSized> = Vec::new();
-                    for (i, pkg) in pkgs.iter().enumerate() {
-                        if bin.len() < pkg_per_bin_ms {
-                            bin.push(*pkg);
-                        } else {
-                            r.push(bin.clone());
-                            bin.clear();
-                            bin.push(*pkg);
-                        }
-                        if i == pkgs.len() - 1 && !bin.is_empty() {
-                            r.push(bin.clone());
-                            bin.clear();
-                        }
+                    if i == pkgs.len() - 1 && !bin.is_empty() {
+                        r.push(bin.clone());
+                        bin.clear();
                     }
                 }
             }
-            tracing::debug!("Bins before unoptimized build: {}", r.len());
-
-            // Despite allocation certain number of pkgs per bin in medium-size partitions, the
-            // hard limit of number of medium-size bins can be exceeded. This is because the pkg_per_bin_ms
-            // is only upper limit and there is no lower limit. Thus, if a partition in medium-size has only 1 pkg
-            // but pkg_per_bin_ms > 1, then the entire bin will have 1 pkg. This prevents partition
-            // mixing.
-            //
-            // Addressing medium-size bins limit breach by mergin internal MS partitions
-            // The partitions in medium-size are merged beginning from the end so to not mix high-frequency bins with low-frequency bins. The
-            // bins are kept in this order: high-frequency, medium-frequency, low-frequency.
-            while r.len() > (bin_size.get() as usize - limit_new_bins - limit_max_frequency_bins) {
-                for i in (limit_ls_bins + limit_hs_bins..r.len() - 1)
-                    .step_by(2)
-                    .rev()
-                {
-                    if r.len()
-                        <= (bin_size.get() as usize - limit_new_bins - limit_max_frequency_bins)
-                    {
-                        break;
-                    }
-                    let prev = &r[i - 1];
-                    let curr = &r[i];
-                    let mut merge: Vec<&ObjectSourceMetaSized> = Vec::new();
-                    merge.extend(prev.iter());
-                    merge.extend(curr.iter());
-                    r.remove(i);
-                    r.remove(i - 1);
-                    r.insert(i, merge);
-                }
-            }
-            tracing::debug!("Bins after optimization: {}", r.len());
         }
+        tracing::debug!("Bins before unoptimized build: {}", r.len());
+
+        // Despite allocation certain number of pkgs per bin in medium-size partitions, the
+        // hard limit of number of medium-size bins can be exceeded. This is because the pkg_per_bin_ms
+        // is only upper limit and there is no lower limit. Thus, if a partition in medium-size has only 1 pkg
+        // but pkg_per_bin_ms > 1, then the entire bin will have 1 pkg. This prevents partition
+        // mixing.
+        //
+        // Addressing medium-size bins limit breach by mergin internal MS partitions
+        // The partitions in medium-size are merged beginning from the end so to not mix high-frequency bins with low-frequency bins. The
+        // bins are kept in this order: high-frequency, medium-frequency, low-frequency.
+        while r.len() > (bin_size.get() as usize - limit_new_bins - limit_max_frequency_bins) {
+            for i in (limit_ls_bins + limit_hs_bins..r.len() - 1)
+                .step_by(2)
+                .rev()
+            {
+                if r.len() <= (bin_size.get() as usize - limit_new_bins - limit_max_frequency_bins)
+                {
+                    break;
+                }
+                let prev = &r[i - 1];
+                let curr = &r[i];
+                let mut merge: Vec<&ObjectSourceMetaSized> = Vec::new();
+                merge.extend(prev.iter());
+                merge.extend(curr.iter());
+                r.remove(i);
+                r.remove(i - 1);
+                r.insert(i, merge);
+            }
+        }
+        tracing::debug!("Bins after optimization: {}", r.len());
     }
 
     if !max_freq_components.is_empty() {
         r.push(max_freq_components);
     }
 
-    let new_pkgs_bin: Vec<&ObjectSourceMetaSized> = Vec::new();
-    r.push(new_pkgs_bin);
+    // Allocate an empty bin for new packages
+    r.push(Vec::new());
     let after_processing_pkgs_len = r.iter().map(|b| b.len()).sum::<usize>();
     assert_eq!(after_processing_pkgs_len, before_processing_pkgs_len);
     assert!(r.len() <= bin_size.get() as usize);
@@ -807,7 +800,7 @@ mod test {
             .iter()
             .map(|b| {
                 b.iter()
-                    .map(|p| p.split(".").collect::<Vec<&str>>()[0].to_string())
+                    .map(|p| p.split('.').collect::<Vec<&str>>()[0].to_string())
                     .collect()
             })
             .collect();
@@ -824,13 +817,15 @@ mod test {
         let layers: Vec<oci_spec::image::Descriptor> = metadata_with_ostree_commit
             .iter()
             .map(|l| {
+                let mut buf = [0; 8];
+                let sep = COMPONENT_SEPARATOR.encode_utf8(&mut buf);
                 oci_spec::image::DescriptorBuilder::default()
                     .media_type(oci_spec::image::MediaType::ImageLayerGzip)
                     .size(100)
                     .digest(format!("sha256:{}", l.len()))
                     .annotations(HashMap::from([(
                         CONTENT_ANNOTATION.to_string(),
-                        l.join(","),
+                        l.join(sep),
                     )]))
                     .build()
                     .expect("build layer")
