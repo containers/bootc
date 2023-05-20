@@ -17,7 +17,7 @@ use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
-use clap::ArgEnum;
+use clap::ValueEnum;
 use fn_error_context::context;
 use serde::{Deserialize, Serialize};
 
