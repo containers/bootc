@@ -670,7 +670,7 @@ pub(crate) fn finalize_filesystem(fs: &Utf8Path) -> Result<()> {
         .run()?;
     // Finally, freezing (and thawing) the filesystem will flush the journal, which means the next boot is clean.
     for a in ["-f", "-u"] {
-        Task::new("Flushing filesystem journal", "xfs_freeze")
+        Task::new("Flushing filesystem journal", "fsfreeze")
             .quiet()
             .args([a, fs.as_str()])
             .run()?;
