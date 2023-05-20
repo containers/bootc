@@ -2,7 +2,6 @@ use std::process::Command;
 
 use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
-use cap_std_ext::rustix;
 use fn_error_context::context;
 use rustix::fd::AsFd;
 use xshell::{cmd, Shell};

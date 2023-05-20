@@ -65,7 +65,7 @@ impl DeploymentStatus {
         let staged = deployment.is_staged();
         let pinned = deployment.is_pinned();
         let image = get_image_origin(deployment)?.1;
-        let checksum = deployment.csum().unwrap().to_string();
+        let checksum = deployment.csum().to_string();
         let deploy_serial = (!staged).then(|| deployment.bootserial().try_into().unwrap());
         let supported = deployment
             .origin()
@@ -119,7 +119,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
         return Ok(());
     }
     let sysroot = super::cli::get_locked_sysroot().await?;
-    let repo = &sysroot.repo().unwrap();
+    let repo = &sysroot.repo();
     let booted_deployment = sysroot.booted_deployment();
 
     let deployments = get_deployments(&sysroot, booted_deployment.as_ref(), opts.booted)?;
