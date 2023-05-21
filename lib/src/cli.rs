@@ -4,7 +4,6 @@
 
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
-use cap_std_ext::rustix;
 use clap::Parser;
 use fn_error_context::context;
 use ostree::{gio, glib};
@@ -145,7 +144,7 @@ pub(crate) async fn ensure_self_unshared_mount_namespace() -> Result<()> {
         return Ok(());
     }
     if std::env::var_os(recurse_env).is_some() {
-        let am_pid1 = cap_std_ext::rustix::process::getpid().is_init();
+        let am_pid1 = rustix::process::getpid().is_init();
         if am_pid1 {
             tracing::debug!("We are pid 1");
             return Ok(());
@@ -237,7 +236,7 @@ pub(crate) fn require_root() -> Result<()> {
     if !uid.is_root() {
         anyhow::bail!("This command requires root privileges");
     }
-    if !rustix::thread::is_in_capability_bounding_set(rustix::thread::Capability::SystemAdmin)? {
+    if !rustix::thread::capability_is_in_bounding_set(rustix::thread::Capability::SystemAdmin)? {
         anyhow::bail!("This command requires full root privileges (CAP_SYS_ADMIN)");
     }
     Ok(())
@@ -263,10 +262,10 @@ async fn prepare_for_write() -> Result<()> {
 async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     prepare_for_write().await?;
     let sysroot = &get_locked_sysroot().await?;
-    let repo = &sysroot.repo().unwrap();
+    let repo = &sysroot.repo();
     let booted_deployment = &sysroot.require_booted_deployment()?;
     let status = crate::status::DeploymentStatus::from_deployment(booted_deployment, true)?;
-    let osname = booted_deployment.osname().unwrap();
+    let osname = booted_deployment.osname();
     let origin = booted_deployment
         .origin()
         .ok_or_else(|| anyhow::anyhow!("Deployment is missing an origin"))?;
@@ -279,7 +278,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             "Booted deployment contains local rpm-ostree modifications; cannot upgrade via bootc"
         ));
     }
-    let commit = booted_deployment.csum().unwrap();
+    let commit = booted_deployment.csum();
     let state = ostree_container::store::query_image_commit(repo, &commit)?;
     let digest = state.manifest_digest.as_str();
     let fetched = pull(repo, &imgref, opts.quiet).await?;
@@ -308,8 +307,8 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let booted_deployment = &sysroot.require_booted_deployment()?;
     let (origin, booted_image) = crate::utils::get_image_origin(booted_deployment)?;
     let booted_refspec = origin.optional_string("origin", "refspec")?;
-    let osname = booted_deployment.osname().unwrap();
-    let repo = &sysroot.repo().unwrap();
+    let osname = booted_deployment.osname();
+    let repo = &sysroot.repo();
 
     let transport = ostree_container::Transport::try_from(opts.transport.as_str())?;
     let imgref = ostree_container::ImageReference {

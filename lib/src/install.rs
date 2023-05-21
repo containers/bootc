@@ -20,7 +20,7 @@ use camino::Utf8PathBuf;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtDirExt;
-use cap_std_ext::rustix::fs::MetadataExt;
+use rustix::fs::MetadataExt;
 
 use fn_error_context::context;
 use ostree::gio;
@@ -518,7 +518,7 @@ async fn initialize_ostree_root_from_self(
         .next()
         .ok_or_else(|| anyhow::anyhow!("Failed to find deployment"))?;
     // SAFETY: There must be a path
-    let path = sysroot.deployment_dirpath(&deployment).unwrap();
+    let path = sysroot.deployment_dirpath(&deployment);
     let root = rootfs_dir
         .open_dir(path.as_str())
         .context("Opening deployment dir")?;
@@ -531,7 +531,7 @@ async fn initialize_ostree_root_from_self(
     writeln!(f, "{}", root_setup.boot.to_fstab())?;
     f.flush()?;
 
-    let uname = cap_std_ext::rustix::process::uname();
+    let uname = rustix::process::uname();
 
     let aleph = InstallAleph {
         image: src_imageref.imgref.name.clone(),
@@ -670,7 +670,7 @@ pub(crate) fn finalize_filesystem(fs: &Utf8Path) -> Result<()> {
         .run()?;
     // Finally, freezing (and thawing) the filesystem will flush the journal, which means the next boot is clean.
     for a in ["-f", "-u"] {
-        Task::new("Flushing filesystem journal", "xfs_freeze")
+        Task::new("Flushing filesystem journal", "fsfreeze")
             .quiet()
             .args([a, fs.as_str()])
             .run()?;
