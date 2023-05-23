@@ -10,7 +10,9 @@ debug = true
 
 # See https://github.com/coreos/cargo-vendor-filterer
 [workspace.metadata.vendor-filter]
-platforms = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "s390x-unknown-linux-gnu"]
+# For now we only care about tier 1+2 Linux.  (In practice, it's unlikely there is a tier3-only Linux dependency)
+platforms = ["*-unknown-linux-gnu"]
+tier = "2"
 all-features = true
 exclude-crate-paths = [ { name = "libz-sys", exclude = "src/zlib" },
                         { name = "libz-sys", exclude = "src/zlib-ng" },
