@@ -1,26 +1,31 @@
----
-name: Rust
+# Maintained in https://github.com/coreos/repo-templates
+# Do not edit downstream.
 
+name: Rust
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
-
+    branches: [main]
 permissions:
   contents: read
+
+# don't waste job slots on superseded code
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
   # Pinned toolchain for linting
-  ACTION_LINTS_TOOLCHAIN: 1.66.0
+  ACTIONS_LINTS_TOOLCHAIN: 1.66.0
 
 jobs:
   tests-stable:
-    name: "Tests, stable toolchain"
+    name: Tests, stable toolchain
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v3
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@v1
@@ -31,10 +36,10 @@ jobs:
       - name: cargo test
         run: cargo test
   tests-release-stable:
-    name: "Tests (release), stable toolchain"
+    name: Tests (release), stable toolchain
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v3
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@v1
@@ -45,15 +50,15 @@ jobs:
       - name: cargo test (release)
         run: cargo test --release
   tests-release-msrv:
-    name: "Tests (release), minimum supported toolchain"
+    name: Tests (release), minimum supported toolchain
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v3
       - name: Detect crate MSRV
         run: |
           msrv=$(cargo metadata --format-version 1 --no-deps | \
-              jq -r '.packages | .[].rust_version')
+              jq -r '.packages[0].rust_version')
           echo "Crate MSRV: $msrv"
           echo "MSRV=$msrv" >> $GITHUB_ENV
       - name: Install toolchain
@@ -65,31 +70,29 @@ jobs:
       - name: cargo test (release)
         run: cargo test --release
   linting:
-    name: "Lints, pinned toolchain"
+    name: Lints, pinned toolchain
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v3
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: ${{ env['ACTION_LINTS_TOOLCHAIN']  }}
+          toolchain: ${{ env.ACTIONS_LINTS_TOOLCHAIN }}
           components: rustfmt, clippy
-      - name: cargo clippy (warnings)
-        run: cargo clippy -- -D warnings
       - name: cargo fmt (check)
         run: cargo fmt -- --check -l
+      - name: cargo clippy (warnings)
+        run: cargo clippy -- -D warnings
   tests-other-channels:
-    name: "Tests, unstable toolchain"
+    name: Tests, unstable toolchain
     runs-on: ubuntu-latest
     continue-on-error: true
     strategy:
       matrix:
-        channel:
-          - "beta"
-          - "nightly"
+        channel: [beta, nightly]
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v3
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@v1
