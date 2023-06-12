@@ -34,7 +34,7 @@ const IMAGE_PREFIX: &str = "ostree/container/image";
 /// If you maintain tooling which is locally building derived commits, write a ref
 /// with this prefix that is owned by your code.  It's a best practice to prefix the
 /// ref with the project name, so the final ref may be of the form e.g. `ostree/container/baseimage/bootc/foo`.
-const BASE_IMAGE_PREFIX: &str = "ostree/container/baseimage";
+pub const BASE_IMAGE_PREFIX: &str = "ostree/container/baseimage";
 
 /// The key injected into the merge commit for the manifest digest.
 const META_MANIFEST_DIGEST: &str = "ostree.manifest-digest";
