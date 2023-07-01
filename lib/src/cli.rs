@@ -19,6 +19,9 @@ use std::ffi::OsString;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
+use crate::spec::HostSpec;
+use crate::spec::ImageReference;
+
 /// Perform an upgrade operation
 #[derive(Debug, Parser)]
 pub(crate) struct UpgradeOpts {
@@ -174,9 +177,10 @@ pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootL
 #[context("Pulling")]
 async fn pull(
     repo: &ostree::Repo,
-    imgref: &OstreeImageReference,
+    imgref: &ImageReference,
     quiet: bool,
 ) -> Result<Box<LayeredImageState>> {
+    let imgref = &OstreeImageReference::from(imgref.clone());
     let config = Default::default();
     let mut imp = ostree_container::store::ImageImporter::new(repo, imgref, config).await?;
     let prep = match imp.prepare().await? {
@@ -215,22 +219,35 @@ async fn pull(
 async fn stage(
     sysroot: &SysrootLock,
     stateroot: &str,
-    imgref: &ostree_container::OstreeImageReference,
     image: Box<LayeredImageState>,
-    origin: &glib::KeyFile,
+    spec: &HostSpec,
 ) -> Result<()> {
     let cancellable = gio::Cancellable::NONE;
     let stateroot = Some(stateroot);
     let merge_deployment = sysroot.merge_deployment(stateroot);
+    let origin = glib::KeyFile::new();
+    let ostree_imgref = spec
+        .image
+        .as_ref()
+        .map(|imgref| OstreeImageReference::from(imgref.clone()));
+    if let Some(imgref) = ostree_imgref.as_ref() {
+        origin.set_string(
+            "origin",
+            ostree_container::deploy::ORIGIN_CONTAINER,
+            imgref.to_string().as_str(),
+        );
+    }
     let _new_deployment = sysroot.stage_tree_with_options(
         stateroot,
         image.merge_commit.as_str(),
-        Some(origin),
+        Some(&origin),
         merge_deployment.as_ref(),
         &Default::default(),
         cancellable,
     )?;
-    println!("Queued for next boot: {imgref}");
+    if let Some(imgref) = ostree_imgref.as_ref() {
+        println!("Queued for next boot: {imgref}");
+    }
     Ok(())
 }
 
@@ -266,30 +283,30 @@ async fn prepare_for_write() -> Result<()> {
 async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     prepare_for_write().await?;
     let sysroot = &get_locked_sysroot().await?;
-    let repo = &sysroot.repo();
     let booted_deployment = &sysroot.require_booted_deployment()?;
-    let status = crate::status::DeploymentStatus::from_deployment(booted_deployment, true)?;
-    let osname = booted_deployment.osname();
-    let origin = booted_deployment
-        .origin()
-        .ok_or_else(|| anyhow::anyhow!("Deployment is missing an origin"))?;
-    let imgref = status
-        .image
-        .ok_or_else(|| anyhow::anyhow!("Booted deployment is not container image based"))?;
-    let imgref: OstreeImageReference = imgref.into();
-    if !status.supported {
+    let (_deployments, host) = crate::status::get_status(sysroot, Some(booted_deployment))?;
+    // SAFETY: There must be a status if we have a booted deployment
+    let status = host.status.unwrap();
+    let imgref = host.spec.image.as_ref();
+    // If there's no specified image, let's be nice and check if the booted system is using rpm-ostree
+    if imgref.is_none() && status.booted.map_or(false, |b| b.incompatible) {
         return Err(anyhow::anyhow!(
             "Booted deployment contains local rpm-ostree modifications; cannot upgrade via bootc"
         ));
     }
-    let commit = booted_deployment.csum();
-    let state = ostree_container::store::query_image_commit(repo, &commit)?;
-    let digest = state.manifest_digest.as_str();
-
+    let imgref = imgref.ok_or_else(|| anyhow::anyhow!("No image source specified"))?;
+    // Find the currently queued digest, if any before we pull
+    let queued_digest = status
+        .staged
+        .as_ref()
+        .and_then(|e| e.image.as_ref())
+        .map(|img| img.image_digest.as_str());
     if opts.check {
         // pull the image manifest without the layers
         let config = Default::default();
-        let mut imp = ostree_container::store::ImageImporter::new(repo, &imgref, config).await?;
+        let imgref = &OstreeImageReference::from(imgref.clone());
+        let mut imp =
+            ostree_container::store::ImageImporter::new(&sysroot.repo(), imgref, config).await?;
         match imp.prepare().await? {
             PrepareResult::AlreadyPresent(c) => {
                 println!(
@@ -298,24 +315,27 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
                 );
                 return Ok(());
             }
-            PrepareResult::Ready(p) => {
+            PrepareResult::Ready(r) => {
+                // TODO show a diff
                 println!(
-                    "New manifest available for {}. Digest {}",
-                    imgref, p.manifest_digest
+                    "New image available for {imgref}. Digest {}",
+                    r.manifest_digest
                 );
+                // Note here we'll fall through to handling the --touch-if-changed below
             }
         }
     } else {
-        let fetched = pull(repo, &imgref, opts.quiet).await?;
-
-        if fetched.merge_commit.as_str() == commit.as_str() {
-            println!("Already queued: {digest}");
-            return Ok(());
+        let fetched = pull(&sysroot.repo(), imgref, opts.quiet).await?;
+        if let Some(queued_digest) = queued_digest {
+            if fetched.merge_commit.as_str() == queued_digest {
+                println!("Already queued: {queued_digest}");
+                return Ok(());
+            }
         }
 
-        stage(sysroot, &osname, &imgref, fetched, &origin).await?;
+        let osname = booted_deployment.osname();
+        stage(sysroot, &osname, fetched, &host.spec).await?;
     }
-
     if let Some(path) = opts.touch_if_changed {
         std::fs::write(&path, "").with_context(|| format!("Writing {path}"))?;
     }
@@ -327,14 +347,14 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
 #[context("Switching")]
 async fn switch(opts: SwitchOpts) -> Result<()> {
     prepare_for_write().await?;
-
     let cancellable = gio::Cancellable::NONE;
-    let sysroot = get_locked_sysroot().await?;
-    let booted_deployment = &sysroot.require_booted_deployment()?;
-    let (origin, booted_image) = crate::utils::get_image_origin(booted_deployment)?;
-    let booted_refspec = origin.optional_string("origin", "refspec")?;
-    let osname = booted_deployment.osname();
+
+    let sysroot = &get_locked_sysroot().await?;
     let repo = &sysroot.repo();
+    let booted_deployment = &sysroot.require_booted_deployment()?;
+    let (_deployments, host) = crate::status::get_status(sysroot, Some(booted_deployment))?;
+    // SAFETY: There must be a status if we have a booted deployment
+    let status = host.status.unwrap();
 
     let transport = ostree_container::Transport::try_from(opts.transport.as_str())?;
     let imgref = ostree_container::ImageReference {
@@ -349,30 +369,38 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
         SignatureSource::ContainerPolicy
     };
     let target = ostree_container::OstreeImageReference { sigverify, imgref };
+    let target = ImageReference::from(target);
+
+    let new_spec = {
+        let mut new_spec = host.spec.clone();
+        new_spec.image = Some(target.clone());
+        new_spec
+    };
+
+    if new_spec == host.spec {
+        anyhow::bail!("No changes in current host spec");
+    }
 
     let fetched = pull(repo, &target, opts.quiet).await?;
 
     if !opts.retain {
         // By default, we prune the previous ostree ref or container image
-        if let Some(ostree_ref) = booted_refspec {
-            let (remote, ostree_ref) =
-                ostree::parse_refspec(&ostree_ref).context("Failed to parse ostree ref")?;
-            repo.set_ref_immediate(remote.as_deref(), &ostree_ref, None, cancellable)?;
-            origin.remove_key("origin", "refspec")?;
-        } else if let Some(booted_image) = booted_image.as_ref() {
-            ostree_container::store::remove_image(repo, &booted_image.imgref)?;
-            let _nlayers: u32 = ostree_container::store::gc_image_layers(repo)?;
+        if let Some(booted_origin) = booted_deployment.origin() {
+            if let Some(ostree_ref) = booted_origin.optional_string("origin", "refspec")? {
+                let (remote, ostree_ref) =
+                    ostree::parse_refspec(&ostree_ref).context("Failed to parse ostree ref")?;
+                repo.set_ref_immediate(remote.as_deref(), &ostree_ref, None, cancellable)?;
+            } else if let Some(booted_image) = status.booted.as_ref().and_then(|b| b.image.as_ref())
+            {
+                let imgref = OstreeImageReference::from(booted_image.image.clone());
+                ostree_container::store::remove_image(repo, &imgref.imgref)?;
+                let _nlayers: u32 = ostree_container::store::gc_image_layers(repo)?;
+            }
         }
     }
 
-    // We always make a fresh origin to toss out old state.
-    let origin = glib::KeyFile::new();
-    origin.set_string(
-        "origin",
-        ostree_container::deploy::ORIGIN_CONTAINER,
-        target.to_string().as_str(),
-    );
-    stage(&sysroot, &osname, &target, fetched, &origin).await?;
+    let stateroot = booted_deployment.osname();
+    stage(sysroot, &stateroot, fetched, &new_spec).await?;
 
     Ok(())
 }

@@ -36,6 +36,7 @@ mod install;
 pub(crate) mod mount;
 #[cfg(feature = "install")]
 mod podman;
+pub mod spec;
 #[cfg(feature = "install")]
 mod task;
 
