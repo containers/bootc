@@ -28,9 +28,13 @@ pub(crate) struct UpgradeOpts {
 
     #[clap(long)]
     pub(crate) touch_if_changed: Option<Utf8PathBuf>,
+
+    /// Check if an update is available without applying it
+    #[clap(long)]
+    pub(crate) check: bool,
 }
 
-/// Perform an upgrade operation
+/// Perform an switch operation
 #[derive(Debug, Parser)]
 pub(crate) struct SwitchOpts {
     /// Don't display progress
@@ -57,7 +61,7 @@ pub(crate) struct SwitchOpts {
     pub(crate) target: String,
 }
 
-/// Perform an upgrade operation
+/// Perform a status operation
 #[derive(Debug, Parser)]
 pub(crate) struct StatusOpts {
     /// Output in JSON format.
@@ -281,14 +285,36 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     let commit = booted_deployment.csum();
     let state = ostree_container::store::query_image_commit(repo, &commit)?;
     let digest = state.manifest_digest.as_str();
-    let fetched = pull(repo, &imgref, opts.quiet).await?;
 
-    if fetched.merge_commit.as_str() == commit.as_str() {
-        println!("Already queued: {digest}");
-        return Ok(());
+    if opts.check {
+        // pull the image manifest without the layers
+        let config = Default::default();
+        let mut imp = ostree_container::store::ImageImporter::new(repo, &imgref, config).await?;
+        match imp.prepare().await? {
+            PrepareResult::AlreadyPresent(c) => {
+                println!(
+                    "No changes available for {}. Latest digest: {}",
+                    imgref, c.manifest_digest
+                );
+                return Ok(());
+            }
+            PrepareResult::Ready(p) => {
+                println!(
+                    "New manifest available for {}. Digest {}",
+                    imgref, p.manifest_digest
+                );
+            }
+        }
+    } else {
+        let fetched = pull(repo, &imgref, opts.quiet).await?;
+
+        if fetched.merge_commit.as_str() == commit.as_str() {
+            println!("Already queued: {digest}");
+            return Ok(());
+        }
+
+        stage(sysroot, &osname, &imgref, fetched, &origin).await?;
     }
-
-    stage(sysroot, &osname, &imgref, fetched, &origin).await?;
 
     if let Some(path) = opts.touch_if_changed {
         std::fs::write(&path, "").with_context(|| format!("Writing {path}"))?;
