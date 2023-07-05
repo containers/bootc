@@ -1,5 +1,7 @@
+use std::os::unix::prelude::OsStringExt;
 use std::process::Command;
 
+use anyhow::{Context, Result};
 use ostree::glib;
 use ostree_ext::ostree;
 
@@ -22,6 +24,26 @@ pub(crate) fn run_in_host_mountns(cmd: &str) -> Command {
     let mut c = Command::new("nsenter");
     c.args(["-m", "-t", "1", "--", cmd]);
     c
+}
+
+pub(crate) fn spawn_editor(tmpf: &tempfile::NamedTempFile) -> Result<()> {
+    let v = "EDITOR";
+    let editor = std::env::var_os(v)
+        .ok_or_else(|| anyhow::anyhow!("{v} is unset"))?
+        .into_vec();
+    let editor = String::from_utf8(editor).with_context(|| format!("{v} is invalid UTF-8"))?;
+    let mut editor_args = editor.split_ascii_whitespace();
+    let argv0 = editor_args
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Invalid {v}: {editor}"))?;
+    let status = Command::new(argv0)
+        .args(editor_args)
+        .arg(tmpf.path())
+        .status()?;
+    if !status.success() {
+        anyhow::bail!("Invoking {v}: {editor} failed: {status:?}");
+    }
+    Ok(())
 }
 
 /// Given a possibly tagged image like quay.io/foo/bar:latest and a digest 0ab32..., return
