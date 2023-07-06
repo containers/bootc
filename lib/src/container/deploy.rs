@@ -1,8 +1,12 @@
 //! Perform initial setup for a container image based system root
 
+use std::collections::HashSet;
+
 use super::store::LayeredImageState;
-use super::OstreeImageReference;
+use super::{ImageReference, OstreeImageReference};
 use crate::container::store::PrepareResult;
+use crate::keyfileext::KeyFileExt;
+use crate::sysroot::SysrootLock;
 use anyhow::Result;
 use fn_error_context::context;
 use ostree::glib;
@@ -111,4 +115,50 @@ pub async fn deploy(
     }
 
     Ok(state)
+}
+
+/// Query the container image reference for a deployment
+fn deployment_origin_container(
+    deploy: &ostree::Deployment,
+) -> Result<Option<OstreeImageReference>> {
+    let origin = deploy
+        .origin()
+        .map(|o| o.optional_string("origin", ORIGIN_CONTAINER))
+        .transpose()?
+        .flatten();
+    let r = origin
+        .map(|v| OstreeImageReference::try_from(v.as_str()))
+        .transpose()?;
+    Ok(r)
+}
+
+/// Remove all container images which are not the target of a deployment.
+/// This acts equivalently to [`super::store::remove_images()`] - the underlying layers
+/// are not pruned.
+///
+/// The set of removed images is returned.
+pub fn remove_undeployed_images(sysroot: &SysrootLock) -> Result<Vec<ImageReference>> {
+    let repo = &sysroot.repo();
+    let deployment_origins: Result<HashSet<_>> = sysroot
+        .deployments()
+        .into_iter()
+        .filter_map(|deploy| {
+            deployment_origin_container(&deploy)
+                .map(|v| v.map(|v| v.imgref))
+                .transpose()
+        })
+        .collect();
+    let deployment_origins = deployment_origins?;
+    // TODO add an API that returns ImageReference instead
+    let all_images = super::store::list_images(&sysroot.repo())?
+        .into_iter()
+        .filter_map(|img| ImageReference::try_from(img.as_str()).ok());
+    let mut removed = Vec::new();
+    for image in all_images {
+        if !deployment_origins.contains(&image) {
+            super::store::remove_image(repo, &image)?;
+            removed.push(image);
+        }
+    }
+    Ok(removed)
 }
