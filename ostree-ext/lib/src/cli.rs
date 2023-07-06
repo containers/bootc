@@ -18,6 +18,7 @@ use crate::commit::container_commit;
 use crate::container::store::{ImportProgress, LayerProgress, PreparedImport};
 use crate::container::{self as ostree_container};
 use crate::container::{Config, ImageReference, OstreeImageReference};
+use crate::sysroot::SysrootLock;
 use ostree_container::store::{ImageImporter, PrepareResult};
 
 /// Parse an [`OstreeImageReference`] from a CLI arguemnt.
@@ -271,6 +272,17 @@ pub(crate) enum ContainerImageOpts {
         /// Path to the repository
         #[clap(long, value_parser)]
         repo: Utf8PathBuf,
+    },
+
+    /// Garbage collect unreferenced image layer references.
+    PruneImages {
+        /// Path to the system root
+        #[clap(long)]
+        sysroot: Utf8PathBuf,
+
+        #[clap(long)]
+        /// Also prune layers
+        and_layers: bool,
     },
 
     /// Perform initial deployment for a container image
@@ -823,6 +835,31 @@ where
                     let repo = parse_repo(&repo)?;
                     let nlayers = crate::container::store::gc_image_layers(&repo)?;
                     println!("Removed layers: {nlayers}");
+                    Ok(())
+                }
+                ContainerImageOpts::PruneImages {
+                    sysroot,
+                    and_layers,
+                } => {
+                    let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
+                    sysroot.load(gio::Cancellable::NONE)?;
+                    let sysroot = &SysrootLock::new_from_sysroot(sysroot).await?;
+                    let removed = crate::container::deploy::remove_undeployed_images(sysroot)?;
+                    match removed.as_slice() {
+                        [] => {
+                            println!("No unreferenced images.");
+                            return Ok(());
+                        }
+                        o => {
+                            for imgref in o {
+                                println!("Removed: {imgref}");
+                            }
+                        }
+                    }
+                    if and_layers {
+                        let nlayers = crate::container::store::gc_image_layers(&sysroot.repo())?;
+                        println!("Removed layers: {nlayers}");
+                    }
                     Ok(())
                 }
                 ContainerImageOpts::Copy {
