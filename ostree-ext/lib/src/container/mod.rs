@@ -100,12 +100,29 @@ impl TryFrom<&str> for Transport {
 
     fn try_from(value: &str) -> Result<Self> {
         Ok(match value {
-            "registry" | "docker" => Self::Registry,
-            "oci" => Self::OciDir,
-            "oci-archive" => Self::OciArchive,
-            "containers-storage" => Self::ContainerStorage,
+            Self::REGISTRY_STR | "docker" => Self::Registry,
+            Self::OCI_STR => Self::OciDir,
+            Self::OCI_ARCHIVE_STR => Self::OciArchive,
+            Self::CONTAINERS_STORAGE_STR => Self::ContainerStorage,
             o => return Err(anyhow!("Unknown transport '{}'", o)),
         })
+    }
+}
+
+impl Transport {
+    const OCI_STR: &str = "oci";
+    const OCI_ARCHIVE_STR: &str = "oci-archive";
+    const CONTAINERS_STORAGE_STR: &str = "containers-storage";
+    const REGISTRY_STR: &str = "registry";
+
+    /// Retrieve an identifier that can then be re-parsed from [`Transport::try_from::<&str>`].
+    pub fn serializable_name(&self) -> &'static str {
+        match self {
+            Transport::Registry => Self::REGISTRY_STR,
+            Transport::OciDir => Self::OCI_STR,
+            Transport::OciArchive => Self::OCI_ARCHIVE_STR,
+            Transport::ContainerStorage => Self::CONTAINERS_STORAGE_STR,
+        }
     }
 }
 
@@ -427,6 +444,18 @@ mod tests {
     use containers_image_proxy::ImageProxyConfig;
 
     use super::*;
+
+    #[test]
+    fn test_serializable_transport() {
+        for v in [
+            Transport::Registry,
+            Transport::ContainerStorage,
+            Transport::OciArchive,
+            Transport::OciDir,
+        ] {
+            assert_eq!(Transport::try_from(v.serializable_name()).unwrap(), v);
+        }
+    }
 
     const INVALID_IRS: &[&str] = &["", "foo://", "docker:blah", "registry:", "foo:bar"];
     const VALID_IRS: &[&str] = &[
