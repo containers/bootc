@@ -7,6 +7,7 @@ use rustix::fd::AsFd;
 use xshell::{cmd, Shell};
 
 use super::cli::TestingOpts;
+use super::spec::Host;
 
 const IMGSIZE: u64 = 20 * 1024 * 1024 * 1024;
 
@@ -101,9 +102,9 @@ pub(crate) fn impl_run_host() -> Result<()> {
 pub(crate) fn impl_run_container() -> Result<()> {
     assert!(ostree_ext::container_utils::is_ostree_container()?);
     let sh = Shell::new()?;
-    let stout = cmd!(sh, "bootc status").read()?;
-    assert!(stout.contains("Running in a container (ostree base)."));
-    drop(stout);
+    let host: Host = serde_yaml::from_str(&cmd!(sh, "bootc status").read()?)?;
+    let status = host.status.unwrap();
+    assert!(status.is_container);
     for c in ["upgrade", "update"] {
         let o = Command::new("bootc").arg(c).output()?;
         let st = o.status;
