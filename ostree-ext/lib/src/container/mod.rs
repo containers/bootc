@@ -48,7 +48,7 @@ pub(crate) const COMPONENT_SEPARATOR: char = ',';
 type Result<T> = anyhow::Result<T>;
 
 /// A backend/transport for OCI/Docker images.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Hash, Debug, PartialEq, Eq)]
 pub enum Transport {
     /// A remote Docker/OCI registry (`registry:` or `docker://`)
     Registry,
@@ -63,7 +63,7 @@ pub enum Transport {
 /// Combination of a remote image reference and transport.
 ///
 /// For example,
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ImageReference {
     /// The storage and transport for the image
     pub transport: Transport,
@@ -72,7 +72,7 @@ pub struct ImageReference {
 }
 
 /// Policy for signature verification.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SignatureSource {
     /// Fetches will use the named ostree remote for signature verification of the ostree commit.
     OstreeRemote(String),
@@ -87,7 +87,7 @@ pub const LABEL_VERSION: &str = "version";
 
 /// Combination of a signature verification mechanism, and a standard container image reference.
 ///
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct OstreeImageReference {
     /// The signature verification mechanism.
     pub sigverify: SignatureSource,
