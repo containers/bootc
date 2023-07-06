@@ -24,6 +24,8 @@ fi
 if test '!' -d "${sysroot}/ostree/deploy/${stateroot}"; then
     ostree admin os-init "${stateroot}" --sysroot "${sysroot}"
 fi
+# Should be no images pruned
+ostree-ext-cli container image prune-images --sysroot "${sysroot}"
 # Test the syntax which uses full imgrefs.
 ostree-ext-cli container image deploy --sysroot "${sysroot}" \
     --stateroot "${stateroot}" --imgref "${imgref}"
@@ -34,8 +36,11 @@ ostree admin --sysroot="${sysroot}" undeploy 0
 ostree-ext-cli container image deploy --transport registry --sysroot "${sysroot}" \
     --stateroot "${stateroot}" --image "${image}" --no-signature-verification
 ostree admin --sysroot="${sysroot}" status
-ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"${image}"
 ostree admin --sysroot="${sysroot}" undeploy 0
+# Now we should prune it
+ostree-ext-cli container image prune-images --sysroot "${sysroot}"
+ostree-ext-cli container image list --repo "${sysroot}/ostree/repo" > out.txt
+test $(stat -c '%s' out.txt) = 0
 
 for img in "${image}"; do
     ostree-ext-cli container image deploy --sysroot "${sysroot}" \
