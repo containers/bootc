@@ -191,6 +191,8 @@ pub struct PreparedImport {
     pub manifest: oci_image::ImageManifest,
     /// The deserialized configuration.
     pub config: oci_image::ImageConfiguration,
+    /// The previous manifest
+    pub previous_state: Option<Box<LayeredImageState>>,
     /// The previously stored manifest digest.
     pub previous_manifest_digest: Option<String>,
     /// The previously stored image ID.
@@ -532,7 +534,7 @@ impl ImageImporter {
 
         // Query for previous stored state
 
-        let (previous_manifest_digest, previous_imageid) =
+        let (previous_state, previous_imageid) =
             if let Some(previous_state) = try_query_image_ref(&self.repo, &self.imgref.imgref)? {
                 // If the manifest digests match, we're done.
                 if previous_state.manifest_digest == manifest_digest {
@@ -543,10 +545,8 @@ impl ImageImporter {
                 if previous_imageid == new_imageid {
                     return Ok(PrepareResult::AlreadyPresent(previous_state));
                 }
-                (
-                    Some(previous_state.manifest_digest),
-                    Some(previous_imageid.to_string()),
-                )
+                let previous_imageid = previous_imageid.to_string();
+                (Some(previous_state), Some(previous_imageid))
             } else {
                 (None, None)
             };
@@ -567,10 +567,12 @@ impl ImageImporter {
             .map(query)
             .collect::<Result<Vec<_>>>()?;
 
+        let previous_manifest_digest = previous_state.as_ref().map(|s| s.manifest_digest.clone());
         let imp = PreparedImport {
             manifest,
             manifest_digest,
             config,
+            previous_state,
             previous_manifest_digest,
             previous_imageid,
             ostree_layers: component_layers,
