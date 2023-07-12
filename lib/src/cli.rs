@@ -16,9 +16,11 @@ use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
 use ostree_ext::sysroot::SysrootLock;
 use std::ffi::OsString;
+use std::io::Seek;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
+use crate::spec::Host;
 use crate::spec::HostSpec;
 use crate::spec::ImageReference;
 
@@ -64,7 +66,18 @@ pub(crate) struct SwitchOpts {
     pub(crate) target: String,
 }
 
-/// Perform a status operation
+/// Perform an edit operation
+#[derive(Debug, Parser)]
+pub(crate) struct EditOpts {
+    /// Path to new system specification; use `-` for stdin
+    pub(crate) filename: String,
+
+    /// Don't display progress
+    #[clap(long)]
+    pub(crate) quiet: bool,
+}
+
+/// Perform an status operation
 #[derive(Debug, Parser)]
 pub(crate) struct StatusOpts {
     /// Output in JSON format.
@@ -111,6 +124,8 @@ pub(crate) enum Opt {
     Upgrade(UpgradeOpts),
     /// Target a new container image reference to boot.
     Switch(SwitchOpts),
+    /// Change host specification
+    Edit(EditOpts),
     /// Display status
     Status(StatusOpts),
     /// Add a transient writable overlayfs on `/usr` that will be discarded on reboot.
@@ -405,6 +420,44 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     Ok(())
 }
 
+/// Implementation of the `bootc edit` CLI command.
+#[context("Editing spec")]
+async fn edit(opts: EditOpts) -> Result<()> {
+    prepare_for_write().await?;
+    let sysroot = &get_locked_sysroot().await?;
+    let repo = &sysroot.repo();
+    let booted_deployment = &sysroot.require_booted_deployment()?;
+    let (_deployments, host) = crate::status::get_status(sysroot, Some(booted_deployment))?;
+
+    let new_host: Host = if opts.filename == "-" {
+        let tmpf = tempfile::NamedTempFile::new()?;
+        serde_yaml::to_writer(std::io::BufWriter::new(tmpf.as_file()), &host)?;
+        crate::utils::spawn_editor(&tmpf)?;
+        tmpf.as_file().seek(std::io::SeekFrom::Start(0))?;
+        serde_yaml::from_reader(&mut tmpf.as_file())?
+    } else {
+        let mut r = std::io::BufReader::new(std::fs::File::open(opts.filename)?);
+        serde_yaml::from_reader(&mut r)?
+    };
+
+    if new_host.spec == host.spec {
+        anyhow::bail!("No changes in current host spec");
+    }
+    let new_image = new_host
+        .spec
+        .image
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Unable to transition to unset image"))?;
+    let fetched = pull(repo, new_image, opts.quiet).await?;
+
+    // TODO gc old layers here
+
+    let stateroot = booted_deployment.osname();
+    stage(sysroot, &stateroot, fetched, &new_host.spec).await?;
+
+    Ok(())
+}
+
 /// Implementation of `bootc usroverlay`
 async fn usroverlay() -> Result<()> {
     // This is just a pass-through today.  At some point we may make this a libostree API
@@ -426,6 +479,7 @@ where
     match opt {
         Opt::Upgrade(opts) => upgrade(opts).await,
         Opt::Switch(opts) => switch(opts).await,
+        Opt::Edit(opts) => edit(opts).await,
         Opt::UsrOverlay => usroverlay().await,
         #[cfg(feature = "install")]
         Opt::Install(opts) => crate::install::install(opts).await,
