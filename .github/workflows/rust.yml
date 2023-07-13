@@ -18,7 +18,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   # Pinned toolchain for linting
-  ACTIONS_LINTS_TOOLCHAIN: 1.70.0
+  ACTIONS_LINTS_TOOLCHAIN: 1.71.0
 
 jobs:
   tests-stable:
