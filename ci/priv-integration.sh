@@ -13,6 +13,9 @@ image=quay.io/fedora/fedora-coreos:testing-devel
 imgref=ostree-unverified-registry:${image}
 stateroot=testos
 
+# This image was generated manually; TODO auto-generate in quay.io/coreos-assembler or better start sigstore signing our production images
+FIXTURE_SIGSTORE_SIGNED_FCOS_IMAGE=quay.io/rh_ee_rsaini/coreos
+
 cd $(mktemp -d -p /var/tmp)
 
 set -x
@@ -102,5 +105,68 @@ ostree-ext-cli container image deploy --sysroot "${sysroot}" \
 img_commit2=$(ostree --repo=${repo} rev-parse ostree/container/image/${imgref})
 test "${img_commit}" = "${img_commit2}"
 echo "ok deploy derived container identical revs"
+
+# Verify policy
+
+mkdir -p /etc/pki/containers
+#Ensure Wrong Public Key fails
+cat > /etc/pki/containers/fcos.pub << EOF
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEPw/TzXY5FQ00LT2orloOuAbqoOKv
+relAN0my/O8tziGvc16PtEhF6A7Eun0/9//AMRZ8BwLn2cORZiQsGd5adA==
+-----END PUBLIC KEY-----
+EOF
+
+cat > /etc/containers/registries.d/default.yaml << EOF
+docker:
+  ${FIXTURE_SIGSTORE_SIGNED_FCOS_IMAGE}:
+    use-sigstore-attachments: true
+EOF
+
+cat > /etc/containers/policy.json << EOF
+{
+    "default": [
+        {
+            "type": "reject"
+        }
+    ],
+    "transports": {
+        "docker": {
+            "quay.io/fedora/fedora-coreos": [
+                {
+                    "type": "insecureAcceptAnything"
+                }
+            ],
+            "${FIXTURE_SIGSTORE_SIGNED_FCOS_IMAGE}": [
+                {
+                    "type": "sigstoreSigned",
+                    "keyPath": "/etc/pki/containers/fcos.pub",
+                    "signedIdentity": {
+                        "type": "matchRepository"
+                    }
+                }
+            ]
+
+        }
+    }
+}
+EOF
+
+if ostree container image pull ${repo} ostree-image-signed:docker://${FIXTURE_SIGSTORE_SIGNED_FCOS_IMAGE} 2> error; then
+  echo "unexpectedly pulled image" 1>&2
+  exit 1
+else
+  grep -q "invalid signature" error
+fi
+
+#Ensure Correct Public Key succeeds
+cat > /etc/pki/containers/fcos.pub << EOF
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEREpVb8t/Rp/78fawILAodC6EXGCG
+rWNjJoPo7J99cBu5Ui4oCKD+hAHagop7GTi/G3UBP/dtduy2BVdICuBETQ==
+-----END PUBLIC KEY-----
+EOF
+ostree container image pull ${repo} ostree-image-signed:docker://${FIXTURE_SIGSTORE_SIGNED_FCOS_IMAGE}
+ostree container image history --repo ${repo} docker://${FIXTURE_SIGSTORE_SIGNED_FCOS_IMAGE}
 
 echo ok privileged integration
