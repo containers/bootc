@@ -263,6 +263,8 @@ async fn stage(
     if let Some(imgref) = ostree_imgref.as_ref() {
         println!("Queued for next boot: {imgref}");
     }
+    ostree_container::deploy::remove_undeployed_images(sysroot).context("Pruning images")?;
+
     Ok(())
 }
 
@@ -368,8 +370,6 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let repo = &sysroot.repo();
     let booted_deployment = &sysroot.require_booted_deployment()?;
     let (_deployments, host) = crate::status::get_status(sysroot, Some(booted_deployment))?;
-    // SAFETY: There must be a status if we have a booted deployment
-    let status = host.status.unwrap();
 
     let transport = ostree_container::Transport::try_from(opts.transport.as_str())?;
     let imgref = ostree_container::ImageReference {
@@ -399,17 +399,12 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let fetched = pull(repo, &target, opts.quiet).await?;
 
     if !opts.retain {
-        // By default, we prune the previous ostree ref or container image
+        // By default, we prune the previous ostree ref so it will go away after later upgrades
         if let Some(booted_origin) = booted_deployment.origin() {
             if let Some(ostree_ref) = booted_origin.optional_string("origin", "refspec")? {
                 let (remote, ostree_ref) =
                     ostree::parse_refspec(&ostree_ref).context("Failed to parse ostree ref")?;
                 repo.set_ref_immediate(remote.as_deref(), &ostree_ref, None, cancellable)?;
-            } else if let Some(booted_image) = status.booted.as_ref().and_then(|b| b.image.as_ref())
-            {
-                let imgref = OstreeImageReference::from(booted_image.image.clone());
-                ostree_container::store::remove_image(repo, &imgref.imgref)?;
-                let _nlayers: u32 = ostree_container::store::gc_image_layers(repo)?;
             }
         }
     }
