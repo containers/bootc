@@ -8,14 +8,17 @@
 use super::*;
 use crate::logging::system_repo_journal_print;
 use crate::refescape;
+use crate::sysroot::SysrootLock;
 use crate::utils::ResultExt;
 use anyhow::{anyhow, Context};
+use camino::{Utf8Path, Utf8PathBuf};
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
 use futures_util::TryFutureExt;
 use oci_spec::image::{self as oci_image, Descriptor, History, ImageConfiguration, ImageManifest};
-use ostree::prelude::{Cast, ToVariant};
+use ostree::prelude::{Cast, FileEnumeratorExt, FileExt, ToVariant};
 use ostree::{gio, glib};
+use rustix::fs::MetadataExt;
 use std::collections::{BTreeSet, HashMap};
 use std::iter::FromIterator;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -37,7 +40,7 @@ const IMAGE_PREFIX: &str = "ostree/container/image";
 pub const BASE_IMAGE_PREFIX: &str = "ostree/container/baseimage";
 
 /// The key injected into the merge commit for the manifest digest.
-const META_MANIFEST_DIGEST: &str = "ostree.manifest-digest";
+pub(crate) const META_MANIFEST_DIGEST: &str = "ostree.manifest-digest";
 /// The key injected into the merge commit with the manifest serialized as JSON.
 const META_MANIFEST: &str = "ostree.manifest";
 /// The key injected into the merge commit with the image configuration serialized as JSON.
@@ -1261,4 +1264,223 @@ pub fn remove_images<'a>(
         return Err(anyhow::anyhow!("Missing images: {missing}"));
     }
     Ok(())
+}
+
+#[derive(Debug, Default)]
+struct CompareState {
+    verified: BTreeSet<Utf8PathBuf>,
+    inode_corrupted: BTreeSet<Utf8PathBuf>,
+    unknown_corrupted: BTreeSet<Utf8PathBuf>,
+}
+
+impl CompareState {
+    fn is_ok(&self) -> bool {
+        self.inode_corrupted.is_empty() && self.unknown_corrupted.is_empty()
+    }
+}
+
+fn compare_file_info(src: &gio::FileInfo, target: &gio::FileInfo) -> bool {
+    if src.file_type() != target.file_type() {
+        return false;
+    }
+    if src.size() != target.size() {
+        return false;
+    }
+    for attr in ["unix::uid", "unix::gid", "unix::mode"] {
+        if src.attribute_uint32(attr) != target.attribute_uint32(attr) {
+            return false;
+        }
+    }
+    true
+}
+
+#[context("Querying object inode")]
+fn inode_of_object(repo: &ostree::Repo, checksum: &str) -> Result<u64> {
+    let repodir = repo.dfd_as_dir()?;
+    let (prefix, suffix) = checksum.split_at(2);
+    let objpath = format!("objects/{}/{}.file", prefix, suffix);
+    let metadata = repodir.symlink_metadata(objpath)?;
+    Ok(metadata.ino())
+}
+
+fn compare_commit_trees(
+    repo: &ostree::Repo,
+    root: &Utf8Path,
+    target: &ostree::RepoFile,
+    expected: &ostree::RepoFile,
+    exact: bool,
+    colliding_inodes: &BTreeSet<u64>,
+    state: &mut CompareState,
+) -> Result<()> {
+    let cancellable = gio::Cancellable::NONE;
+    let queryattrs = "standard::name,standard::type";
+    let queryflags = gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS;
+    let expected_iter = expected.enumerate_children(queryattrs, queryflags, cancellable)?;
+
+    while let Some(expected_info) = expected_iter.next_file(cancellable)? {
+        let expected_child = expected_iter.child(&expected_info);
+        let name = expected_info.name();
+        let name = name.to_str().expect("UTF-8 ostree name");
+        let path = Utf8PathBuf::from(format!("{root}{name}"));
+        let target_child = target.child(name);
+        let target_info = crate::diff::query_info_optional(&target_child, queryattrs, queryflags)
+            .context("querying optional to")?;
+        let is_dir = matches!(expected_info.file_type(), gio::FileType::Directory);
+        if let Some(target_info) = target_info {
+            let to_child = target_child
+                .downcast::<ostree::RepoFile>()
+                .expect("downcast");
+            to_child.ensure_resolved()?;
+            let from_child = expected_child
+                .downcast::<ostree::RepoFile>()
+                .expect("downcast");
+            from_child.ensure_resolved()?;
+
+            if is_dir {
+                let from_contents_checksum = from_child.tree_get_contents_checksum();
+                let to_contents_checksum = to_child.tree_get_contents_checksum();
+                if from_contents_checksum != to_contents_checksum {
+                    let subpath = Utf8PathBuf::from(format!("{}/", path));
+                    compare_commit_trees(
+                        repo,
+                        &subpath,
+                        &from_child,
+                        &to_child,
+                        exact,
+                        colliding_inodes,
+                        state,
+                    )?;
+                }
+            } else {
+                let from_checksum = from_child.checksum();
+                let to_checksum = to_child.checksum();
+                let matches = if exact {
+                    from_checksum == to_checksum
+                } else {
+                    compare_file_info(&target_info, &expected_info)
+                };
+                if !matches {
+                    let from_inode = inode_of_object(repo, &from_checksum)?;
+                    let to_inode = inode_of_object(repo, &to_checksum)?;
+                    if colliding_inodes.contains(&from_inode)
+                        || colliding_inodes.contains(&to_inode)
+                    {
+                        state.inode_corrupted.insert(path);
+                    } else {
+                        state.unknown_corrupted.insert(path);
+                    }
+                } else {
+                    state.verified.insert(path);
+                }
+            }
+        } else {
+            eprintln!("Missing {path}");
+            state.unknown_corrupted.insert(path);
+        }
+    }
+    Ok(())
+}
+
+#[context("Verifying container image state")]
+pub(crate) fn verify_container_image(
+    sysroot: &SysrootLock,
+    imgref: &ImageReference,
+    colliding_inodes: &BTreeSet<u64>,
+    verbose: bool,
+) -> Result<bool> {
+    let cancellable = gio::Cancellable::NONE;
+    let repo = &sysroot.repo();
+    let state =
+        query_image_ref(repo, imgref)?.ok_or_else(|| anyhow!("Expected present image {imgref}"))?;
+    let merge_commit = state.merge_commit.as_str();
+    let merge_commit_root = repo.read_commit(merge_commit, gio::Cancellable::NONE)?.0;
+    let merge_commit_root = merge_commit_root
+        .downcast::<ostree::RepoFile>()
+        .expect("downcast");
+    merge_commit_root.ensure_resolved()?;
+
+    // This shouldn't happen anymore
+    let config = state
+        .configuration
+        .ok_or_else(|| anyhow!("Missing configuration for image {imgref}"))?;
+    let (commit_layer, _component_layers, remaining_layers) =
+        parse_manifest_layout(&state.manifest, &config)?;
+
+    let mut comparison_state = CompareState::default();
+
+    let query = |l: &Descriptor| query_layer(repo, l.clone());
+
+    let base_tree = repo
+        .read_commit(&state.base_commit, cancellable)?
+        .0
+        .downcast::<ostree::RepoFile>()
+        .expect("downcast");
+    println!(
+        "Verifying with base ostree layer {}",
+        ref_for_layer(commit_layer)?
+    );
+    compare_commit_trees(
+        repo,
+        "/".into(),
+        &merge_commit_root,
+        &base_tree,
+        true,
+        colliding_inodes,
+        &mut comparison_state,
+    )?;
+
+    let remaining_layers = remaining_layers
+        .into_iter()
+        .map(query)
+        .collect::<Result<Vec<_>>>()?;
+
+    println!("Image has {} derived layers", remaining_layers.len());
+
+    for layer in remaining_layers.iter().rev() {
+        let layer_ref = layer.ostree_ref.as_str();
+        let layer_commit = layer
+            .commit
+            .as_deref()
+            .ok_or_else(|| anyhow!("Missing layer {layer_ref}"))?;
+        let layer_tree = repo
+            .read_commit(layer_commit, cancellable)?
+            .0
+            .downcast::<ostree::RepoFile>()
+            .expect("downcast");
+        compare_commit_trees(
+            repo,
+            "/".into(),
+            &merge_commit_root,
+            &layer_tree,
+            false,
+            colliding_inodes,
+            &mut comparison_state,
+        )?;
+    }
+
+    let n_verified = comparison_state.verified.len();
+    if comparison_state.is_ok() {
+        println!("OK image {imgref} (verified={n_verified})");
+        println!();
+    } else {
+        let n_inode = comparison_state.inode_corrupted.len();
+        let n_other = comparison_state.unknown_corrupted.len();
+        eprintln!("warning: Found corrupted merge commit");
+        eprintln!("  inode clashes: {n_inode}");
+        eprintln!("  unknown:       {n_other}");
+        eprintln!("  ok:            {n_verified}");
+        if verbose {
+            eprintln!("Mismatches:");
+            for path in comparison_state.inode_corrupted {
+                eprintln!("  inode: {path}");
+            }
+            for path in comparison_state.unknown_corrupted {
+                eprintln!("  other: {path}");
+            }
+        }
+        eprintln!();
+        return Ok(false);
+    }
+
+    Ok(true)
 }
