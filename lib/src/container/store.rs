@@ -1385,13 +1385,12 @@ fn compare_commit_trees(
 pub(crate) fn verify_container_image(
     sysroot: &SysrootLock,
     imgref: &ImageReference,
+    state: &LayeredImageState,
     colliding_inodes: &BTreeSet<u64>,
     verbose: bool,
 ) -> Result<bool> {
     let cancellable = gio::Cancellable::NONE;
     let repo = &sysroot.repo();
-    let state =
-        query_image_ref(repo, imgref)?.ok_or_else(|| anyhow!("Expected present image {imgref}"))?;
     let merge_commit = state.merge_commit.as_str();
     let merge_commit_root = repo.read_commit(merge_commit, gio::Cancellable::NONE)?.0;
     let merge_commit_root = merge_commit_root
@@ -1402,9 +1401,10 @@ pub(crate) fn verify_container_image(
     // This shouldn't happen anymore
     let config = state
         .configuration
-        .ok_or_else(|| anyhow!("Missing configuration for image {imgref}"))?;
+        .as_ref()
+        .ok_or_else(|| anyhow!("Missing configuration for image"))?;
     let (commit_layer, _component_layers, remaining_layers) =
-        parse_manifest_layout(&state.manifest, &config)?;
+        parse_manifest_layout(&state.manifest, config)?;
 
     let mut comparison_state = CompareState::default();
 
