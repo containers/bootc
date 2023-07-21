@@ -1,16 +1,13 @@
 //! System repair functionality
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    process::Command,
-};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Display;
 
 use anyhow::{anyhow, Context, Result};
 use cap_std::fs::Dir;
-use cap_std_ext::prelude::CapStdExtCommandExt;
 use cap_tempfile::cap_std;
 use fn_error_context::context;
-use ostree::{gio, glib};
+use serde::{Deserialize, Serialize};
 use std::os::unix::fs::MetadataExt;
 
 use crate::sysroot::SysrootLock;
@@ -47,37 +44,52 @@ fn gather_inodes(
     Ok(())
 }
 
-#[context("Analyzing commit for derivation")]
-fn commit_is_derived(commit: &glib::Variant) -> Result<bool> {
-    let commit_meta = &glib::VariantDict::new(Some(&commit.child_value(0)));
-    if commit_meta
-        .lookup::<String>(crate::container::store::META_MANIFEST_DIGEST)?
-        .is_some()
-    {
-        return Ok(true);
-    }
-    if commit_meta
-        .lookup::<bool>("rpmostree.clientlayer")?
-        .is_some()
-    {
-        return Ok(true);
-    }
-    Ok(false)
+#[derive(Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct RepairResult {
+    /// Result of inode checking
+    pub inodes: InodeCheck,
+    // Whether we detected a likely corrupted merge commit
+    pub likely_corrupted_container_image_merges: Vec<String>,
+    // Whether the booted deployment is likely corrupted
+    pub booted_is_likely_corrupted: bool,
+    // Whether the staged deployment is likely corrupted
+    pub staged_is_likely_corrupted: bool,
 }
 
-/// The result of a check_repair operation
-#[derive(Debug, PartialEq, Eq)]
-pub enum InodeCheckResult {
-    /// Problems are unlikely.
-    Okay,
-    /// There is potential corruption
-    PotentialCorruption(BTreeSet<u64>),
+#[derive(Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct InodeCheck {
+    // Number of >32 bit inodes found
+    pub inode64: u64,
+    // Number of <= 32 bit inodes found
+    pub inode32: u64,
+    // Number of collisions found (when 64 bit inode is truncated to 32 bit)
+    pub collisions: BTreeSet<u64>,
+}
+
+impl Display for InodeCheck {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ostree inode check:\n  64bit inodes: {}\n  32 bit inodes: {}\n  collisions: {}\n",
+            self.inode64,
+            self.inode32,
+            self.collisions.len()
+        )
+    }
+}
+
+impl InodeCheck {
+    pub fn is_ok(&self) -> bool {
+        self.collisions.is_empty()
+    }
 }
 
 #[context("Checking inodes")]
 #[doc(hidden)]
 /// Detect if any commits are potentially incorrect due to inode truncations.
-pub fn check_inode_collision(repo: &ostree::Repo, verbose: bool) -> Result<InodeCheckResult> {
+pub fn check_inode_collision(repo: &ostree::Repo, verbose: bool) -> Result<InodeCheck> {
     let repo_dir = repo.dfd_as_dir()?;
     let objects = repo_dir.open_dir("objects")?;
 
@@ -129,99 +141,122 @@ For more information, see https://github.com/ostreedev/ostree/pull/2874/commits/
         }
     }
 
-    let n_big = big_inodes.len();
-    let n_small = little_inodes.len();
-    println!("Analyzed {n_big} objects with > 32 bit inode numbers and {n_small} objects with <= 32 bit inode numbers");
-    if !colliding_inodes.is_empty() {
-        return Ok(InodeCheckResult::PotentialCorruption(
-            colliding_inodes
-                .keys()
-                .map(|&&v| v)
-                .collect::<BTreeSet<u64>>(),
-        ));
-    }
+    // From here let's just track the possibly-colliding 64 bit inode, not also
+    // the checksum.
+    let collisions = colliding_inodes
+        .keys()
+        .map(|&&v| v)
+        .collect::<BTreeSet<u64>>();
 
-    Ok(InodeCheckResult::Okay)
+    let inode32 = little_inodes.len() as u64;
+    let inode64 = big_inodes.len() as u64;
+    Ok(InodeCheck {
+        inode32,
+        inode64,
+        collisions,
+    })
 }
 
 /// Attempt to automatically repair any corruption from inode collisions.
 #[doc(hidden)]
-pub fn auto_repair_inode_collision(
-    sysroot: &SysrootLock,
-    dry_run: bool,
-    verbose: bool,
-) -> Result<()> {
+pub fn analyze_for_repair(sysroot: &SysrootLock, verbose: bool) -> Result<RepairResult> {
     use crate::container::store as container_store;
     let repo = &sysroot.repo();
-    let repo_dir = repo.dfd_as_dir()?;
 
-    let mut derived_commits = BTreeSet::new();
-    for (_refname, digest) in repo.list_refs(None, gio::Cancellable::NONE)? {
-        let commit = repo.load_commit(&digest)?.0;
-        if commit_is_derived(&commit)? {
-            if verbose {
-                eprintln!("Found derived commit: {commit}");
-            }
-            derived_commits.insert(digest);
-        }
+    // Query booted and pending state
+    let booted_deployment = sysroot.booted_deployment();
+    let booted_checksum = booted_deployment.as_ref().map(|b| b.csum());
+    let booted_checksum = booted_checksum.as_ref().map(|s| s.as_str());
+    let staged_deployment = sysroot.staged_deployment();
+    let staged_checksum = staged_deployment.as_ref().map(|b| b.csum());
+    let staged_checksum = staged_checksum.as_ref().map(|s| s.as_str());
+
+    let inodes = check_inode_collision(repo, verbose)?;
+    println!("{}", inodes);
+    if inodes.is_ok() {
+        println!("OK no colliding inodes found");
+        return Ok(RepairResult {
+            inodes,
+            ..Default::default()
+        });
     }
 
-    // This is not an ironclad guarantee...however, I am pretty confident that there's
-    // no exposure without derivation today.
-    if derived_commits.is_empty() {
-        println!("OK no derived commits found.");
-        return Ok(());
-    }
-    let n_derived = derived_commits.len();
-    println!("Found {n_derived} derived commits");
-    println!("Backing filesystem information:");
-    {
-        let st = Command::new("stat")
-            .args(["-f", "."])
-            .cwd_dir(repo_dir.try_clone()?)
-            .status()?;
-        if !st.success() {
-            eprintln!("failed to spawn stat: {st:?}");
-        }
-    }
-
-    match check_inode_collision(repo, verbose)? {
-        InodeCheckResult::Okay => {
-            println!("OK no colliding inodes found");
-            Ok(())
-        }
-        InodeCheckResult::PotentialCorruption(colliding_inodes) => {
-            eprintln!(
-                "warning: {} potentially colliding inodes found",
-                colliding_inodes.len()
-            );
-            let all_images = container_store::list_images(repo)?;
-            let all_images = all_images
-                .into_iter()
-                .map(|img| crate::container::ImageReference::try_from(img.as_str()))
-                .collect::<Result<Vec<_>>>()?;
-            println!("Verifying {} ostree-container images", all_images.len());
-            let mut corrupted_images = Vec::new();
-            for imgref in all_images {
-                if !container_store::verify_container_image(
-                    sysroot,
-                    &imgref,
-                    &colliding_inodes,
-                    verbose,
-                )? {
-                    eprintln!("warning: Corrupted image {imgref}");
-                    corrupted_images.push(imgref);
+    let all_images = container_store::list_images(repo)?;
+    let all_images = all_images
+        .into_iter()
+        .map(|img| crate::container::ImageReference::try_from(img.as_str()))
+        .collect::<Result<Vec<_>>>()?;
+    println!("Verifying ostree-container images: {}", all_images.len());
+    let mut likely_corrupted_container_image_merges = Vec::new();
+    let mut booted_is_likely_corrupted = false;
+    let mut staged_is_likely_corrupted = false;
+    for imgref in all_images {
+        if let Some(state) = container_store::query_image_ref(repo, &imgref)? {
+            if !container_store::verify_container_image(
+                sysroot,
+                &imgref,
+                &state,
+                &inodes.collisions,
+                verbose,
+            )? {
+                eprintln!("warning: Corrupted image {imgref}");
+                likely_corrupted_container_image_merges.push(imgref.to_string());
+                let merge_commit = state.merge_commit.as_str();
+                if booted_checksum == Some(merge_commit) {
+                    booted_is_likely_corrupted = true;
+                    eprintln!("warning: booted deployment is likely corrupted");
+                } else if staged_checksum == Some(merge_commit) {
+                    staged_is_likely_corrupted = true;
+                    eprintln!("warning: staged deployment is likely corrupted");
                 }
             }
-            if corrupted_images.is_empty() {
-                println!("OK no corrupted images found");
-                return Ok(());
-            }
-            if dry_run {
-                anyhow::bail!("Found potential corruption, dry-run mode enabled");
-            }
-            container_store::remove_images(repo, corrupted_images.iter())?;
-            Ok(())
+        } else {
+            // This really shouldn't happen
+            eprintln!("warning: Image was removed from underneath us: {imgref}");
+            std::thread::sleep(std::time::Duration::from_secs(1));
         }
+    }
+    Ok(RepairResult {
+        inodes,
+        likely_corrupted_container_image_merges,
+        booted_is_likely_corrupted,
+        staged_is_likely_corrupted,
+    })
+}
+
+impl RepairResult {
+    pub fn check(&self) -> anyhow::Result<()> {
+        if self.booted_is_likely_corrupted {
+            eprintln!("warning: booted deployment is likely corrupted");
+        }
+        if self.booted_is_likely_corrupted {
+            eprintln!("warning: staged deployment is likely corrupted");
+        }
+        match self.likely_corrupted_container_image_merges.len() {
+            0 => {
+                println!("OK no corruption found");
+                Ok(())
+            }
+            n => {
+                anyhow::bail!("Found corruption in images: {n}")
+            }
+        }
+    }
+
+    #[context("Repairing")]
+    pub fn repair(self, sysroot: &SysrootLock) -> Result<()> {
+        let repo = &sysroot.repo();
+        for imgref in self.likely_corrupted_container_image_merges {
+            let imgref = crate::container::ImageReference::try_from(imgref.as_str())?;
+            eprintln!("Flushing cached state for corrupted merged image: {imgref}");
+            crate::container::store::remove_images(repo, [&imgref])?;
+        }
+        if self.booted_is_likely_corrupted {
+            anyhow::bail!("TODO redeploy and reboot for booted deployment corruption");
+        }
+        if self.staged_is_likely_corrupted {
+            anyhow::bail!("TODO undeploy for staged deployment corruption");
+        }
+        Ok(())
     }
 }
