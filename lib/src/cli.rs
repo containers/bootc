@@ -12,6 +12,7 @@ use fn_error_context::context;
 use ostree::{cap_std, gio, glib};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::io::BufWriter;
 use std::path::PathBuf;
 use std::process::Command;
 use tokio::sync::mpsc::Receiver;
@@ -348,7 +349,7 @@ pub(crate) enum ContainerImageOpts {
 }
 
 /// Options for deployment repair.
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Parser)]
 pub(crate) enum ProvisionalRepairOpts {
     AnalyzeInodes {
         /// Path to the repository
@@ -358,6 +359,10 @@ pub(crate) enum ProvisionalRepairOpts {
         /// Print additional information
         #[clap(long)]
         verbose: bool,
+
+        /// Serialize the repair result to this file as JSON
+        #[clap(long)]
+        write_result_to: Option<Utf8PathBuf>,
     },
 
     Repair {
@@ -368,6 +373,10 @@ pub(crate) enum ProvisionalRepairOpts {
         /// Do not mutate any system state
         #[clap(long)]
         dry_run: bool,
+
+        /// Serialize the repair result to this file as JSON
+        #[clap(long)]
+        write_result_to: Option<Utf8PathBuf>,
 
         /// Print additional information
         #[clap(long)]
@@ -787,6 +796,17 @@ fn container_remount_sysroot(sysroot: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
+#[context("Serializing to output file")]
+fn handle_serialize_to_file<T: serde::Serialize>(path: Option<&Utf8Path>, obj: T) -> Result<()> {
+    if let Some(path) = path {
+        let mut out = std::fs::File::create(path)
+            .map(BufWriter::new)
+            .with_context(|| anyhow::anyhow!("Opening {path} for writing"))?;
+        serde_json::to_writer(&mut out, &obj).context("Serializing output")?;
+    }
+    Ok(())
+}
+
 /// Parse the provided arguments and execute.
 /// Calls [`structopt::clap::Error::exit`] on failure, printing the error message and aborting the program.
 pub async fn run_from_iter<I>(args: I) -> Result<()>
@@ -1027,15 +1047,21 @@ where
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
         Opt::ProvisionalRepair(opts) => match opts {
-            ProvisionalRepairOpts::AnalyzeInodes { repo, verbose } => {
+            ProvisionalRepairOpts::AnalyzeInodes {
+                repo,
+                verbose,
+                write_result_to,
+            } => {
                 let repo = parse_repo(&repo)?;
-                match crate::repair::check_inode_collision(&repo, verbose)? {
-                    crate::repair::InodeCheckResult::Okay => {
-                        println!("OK: No colliding objects found.");
-                    }
-                    crate::repair::InodeCheckResult::PotentialCorruption(n) => {
-                        eprintln!("warning: {} potentially colliding inodes found", n.len());
-                    }
+                let check_res = crate::repair::check_inode_collision(&repo, verbose)?;
+                handle_serialize_to_file(write_result_to.as_deref(), &check_res)?;
+                if check_res.collisions.is_empty() {
+                    println!("OK: No colliding objects found.");
+                } else {
+                    eprintln!(
+                        "warning: {} potentially colliding inodes found",
+                        check_res.collisions.len()
+                    );
                 }
                 Ok(())
             }
@@ -1043,12 +1069,19 @@ where
                 sysroot,
                 verbose,
                 dry_run,
+                write_result_to,
             } => {
                 container_remount_sysroot(&sysroot)?;
                 let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
                 sysroot.load(gio::Cancellable::NONE)?;
                 let sysroot = &SysrootLock::new_from_sysroot(sysroot).await?;
-                crate::repair::auto_repair_inode_collision(sysroot, dry_run, verbose)
+                let result = crate::repair::analyze_for_repair(sysroot, verbose)?;
+                handle_serialize_to_file(write_result_to.as_deref(), &result)?;
+                if dry_run {
+                    result.check()
+                } else {
+                    result.repair(sysroot)
+                }
             }
         },
     }
