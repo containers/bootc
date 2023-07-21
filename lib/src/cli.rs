@@ -8,10 +8,12 @@
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::{Parser, Subcommand};
+use fn_error_context::context;
 use ostree::{cap_std, gio, glib};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::process::Command;
 use tokio::sync::mpsc::Receiver;
 
 use crate::commit::container_commit;
@@ -345,6 +347,34 @@ pub(crate) enum ContainerImageOpts {
     },
 }
 
+/// Options for deployment repair.
+#[derive(Debug, Subcommand)]
+pub(crate) enum ProvisionalRepairOpts {
+    AnalyzeInodes {
+        /// Path to the repository
+        #[clap(long, value_parser)]
+        repo: Utf8PathBuf,
+
+        /// Print additional information
+        #[clap(long)]
+        verbose: bool,
+    },
+
+    Repair {
+        /// Path to the sysroot
+        #[clap(long, value_parser)]
+        sysroot: Utf8PathBuf,
+
+        /// Do not mutate any system state
+        #[clap(long)]
+        dry_run: bool,
+
+        /// Print additional information
+        #[clap(long)]
+        verbose: bool,
+    },
+}
+
 /// Options for the Integrity Measurement Architecture (IMA).
 #[derive(Debug, Parser)]
 pub(crate) struct ImaSignOpts {
@@ -410,6 +440,8 @@ pub(crate) enum Opt {
     #[clap(hide(true))]
     #[cfg(feature = "docgen")]
     Man(ManOpts),
+    #[clap(hide = true, subcommand)]
+    ProvisionalRepair(ProvisionalRepairOpts),
 }
 
 #[allow(clippy::from_over_into)]
@@ -739,6 +771,22 @@ async fn testing(opts: &TestingOpts) -> Result<()> {
     }
 }
 
+// Quick hack; TODO dedup this with the code in bootc or lower here
+#[context("Remounting sysroot writable")]
+fn container_remount_sysroot(sysroot: &Utf8Path) -> Result<()> {
+    if !Utf8Path::new("/run/.containerenv").exists() {
+        return Ok(());
+    }
+    println!("Running in container, assuming we can remount {sysroot} writable");
+    let st = Command::new("mount")
+        .args(["-o", "remount,rw", sysroot.as_str()])
+        .status()?;
+    if !st.success() {
+        anyhow::bail!("Failed to remount {sysroot}: {st:?}");
+    }
+    Ok(())
+}
+
 /// Parse the provided arguments and execute.
 /// Calls [`structopt::clap::Error::exit`] on failure, printing the error message and aborting the program.
 pub async fn run_from_iter<I>(args: I) -> Result<()>
@@ -978,5 +1026,30 @@ where
         Opt::InternalOnlyForTesting(ref opts) => testing(opts).await,
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
+        Opt::ProvisionalRepair(opts) => match opts {
+            ProvisionalRepairOpts::AnalyzeInodes { repo, verbose } => {
+                let repo = parse_repo(&repo)?;
+                match crate::repair::check_inode_collision(&repo, verbose)? {
+                    crate::repair::InodeCheckResult::Okay => {
+                        println!("OK: No colliding objects found.");
+                    }
+                    crate::repair::InodeCheckResult::PotentialCorruption(n) => {
+                        eprintln!("warning: {} potentially colliding inodes found", n.len());
+                    }
+                }
+                Ok(())
+            }
+            ProvisionalRepairOpts::Repair {
+                sysroot,
+                verbose,
+                dry_run,
+            } => {
+                container_remount_sysroot(&sysroot)?;
+                let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
+                sysroot.load(gio::Cancellable::NONE)?;
+                let sysroot = &SysrootLock::new_from_sysroot(sysroot).await?;
+                crate::repair::auto_repair_inode_collision(sysroot, dry_run, verbose)
+            }
+        },
     }
 }

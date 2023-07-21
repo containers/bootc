@@ -39,6 +39,8 @@ pub mod ima;
 pub mod keyfileext;
 pub(crate) mod logging;
 pub mod refescape;
+#[doc(hidden)]
+pub mod repair;
 pub mod sysroot;
 pub mod tar;
 pub mod tokio_util;

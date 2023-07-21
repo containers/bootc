@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 /// Like `g_file_query_info()`, but return None if the target doesn't exist.
-fn query_info_optional(
+pub(crate) fn query_info_optional(
     f: &gio::File,
     queryattrs: &str,
     queryflags: gio::FileQueryInfoFlags,
