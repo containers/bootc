@@ -282,6 +282,18 @@ pub struct ManifestDiff<'a> {
     pub removed: Vec<&'a oci_spec::image::Descriptor>,
     /// Layers which are present in the new image but not the old image.
     pub added: Vec<&'a oci_spec::image::Descriptor>,
+    /// Total number of packages
+    pub total: u64,
+    /// Size of total number of packages.
+    pub total_size: u64,
+    /// Number of packages removed
+    pub n_removed: u64,
+    /// Size of the number of packages removed
+    pub removed_size: u64,
+    /// Number of packages added
+    pub n_added: u64,
+    /// Size of the number of packages added
+    pub added_size: u64,
 }
 
 impl<'a> ManifestDiff<'a> {
@@ -314,11 +326,27 @@ impl<'a> ManifestDiff<'a> {
             }
         }
         added.sort_by(|a, b| a.digest().cmp(b.digest()));
+
+        fn layersum<'a, I: Iterator<Item = &'a oci_spec::image::Descriptor>>(layers: I) -> u64 {
+            layers.map(|layer| layer.size() as u64).sum()
+        }
+        let total = dest_layers.len() as u64;
+        let total_size = layersum(dest.layers().iter());
+        let n_removed = removed.len() as u64;
+        let n_added = added.len() as u64;
+        let removed_size = layersum(removed.iter().copied());
+        let added_size = layersum(added.iter().copied());
         ManifestDiff {
             from: src,
             to: dest,
             removed,
             added,
+            total,
+            total_size,
+            n_removed,
+            removed_size,
+            n_added,
+            added_size,
         }
     }
 }
@@ -326,20 +354,15 @@ impl<'a> ManifestDiff<'a> {
 impl<'a> ManifestDiff<'a> {
     /// Prints the total, removed and added content between two OCI images
     pub fn print(&self) {
-        fn layersum<'a, I: Iterator<Item = &'a oci_spec::image::Descriptor>>(layers: I) -> u64 {
-            layers.map(|layer| layer.size() as u64).sum()
-        }
-        let new_total = self.to.layers().len();
-        let new_total_size = glib::format_size(layersum(self.to.layers().iter()));
-        let n_removed = self.removed.len();
-        let n_added = self.added.len();
-        let removed_size = layersum(self.removed.iter().copied());
-        let removed_size_str = glib::format_size(removed_size);
-        let added_size = layersum(self.added.iter().copied());
-        let added_size_str = glib::format_size(added_size);
-        println!("Total new layers: {new_total:<4}  Size: {new_total_size}");
-        println!("Removed layers:   {n_removed:<4}  Size: {removed_size_str}");
-        println!("Added layers:     {n_added:<4}  Size: {added_size_str}");
+        let print_total = self.total;
+        let print_total_size = glib::format_size(self.total_size);
+        let print_n_removed = self.n_removed;
+        let print_removed_size = glib::format_size(self.removed_size);
+        let print_n_added = self.n_added;
+        let print_added_size = glib::format_size(self.added_size);
+        println!("Total new layers: {print_total:<4}  Size: {print_total_size}");
+        println!("Removed layers:   {print_n_removed:<4}  Size: {print_removed_size}");
+        println!("Added layers:     {print_n_added:<4}  Size: {print_added_size}");
     }
 }
 
