@@ -19,7 +19,7 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::commit::container_commit;
 use crate::container::store::{ImportProgress, LayerProgress, PreparedImport};
-use crate::container::{self as ostree_container};
+use crate::container::{self as ostree_container, ManifestDiff};
 use crate::container::{Config, ImageReference, OstreeImageReference};
 use crate::sysroot::SysrootLock;
 use ostree_container::store::{ImageImporter, PrepareResult};
@@ -665,6 +665,10 @@ async fn container_store(
     };
     if let Some(warning) = prep.deprecated_warning() {
         print_deprecated_warning(warning).await;
+    }
+    if let Some(previous_state) = prep.previous_state.as_ref() {
+        let diff = ManifestDiff::new(&previous_state.manifest, &prep.manifest);
+        diff.print();
     }
     print_layer_status(&prep);
     let printer = (!quiet).then(|| {
