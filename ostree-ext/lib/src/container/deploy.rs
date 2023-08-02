@@ -81,11 +81,12 @@ pub async fn deploy(
     let target_imgref = options.target_imgref.unwrap_or(imgref);
     origin.set_string("origin", ORIGIN_CONTAINER, &target_imgref.to_string());
 
+    let opts = ostree::SysrootDeployTreeOpts {
+        override_kernel_argv: options.kargs,
+        ..Default::default()
+    };
+
     if sysroot.booted_deployment().is_some() {
-        let opts = ostree::SysrootDeployTreeOpts {
-            override_kernel_argv: options.kargs,
-            ..Default::default()
-        };
         sysroot.stage_tree_with_options(
             Some(stateroot),
             commit,
@@ -95,12 +96,12 @@ pub async fn deploy(
             cancellable,
         )?;
     } else {
-        let deployment = &sysroot.deploy_tree(
+        let deployment = &sysroot.deploy_tree_with_options(
             Some(stateroot),
             commit,
             Some(&origin),
             merge_deployment.as_ref(),
-            options.kargs.unwrap_or_default(),
+            Some(&opts),
             cancellable,
         )?;
         let flags = ostree::SysrootSimpleWriteDeploymentFlags::NONE;
