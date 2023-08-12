@@ -14,6 +14,7 @@
 #![deny(clippy::todo)]
 
 pub mod cli;
+pub(crate) mod deploy;
 mod lsm;
 mod reexec;
 mod status;
