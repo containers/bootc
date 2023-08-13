@@ -5,6 +5,11 @@ use anyhow::{Context, Result};
 use ostree::glib;
 use ostree_ext::ostree;
 
+pub(crate) fn new_http_client() -> reqwest::ClientBuilder {
+    const USER_AGENT: &str = env!("CARGO_PKG_VERSION");
+    reqwest::Client::builder().user_agent(USER_AGENT)
+}
+
 /// Try to look for keys injected by e.g. rpm-ostree requesting machine-local
 /// changes; if any are present, return `true`.
 pub(crate) fn origin_has_rpmostree_stuff(kf: &glib::KeyFile) -> bool {

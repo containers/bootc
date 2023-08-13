@@ -22,6 +22,15 @@ use serde::{Deserialize, Serialize};
 pub struct HostSpec {
     /// The host image
     pub image: Option<ImageReference>,
+    /// Attached configs
+    pub configmap_sources: Vec<String>,
+}
+
+/// Remote location for a configmap
+#[derive(Debug, Clone)]
+pub struct ConfigReference {
+    /// URL for configmap
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
@@ -80,6 +89,8 @@ pub struct BootEntry {
     pub pinned: bool,
     /// If this boot entry is ostree based, the corresponding state
     pub ostree: Option<BootEntryOstree>,
+    /// Attached configmap objects
+    pub configmaps: Vec<String>,
 }
 
 /// The status of the host system

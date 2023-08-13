@@ -11,6 +11,7 @@ use fn_error_context::context;
 use gvariant::{aligned_bytes::TryAsAligned, Marker, Structure};
 #[cfg(feature = "install")]
 use ostree_ext::ostree;
+use ostree_ext::prelude::ToVariant;
 
 #[cfg(feature = "install")]
 use crate::task::Task;
@@ -170,4 +171,20 @@ pub(crate) fn xattrs_have_selinux(xattrs: &ostree::glib::Variant) -> bool {
         }
     }
     false
+}
+
+#[cfg(feature = "install")]
+/// Given a SELinux policy and path, return a new set of extended attributes
+/// including the SELinux label corresponding to that path, if any.
+pub(crate) fn new_xattrs_with_selinux(
+    policy: &ostree::SePolicy,
+    path: &Utf8Path,
+    mode: u32,
+) -> Result<ostree_ext::glib::Variant> {
+    let label = policy.label(path.as_str(), mode, ostree_ext::gio::Cancellable::NONE)?;
+    let r = label
+        .iter()
+        .map(|label| (SELINUX_XATTR, label.as_bytes()))
+        .collect::<Vec<_>>();
+    Ok(r.to_variant())
 }
