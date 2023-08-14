@@ -140,7 +140,7 @@ static OWNERS: Lazy<Vec<(Regex, &str)>> = Lazy::new(|| {
     .collect()
 });
 
-static CONTENTS_V0: &str = indoc::indoc! { r##"
+pub static CONTENTS_V0: &str = indoc::indoc! { r##"
 r usr/lib/modules/5.10.18-200.x86_64/vmlinuz this-is-a-kernel
 r usr/lib/modules/5.10.18-200.x86_64/initramfs this-is-an-initramfs
 m 0 0 755
@@ -361,6 +361,7 @@ pub struct Fixture {
     destrepo: ostree::Repo,
 
     pub selinux: bool,
+    pub bootable: bool,
 }
 
 impl Fixture {
@@ -407,6 +408,7 @@ impl Fixture {
             srcrepo,
             destrepo,
             selinux: true,
+            bootable: true,
         })
     }
 
@@ -500,7 +502,9 @@ impl Fixture {
         metadata.insert("ostree.container-cmd", &vec!["/usr/bin/bash"]);
         metadata.insert("version", &"42.0");
         #[allow(clippy::explicit_auto_deref)]
-        metadata.insert(*ostree::METADATA_KEY_BOOTABLE, &true);
+        if self.bootable {
+            metadata.insert(*ostree::METADATA_KEY_BOOTABLE, &true);
+        }
         let metadata = metadata.to_variant();
         let commit = self.srcrepo.write_commit_with_time(
             None,

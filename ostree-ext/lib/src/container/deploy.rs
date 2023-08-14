@@ -60,6 +60,7 @@ pub async fn deploy(
     let mut imp =
         super::store::ImageImporter::new(repo, imgref, options.proxy_cfg.unwrap_or_default())
             .await?;
+    imp.require_bootable();
     if let Some(target) = options.target_imgref {
         imp.set_target(target);
     }
