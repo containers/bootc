@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use clap::Parser;
 use fn_error_context::context;
-use ostree::{gio, glib};
+use ostree::gio;
 use ostree_container::store::LayeredImageState;
 use ostree_container::store::PrepareResult;
 use ostree_container::OstreeImageReference;
@@ -14,14 +14,12 @@ use ostree_ext::container as ostree_container;
 use ostree_ext::container::SignatureSource;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
-use ostree_ext::sysroot::SysrootLock;
 use std::ffi::OsString;
 use std::io::Seek;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
 use crate::spec::Host;
-use crate::spec::HostSpec;
 use crate::spec::ImageReference;
 
 /// Perform an upgrade operation
@@ -229,45 +227,6 @@ async fn pull(
     Ok(import)
 }
 
-/// Stage (queue deployment of) a fetched container image.
-#[context("Staging")]
-async fn stage(
-    sysroot: &SysrootLock,
-    stateroot: &str,
-    image: Box<LayeredImageState>,
-    spec: &HostSpec,
-) -> Result<()> {
-    let cancellable = gio::Cancellable::NONE;
-    let stateroot = Some(stateroot);
-    let merge_deployment = sysroot.merge_deployment(stateroot);
-    let origin = glib::KeyFile::new();
-    let ostree_imgref = spec
-        .image
-        .as_ref()
-        .map(|imgref| OstreeImageReference::from(imgref.clone()));
-    if let Some(imgref) = ostree_imgref.as_ref() {
-        origin.set_string(
-            "origin",
-            ostree_container::deploy::ORIGIN_CONTAINER,
-            imgref.to_string().as_str(),
-        );
-    }
-    let _new_deployment = sysroot.stage_tree_with_options(
-        stateroot,
-        image.merge_commit.as_str(),
-        Some(&origin),
-        merge_deployment.as_ref(),
-        &Default::default(),
-        cancellable,
-    )?;
-    if let Some(imgref) = ostree_imgref.as_ref() {
-        println!("Queued for next boot: {imgref}");
-    }
-    ostree_container::deploy::remove_undeployed_images(sysroot).context("Pruning images")?;
-
-    Ok(())
-}
-
 #[context("Querying root privilege")]
 pub(crate) fn require_root() -> Result<()> {
     let uid = rustix::process::getuid();
@@ -282,7 +241,7 @@ pub(crate) fn require_root() -> Result<()> {
 
 /// A few process changes that need to be made for writing.
 #[context("Preparing for write")]
-async fn prepare_for_write() -> Result<()> {
+pub(crate) async fn prepare_for_write() -> Result<()> {
     if ostree_ext::container_utils::is_ostree_container()? {
         anyhow::bail!(
             "Detected container (ostree base); this command requires a booted host system."
@@ -351,7 +310,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         }
 
         let osname = booted_deployment.osname();
-        stage(sysroot, &osname, fetched, &host.spec).await?;
+        crate::deploy::stage(sysroot, &osname, fetched, &host.spec).await?;
     }
     if let Some(path) = opts.touch_if_changed {
         std::fs::write(&path, "").with_context(|| format!("Writing {path}"))?;
@@ -410,7 +369,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     }
 
     let stateroot = booted_deployment.osname();
-    stage(sysroot, &stateroot, fetched, &new_spec).await?;
+    crate::deploy::stage(sysroot, &stateroot, fetched, &new_spec).await?;
 
     Ok(())
 }
@@ -448,7 +407,7 @@ async fn edit(opts: EditOpts) -> Result<()> {
     // TODO gc old layers here
 
     let stateroot = booted_deployment.osname();
-    stage(sysroot, &stateroot, fetched, &new_host.spec).await?;
+    crate::deploy::stage(sysroot, &stateroot, fetched, &new_host.spec).await?;
 
     Ok(())
 }
