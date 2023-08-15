@@ -33,16 +33,8 @@ pub(crate) const BOOTPN: u32 = 3;
 // This ensures we end up under 512 to be small-sized.
 pub(crate) const BOOTPN_SIZE_MB: u32 = 510;
 pub(crate) const ROOTPN: u32 = 4;
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(crate) const EFIPN: u32 = 2;
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(crate) const EFIPN_SIZE_MB: u32 = 512;
-#[cfg(target_arch = "aarch64")]
-pub(crate) const RESERVEDPN: u32 = 1;
-#[cfg(target_arch = "ppc64")]
-pub(crate) const PREPPN: u32 = 1;
-#[cfg(target_arch = "ppc64")]
-pub(crate) const RESERVEDPN: u32 = 1;
 
 #[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
