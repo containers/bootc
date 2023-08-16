@@ -818,7 +818,10 @@ where
     I: IntoIterator,
     I::Item: Into<OsString> + Clone,
 {
-    let opt = Opt::parse_from(args);
+    run_from_opt(Opt::parse_from(args)).await
+}
+
+async fn run_from_opt(opt: Opt) -> Result<()> {
     match opt {
         Opt::Tar(TarOpts::Import(ref opt)) => tar_import(opt).await,
         Opt::Tar(TarOpts::Export(ref opt)) => tar_export(opt),
