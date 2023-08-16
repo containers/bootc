@@ -369,7 +369,7 @@ pub(crate) fn parse_manifest_layout<'a>(
 
     let (layout, target_diffid) = info.ok_or_else(|| {
         anyhow!(
-            "No {} label found, not an ostree-bootable container",
+            "No {} label found, not an ostree encapsulated container",
             ExportLayout::V1.label()
         )
     })?;
