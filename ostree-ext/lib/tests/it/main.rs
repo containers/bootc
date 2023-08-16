@@ -625,6 +625,57 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_unencapsulate_unbootable() -> Result<()> {
+    let fixture = {
+        let mut fixture = Fixture::new_base()?;
+        fixture.bootable = false;
+        fixture.commit_filedefs(FileDef::iter_from(ostree_ext::fixture::CONTENTS_V0))?;
+        fixture
+    };
+    let testrev = fixture
+        .srcrepo()
+        .require_rev(fixture.testref())
+        .context("Failed to resolve ref")?;
+    let srcoci_path = &fixture.path.join("oci");
+    let srcoci_imgref = ImageReference {
+        transport: Transport::OciDir,
+        name: srcoci_path.as_str().to_string(),
+    };
+    let srcoci_unverified = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: srcoci_imgref.clone(),
+    };
+
+    let config = Config::default();
+    let _digest = ostree_ext::container::encapsulate(
+        fixture.srcrepo(),
+        fixture.testref(),
+        &config,
+        None,
+        None,
+        None,
+        &srcoci_imgref,
+    )
+    .await
+    .context("exporting")?;
+    assert!(srcoci_path.exists());
+
+    assert!(fixture
+        .destrepo()
+        .resolve_rev(fixture.testref(), true)
+        .unwrap()
+        .is_none());
+
+    let target = ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_unverified)
+        .await
+        .unwrap();
+
+    assert_eq!(target.ostree_commit.as_str(), testrev.as_str());
+
+    Ok(())
+}
+
 /// Parse a chunked container image and validate its structure; particularly
 fn validate_chunked_structure(oci_path: &Utf8Path) -> Result<()> {
     use tar::EntryType::Link;

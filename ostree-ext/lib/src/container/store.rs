@@ -148,6 +148,8 @@ pub struct ImageImporter {
     target_imgref: Option<OstreeImageReference>,
     no_imgref: bool,  // If true, do not write final image ref
     disable_gc: bool, // If true, don't prune unused image layers
+    /// If true, require the image has the bootable flag
+    require_bootable: bool,
     pub(crate) proxy_img: OpenedImage,
 
     layer_progress: Option<Sender<ImportProgress>>,
@@ -349,11 +351,6 @@ pub(crate) fn parse_manifest_layout<'a>(
     config: &ImageConfiguration,
 ) -> Result<(&'a Descriptor, Vec<&'a Descriptor>, Vec<&'a Descriptor>)> {
     let config_labels = super::labels_of(config);
-    let bootable_key = *ostree::METADATA_KEY_BOOTABLE;
-    let bootable = config_labels.map_or(false, |l| l.contains_key(bootable_key));
-    if !bootable {
-        anyhow::bail!("Target image does not have {bootable_key} label");
-    }
 
     let first_layer = manifest
         .layers()
@@ -470,6 +467,7 @@ impl ImageImporter {
             target_imgref: None,
             no_imgref: false,
             disable_gc: false,
+            require_bootable: false,
             imgref: imgref.clone(),
             layer_progress: None,
             layer_byte_progress: None,
@@ -486,6 +484,11 @@ impl ImageImporter {
     /// but in such a way that it does not need to be manually removed later.
     pub fn set_no_imgref(&mut self) {
         self.no_imgref = true;
+    }
+
+    /// Require that the image has the bootable metadata field
+    pub fn require_bootable(&mut self) {
+        self.require_bootable = true;
     }
 
     /// Do not prune image layers.
@@ -555,6 +558,15 @@ impl ImageImporter {
             };
 
         let config = self.proxy.fetch_config(&self.proxy_img).await?;
+        let config_labels = super::labels_of(&config);
+
+        if self.require_bootable {
+            let bootable_key = *ostree::METADATA_KEY_BOOTABLE;
+            let bootable = config_labels.map_or(false, |l| l.contains_key(bootable_key));
+            if !bootable {
+                anyhow::bail!("Target image does not have {bootable_key} label");
+            }
+        }
 
         let (commit_layer, component_layers, remaining_layers) =
             parse_manifest_layout(&manifest, &config)?;
