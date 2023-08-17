@@ -429,7 +429,11 @@ where
     I: IntoIterator,
     I::Item: Into<OsString> + Clone,
 {
-    let opt = Opt::parse_from(args);
+    run_from_opt(Opt::parse_from(args)).await
+}
+
+/// Internal (non-generic/monomorphized) primary CLI entrypoint
+async fn run_from_opt(opt: Opt) -> Result<()> {
     match opt {
         Opt::Upgrade(opts) => upgrade(opts).await,
         Opt::Switch(opts) => switch(opts).await,
