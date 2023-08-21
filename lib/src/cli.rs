@@ -292,7 +292,7 @@ pub(crate) enum ContainerImageOpts {
     Deploy {
         /// Path to the system root
         #[clap(long)]
-        sysroot: String,
+        sysroot: Option<String>,
 
         /// Name for the state directory, also known as "osname".
         #[clap(long, default_value = ostree_container::deploy::STATEROOT_DEFAULT)]
@@ -976,7 +976,11 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     proxyopts,
                     write_commitid_to,
                 } => {
-                    let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
+                    let sysroot = &if let Some(sysroot) = sysroot {
+                        ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)))
+                    } else {
+                        ostree::Sysroot::new_default()
+                    };
                     sysroot.load(gio::Cancellable::NONE)?;
                     let repo = &sysroot.repo();
                     let kargs = karg.as_deref();
