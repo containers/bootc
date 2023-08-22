@@ -5,8 +5,16 @@ members = ["cli", "lib", "xtask"]
 opt-level = 1 # No optimizations are too slow for us.
 
 [profile.release]
-# RPMs/debs/etc want debuginfo by default
+lto = "thin"
+# We use FFI so this is safest
+panic = "abort"
+# We assume we're being delivered via e.g. RPM which supports split debuginfo
 debug = true
+
+[profile.releaselto]
+codegen-units = 1
+inherits = "release"
+lto = "yes"
 
 # See https://github.com/coreos/cargo-vendor-filterer
 [workspace.metadata.vendor-filter]
