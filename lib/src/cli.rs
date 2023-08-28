@@ -88,6 +88,9 @@ pub(crate) enum ContainerOpts {
         #[clap(long, value_parser)]
         repo: Utf8PathBuf,
 
+        #[clap(flatten)]
+        proxyopts: ContainerProxyOpts,
+
         /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
         #[clap(value_parser = parse_imgref)]
         imgref: OstreeImageReference,
@@ -571,6 +574,7 @@ pub async fn print_deprecated_warning(msg: &str) {
 async fn container_import(
     repo: &ostree::Repo,
     imgref: &OstreeImageReference,
+    proxyopts: ContainerProxyOpts,
     write_ref: Option<&str>,
     quiet: bool,
 ) -> Result<()> {
@@ -584,7 +588,7 @@ async fn container_import(
         pb.set_message("Downloading...");
         pb
     });
-    let importer = ImageImporter::new(repo, imgref, Default::default()).await?;
+    let importer = ImageImporter::new(repo, imgref, proxyopts.into()).await?;
     let import = importer.unencapsulate().await;
     // Ensure we finish the progress bar before potentially propagating an error
     if let Some(pb) = pb.as_ref() {
@@ -831,11 +835,12 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             ContainerOpts::Unencapsulate {
                 repo,
                 imgref,
+                proxyopts,
                 write_ref,
                 quiet,
             } => {
                 let repo = parse_repo(&repo)?;
-                container_import(&repo, &imgref, write_ref.as_deref(), quiet).await
+                container_import(&repo, &imgref, proxyopts, write_ref.as_deref(), quiet).await
             }
             ContainerOpts::Encapsulate {
                 repo,
