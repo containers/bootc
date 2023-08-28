@@ -1,5 +1,6 @@
 [workspace]
 members = ["cli", "lib"]
+resolver = "2"
 
 # These bits are copied from rpm-ostree.
 [profile.dev]
