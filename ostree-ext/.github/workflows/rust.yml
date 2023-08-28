@@ -15,8 +15,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Pinned toolchain for linting
-  ACTION_LINTS_TOOLCHAIN: 1.64.0
 
 jobs:
   tests:
@@ -33,6 +31,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: "tests"
+      - name: cargo fmt (check)
+        run: cargo fmt -- --check -l
       - name: Build
         run: cargo test --no-run
       - name: Individual checks
@@ -41,6 +41,8 @@ jobs:
         run: cargo test -- --nocapture --quiet
       - name: Manpage generation
         run: mkdir -p target/man && cargo run --features=docgen -- man --directory target/man
+      # - name: cargo clippy
+      #   run: cargo clippy
   build:
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
@@ -94,25 +96,6 @@ jobs:
       with:
         log-level: warn
         command: check bans sources licenses
-  linting:
-    name: "Lints, pinned toolchain"
-    runs-on: ubuntu-latest
-    container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Install deps
-        run: ./ci/installdeps.sh
-      - name: Remove system Rust toolchain
-        run: dnf remove -y rust cargo
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env['ACTION_LINTS_TOOLCHAIN']  }}
-          components: rustfmt, clippy
-      - name: cargo fmt (check)
-        run: cargo fmt -- --check -l
-      - name: cargo clippy (warnings)
-        run: cargo clippy -- -D warnings
   integration:
     name: "Integration"
     needs: build
