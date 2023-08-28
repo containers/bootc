@@ -26,6 +26,9 @@ use serde::{Deserialize, Serialize};
 // We take half the limit of 128.
 // https://github.com/ostreedev/ostree-rs-ext/issues/69
 pub(crate) const MAX_CHUNKS: u32 = 64;
+/// Minimum number of layers we can create in a "chunked" flow; otherwise
+/// we will just drop down to one.
+const MIN_CHUNKED_LAYERS: u32 = 4;
 
 type RcStr = Rc<str>;
 pub(crate) type ChunkMapping = BTreeMap<RcStr, (u64, Vec<Utf8PathBuf>)>;
@@ -638,6 +641,8 @@ fn basic_packing<'a>(
     const HIGH_SIZE_CUTOFF: f32 = 0.6;
     let before_processing_pkgs_len = components.len();
 
+    anyhow::ensure!(bin_size.get() >= MIN_CHUNKED_LAYERS);
+
     // If we have a prior build, then use that
     if let Some(prior_build) = prior_build_metadata {
         return basic_packing_with_prior_build(components, bin_size, prior_build);
@@ -687,7 +692,7 @@ fn basic_packing<'a>(
         // Approximate number of components we should have per medium-size bin.
         let pkg_per_bin_ms: usize = (components.len() - limit_hs_bins - low_sized_component_count)
             .checked_div(limit_ms_bins)
-            .expect("number of bins should be >= 4");
+            .ok_or_else(|| anyhow::anyhow!("number of bins should be >= {}", MIN_CHUNKED_LAYERS))?;
 
         // Bins assignment
         for (partition, pkgs) in partitions.iter() {
@@ -772,7 +777,7 @@ mod test {
     #[test]
     fn test_packing_basics() -> Result<()> {
         // null cases
-        for v in [1u32, 7].map(|v| NonZeroU32::new(v).unwrap()) {
+        for v in [4, 7].map(|v| NonZeroU32::new(v).unwrap()) {
             assert_eq!(basic_packing(&[], v, None).unwrap().len(), 0);
         }
         Ok(())
@@ -792,6 +797,15 @@ mod test {
         // And verify that the sizes match
         let packed_total_size = packing_size(&packing);
         assert_eq!(total_size, packed_total_size);
+        Ok(())
+    }
+
+    #[test]
+    fn test_packing_one_layer() -> Result<()> {
+        let contentmeta: Vec<ObjectSourceMetaSized> =
+            serde_json::from_reader(flate2::read::GzDecoder::new(FCOS_CONTENTMETA))?;
+        let r = basic_packing(&contentmeta, NonZeroU32::new(1).unwrap(), None);
+        assert!(r.is_err());
         Ok(())
     }
 
