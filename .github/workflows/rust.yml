@@ -55,7 +55,7 @@ jobs:
         with:
           key: "build"
       - name: Build
-        run: cargo build --release
+        run: cargo build --release --features=internal-testing-api
       - name: Upload binary
         uses: actions/upload-artifact@v2
         with:
