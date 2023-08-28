@@ -348,6 +348,8 @@ async fn build_impl(
         let tempdest = tempdir.path().join("d");
         let tempdest = tempdest.to_str().unwrap();
 
+        // Minor TODO: refactor to avoid clone
+        let authfile = opts.authfile.clone();
         let tempoci = build_oci(
             repo,
             ostree_ref,
@@ -359,7 +361,7 @@ async fn build_impl(
             contentmeta,
         )?;
 
-        let digest = skopeo::copy(&tempoci, dest).await?;
+        let digest = skopeo::copy(&tempoci, dest, authfile.as_deref()).await?;
         Some(digest)
     };
     if let Some(digest) = digest {
@@ -377,7 +379,7 @@ async fn build_impl(
 }
 
 /// Options controlling commit export into OCI
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ExportOpts {
     /// If true, do not perform gzip compression of the tar layers.
     pub skip_compression: bool,
@@ -387,6 +389,8 @@ pub struct ExportOpts {
     pub copy_meta_opt_keys: Vec<String>,
     /// Maximum number of layers to use
     pub max_layers: Option<NonZeroU32>,
+    /// Path to Docker-formatted authentication file.
+    pub authfile: Option<std::path::PathBuf>,
     // TODO semver-break: remove this
     /// Use only the standard OCI version label
     pub no_legacy_version_label: bool,

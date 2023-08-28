@@ -29,7 +29,7 @@ pub async fn update_detached_metadata(
     };
 
     // Full copy of the source image
-    let pulled_digest: String = skopeo::copy(src, &tempsrc_ref)
+    let pulled_digest: String = skopeo::copy(src, &tempsrc_ref, None)
         .await
         .context("Creating temporary copy to OCI dir")?;
 
@@ -124,7 +124,7 @@ pub async fn update_detached_metadata(
 
     // Finally, copy the mutated image back to the target.  For chunked images,
     // because we only changed one layer, skopeo should know not to re-upload shared blobs.
-    crate::container::skopeo::copy(&tempsrc_ref, dest)
+    crate::container::skopeo::copy(&tempsrc_ref, dest, None)
         .await
         .context("Copying to destination")
 }
