@@ -129,6 +129,10 @@ pub(crate) enum ContainerOpts {
         #[clap(name = "label", long, short)]
         labels: Vec<String>,
 
+        #[clap(long)]
+        /// Path to Docker-formatted authentication file.
+        authfile: Option<PathBuf>,
+
         /// Propagate an OSTree commit metadata key to container label
         #[clap(name = "copymeta", long)]
         copy_meta_keys: Vec<String>,
@@ -624,6 +628,7 @@ async fn container_export(
     rev: &str,
     imgref: &ImageReference,
     labels: BTreeMap<String, String>,
+    authfile: Option<PathBuf>,
     copy_meta_keys: Vec<String>,
     copy_meta_opt_keys: Vec<String>,
     cmd: Option<Vec<String>>,
@@ -636,6 +641,7 @@ async fn container_export(
     let opts = crate::container::ExportOpts {
         copy_meta_keys,
         copy_meta_opt_keys,
+        authfile,
         skip_compression: compression_fast, // TODO rename this in the struct at the next semver break
         ..Default::default()
     };
@@ -847,6 +853,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 rev,
                 imgref,
                 labels,
+                authfile,
                 copy_meta_keys,
                 copy_meta_opt_keys,
                 cmd,
@@ -867,6 +874,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     &rev,
                     &imgref,
                     labels?,
+                    authfile,
                     copy_meta_keys,
                     copy_meta_opt_keys,
                     cmd,
