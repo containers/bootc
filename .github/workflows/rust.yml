@@ -41,8 +41,8 @@ jobs:
         run: cargo test -- --nocapture --quiet
       - name: Manpage generation
         run: mkdir -p target/man && cargo run --features=docgen -- man --directory target/man
-      # - name: cargo clippy
-      #   run: cargo clippy
+      - name: cargo clippy
+        run: cargo clippy
   build:
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
