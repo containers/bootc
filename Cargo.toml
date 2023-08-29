@@ -1,5 +1,6 @@
 [workspace]
 members = ["cli", "lib", "xtask"]
+resolver = "2"
 
 [profile.dev]
 opt-level = 1 # No optimizations are too slow for us.
