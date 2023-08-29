@@ -283,6 +283,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         let imgref = &OstreeImageReference::from(imgref.clone());
         let mut imp =
             ostree_container::store::ImageImporter::new(&sysroot.repo(), imgref, config).await?;
+        imp.require_bootable();
         match imp.prepare().await? {
             PrepareResult::AlreadyPresent(c) => {
                 println!(
