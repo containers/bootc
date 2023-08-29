@@ -11,7 +11,7 @@ rust-version = "1.70.0"
 
 [dependencies]
 anyhow = "1.0"
-containers-image-proxy = "0.5.3"
+containers-image-proxy = "0.5.5"
 async-compression = { version = "0.3", features = ["gzip", "tokio"] }
 bitflags = "1"
 camino = "1.0.4"
