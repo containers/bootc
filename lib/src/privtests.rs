@@ -157,8 +157,6 @@ fn test_install_filesystem(image: &str, blockdev: &Utf8Path) -> Result<()> {
 
     cmd!(sh, "umount -R {mountpoint}").run()?;
 
-    drop(mountpoint);
-
     Ok(())
 }
 
