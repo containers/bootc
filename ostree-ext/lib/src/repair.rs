@@ -5,7 +5,7 @@ use std::fmt::Display;
 
 use anyhow::{anyhow, Context, Result};
 use cap_std::fs::Dir;
-use cap_tempfile::cap_std;
+use cap_std_ext::cap_std;
 use fn_error_context::context;
 use serde::{Deserialize, Serialize};
 use std::os::unix::fs::MetadataExt;

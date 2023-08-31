@@ -12,8 +12,8 @@ use anyhow::{anyhow, Context};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 
 use cap_std::io_lifetimes;
-use cap_std_ext::cap_std;
 use cap_std_ext::cmdext::CapStdExtCommandExt;
+use cap_std_ext::{cap_std, cap_tempfile};
 use once_cell::unsync::OnceCell;
 use ostree::gio;
 use ostree::prelude::FileExt;

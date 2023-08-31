@@ -169,6 +169,7 @@ pub(crate) async fn container_commit() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cap_std_ext::cap_tempfile;
 
     #[test]
     fn commit() -> Result<()> {
