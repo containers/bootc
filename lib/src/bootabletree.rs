@@ -91,7 +91,7 @@ pub fn find_kernel_dir_fs(root: &Dir) -> Result<Option<Utf8PathBuf>> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use cap_tempfile::cap_std;
+    use cap_std_ext::{cap_std, cap_tempfile};
 
     #[test]
     fn test_find_kernel_dir_fs() -> Result<()> {
