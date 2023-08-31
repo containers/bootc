@@ -165,6 +165,7 @@ pub(crate) async fn join_fetch<T: std::fmt::Debug>(
         (Err(worker), Err(driver)) => {
             let text = driver.root_cause().to_string();
             if text.ends_with("broken pipe") {
+                tracing::trace!("Ignoring broken pipe failure from driver");
                 Err(worker)
             } else {
                 Err(worker.context(format!("proxy failure: {} and client error", text)))
