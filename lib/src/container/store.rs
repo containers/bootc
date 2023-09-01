@@ -841,7 +841,7 @@ impl ImageImporter {
                 let devino = ostree::RepoDevInoCache::new();
                 let repodir = repo.dfd_as_dir()?;
                 let repo_tmp = repodir.open_dir("tmp")?;
-                let td = cap_tempfile::TempDir::new_in(&repo_tmp)?;
+                let td = cap_std_ext::cap_tempfile::TempDir::new_in(&repo_tmp)?;
 
                 let rootpath = "root";
                 let checkout_mode = if repo.mode() == ostree::RepoMode::Bare {
