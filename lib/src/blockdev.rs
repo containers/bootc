@@ -40,6 +40,7 @@ impl Device {
     }
 }
 
+#[context("Failed to wipe {dev}")]
 pub(crate) fn wipefs(dev: &Utf8Path) -> Result<()> {
     Task::new_and_run(
         format!("Wiping device {dev}"),

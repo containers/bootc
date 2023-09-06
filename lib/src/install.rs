@@ -763,6 +763,7 @@ async fn prepare_install(
         reexecute_self_for_selinux_if_needed(&source, config_opts.disable_selinux)?;
 
     let install_config = config::load_config()?;
+    tracing::debug!("Loaded install configuration");
 
     // Create our global (read-only) state which gets wrapped in an Arc
     // so we can pass it to worker threads too. Right now this just

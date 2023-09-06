@@ -263,7 +263,8 @@ pub(crate) fn install_create_rootfs(
         "root",
         Some("0FC63DAF-8483-4772-8E79-3D69D8477DE4"),
     );
-    sgdisk.run()?;
+    sgdisk.run().context("Failed to run sgdisk")?;
+    tracing::debug!("Created partition table");
 
     // Reread the partition table
     {
