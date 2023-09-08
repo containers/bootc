@@ -606,6 +606,10 @@ fn basic_packing_with_prior_build<'a>(
     for bin in curr_build {
         let mut mod_bin = Vec::new();
         for pkg in bin {
+            // An empty component set can happen for the ostree commit layer; ignore that.
+            if pkg.is_empty() {
+                continue;
+            }
             mod_bin.push(name_to_component[&pkg]);
         }
         modified_build.push(mod_bin);
