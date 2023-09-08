@@ -34,7 +34,7 @@ openssl = "0.10.33"
 ostree = { features = ["v2022_6"], version = "0.19.0" }
 pin-project = "1.0"
 regex = "1.5.4"
-rustix = { version = "0.37.19", features = ["fs", "process"] }
+rustix = { version = "0.38", features = ["fs", "process"] }
 serde = { features = ["derive"], version = "1.0.125" }
 serde_json = "1.0.64"
 tar = "0.4.38"
