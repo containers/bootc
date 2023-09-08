@@ -90,7 +90,7 @@ impl InodeCheck {
 #[doc(hidden)]
 /// Detect if any commits are potentially incorrect due to inode truncations.
 pub fn check_inode_collision(repo: &ostree::Repo, verbose: bool) -> Result<InodeCheck> {
-    let repo_dir = repo.dfd_as_dir()?;
+    let repo_dir = Dir::reopen_dir(&repo.dfd_borrow())?;
     let objects = repo_dir.open_dir("objects")?;
 
     println!(

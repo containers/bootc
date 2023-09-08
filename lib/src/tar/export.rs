@@ -398,19 +398,21 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                 let target = meta
                     .symlink_target()
                     .ok_or_else(|| anyhow!("Missing symlink target"))?;
+                let target = target
+                    .to_str()
+                    .ok_or_else(|| anyhow!("Invalid UTF-8 symlink target: {target:?}"))?;
                 let context = || format!("Writing content symlink: {}", checksum);
                 h.set_entry_type(tar::EntryType::Symlink);
                 h.set_size(0);
                 // Handle //chkconfig, see above
-                if symlink_is_denormal(&target) {
-                    h.set_link_name_literal(meta.symlink_target().unwrap().as_str())
-                        .with_context(context)?;
+                if symlink_is_denormal(target) {
+                    h.set_link_name_literal(target).with_context(context)?;
                     self.out
                         .append_data(&mut h, &path, &mut std::io::empty())
                         .with_context(context)?;
                 } else {
                     self.out
-                        .append_link(&mut h, &path, target.as_str())
+                        .append_link(&mut h, &path, target)
                         .with_context(context)?;
                 }
             }
