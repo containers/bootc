@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use cap_std::fs::{Dir, DirBuilder};
+use cap_std_ext::cap_std;
 use containers_image_proxy::oci_spec;
 use containers_image_proxy::oci_spec::image::ImageManifest;
 use once_cell::sync::Lazy;
-use ostree::cap_std;
 use ostree_ext::chunking::ObjectMetaSized;
 use ostree_ext::container::{store, ManifestDiff};
 use ostree_ext::container::{
