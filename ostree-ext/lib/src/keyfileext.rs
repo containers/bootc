@@ -9,12 +9,6 @@ pub trait KeyFileExt {
     fn optional_string(&self, group: &str, key: &str) -> Result<Option<GString>, glib::Error>;
     /// Get a boolean value, but return `None` if the key does not exist.
     fn optional_bool(&self, group: &str, key: &str) -> Result<Option<bool>, glib::Error>;
-    /// Get a string list value, but return `None` if the key does not exist.
-    fn optional_string_list(
-        &self,
-        group: &str,
-        key: &str,
-    ) -> Result<Option<Vec<GString>>, glib::Error>;
 }
 
 /// Consume a keyfile error, mapping the case where group or key is not found to `Ok(None)`.
@@ -42,14 +36,6 @@ impl KeyFileExt for glib::KeyFile {
     fn optional_bool(&self, group: &str, key: &str) -> Result<Option<bool>, glib::Error> {
         map_keyfile_optional(self.boolean(group, key))
     }
-
-    fn optional_string_list(
-        &self,
-        group: &str,
-        key: &str,
-    ) -> Result<Option<Vec<GString>>, glib::Error> {
-        map_keyfile_optional(self.string_list(group, key))
-    }
 }
 
 #[cfg(test)]
@@ -71,17 +57,5 @@ mod tests {
         assert_eq!(kf.optional_bool("foo", "bar").unwrap(), None);
         kf.set_boolean("foo", "somebool", false);
         assert_eq!(kf.optional_bool("foo", "somebool").unwrap(), Some(false));
-
-        assert_eq!(kf.optional_string_list("foo", "bar").unwrap(), None);
-        kf.set_string("foo", "somelist", "one;two;three");
-        assert_eq!(
-            kf.optional_string_list("foo", "somelist").unwrap(),
-            Some(
-                vec!["one", "two", "three"]
-                    .iter()
-                    .map(|&v| GString::from(v))
-                    .collect()
-            )
-        );
     }
 }
