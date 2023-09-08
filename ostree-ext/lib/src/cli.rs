@@ -7,9 +7,11 @@
 
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
+use cap_std_ext::cap_std;
 use clap::{Parser, Subcommand};
 use fn_error_context::context;
-use ostree::{cap_std, gio, glib};
+use io_lifetimes::AsFd;
+use ostree::{gio, glib};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::io::BufWriter;
@@ -38,7 +40,7 @@ pub fn parse_base_imgref(s: &str) -> Result<ImageReference> {
 pub fn parse_repo(s: &Utf8Path) -> Result<ostree::Repo> {
     let repofd = cap_std::fs::Dir::open_ambient_dir(s, cap_std::ambient_authority())
         .with_context(|| format!("Opening directory at '{s}'"))?;
-    ostree::Repo::open_at_dir(&repofd, ".")
+    ostree::Repo::open_at_dir(repofd.as_fd(), ".")
         .with_context(|| format!("Opening ostree repository at '{s}'"))
 }
 

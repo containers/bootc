@@ -12,6 +12,7 @@ use crate::sysroot::SysrootLock;
 use crate::utils::ResultExt;
 use anyhow::{anyhow, Context};
 use camino::{Utf8Path, Utf8PathBuf};
+use cap_std_ext::cap_std::fs::Dir;
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
 use futures_util::TryFutureExt;
@@ -839,7 +840,7 @@ impl ImageImporter {
                 let txn = repo.auto_transaction(cancellable)?;
 
                 let devino = ostree::RepoDevInoCache::new();
-                let repodir = repo.dfd_as_dir()?;
+                let repodir = Dir::reopen_dir(&repo.dfd_borrow())?;
                 let repo_tmp = repodir.open_dir("tmp")?;
                 let td = cap_std_ext::cap_tempfile::TempDir::new_in(&repo_tmp)?;
 
@@ -1310,7 +1311,7 @@ fn compare_file_info(src: &gio::FileInfo, target: &gio::FileInfo) -> bool {
 
 #[context("Querying object inode")]
 fn inode_of_object(repo: &ostree::Repo, checksum: &str) -> Result<u64> {
-    let repodir = repo.dfd_as_dir()?;
+    let repodir = Dir::reopen_dir(&repo.dfd_borrow())?;
     let (prefix, suffix) = checksum.split_at(2);
     let objpath = format!("objects/{}/{}.file", prefix, suffix);
     let metadata = repodir.symlink_metadata(objpath)?;

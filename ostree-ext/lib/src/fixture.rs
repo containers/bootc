@@ -10,11 +10,12 @@ use crate::{gio, glib};
 use anyhow::{anyhow, Context, Result};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use cap_std::fs::Dir;
+use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtCommandExt;
 use chrono::TimeZone;
 use fn_error_context::context;
+use io_lifetimes::AsFd;
 use once_cell::sync::Lazy;
-use ostree::cap_std;
 use regex::Regex;
 use std::borrow::Cow;
 use std::io::Write;
@@ -394,13 +395,21 @@ impl Fixture {
             .status()?;
         assert!(st.success());
 
-        let srcrepo =
-            ostree::Repo::create_at_dir(srcdir_dfd, "repo", ostree::RepoMode::Archive, None)
-                .context("Creating src/ repo")?;
+        let srcrepo = ostree::Repo::create_at_dir(
+            srcdir_dfd.as_fd(),
+            "repo",
+            ostree::RepoMode::Archive,
+            None,
+        )
+        .context("Creating src/ repo")?;
 
         dir.create_dir("dest")?;
-        let destrepo =
-            ostree::Repo::create_at_dir(&dir, "dest/repo", ostree::RepoMode::BareUser, None)?;
+        let destrepo = ostree::Repo::create_at_dir(
+            dir.as_fd(),
+            "dest/repo",
+            ostree::RepoMode::BareUser,
+            None,
+        )?;
         Ok(Self {
             tempdir,
             dir,
