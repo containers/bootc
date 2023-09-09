@@ -267,7 +267,16 @@ impl std::fmt::Display for SignatureSource {
 
 impl std::fmt::Display for OstreeImageReference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.sigverify, self.imgref)
+        match (&self.sigverify, &self.imgref) {
+            (SignatureSource::ContainerPolicyAllowInsecure, imgref)
+                if imgref.transport == Transport::Registry =>
+            {
+                write!(f, "ostree-unverified-registry:{}", self.imgref.name)
+            }
+            (sigverify, imgref) => {
+                write!(f, "{}:{}", sigverify, imgref)
+            }
+        }
     }
 }
 
@@ -551,7 +560,7 @@ mod tests {
         assert_eq!(ir.imgref.name, "quay.io/exampleos/blah");
         assert_eq!(
             ir.to_string(),
-            "ostree-unverified-image:docker://quay.io/exampleos/blah"
+            "ostree-unverified-registry:quay.io/exampleos/blah"
         );
         let ir_shorthand =
             OstreeImageReference::try_from("ostree-unverified-registry:quay.io/exampleos/blah")
