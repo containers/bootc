@@ -269,7 +269,7 @@ impl Chunking {
     pub fn from_mapping(
         repo: &ostree::Repo,
         rev: &str,
-        meta: ObjectMetaSized,
+        meta: &ObjectMetaSized,
         max_layers: &Option<NonZeroU32>,
         prior_build_metadata: Option<&oci_spec::image::ImageManifest>,
     ) -> Result<Self> {
@@ -287,7 +287,7 @@ impl Chunking {
     #[allow(clippy::or_fun_call)]
     pub fn process_mapping(
         &mut self,
-        meta: ObjectMetaSized,
+        meta: &ObjectMetaSized,
         max_layers: &Option<NonZeroU32>,
         prior_build_metadata: Option<&oci_spec::image::ImageManifest>,
     ) -> Result<()> {
