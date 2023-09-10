@@ -55,6 +55,7 @@ pub(crate) fn copy_entry(
 
 /// Configuration for tar layer commits.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct WriteTarOptions {
     /// Base ostree commit hash
     pub base: Option<String>,
