@@ -380,6 +380,7 @@ async fn build_impl(
 
 /// Options controlling commit export into OCI
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct ExportOpts {
     /// If true, do not perform gzip compression of the tar layers.
     pub skip_compression: bool,

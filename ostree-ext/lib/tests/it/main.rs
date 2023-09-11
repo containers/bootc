@@ -106,14 +106,9 @@ async fn test_tar_import_signed() -> Result<()> {
 
     // Verify we fail with an unknown remote.
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(test_tar)?.into_std());
-    let r = ostree_ext::tar::import_tar(
-        fixture.destrepo(),
-        src_tar,
-        Some(TarImportOptions {
-            remote: Some("nosuchremote".to_string()),
-        }),
-    )
-    .await;
+    let mut taropts = TarImportOptions::default();
+    taropts.remote = Some("nosuchremote".to_string());
+    let r = ostree_ext::tar::import_tar(fixture.destrepo(), src_tar, Some(taropts)).await;
     assert_err_contains(r, r#"Remote "nosuchremote" not found"#);
 
     // Test a remote, but without a key
@@ -124,14 +119,9 @@ async fn test_tar_import_signed() -> Result<()> {
         .destrepo()
         .remote_add("myremote", None, Some(&opts.end()), gio::Cancellable::NONE)?;
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(test_tar)?.into_std());
-    let r = ostree_ext::tar::import_tar(
-        fixture.destrepo(),
-        src_tar,
-        Some(TarImportOptions {
-            remote: Some("myremote".to_string()),
-        }),
-    )
-    .await;
+    let mut taropts = TarImportOptions::default();
+    taropts.remote = Some("myremote".to_string());
+    let r = ostree_ext::tar::import_tar(fixture.destrepo(), src_tar, Some(taropts)).await;
     assert_err_contains(r, r#"Can't check signature: public key not found"#);
 
     // And signed correctly
@@ -143,14 +133,9 @@ async fn test_tar_import_signed() -> Result<()> {
     .ignore_stdout()
     .run()?;
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(test_tar)?.into_std());
-    let imported = ostree_ext::tar::import_tar(
-        fixture.destrepo(),
-        src_tar,
-        Some(TarImportOptions {
-            remote: Some("myremote".to_string()),
-        }),
-    )
-    .await?;
+    let mut taropts = TarImportOptions::default();
+    taropts.remote = Some("myremote".to_string());
+    let imported = ostree_ext::tar::import_tar(fixture.destrepo(), src_tar, Some(taropts)).await?;
     let (commitdata, state) = fixture.destrepo().load_commit(&imported)?;
     assert_eq!(
         CONTENTS_CHECKSUM_V0,
@@ -173,14 +158,9 @@ async fn test_tar_import_signed() -> Result<()> {
     })
     .await??;
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(nometa)?.into_std());
-    let r = ostree_ext::tar::import_tar(
-        fixture.destrepo(),
-        src_tar,
-        Some(TarImportOptions {
-            remote: Some("myremote".to_string()),
-        }),
-    )
-    .await;
+    let mut taropts = TarImportOptions::default();
+    taropts.remote = Some("myremote".to_string());
+    let r = ostree_ext::tar::import_tar(fixture.destrepo(), src_tar, Some(taropts)).await;
     assert_err_contains(r, "Expected commitmeta object");
 
     // Now inject garbage into the commitmeta by flipping some bits in the signature
@@ -210,14 +190,9 @@ async fn test_tar_import_signed() -> Result<()> {
     })
     .await??;
     let src_tar = tokio::fs::File::from_std(fixture.dir.open(nometa)?.into_std());
-    let r = ostree_ext::tar::import_tar(
-        fixture.destrepo(),
-        src_tar,
-        Some(TarImportOptions {
-            remote: Some("myremote".to_string()),
-        }),
-    )
-    .await;
+    let mut taropts = TarImportOptions::default();
+    taropts.remote = Some("myremote".to_string());
+    let r = ostree_ext::tar::import_tar(fixture.destrepo(), src_tar, Some(taropts)).await;
     assert_err_contains(r, "BAD signature");
 
     Ok(())
@@ -478,12 +453,10 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
             ObjectMetaSized::compute_sizes(fixture.srcrepo(), meta).context("Computing sizes")
         })
         .transpose()?;
-    let opts = ExportOpts {
-        copy_meta_keys: vec!["buildsys.checksum".to_string()],
-        copy_meta_opt_keys: vec!["nosuchvalue".to_string()],
-        max_layers: std::num::NonZeroU32::new(PKGS_V0_LEN as u32),
-        ..Default::default()
-    };
+    let mut opts = ExportOpts::default();
+    opts.copy_meta_keys = vec!["buildsys.checksum".to_string()];
+    opts.copy_meta_opt_keys = vec!["nosuchvalue".to_string()];
+    opts.max_layers = std::num::NonZeroU32::new(PKGS_V0_LEN as u32);
     let digest = ostree_ext::container::encapsulate(
         fixture.srcrepo(),
         fixture.testref(),
