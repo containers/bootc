@@ -798,6 +798,7 @@ fn validate_sha256(input: String) -> Result<String> {
 
 /// Configuration for tar import.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct TarImportOptions {
     /// Name of the remote to use for signature verification.
     pub remote: Option<String>,

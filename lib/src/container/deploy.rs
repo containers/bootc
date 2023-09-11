@@ -20,6 +20,7 @@ pub const STATEROOT_DEFAULT: &str = "default";
 
 /// Options configuring deployment.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct DeployOpts<'a> {
     /// Kernel arguments to use.
     pub kargs: Option<&'a [&'a str]>,
