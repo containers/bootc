@@ -650,8 +650,7 @@ async fn container_export(
         skip_compression: compression_fast, // TODO rename this in the struct at the next semver break
         ..Default::default()
     };
-    let pushed =
-        crate::container::encapsulate(repo, rev, &config, None, Some(opts), None, imgref).await?;
+    let pushed = crate::container::encapsulate(repo, rev, &config, Some(opts), imgref).await?;
     println!("{}", pushed);
     Ok(())
 }

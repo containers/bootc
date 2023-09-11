@@ -457,13 +457,12 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
     opts.copy_meta_keys = vec!["buildsys.checksum".to_string()];
     opts.copy_meta_opt_keys = vec!["nosuchvalue".to_string()];
     opts.max_layers = std::num::NonZeroU32::new(PKGS_V0_LEN as u32);
+    opts.contentmeta = contentmeta.as_ref();
     let digest = ostree_ext::container::encapsulate(
         fixture.srcrepo(),
         fixture.testref(),
         &config,
-        None,
         Some(opts),
-        contentmeta,
         &srcoci_imgref,
     )
     .await
@@ -514,8 +513,6 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
             fixture.srcrepo(),
             fixture.testref(),
             &config,
-            None,
-            None,
             None,
             &ociarchive_dest,
         )
@@ -625,8 +622,6 @@ async fn test_unencapsulate_unbootable() -> Result<()> {
         fixture.srcrepo(),
         fixture.testref(),
         &config,
-        None,
-        None,
         None,
         &srcoci_imgref,
     )
@@ -961,8 +956,6 @@ async fn test_container_write_derive() -> Result<()> {
             cmd: Some(vec!["/bin/bash".to_string()]),
             ..Default::default()
         },
-        None,
-        None,
         None,
         &ImageReference {
             transport: Transport::OciDir,
@@ -1346,17 +1339,10 @@ async fn test_container_import_export_registry() -> Result<()> {
         cmd: Some(vec!["/bin/bash".to_string()]),
         ..Default::default()
     };
-    let digest = ostree_ext::container::encapsulate(
-        fixture.srcrepo(),
-        testref,
-        &config,
-        None,
-        None,
-        None,
-        &src_imgref,
-    )
-    .await
-    .context("exporting to registry")?;
+    let digest =
+        ostree_ext::container::encapsulate(fixture.srcrepo(), testref, &config, None, &src_imgref)
+            .await
+            .context("exporting to registry")?;
     let mut digested_imgref = src_imgref.clone();
     digested_imgref.name = format!("{}@{}", src_imgref.name, digest);
 
