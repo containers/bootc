@@ -12,6 +12,7 @@ use clap::{Parser, Subcommand};
 use fn_error_context::context;
 use io_lifetimes::AsFd;
 use ostree::{gio, glib};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::io::BufWriter;
@@ -304,8 +305,10 @@ pub(crate) enum ContainerImageOpts {
         sysroot: Option<String>,
 
         /// Name for the state directory, also known as "osname".
-        #[clap(long, default_value = ostree_container::deploy::STATEROOT_DEFAULT)]
-        stateroot: String,
+        /// If the current system is booted via ostree, then this will default to the booted stateroot.
+        /// Otherwise, the default is `default`.
+        #[clap(long)]
+        stateroot: Option<String>,
 
         /// Source image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos@sha256:abcd...
         /// This conflicts with `--image`.
@@ -1003,6 +1006,20 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                         let r: Vec<_> = v.iter().map(|s| s.as_str()).collect();
                         r
                     });
+
+                    // If the user specified a stateroot, we always use that.
+                    let stateroot = if let Some(stateroot) = stateroot.as_deref() {
+                        Cow::Borrowed(stateroot)
+                    } else {
+                        // Otherwise, if we're booted via ostree, use the booted.
+                        // If that doesn't hold, then use `default`.
+                        let booted_stateroot = sysroot
+                            .booted_deployment()
+                            .map(|d| Cow::Owned(d.osname().to_string()));
+                        booted_stateroot.unwrap_or_else(|| {
+                            Cow::Borrowed(crate::container::deploy::STATEROOT_DEFAULT)
+                        })
+                    };
 
                     let imgref = if let Some(image) = image {
                         let transport = transport.as_deref().unwrap_or("registry");
