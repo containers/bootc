@@ -187,8 +187,6 @@ fn build_oci(
     tag: Option<&str>,
     config: &Config,
     opts: ExportOpts,
-    prior_build: Option<&oci_image::ImageManifest>,
-    contentmeta: Option<crate::chunking::ObjectMetaSized>,
 ) -> Result<ImageReference> {
     if !ocidir_path.exists() {
         std::fs::create_dir(ocidir_path).context("Creating OCI dir")?;
@@ -230,14 +228,16 @@ fn build_oci(
 
     let mut manifest = ocidir::new_empty_manifest().build().unwrap();
 
-    let chunking = contentmeta
+    let chunking = opts
+        .contentmeta
+        .as_ref()
         .map(|meta| {
             crate::chunking::Chunking::from_mapping(
                 repo,
                 commit,
                 meta,
                 &opts.max_layers,
-                prior_build,
+                opts.prior_build,
             )
         })
         .transpose()?;
@@ -316,14 +316,12 @@ pub(crate) fn parse_oci_path_and_tag(path: &str) -> (&str, Option<&str>) {
 }
 
 /// Helper for `build()` that avoids generics
-#[instrument(skip(repo, contentmeta))]
+#[instrument(skip(repo, config, opts))]
 async fn build_impl(
     repo: &ostree::Repo,
     ostree_ref: &str,
     config: &Config,
-    prior_build: Option<&oci_image::ImageManifest>,
-    opts: Option<ExportOpts>,
-    contentmeta: Option<ObjectMetaSized>,
+    opts: Option<ExportOpts<'_, '_>>,
     dest: &ImageReference,
 ) -> Result<String> {
     let mut opts = opts.unwrap_or_default();
@@ -332,16 +330,8 @@ async fn build_impl(
     }
     let digest = if dest.transport == Transport::OciDir {
         let (path, tag) = parse_oci_path_and_tag(dest.name.as_str());
-        let _copied: ImageReference = build_oci(
-            repo,
-            ostree_ref,
-            Path::new(path),
-            tag,
-            config,
-            opts,
-            prior_build,
-            contentmeta,
-        )?;
+        let _copied: ImageReference =
+            build_oci(repo, ostree_ref, Path::new(path), tag, config, opts)?;
         None
     } else {
         let tempdir = tempfile::tempdir_in("/var/tmp")?;
@@ -350,16 +340,7 @@ async fn build_impl(
 
         // Minor TODO: refactor to avoid clone
         let authfile = opts.authfile.clone();
-        let tempoci = build_oci(
-            repo,
-            ostree_ref,
-            Path::new(tempdest),
-            None,
-            config,
-            opts,
-            prior_build,
-            contentmeta,
-        )?;
+        let tempoci = build_oci(repo, ostree_ref, Path::new(tempdest), None, config, opts)?;
 
         let digest = skopeo::copy(&tempoci, dest, authfile.as_deref()).await?;
         Some(digest)
@@ -381,7 +362,7 @@ async fn build_impl(
 /// Options controlling commit export into OCI
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
-pub struct ExportOpts {
+pub struct ExportOpts<'m, 'o> {
     /// If true, do not perform gzip compression of the tar layers.
     pub skip_compression: bool,
     /// A set of commit metadata keys to copy as image labels.
@@ -395,9 +376,15 @@ pub struct ExportOpts {
     // TODO semver-break: remove this
     /// Use only the standard OCI version label
     pub no_legacy_version_label: bool,
+    /// A reference to the metadata for a previous build; used to optimize
+    /// the packing structure.
+    pub prior_build: Option<&'m oci_image::ImageManifest>,
+    /// Metadata mapping between objects and their owning component/package;
+    /// used to optimize packing.
+    pub contentmeta: Option<&'o ObjectMetaSized>,
 }
 
-impl ExportOpts {
+impl<'m, 'o> ExportOpts<'m, 'o> {
     /// Return the gzip compression level to use, as configured by the export options.
     fn compression(&self) -> Compression {
         if self.skip_compression {
@@ -415,19 +402,8 @@ pub async fn encapsulate<S: AsRef<str>>(
     repo: &ostree::Repo,
     ostree_ref: S,
     config: &Config,
-    prior_build: Option<&oci_image::ImageManifest>,
-    opts: Option<ExportOpts>,
-    contentmeta: Option<ObjectMetaSized>,
+    opts: Option<ExportOpts<'_, '_>>,
     dest: &ImageReference,
 ) -> Result<String> {
-    build_impl(
-        repo,
-        ostree_ref.as_ref(),
-        config,
-        prior_build,
-        opts,
-        contentmeta,
-        dest,
-    )
-    .await
+    build_impl(repo, ostree_ref.as_ref(), config, opts, dest).await
 }
