@@ -10,6 +10,7 @@ mod baseline;
 
 use std::io::BufWriter;
 use std::io::Write;
+use std::os::fd::AsFd;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -311,7 +312,7 @@ impl SourceInfo {
             .quiet()
             .read()?;
         let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-        let repo = ostree::Repo::open_at_dir(&root, "ostree/repo")?;
+        let repo = ostree::Repo::open_at_dir(root.as_fd(), "ostree/repo")?;
         let root = repo
             .read_commit(commit.trim(), cancellable)
             .context("Reading commit")?
@@ -492,13 +493,10 @@ async fn initialize_ostree_root_from_self(
         .iter()
         .map(|v| v.as_str())
         .collect::<Vec<_>>();
-    #[allow(clippy::needless_update)]
-    let options = ostree_container::deploy::DeployOpts {
-        kargs: Some(kargs.as_slice()),
-        target_imgref: Some(&target_imgref),
-        proxy_cfg: Some(proxy_cfg),
-        ..Default::default()
-    };
+    let mut options = ostree_container::deploy::DeployOpts::default();
+    options.kargs = Some(kargs.as_slice());
+    options.target_imgref = Some(&target_imgref);
+    options.proxy_cfg = Some(proxy_cfg);
     println!("Creating initial deployment");
     let state =
         ostree_container::deploy::deploy(&sysroot, stateroot, &src_imageref, Some(options)).await?;
@@ -531,7 +529,7 @@ async fn initialize_ostree_root_from_self(
     writeln!(f, "{}", root_setup.boot.to_fstab())?;
     f.flush()?;
 
-    let uname = rustix::process::uname();
+    let uname = rustix::system::uname();
 
     let aleph = InstallAleph {
         image: src_imageref.imgref.name.clone(),
@@ -717,7 +715,7 @@ pub(crate) fn propagate_tmp_mounts_to_host() -> Result<()> {
         if path.try_exists()? {
             std::os::unix::fs::symlink(&target, &tmp)
                 .with_context(|| format!("Symlinking {target} to {tmp}"))?;
-            let cwd = rustix::fs::cwd();
+            let cwd = rustix::fs::CWD;
             rustix::fs::renameat_with(
                 cwd,
                 path.as_os_str(),

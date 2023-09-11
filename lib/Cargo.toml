@@ -11,10 +11,10 @@ rust-version = "1.64.0"
 [dependencies]
 anyhow = "1.0"
 camino = { version = "1.0.4", features = ["serde1"] }
-ostree-ext = "0.11.5"
+ostree-ext = "0.12"
 clap = { version= "4.2", features = ["derive"] }
 clap_mangen = { version = "0.2", optional = true }
-cap-std-ext = "2"
+cap-std-ext = "3"
 hex = "^0.4"
 fn-error-context = "0.2.0"
 gvariant = "0.4.0"
@@ -27,7 +27,7 @@ once_cell = "1.9"
 openssl = "^0.10"
 nix = ">= 0.24, < 0.26"
 regex = "1.7.1"
-rustix = { "version" = "0.37", features = ["thread", "process"] }
+rustix = { "version" = "0.38", features = ["thread", "fs", "system", "process"] }
 schemars = "0.8.6"
 serde = { features = ["derive"], version = "1.0.125" }
 serde_json = "1.0.64"
