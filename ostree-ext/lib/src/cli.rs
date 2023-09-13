@@ -7,7 +7,9 @@
 
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
+use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
+use cap_std_ext::prelude::CapStdExtDirExt;
 use clap::{Parser, Subcommand};
 use fn_error_context::context;
 use io_lifetimes::AsFd;
@@ -220,6 +222,12 @@ pub(crate) enum ContainerImageOpts {
         /// Don't display progress
         #[clap(long)]
         quiet: bool,
+
+        /// Just check for an updated manifest, but do not download associated container layers.
+        /// If an updated manifest is found, a file at the provided path will be created and contain
+        /// the new manifest.
+        #[clap(long)]
+        check: Option<Utf8PathBuf>,
     },
 
     /// Output metadata about an already stored container image.
@@ -668,6 +676,7 @@ async fn container_store(
     imgref: &OstreeImageReference,
     proxyopts: ContainerProxyOpts,
     quiet: bool,
+    check: Option<Utf8PathBuf>,
 ) -> Result<()> {
     let mut imp = ImageImporter::new(repo, imgref, proxyopts.into()).await?;
     let prep = match imp.prepare().await? {
@@ -679,6 +688,14 @@ async fn container_store(
     };
     if let Some(warning) = prep.deprecated_warning() {
         print_deprecated_warning(warning).await;
+    }
+    if let Some(check) = check.as_deref() {
+        let rootfs = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+        rootfs.atomic_replace_with(check.as_str().trim_start_matches('/'), |w| {
+            serde_json::to_writer(w, &prep.manifest).context("Serializing manifest")
+        })?;
+        // In check mode, we're done
+        return Ok(());
     }
     if let Some(previous_state) = prep.previous_state.as_ref() {
         let diff = ManifestDiff::new(&previous_state.manifest, &prep.manifest);
@@ -899,9 +916,10 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     imgref,
                     proxyopts,
                     quiet,
+                    check,
                 } => {
                     let repo = parse_repo(&repo)?;
-                    container_store(&repo, &imgref, proxyopts, quiet).await
+                    container_store(&repo, &imgref, proxyopts, quiet, check).await
                 }
                 ContainerImageOpts::History { repo, imgref } => {
                     let repo = parse_repo(&repo)?;
