@@ -25,6 +25,7 @@ use tracing::instrument;
 /// The label which may be used in addition to the standard OCI label.
 pub const LEGACY_VERSION_LABEL: &str = "version";
 
+// semver-break: Delete this and only support v1
 /// Type of container image generated
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum ExportLayout {

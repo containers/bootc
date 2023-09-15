@@ -826,7 +826,7 @@ fn handle_serialize_to_file<T: serde::Serialize>(path: Option<&Utf8Path>, obj: T
 }
 
 /// Parse the provided arguments and execute.
-/// Calls [`structopt::clap::Error::exit`] on failure, printing the error message and aborting the program.
+/// Calls [`clap::Error::exit`] on failure, printing the error message and aborting the program.
 pub async fn run_from_iter<I>(args: I) -> Result<()>
 where
     I: IntoIterator,
