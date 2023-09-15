@@ -1012,6 +1012,7 @@ pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<Layer
 ///
 /// This is a thin wrapper for [`query_image_ref`] and should
 /// be considered deprecated.
+// semver-break: Delete this and rename query_image_ref -> query_image
 pub fn query_image(
     repo: &ostree::Repo,
     imgref: &OstreeImageReference,
@@ -1030,6 +1031,7 @@ fn manifest_for_image(repo: &ostree::Repo, imgref: &ImageReference) -> Result<Im
 /// Copy a downloaded image from one repository to another.
 #[context("Copying image")]
 #[deprecated = "Use copy_as instead"]
+// semver-break: Delete this and rename copy_as -> copy
 pub async fn copy(
     src_repo: &ostree::Repo,
     dest_repo: &ostree::Repo,
