@@ -12,6 +12,7 @@ rust-version = "1.64.0"
 anyhow = "1.0"
 camino = { version = "1.0.4", features = ["serde1"] }
 ostree-ext = "0.12"
+chrono = { version = "0.4.23", features = ["serde"] }
 clap = { version= "4.2", features = ["derive"] }
 clap_mangen = { version = "0.2", optional = true }
 cap-std-ext = "3"
@@ -19,7 +20,7 @@ hex = "^0.4"
 fn-error-context = "0.2.0"
 gvariant = "0.4.0"
 indicatif = "0.17.0"
-k8s-openapi = { version = "0.18.0", features = ["v1_25"] }
+k8s-openapi = { version = "0.18.0", features = ["v1_25", "schemars"] }
 kube = { version = "0.83.0", features = ["runtime", "derive"] }
 libc = "^0.2"
 liboverdrop = "0.1.0"
@@ -29,7 +30,7 @@ openssl = "^0.10"
 nix = { version = "0.27", features = ["ioctl"] }
 regex = "1.7.1"
 rustix = { "version" = "0.38", features = ["thread", "fs", "system", "process"] }
-schemars = "0.8.6"
+schemars = { version = "0.8.6", features = ["chrono"] }
 serde = { features = ["derive"], version = "1.0.125" }
 serde_json = "1.0.64"
 serde_yaml = "0.9.17"

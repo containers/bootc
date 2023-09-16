@@ -3,10 +3,12 @@ use std::collections::VecDeque;
 use crate::spec::{BootEntry, Host, HostSpec, HostStatus, ImageStatus};
 use crate::spec::{ImageReference, ImageSignature};
 use anyhow::{Context, Result};
+use k8s_openapi::apimachinery::pkg::apis::meta::v1 as k8smeta;
 use ostree::glib;
 use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
 use ostree_ext::keyfileext::KeyFileExt;
+use ostree_ext::oci_spec;
 use ostree_ext::ostree;
 use ostree_ext::sysroot::SysrootLock;
 
@@ -87,6 +89,22 @@ pub(crate) struct Deployments {
     pub(crate) other: VecDeque<ostree::Deployment>,
 }
 
+fn try_deserialize_timestamp(t: &str) -> Option<k8smeta::Time> {
+    match chrono::DateTime::parse_from_rfc3339(t).context("Parsing timestamp") {
+        Ok(t) => Some(k8smeta::Time(t.with_timezone(&chrono::Utc))),
+        Err(e) => {
+            tracing::warn!("Invalid timestamp in image: {:#}", e);
+            None
+        }
+    }
+}
+
+pub(crate) fn labels_of_config(
+    config: &oci_spec::image::ImageConfiguration,
+) -> Option<&std::collections::HashMap<String, String>> {
+    config.config().as_ref().and_then(|c| c.labels().as_ref())
+}
+
 fn boot_entry_from_deployment(
     sysroot: &SysrootLock,
     deployment: &ostree::Deployment,
@@ -98,9 +116,23 @@ fn boot_entry_from_deployment(
             let csum = deployment.csum();
             let incompatible = crate::utils::origin_has_rpmostree_stuff(origin);
             let imgstate = ostree_container::store::query_image_commit(repo, &csum)?;
+            let config = imgstate.configuration.as_ref();
+            let labels = config.and_then(labels_of_config);
+            let timestamp = labels
+                .and_then(|l| {
+                    l.get(oci_spec::image::ANNOTATION_CREATED)
+                        .map(|s| s.as_str())
+                })
+                .and_then(try_deserialize_timestamp);
+
+            let version = config
+                .and_then(ostree_container::version_for_config)
+                .map(ToOwned::to_owned);
             (
                 Some(ImageStatus {
                     image,
+                    version,
+                    timestamp,
                     image_digest: imgstate.manifest_digest,
                 }),
                 incompatible,
