@@ -74,7 +74,10 @@ fn process_vardir_recurse(
 /// Recursively remove the target directory, but avoid traversing across mount points.
 fn remove_all_on_mount_recurse(root: &Dir, rootdev: u64, path: &Path) -> Result<bool> {
     let mut skipped = false;
-    for entry in root.read_dir(path)? {
+    for entry in root
+        .read_dir(path)
+        .with_context(|| format!("Reading {path:?}"))?
+    {
         let entry = entry?;
         let metadata = entry.metadata()?;
         if metadata.dev() != rootdev {
@@ -87,11 +90,13 @@ fn remove_all_on_mount_recurse(root: &Dir, rootdev: u64, path: &Path) -> Result<
         if metadata.is_dir() {
             skipped |= remove_all_on_mount_recurse(root, rootdev, path.as_path())?;
         } else {
-            root.remove_file(path)?;
+            root.remove_file(path)
+                .with_context(|| format!("Removing {path:?}"))?;
         }
     }
     if !skipped {
-        root.remove_dir(path)?;
+        root.remove_dir(path)
+            .with_context(|| format!("Removing {path:?}"))?;
     }
     Ok(skipped)
 }
@@ -109,7 +114,8 @@ fn clean_subdir(root: &Dir, rootdev: u64) -> Result<()> {
         if metadata.is_dir() {
             remove_all_on_mount_recurse(root, rootdev, &path)?;
         } else {
-            root.remove_file(&path)?;
+            root.remove_file(&path)
+                .with_context(|| format!("Removing {path:?}"))?;
         }
     }
     Ok(())
