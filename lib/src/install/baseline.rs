@@ -233,7 +233,7 @@ pub(crate) fn install_create_rootfs(
         anyhow::bail!("Unsupported architecture: {}", std::env::consts::ARCH);
     }
 
-    let espdev = if cfg!(any(target_arch = "x86_64", target_arch = "aarch64")) {
+    let espdev = if super::ARCH_USES_EFI {
         sgdisk_partition(
             &mut sgdisk.cmd,
             EFIPN,
@@ -370,5 +370,6 @@ pub(crate) fn install_create_rootfs(
         rootfs_fd,
         boot,
         kargs,
+        skip_finalize: false,
     })
 }

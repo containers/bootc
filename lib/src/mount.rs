@@ -13,6 +13,8 @@ use crate::task::Task;
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct Filesystem {
     pub(crate) source: String,
+    pub(crate) fstype: String,
+    pub(crate) options: String,
     pub(crate) uuid: Option<String>,
 }
 

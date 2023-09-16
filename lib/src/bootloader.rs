@@ -75,7 +75,7 @@ pub(crate) fn install_via_bootupd(
     let bootfs = &rootfs.join("boot");
     let bootfs = Dir::open_ambient_dir(bootfs, cap_std::ambient_authority())?;
 
-    {
+    if super::install::ARCH_USES_EFI {
         let efidir = bootfs.open_dir("efi")?;
         install_grub2_efi(&efidir, &grub2_uuid_contents)?;
     }
