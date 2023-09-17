@@ -1,5 +1,6 @@
 //! The definition for host system state.
 
+use k8s_openapi::apimachinery::pkg::apis::meta::v1 as k8smeta;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -54,6 +55,10 @@ pub struct ImageReference {
 pub struct ImageStatus {
     /// The currently booted image
     pub image: ImageReference,
+    /// The version string, if any
+    pub version: Option<String>,
+    /// The build timestamp, if any
+    pub timestamp: Option<k8smeta::Time>,
     /// The digest of the fetched image (e.g. sha256:a0...);
     pub image_digest: String,
 }
