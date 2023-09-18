@@ -703,6 +703,9 @@ async fn test_container_chunked() -> Result<()> {
 
     let mut imp =
         store::ImageImporter::new(fixture.destrepo(), &imgref, Default::default()).await?;
+    assert!(store::query_image_ref(fixture.destrepo(), &imgref.imgref)
+        .unwrap()
+        .is_none());
     let prep = match imp.prepare().await.context("Init prep derived")? {
         store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         store::PrepareResult::Ready(r) => r,
@@ -748,6 +751,14 @@ async fn test_container_chunked() -> Result<()> {
             .unwrap()
             .is_none()
     );
+    // Verify there are no updates.
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &imgref, Default::default()).await?;
+    let state = match imp.prepare().await? {
+        store::PrepareResult::AlreadyPresent(i) => i,
+        store::PrepareResult::Ready(_) => panic!("should be already imported"),
+    };
+    assert!(state.cached_update.is_none());
 
     const ADDITIONS: &str = indoc::indoc! { "
 r usr/bin/bash bash-v0
@@ -765,6 +776,18 @@ r usr/bin/bash bash-v0
         store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         store::PrepareResult::Ready(r) => r,
     };
+    // Verify we also serialized the cached update
+    {
+        let cached = store::query_image_ref(fixture.destrepo(), &imgref.imgref)
+            .unwrap()
+            .unwrap()
+            .cached_update
+            .unwrap();
+        assert_eq!(
+            cached.manifest_digest.as_str(),
+            prep.manifest_digest.as_str()
+        );
+    }
     let to_fetch = prep.layers_to_fetch().collect::<Result<Vec<_>>>()?;
     assert_eq!(to_fetch.len(), 2);
     assert_eq!(expected_digest, prep.manifest_digest.as_str());
