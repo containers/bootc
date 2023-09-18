@@ -122,6 +122,8 @@ pub struct LayeredImageState {
     pub manifest: ImageManifest,
     /// The image configuration; for v0 images, may not be available.
     pub configuration: Option<ImageConfiguration>,
+    /// Metadata for (cached, previously fetched) updates to the image, if any.
+    pub cached_update: Option<CachedImageUpdate>,
 }
 
 impl LayeredImageState {
@@ -138,6 +140,17 @@ impl LayeredImageState {
             self.base_commit.as_str()
         }
     }
+}
+
+/// Locally cached metadata for an update to an existing image.
+#[derive(Debug, PartialEq, Eq)]
+pub struct CachedImageUpdate {
+    /// The image manifest
+    pub manifest: ImageManifest,
+    /// The image configuration
+    pub config: ImageConfiguration,
+    /// The digest of the manifest
+    pub manifest_digest: String,
 }
 
 /// Context for importing a container image.
@@ -437,6 +450,11 @@ fn timestamp_of_manifest_or_config(
 }
 
 impl ImageImporter {
+    /// The metadata key used in ostree commit metadata to serialize
+    const CACHED_KEY_MANIFEST_DIGEST: &str = "ostree-ext.cached.manifest-digest";
+    const CACHED_KEY_MANIFEST: &str = "ostree-ext.cached.manifest";
+    const CACHED_KEY_CONFIG: &str = "ostree-ext.cached.config";
+
     /// Create a new importer.
     #[context("Creating importer")]
     pub async fn new(
@@ -498,6 +516,9 @@ impl ImageImporter {
     }
 
     /// Determine if there is a new manifest, and if so return its digest.
+    /// This will also serialize the new manifest and configuration into
+    /// metadata associated with the image, so that invocations of `[query_cached]`
+    /// can re-fetch it without accessing the network.
     #[context("Preparing import")]
     pub async fn prepare(&mut self) -> Result<PrepareResult> {
         self.prepare_internal(false).await
@@ -519,6 +540,81 @@ impl ImageImporter {
         let (s, r) = tokio::sync::watch::channel(None);
         self.layer_byte_progress = Some(s);
         r
+    }
+
+    /// Serialize the metadata about a pending fetch as detached metadata on the commit object,
+    /// so it can be retrieved later offline
+    #[context("Writing cached pending manifest")]
+    pub(crate) async fn cache_pending(
+        &self,
+        commit: &str,
+        manifest_digest: &str,
+        manifest: &ImageManifest,
+        config: &ImageConfiguration,
+    ) -> Result<()> {
+        let commitmeta = glib::VariantDict::new(None);
+        commitmeta.insert(Self::CACHED_KEY_MANIFEST_DIGEST, manifest_digest);
+        let cached_manifest = serde_json::to_string(manifest).context("Serializing manifest")?;
+        commitmeta.insert(Self::CACHED_KEY_MANIFEST, cached_manifest);
+        let cached_config = serde_json::to_string(config).context("Serializing config")?;
+        commitmeta.insert(Self::CACHED_KEY_CONFIG, cached_config);
+        let commitmeta = commitmeta.to_variant();
+        // Clone these to move into blocking method
+        let commit = commit.to_string();
+        let repo = self.repo.clone();
+        crate::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| {
+            repo.write_commit_detached_metadata(&commit, Some(&commitmeta), Some(cancellable))
+                .map_err(anyhow::Error::msg)
+        })
+        .await
+    }
+
+    /// Given existing metadata (manifest, config, previous image statE) generate a PreparedImport structure
+    /// which e.g. includes a diff of the layers.
+    fn create_prepared_import(
+        &mut self,
+        manifest_digest: String,
+        manifest: ImageManifest,
+        config: ImageConfiguration,
+        previous_state: Option<Box<LayeredImageState>>,
+        previous_imageid: Option<String>,
+    ) -> Result<Box<PreparedImport>> {
+        let config_labels = super::labels_of(&config);
+        if self.require_bootable {
+            let bootable_key = *ostree::METADATA_KEY_BOOTABLE;
+            let bootable = config_labels.map_or(false, |l| l.contains_key(bootable_key));
+            if !bootable {
+                anyhow::bail!("Target image does not have {bootable_key} label");
+            }
+        }
+
+        let (commit_layer, component_layers, remaining_layers) =
+            parse_manifest_layout(&manifest, &config)?;
+
+        let query = |l: &Descriptor| query_layer(&self.repo, l.clone());
+        let commit_layer = query(commit_layer)?;
+        let component_layers = component_layers
+            .into_iter()
+            .map(query)
+            .collect::<Result<Vec<_>>>()?;
+        let remaining_layers = remaining_layers
+            .into_iter()
+            .map(query)
+            .collect::<Result<Vec<_>>>()?;
+
+        let previous_manifest_digest = previous_state.as_ref().map(|s| s.manifest_digest.clone());
+        let imp = PreparedImport {
+            manifest_digest,
+            manifest,
+            config,
+            previous_state,
+            previous_manifest_digest,
+            previous_imageid,
+            ostree_layers: component_layers,
+            ostree_commit_layer: commit_layer,
+            layers: remaining_layers,
+        };
+        Ok(Box::new(imp))
     }
 
     /// Determine if there is a new manifest, and if so return its digest.
@@ -559,43 +655,27 @@ impl ImageImporter {
             };
 
         let config = self.proxy.fetch_config(&self.proxy_img).await?;
-        let config_labels = super::labels_of(&config);
 
-        if self.require_bootable {
-            let bootable_key = *ostree::METADATA_KEY_BOOTABLE;
-            let bootable = config_labels.map_or(false, |l| l.contains_key(bootable_key));
-            if !bootable {
-                anyhow::bail!("Target image does not have {bootable_key} label");
-            }
+        // If there is a currently fetched image, cache the new pending manifest+config
+        // as detached commit metadata, so that future fetches can query it offline.
+        if let Some(previous_state) = previous_state.as_ref() {
+            self.cache_pending(
+                previous_state.merge_commit.as_str(),
+                manifest_digest.as_str(),
+                &manifest,
+                &config,
+            )
+            .await?;
         }
 
-        let (commit_layer, component_layers, remaining_layers) =
-            parse_manifest_layout(&manifest, &config)?;
-
-        let query = |l: &Descriptor| query_layer(&self.repo, l.clone());
-        let commit_layer = query(commit_layer)?;
-        let component_layers = component_layers
-            .into_iter()
-            .map(query)
-            .collect::<Result<Vec<_>>>()?;
-        let remaining_layers = remaining_layers
-            .into_iter()
-            .map(query)
-            .collect::<Result<Vec<_>>>()?;
-
-        let previous_manifest_digest = previous_state.as_ref().map(|s| s.manifest_digest.clone());
-        let imp = PreparedImport {
-            manifest,
+        let imp = self.create_prepared_import(
             manifest_digest,
+            manifest,
             config,
             previous_state,
-            previous_manifest_digest,
             previous_imageid,
-            ostree_layers: component_layers,
-            ostree_commit_layer: commit_layer,
-            layers: remaining_layers,
-        };
-        Ok(PrepareResult::Ready(Box::new(imp)))
+        )?;
+        Ok(PrepareResult::Ready(imp))
     }
 
     /// Extract the base ostree commit.
@@ -977,6 +1057,50 @@ pub fn query_image_ref(
         .transpose()
 }
 
+/// Given detached commit metadata, parse the data that we serialized for a pending update (if any).
+fn parse_cached_update(meta: &glib::VariantDict) -> Result<Option<CachedImageUpdate>> {
+    // Try to retrieve the manifest digest key from the commit detached metadata.
+    let manifest_digest =
+        if let Some(d) = meta.lookup::<String>(ImageImporter::CACHED_KEY_MANIFEST_DIGEST)? {
+            d
+        } else {
+            // It's possible that something *else* wrote detached metadata, but without
+            // our key; gracefully handle that.
+            return Ok(None);
+        };
+    // If we found the cached manifest digest key, then we must have the manifest and config;
+    // otherwise that's an error.
+    let manifest = meta.lookup_value(ImageImporter::CACHED_KEY_MANIFEST, None);
+    let manifest: oci_image::ImageManifest = manifest
+        .as_ref()
+        .and_then(|v| v.str())
+        .map(serde_json::from_str)
+        .transpose()?
+        .ok_or_else(|| {
+            anyhow!(
+                "Expected cached manifest {}",
+                ImageImporter::CACHED_KEY_MANIFEST
+            )
+        })?;
+    let config = meta.lookup_value(ImageImporter::CACHED_KEY_CONFIG, None);
+    let config: oci_image::ImageConfiguration = config
+        .as_ref()
+        .and_then(|v| v.str())
+        .map(serde_json::from_str)
+        .transpose()?
+        .ok_or_else(|| {
+            anyhow!(
+                "Expected cached manifest {}",
+                ImageImporter::CACHED_KEY_CONFIG
+            )
+        })?;
+    Ok(Some(CachedImageUpdate {
+        manifest,
+        config,
+        manifest_digest,
+    }))
+}
+
 /// Query metadata for a pulled image via an OSTree commit digest.
 /// The digest must refer to a pulled container image's merge commit.
 pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<LayeredImageState>> {
@@ -996,6 +1120,17 @@ pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<Layer
         .ok_or_else(|| anyhow!("Missing base image ref {ostree_ref}"))?;
     // If there are more layers after the base, then we're layered.
     let is_layered = layers.count() > 0;
+
+    let detached_commitmeta =
+        repo.read_commit_detached_metadata(&merge_commit, gio::Cancellable::NONE)?;
+    let detached_commitmeta = detached_commitmeta
+        .as_ref()
+        .map(|v| glib::VariantDict::new(Some(&v)));
+    let cached_update = detached_commitmeta
+        .as_ref()
+        .map(parse_cached_update)
+        .transpose()?
+        .flatten();
     let state = Box::new(LayeredImageState {
         base_commit,
         merge_commit,
@@ -1003,6 +1138,7 @@ pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<Layer
         manifest_digest,
         manifest,
         configuration,
+        cached_update,
     });
     tracing::debug!(state = ?state);
     Ok(state)
