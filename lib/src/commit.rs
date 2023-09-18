@@ -9,6 +9,7 @@ use camino::Utf8Path;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt;
+use io_lifetimes::AsFd;
 use rustix::fs::MetadataExt;
 use std::borrow::Cow;
 use std::convert::TryInto;
@@ -101,16 +102,42 @@ fn remove_all_on_mount_recurse(root: &Dir, rootdev: u64, path: &Path) -> Result<
     Ok(skipped)
 }
 
+/// Try to (heuristically) determine if the provided path is a mount root.
+fn is_mountpoint(root: &Dir, path: &Path) -> bool {
+    // https://github.com/systemd/systemd/blob/8fbf0a214e2fe474655b17a4b663122943b55db0/src/basic/mountpoint-util.c#L176
+    use rustix::fs::{AtFlags, StatxFlags};
+
+    let attr_mount_root: u32 = libc::STATX_ATTR_MOUNT_ROOT.try_into().unwrap();
+    let flags: StatxFlags = StatxFlags::from_bits(attr_mount_root).unwrap();
+    if let Ok(meta) = rustix::fs::statx(
+        root.as_fd(),
+        path,
+        AtFlags::NO_AUTOMOUNT | AtFlags::SYMLINK_NOFOLLOW,
+        flags,
+    ) {
+        (meta.stx_attributes & attr_mount_root as u64) > 0
+    } else {
+        return false;
+    }
+}
+
 fn clean_subdir(root: &Dir, rootdev: u64) -> Result<()> {
     for entry in root.entries()? {
         let entry = entry?;
         let metadata = entry.metadata()?;
         let dev = metadata.dev();
+        let path = PathBuf::from(entry.file_name());
         // Ignore other filesystem mounts, e.g. podman injects /run/.containerenv
         if dev != rootdev {
+            tracing::trace!("Skipping entry in foreign dev {path:?}");
             continue;
         }
-        let path = PathBuf::from(entry.file_name());
+        // Also ignore bind mounts, if we have a new enough kernel with statx()
+        // that will tell us.
+        if is_mountpoint(root, &path) {
+            tracing::trace!("Skipping mount point {path:?}");
+            continue;
+        }
         if metadata.is_dir() {
             remove_all_on_mount_recurse(root, rootdev, &path)?;
         } else {
