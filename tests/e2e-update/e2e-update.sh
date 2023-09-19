@@ -131,7 +131,7 @@ EOF
 runv butane -o ${testtmp}/test.ign ${testtmp}/test.bu
 cd ${testtmp}
 qemuexec_args=(kola qemuexec --propagate-initramfs-failure --qemu-image "${prev_image}" --qemu-firmware uefi \
-    -i test.ign --bind-ro ${COSA_DIR},/run/cosadir --bind-ro ${bootupd_git},/run/bootupd-source --bind-rw .,/run/testtmp)
+    -i test.ign --bind-ro ${COSA_DIR},/run/cosadir --bind-ro ${bootupd_git},/run/bootupd-source --bind-rw ${testtmp},/run/testtmp)
 if test -n "${e2e_debug:-}"; then
     runv ${qemuexec_args[@]} --devshell
 else
