@@ -45,7 +45,7 @@ pub(crate) struct SavedState01 {
 
 impl ContentMetadata01 {
     pub(crate) fn upconvert(self) -> NewContentMetadata {
-        let timestamp = DateTime::<Utc>::from_utc(self.timestamp, Utc);
+        let timestamp = self.timestamp.and_utc();
         NewContentMetadata {
             timestamp,
             version: self.version,

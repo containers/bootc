@@ -97,9 +97,10 @@ pub(crate) fn parse_rpm_metadata(stdout: Vec<u8>) -> Result<ContentMetadata> {
             let parts: Vec<_> = s.splitn(2, ',').collect();
             let name = parts[0];
             if let Some(ts) = parts.get(1) {
-                let nt = NaiveDateTime::parse_from_str(ts, "%s")
-                    .context("Failed to parse rpm buildtime")?;
-                Ok((name, DateTime::<Utc>::from_utc(nt, Utc)))
+                let nt = DateTime::parse_from_str(ts, "%s")
+                    .context("Failed to parse rpm buildtime")?
+                    .with_timezone(&chrono::Utc);
+                Ok((name, nt))
             } else {
                 bail!("Failed to parse: {}", s);
             }

@@ -7,6 +7,8 @@ authors = ["Colin Walters <walters@verbum.org>"]
 edition = "2021"
 rust-version = "1.70.0"
 
+include = ["src", "LICENSE"]
+
 # See https://github.com/coreos/cargo-vendor-filterer
 [package.metadata.vendor-filter]
 platforms = ["*-unknown-linux-gnu"]
