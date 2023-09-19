@@ -103,21 +103,24 @@ fn remove_all_on_mount_recurse(root: &Dir, rootdev: u64, path: &Path) -> Result<
 }
 
 /// Try to (heuristically) determine if the provided path is a mount root.
-fn is_mountpoint(root: &Dir, path: &Path) -> bool {
+fn is_mountpoint(root: &Dir, path: &Path) -> Result<Option<bool>> {
     // https://github.com/systemd/systemd/blob/8fbf0a214e2fe474655b17a4b663122943b55db0/src/basic/mountpoint-util.c#L176
     use rustix::fs::{AtFlags, StatxFlags};
 
-    let attr_mount_root: u32 = libc::STATX_ATTR_MOUNT_ROOT.try_into().unwrap();
-    let flags: StatxFlags = StatxFlags::from_bits(attr_mount_root).unwrap();
-    if let Ok(meta) = rustix::fs::statx(
+    // SAFETY(unwrap): We can infallibly convert an i32 into a u64.
+    let mountroot_flag: u64 = libc::STATX_ATTR_MOUNT_ROOT.try_into().unwrap();
+    match rustix::fs::statx(
         root.as_fd(),
         path,
         AtFlags::NO_AUTOMOUNT | AtFlags::SYMLINK_NOFOLLOW,
-        flags,
+        StatxFlags::empty(),
     ) {
-        (meta.stx_attributes & attr_mount_root as u64) > 0
-    } else {
-        return false;
+        Ok(r) => {
+            let present = (r.stx_attributes_mask & mountroot_flag) > 0;
+            Ok(present.then(|| r.stx_attributes & mountroot_flag > 0))
+        }
+        Err(e) if e == rustix::io::Errno::NOSYS => Ok(None),
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -134,7 +137,7 @@ fn clean_subdir(root: &Dir, rootdev: u64) -> Result<()> {
         }
         // Also ignore bind mounts, if we have a new enough kernel with statx()
         // that will tell us.
-        if is_mountpoint(root, &path) {
+        if is_mountpoint(root, &path)?.unwrap_or_default() {
             tracing::trace!("Skipping mount point {path:?}");
             continue;
         }
@@ -203,6 +206,20 @@ pub(crate) async fn container_commit() -> Result<()> {
 mod tests {
     use super::*;
     use cap_std_ext::cap_tempfile;
+
+    #[test]
+    fn test_is_mountpoint() -> Result<()> {
+        let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+        let supported = is_mountpoint(&root, Path::new("/")).unwrap();
+        match supported {
+            Some(r) => assert!(r),
+            // If the host doesn't support statx, ignore this for now
+            None => return Ok(()),
+        }
+        let tmpdir = cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+        assert!(!is_mountpoint(&tmpdir, Path::new(".")).unwrap().unwrap());
+        Ok(())
+    }
 
     #[test]
     fn commit() -> Result<()> {
