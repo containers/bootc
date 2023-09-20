@@ -26,21 +26,45 @@ pub(crate) enum ClientRequest {
     Status,
 }
 
-pub(crate) fn install(source_root: &str, dest_root: &str, device: &str) -> Result<()> {
+pub(crate) fn install(
+    source_root: &str,
+    dest_root: &str,
+    device: Option<&str>,
+    target_components: Option<&[String]>,
+) -> Result<()> {
+    // TODO: Change this to an Option<&str>; though this probably balloons into having
+    // DeviceComponent and FileBasedComponent
+    let device = device.unwrap_or("");
     let source_root = openat::Dir::open(source_root)?;
     SavedState::ensure_not_present(dest_root)
         .context("failed to install, invalid re-install attempted")?;
 
-    let components = get_components();
-    if components.is_empty() {
+    let all_components = get_components();
+    if all_components.is_empty() {
         println!("No components available for this platform.");
         return Ok(());
     }
+    let target_components = if let Some(target_components) = target_components {
+        target_components
+            .iter()
+            .map(|name| {
+                all_components
+                    .get(name.as_str())
+                    .ok_or_else(|| anyhow!("Unknown component: {name}"))
+            })
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        all_components.values().collect()
+    };
+
+    if target_components.is_empty() {
+        anyhow::bail!("No components specified");
+    }
 
     let mut state = SavedState::default();
-    for component in components.values() {
+    for component in target_components {
         // skip for BIOS if device is empty
-        if component.name() == "BIOS" && device.trim().is_empty() {
+        if component.name() == "BIOS" && device.is_empty() {
             println!(
                 "Skip installing component {} without target device",
                 component.name()
