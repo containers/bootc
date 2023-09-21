@@ -44,11 +44,21 @@ replace-with = "vendored-sources"
 directory = "vendor"
 EOF
 
+%package grub2-static
+Summary: Static grub2 configuration files for CoreOS-alike systems
+
+%description grub2-static
+This package includes static grub2 configuration files.
+
+%files grub2-static
+%{_prefix}/lib/bootupd
+
 %build
 cargo build --release
 
 %install
 %make_install INSTALL="install -p -c"
+make install-grub-static DESTDIR=%{?buildroot} INSTALL="%{__install} -p"
 
 %post        -n %{crate}
 %systemd_post bootupd.service bootupd.socket
