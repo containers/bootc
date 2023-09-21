@@ -337,7 +337,7 @@ pub(crate) fn apply_diff(
     if !opts.skip_removals {
         for path in diff.removals.iter() {
             destdir
-                .remove_file(path)
+                .remove_file_optional(path)
                 .with_context(|| format!("removing {path}"))?;
         }
     }
