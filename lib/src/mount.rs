@@ -25,7 +25,7 @@ pub(crate) struct Findmnt {
 pub(crate) fn inspect_filesystem(path: &Utf8Path) -> Result<Filesystem> {
     tracing::debug!("Inspecting {path}");
     let o = Command::new("findmnt")
-        .args(["-J", "--output-all", path.as_str()])
+        .args(["-J", "-v", "--output-all", path.as_str()])
         .output()?;
     let st = o.status;
     if !st.success() {

@@ -967,6 +967,15 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     // for GRUB (BIOS) and in the future zipl (I think).
     let backing_device = {
         let mut dev = inspect.source;
+        // Hack: trim bind mount information from source
+        if dev.contains('[') {
+            dev = inspect
+                .sources
+                .into_iter()
+                .flatten()
+                .next()
+                .ok_or_else(|| anyhow!("Expected `sources` in findmnt output"))?;
+        }
         loop {
             tracing::debug!("Finding parents for {dev}");
             let mut parents = crate::blockdev::find_parent_devices(&dev)?.into_iter();
