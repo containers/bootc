@@ -21,6 +21,7 @@ use camino::Utf8PathBuf;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtDirExt;
+use clap::ValueEnum;
 use rustix::fs::MetadataExt;
 
 use fn_error_context::context;
@@ -44,6 +45,7 @@ const BOOT: &str = "boot";
 const RUN_BOOTC: &str = "/run/bootc";
 /// This is an ext4 special directory we need to ignore.
 const LOST_AND_FOUND: &str = "lost+found";
+pub(crate) const ARCH_USES_EFI: bool = cfg!(any(target_arch = "x86_64", target_arch = "aarch64"));
 
 /// Kernel argument used to specify we want the rootfs mounted read-write by default
 const RW_KARG: &str = "rw";
@@ -117,6 +119,28 @@ pub(crate) struct InstallOpts {
     pub(crate) config_opts: InstallConfigOpts,
 }
 
+#[derive(ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ReplaceMode {
+    /// Completely wipe the contents of the target filesystem.  This cannot
+    /// be done if the target filesystem is the one the system is booted from.
+    Wipe,
+    /// This is a destructive operation in the sense that the bootloader state
+    /// will have its contents wiped and replaced.  However,
+    /// the running system (and all files) will remain in place until reboot.
+    ///
+    /// As a corollary to this, you will also need to remove all the old operating
+    /// system binaries after the reboot into the target system; this can be done
+    /// with code in the new target system, or manually.
+    Alongside,
+}
+
+impl std::fmt::Display for ReplaceMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
+}
+
 /// Options for installing to a filesystem
 #[derive(Debug, Clone, clap::Args)]
 pub(crate) struct InstallTargetFilesystemOpts {
@@ -141,9 +165,10 @@ pub(crate) struct InstallTargetFilesystemOpts {
     #[clap(long)]
     pub(crate) boot_mount_spec: Option<String>,
 
-    /// Automatically wipe existing data on the filesystems.
+    /// Initialize the system in-place; at the moment, only one mode for this is implemented.
+    /// In the future, it may also be supported to set up an explicit "dual boot" system.
     #[clap(long)]
-    pub(crate) wipe: bool,
+    pub(crate) replace: Option<ReplaceMode>,
 }
 
 /// Perform an installation to a mounted filesystem.
@@ -592,6 +617,8 @@ pub(crate) struct RootSetup {
     device: Utf8PathBuf,
     rootfs: Utf8PathBuf,
     rootfs_fd: Dir,
+    /// If true, do not try to remount the root read-only and flush the journal, etc.
+    skip_finalize: bool,
     boot: MountSpec,
     kargs: Vec<String>,
 }
@@ -826,9 +853,11 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         .run()?;
 
     // Finalize mounted filesystems
-    let bootfs = rootfs.rootfs.join("boot");
-    for fs in [bootfs.as_path(), rootfs.rootfs.as_path()] {
-        finalize_filesystem(fs)?;
+    if !rootfs.skip_finalize {
+        let bootfs = rootfs.rootfs.join("boot");
+        for fs in [bootfs.as_path(), rootfs.rootfs.as_path()] {
+            finalize_filesystem(fs)?;
+        }
     }
 
     Ok(())
@@ -900,6 +929,36 @@ fn require_empty_rootdir(rootfs_fd: &Dir) -> Result<()> {
     Ok(())
 }
 
+/// Remove all entries in a directory, but do not traverse across distinct devices.
+#[context("Removing entries (noxdev")]
+fn remove_all_in_dir_no_xdev(d: &Dir) -> Result<()> {
+    let parent_dev = d.dir_metadata()?.dev();
+    for entry in d.entries()? {
+        let entry = entry?;
+        let entry_dev = entry.metadata()?.dev();
+        if entry_dev == parent_dev {
+            d.remove_all_optional(entry.file_name())?;
+        }
+    }
+    anyhow::Ok(())
+}
+
+#[context("Removing boot directory content")]
+fn clean_boot_directories(rootfs: &Dir) -> Result<()> {
+    let bootdir = rootfs.open_dir(BOOT).context("Opening /boot")?;
+    // This should not remove /boot/efi note.
+    remove_all_in_dir_no_xdev(&bootdir)?;
+    if ARCH_USES_EFI {
+        if let Some(efidir) = bootdir
+            .open_dir_optional(crate::bootloader::EFI_DIR)
+            .context("Opening /boot/efi")?
+        {
+            remove_all_in_dir_no_xdev(&efidir)?;
+        }
+    }
+    Ok(())
+}
+
 /// Implementation of the `bootc install-to-filsystem` CLI command.
 pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Result<()> {
     // Gather global state, destructuring the provided options
@@ -909,19 +968,21 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     let root_path = &fsopts.root_path;
     let rootfs_fd = Dir::open_ambient_dir(root_path, cap_std::ambient_authority())
         .with_context(|| format!("Opening target root directory {root_path}"))?;
-    if fsopts.wipe {
-        let rootfs_fd = rootfs_fd.try_clone()?;
-        println!("Wiping contents of root");
-        tokio::task::spawn_blocking(move || {
-            for e in rootfs_fd.entries()? {
-                let e = e?;
-                rootfs_fd.remove_all_optional(e.file_name())?;
-            }
-            anyhow::Ok(())
-        })
-        .await??;
-    } else {
-        require_empty_rootdir(&rootfs_fd)?;
+    match fsopts.replace {
+        Some(ReplaceMode::Wipe) => {
+            let rootfs_fd = rootfs_fd.try_clone()?;
+            println!("Wiping contents of root");
+            tokio::task::spawn_blocking(move || {
+                for e in rootfs_fd.entries()? {
+                    let e = e?;
+                    rootfs_fd.remove_all_optional(e.file_name())?;
+                }
+                anyhow::Ok(())
+            })
+            .await??;
+        }
+        Some(ReplaceMode::Alongside) => clean_boot_directories(&rootfs_fd)?,
+        None => require_empty_rootdir(&rootfs_fd)?,
     }
 
     // Gather data about the root filesystem
@@ -929,15 +990,22 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
 
     // We support overriding the mount specification for root (i.e. LABEL vs UUID versus
     // raw paths).
-    let root_mount_spec = if let Some(s) = fsopts.root_mount_spec {
-        s
+    let (root_mount_spec, root_extra) = if let Some(s) = fsopts.root_mount_spec {
+        (s, None)
     } else {
         let mut uuid = inspect
             .uuid
             .ok_or_else(|| anyhow!("No filesystem uuid found in target root"))?;
         uuid.insert_str(0, "UUID=");
         tracing::debug!("root {uuid}");
-        uuid
+        let opts = match inspect.fstype.as_str() {
+            "btrfs" => {
+                let subvol = crate::utils::find_mount_option(&inspect.options, "subvol");
+                subvol.map(|vol| format!("rootflags=subvol={vol}"))
+            }
+            _ => None,
+        };
+        (uuid, opts)
     };
     tracing::debug!("Root mount spec: {root_mount_spec}");
 
@@ -995,7 +1063,11 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     // By default, we inject a boot= karg because things like FIPS compliance currently
     // require checking in the initramfs.
     let bootarg = format!("boot={}", &boot.source);
-    let kargs = vec![rootarg, RW_KARG.to_string(), bootarg];
+    let kargs = [rootarg]
+        .into_iter()
+        .chain(root_extra)
+        .chain([RW_KARG.to_string(), bootarg])
+        .collect::<Vec<_>>();
 
     let mut rootfs = RootSetup {
         luks_device: None,
@@ -1004,6 +1076,7 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
         rootfs_fd,
         boot,
         kargs,
+        skip_finalize: matches!(fsopts.replace, Some(ReplaceMode::Alongside)),
     };
 
     install_to_filesystem_impl(&state, &mut rootfs).await?;

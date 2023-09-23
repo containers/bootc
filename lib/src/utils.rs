@@ -18,6 +18,20 @@ pub(crate) fn origin_has_rpmostree_stuff(kf: &glib::KeyFile) -> bool {
     false
 }
 
+/// Given an mount option string list like foo,bar=baz,something=else,ro parse it and find
+/// the first entry like $optname=
+/// This will not match a bare `optname` without an equals.
+pub(crate) fn find_mount_option<'a>(
+    option_string_list: &'a str,
+    optname: &'_ str,
+) -> Option<&'a str> {
+    option_string_list
+        .split(',')
+        .filter_map(|k| k.split_once('='))
+        .filter_map(|(k, v)| (k == optname).then_some(v))
+        .next()
+}
+
 /// Run a command in the host mount namespace
 #[allow(dead_code)]
 pub(crate) fn run_in_host_mountns(cmd: &str) -> Command {
@@ -70,4 +84,12 @@ fn test_digested_pullspec() {
         digested_pullspec("quay.io/example/foo", digest),
         format!("quay.io/example/foo@{digest}")
     );
+}
+
+#[test]
+fn test_find_mount_option() {
+    const V1: &str = "rw,relatime,compress=foo,subvol=blah,fast";
+    assert_eq!(find_mount_option(V1, "subvol").unwrap(), "blah");
+    assert_eq!(find_mount_option(V1, "rw"), None);
+    assert_eq!(find_mount_option(V1, "somethingelse"), None);
 }
