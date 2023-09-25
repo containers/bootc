@@ -58,6 +58,8 @@ pub enum Transport {
     OciArchive,
     /// Local container storage (`containers-storage:`)
     ContainerStorage,
+    /// Local directory (`dir:`)
+    Dir,
 }
 
 /// Combination of a remote image reference and transport.
@@ -104,6 +106,7 @@ impl TryFrom<&str> for Transport {
             Self::OCI_STR => Self::OciDir,
             Self::OCI_ARCHIVE_STR => Self::OciArchive,
             Self::CONTAINERS_STORAGE_STR => Self::ContainerStorage,
+            Self::LOCAL_DIRECTORY_STR => Self::Dir,
             o => return Err(anyhow!("Unknown transport '{}'", o)),
         })
     }
@@ -113,6 +116,7 @@ impl Transport {
     const OCI_STR: &str = "oci";
     const OCI_ARCHIVE_STR: &str = "oci-archive";
     const CONTAINERS_STORAGE_STR: &str = "containers-storage";
+    const LOCAL_DIRECTORY_STR: &str = "dir";
     const REGISTRY_STR: &str = "registry";
 
     /// Retrieve an identifier that can then be re-parsed from [`Transport::try_from::<&str>`].
@@ -122,6 +126,7 @@ impl Transport {
             Transport::OciDir => Self::OCI_STR,
             Transport::OciArchive => Self::OCI_ARCHIVE_STR,
             Transport::ContainerStorage => Self::CONTAINERS_STORAGE_STR,
+            Transport::Dir => Self::LOCAL_DIRECTORY_STR,
         }
     }
 }
@@ -242,6 +247,7 @@ impl std::fmt::Display for Transport {
             Self::OciArchive => "oci-archive:",
             Self::OciDir => "oci:",
             Self::ContainerStorage => "containers-storage:",
+            Self::Dir => "dir:",
         };
         f.write_str(s)
     }
@@ -514,6 +520,10 @@ mod tests {
         let ir: ImageReference = "oci:somedir".try_into().unwrap();
         assert_eq!(ir.transport, Transport::OciDir);
         assert_eq!(ir.name, "somedir");
+
+        let ir: ImageReference = "dir:/some/dir/blah".try_into().unwrap();
+        assert_eq!(ir.transport, Transport::Dir);
+        assert_eq!(ir.name, "/some/dir/blah");
     }
 
     #[test]

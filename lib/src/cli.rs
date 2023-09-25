@@ -320,6 +320,7 @@ pub(crate) enum ContainerImageOpts {
 
         /// Source image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos@sha256:abcd...
         /// This conflicts with `--image`.
+        /// This conflicts with `--image`. Supports `registry:`, `docker://`, `oci:`, `oci-archive:`, `containers-storage:`, and `dir:`
         #[clap(long, required_unless_present = "image")]
         imgref: Option<String>,
 
