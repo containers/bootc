@@ -157,3 +157,27 @@ system or distribution to ship a separate installer that creates more complex bl
 storage or filesystem setups, but reuses the "top half" of the logic.
 For example, a goal is to change [Anaconda](https://github.com/rhinstaller/anaconda/)
 to use this.
+
+
+### Using `bootc install-to-filesystem --replace=alongside`
+
+This is a variant of `install-to-filesystem`, which maximizes convenience for using
+an existing Linux system, converting it into the target container image.  Note that
+the `/boot` (and `/boot/efi`) partitions *will be reinitialized* - so this is a
+somewhat destructive operation for the existing Linux installation.
+
+Also, because the filesystem is reused, it's required that the target system kernel
+support the root storage setup already initialized.
+
+The core command should look like this:
+
+```
+$ podman run --privileged -v /:/target --pid=host --net=none --security-opt label=type:install_t \
+  <image> \
+  bootc install-to-filesystem --replace=alongside /target
+```
+
+At the current time, leftover data in `/` is *not* automatically cleaned up.  This can
+be useful, because it allows the new image to automatically import data from the previous
+host system!  For example, things like SSH keys or container images can be copied
+and then deleted from the original.
