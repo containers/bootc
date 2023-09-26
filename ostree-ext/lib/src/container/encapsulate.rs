@@ -310,7 +310,7 @@ fn build_oci(
 /// such as `/foo/bar` will return `("/foo/bar"`, None)`, whereas
 /// e.g. `/foo/bar:latest` will return `("/foo/bar", Some("latest"))`.
 pub(crate) fn parse_oci_path_and_tag(path: &str) -> (&str, Option<&str>) {
-    match path.rsplit_once(':') {
+    match path.split_once(':') {
         Some((path, tag)) => (path, Some(tag)),
         None => (path, None),
     }
@@ -331,6 +331,7 @@ async fn build_impl(
     }
     let digest = if dest.transport == Transport::OciDir {
         let (path, tag) = parse_oci_path_and_tag(dest.name.as_str());
+        tracing::debug!("using OCI path={path} tag={tag:?}");
         let _copied: ImageReference =
             build_oci(repo, ostree_ref, Path::new(path), tag, config, opts)?;
         None
@@ -355,7 +356,9 @@ async fn build_impl(
             sigverify: SignatureSource::ContainerPolicyAllowInsecure,
             imgref: dest.to_owned(),
         };
-        let (_, digest) = super::unencapsulate::fetch_manifest(&imgref).await?;
+        let (_, digest) = super::unencapsulate::fetch_manifest(&imgref)
+            .await
+            .context("Querying manifest after push")?;
         Ok(digest)
     }
 }
@@ -407,4 +410,17 @@ pub async fn encapsulate<S: AsRef<str>>(
     dest: &ImageReference,
 ) -> Result<String> {
     build_impl(repo, ostree_ref.as_ref(), config, opts, dest).await
+}
+
+#[test]
+fn test_parse_ocipath() {
+    let default = "/foo/bar";
+    let untagged = "/foo/bar:baz";
+    let tagged = "/foo/bar:baz:latest";
+    assert_eq!(parse_oci_path_and_tag(default), ("/foo/bar", None));
+    assert_eq!(
+        parse_oci_path_and_tag(tagged),
+        ("/foo/bar", Some("baz:latest"))
+    );
+    assert_eq!(parse_oci_path_and_tag(untagged), ("/foo/bar", Some("baz")));
 }
