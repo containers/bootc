@@ -187,6 +187,17 @@ pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootL
 }
 
 /// Wrapper for pulling a container image, wiring up status output.
+async fn new_importer(
+    repo: &ostree::Repo,
+    imgref: &ostree_container::OstreeImageReference,
+) -> Result<ostree_container::store::ImageImporter> {
+    let config = Default::default();
+    let mut imp = ostree_container::store::ImageImporter::new(repo, imgref, config).await?;
+    imp.require_bootable();
+    Ok(imp)
+}
+
+/// Wrapper for pulling a container image, wiring up status output.
 #[context("Pulling")]
 async fn pull(
     repo: &ostree::Repo,
@@ -194,8 +205,7 @@ async fn pull(
     quiet: bool,
 ) -> Result<Box<LayeredImageState>> {
     let imgref = &OstreeImageReference::from(imgref.clone());
-    let config = Default::default();
-    let mut imp = ostree_container::store::ImageImporter::new(repo, imgref, config).await?;
+    let mut imp = new_importer(repo, imgref).await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
             println!("No changes in {} => {}", imgref, c.manifest_digest);
@@ -259,6 +269,7 @@ pub(crate) async fn prepare_for_write() -> Result<()> {
 async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     prepare_for_write().await?;
     let sysroot = &get_locked_sysroot().await?;
+    let repo = &sysroot.repo();
     let booted_deployment = &sysroot.require_booted_deployment()?;
     let (_deployments, host) = crate::status::get_status(sysroot, Some(booted_deployment))?;
     // SAFETY: There must be a status if we have a booted deployment
@@ -278,27 +289,21 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         .and_then(|e| e.image.as_ref())
         .map(|img| img.image_digest.as_str());
     if opts.check {
-        // pull the image manifest without the layers
-        let config = Default::default();
-        let imgref = &OstreeImageReference::from(imgref.clone());
-        let mut imp =
-            ostree_container::store::ImageImporter::new(&sysroot.repo(), imgref, config).await?;
-        imp.require_bootable();
+        let imgref = imgref.clone().into();
+        let mut imp = new_importer(repo, &imgref).await?;
         match imp.prepare().await? {
-            PrepareResult::AlreadyPresent(c) => {
-                println!(
-                    "No changes available for {}. Latest digest: {}",
-                    imgref, c.manifest_digest
-                );
+            PrepareResult::AlreadyPresent(_) => {
+                println!("No changes in: {}", imgref);
                 return Ok(());
             }
             PrepareResult::Ready(r) => {
-                // TODO show a diff
-                println!(
-                    "New image available for {imgref}. Digest {}",
-                    r.manifest_digest
-                );
-                // Note here we'll fall through to handling the --touch-if-changed below
+                println!("Update available for: {}", imgref);
+                println!("  Digest: {}", r.manifest_digest);
+                if let Some(previous) = r.previous_state.as_ref() {
+                    let diff = ostree_container::ManifestDiff::new(&previous.manifest, &r.manifest);
+                    diff.print();
+                }
+                // Note fallthrough to -- touch-if-changed
             }
         }
     } else {
