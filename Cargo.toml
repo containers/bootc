@@ -29,4 +29,12 @@ exclude-crate-paths = [ { name = "libz-sys", exclude = "src/zlib" },
                         { name = "rustix", exclude = "src/imp/linux_raw" },
                         # Test files that include binaries
                         { name = "system-deps", exclude = "src/tests" },
+                        # This stuff is giant, trim unused versions
+                        { name = "k8s-openapi", exclude = "src/v1_20" },
+                        { name = "k8s-openapi", exclude = "src/v1_21" },
+                        { name = "k8s-openapi", exclude = "src/v1_22" },
+                        { name = "k8s-openapi", exclude = "src/v1_23" },
+                        { name = "k8s-openapi", exclude = "src/v1_24" },
+                        # We use 1.25
+                        { name = "k8s-openapi", exclude = "src/v1_26" },
                       ]
