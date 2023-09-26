@@ -517,13 +517,39 @@ mod tests {
                 panic!("Should fail to parse: {}", v)
             }
         }
-        let ir: ImageReference = "oci:somedir".try_into().unwrap();
-        assert_eq!(ir.transport, Transport::OciDir);
-        assert_eq!(ir.name, "somedir");
-
-        let ir: ImageReference = "dir:/some/dir/blah".try_into().unwrap();
-        assert_eq!(ir.transport, Transport::Dir);
-        assert_eq!(ir.name, "/some/dir/blah");
+        struct Case {
+            s: &'static str,
+            transport: Transport,
+            name: &'static str,
+        }
+        for case in [
+            Case {
+                s: "oci:somedir",
+                transport: Transport::OciDir,
+                name: "somedir",
+            },
+            Case {
+                s: "dir:/some/dir/blah",
+                transport: Transport::Dir,
+                name: "/some/dir/blah",
+            },
+            Case {
+                s: "oci-archive:/path/to/foo.ociarchive",
+                transport: Transport::OciArchive,
+                name: "/path/to/foo.ociarchive",
+            },
+            Case {
+                s: "containers-storage:localhost/someimage:blah",
+                transport: Transport::ContainerStorage,
+                name: "localhost/someimage:blah",
+            },
+        ] {
+            let ir: ImageReference = case.s.try_into().unwrap();
+            assert_eq!(ir.transport, case.transport);
+            assert_eq!(ir.name, case.name);
+            let reserialized = ir.to_string();
+            assert_eq!(case.s, reserialized.as_str());
+        }
     }
 
     #[test]
