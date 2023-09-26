@@ -59,10 +59,10 @@ You can also build this project like any other Rust project, e.g. `cargo build -
 
 Many users will be more interested in base (container) images.
 
-* The [bootc-demo-base-images](https://github.com/cgwalters/bootc-demo-base-images) contains demonstration (relatively) small images that can be used as a starting point.
-* [Fedora CoreOS](https://quay.io/repository/fedora/fedora-coreos) can also be used as a base image, but it does not currently include `bootc`.
+* [Fedora CoreOS](https://quay.io/repository/fedora/fedora-coreos) can be used as a base image; you will need to [enable bootc](https://github.com/coreos/rpm-ostree/blob/main/docs/bootc.md) there.
+* There is also an in-development [Project Sagano](https://gitlab.com/CentOS/cloud/sagano) for Fedora/CentOS.
 
-However, bootc itself is not tied to Fedora derivatives; and the plan is to extend the set of images.
+However, bootc itself is not tied to Fedora derivatives; [this issue](https://github.com/coreos/bootupd/issues/468) tracks the main blocker for other distributions.
 
 ### Deriving from and switching to base images
 
