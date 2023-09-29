@@ -5,7 +5,6 @@
  */
 
 use std::cell::RefCell;
-use std::io::prelude::*;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -340,17 +339,7 @@ impl Component for Efi {
             Command::new("mv").args([&efisrc, &dest_efidir]).run()?;
         }
 
-        // Query the rpm database and list the package and build times for all the
-        // files in the EFI system partition. If any files are not owned it is considered
-        // and error condition.
-        let mut rpmout = packagesystem::query(sysroot_path, &dest_efidir)?;
-        let rpmout = rpmout.output()?;
-        if !rpmout.status.success() {
-            std::io::stderr().write_all(&rpmout.stderr)?;
-            bail!("Failed to invoke rpm -qf");
-        }
-
-        let meta = packagesystem::parse_metadata(rpmout.stdout)?;
+        let meta = packagesystem::query(sysroot_path, &dest_efidir)?;
         write_update_metadata(sysroot_path, self, &meta)?;
         Ok(meta)
     }

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Write;
 use std::path::Path;
-use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use chrono::prelude::*;
@@ -9,7 +9,7 @@ use crate::model::*;
 use crate::ostreeutil;
 
 /// Parse the output of `rpm -q`
-pub(crate) fn parse_metadata(stdout: Vec<u8>) -> Result<ContentMetadata> {
+fn rpm_parse_metadata(stdout: Vec<u8>) -> Result<ContentMetadata> {
     let pkgs = std::str::from_utf8(&stdout)?
         .split_whitespace()
         .map(|s| -> Result<_> {
@@ -46,7 +46,7 @@ pub(crate) fn parse_metadata(stdout: Vec<u8>) -> Result<ContentMetadata> {
 
 /// Query the rpm database and list the package and build times, for all the
 /// files in the EFI system partition, or for grub2-install file
-pub(crate) fn query(sysroot_path: &str, path: &Path) -> Result<Command> {
+pub(crate) fn query(sysroot_path: &str, path: &Path) -> Result<ContentMetadata> {
     let mut c = ostreeutil::rpm_cmd(sysroot_path);
     c.args(["-q", "--queryformat", "%{nevra},%{buildtime} ", "-f"]);
 
@@ -65,5 +65,12 @@ pub(crate) fn query(sysroot_path: &str, path: &Path) -> Result<Command> {
             bail!("Unsupported file/directory {:?}", path)
         }
     }
-    Ok(c)
+
+    let rpmout = c.output()?;
+    if !rpmout.status.success() {
+        std::io::stderr().write_all(&rpmout.stderr)?;
+        bail!("Failed to invoke rpm -qf");
+    }
+
+    rpm_parse_metadata(rpmout.stdout)
 }
