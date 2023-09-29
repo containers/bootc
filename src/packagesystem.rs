@@ -9,7 +9,7 @@ use crate::model::*;
 use crate::ostreeutil;
 
 /// Parse the output of `rpm -q`
-fn rpm_parse_metadata(stdout: Vec<u8>) -> Result<ContentMetadata> {
+fn rpm_parse_metadata(stdout: &[u8]) -> Result<ContentMetadata> {
     let pkgs = std::str::from_utf8(&stdout)?
         .split_whitespace()
         .map(|s| -> Result<_> {
@@ -72,5 +72,15 @@ pub(crate) fn query(sysroot_path: &str, path: &Path) -> Result<ContentMetadata> 
         bail!("Failed to invoke rpm -qf");
     }
 
-    rpm_parse_metadata(rpmout.stdout)
+    rpm_parse_metadata(&rpmout.stdout)
+}
+
+#[test]
+fn test_parse_rpmout() {
+    let testdata = "grub2-efi-x64-1:2.06-95.fc38.x86_64,1681321788 grub2-efi-x64-1:2.06-95.fc38.x86_64,1681321788 shim-x64-15.6-2.x86_64,1657222566 shim-x64-15.6-2.x86_64,1657222566 shim-x64-15.6-2.x86_64,1657222566";
+    let parsed = rpm_parse_metadata(testdata.as_bytes()).unwrap();
+    assert_eq!(
+        parsed.version,
+        "grub2-efi-x64-1:2.06-95.fc38.x86_64,shim-x64-15.6-2.x86_64"
+    );
 }
