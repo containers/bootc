@@ -36,6 +36,8 @@ cosaPod(runAsUser: 0, memory: "4608Mi", cpu: "4") {
   stage("Build FCOS") {
     checkout scm
     unstash 'build'
+    // Fast track https://bodhi.fedoraproject.org/updates/FEDORA-2023-5041615f94
+    shwrap("sudo dnf -y update https://kojipkgs.fedoraproject.org//packages/virtiofsd/1.7.0/5.fc38/x86_64/virtiofsd-1.7.0-5.fc38.x86_64.rpm")
     // Note that like {rpm-,}ostree we want to install to both / and overrides/rootfs
     // because bootupd is used both during the `rpm-ostree compose tree` as well as
     // inside the target operating system.
