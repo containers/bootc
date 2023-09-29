@@ -770,8 +770,11 @@ async fn prepare_install(
     crate::cli::require_root()?;
     require_systemd_pid1()?;
 
+    let rootfs = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())
+        .context("Opening /")?;
+
     // This command currently *must* be run inside a privileged container.
-    let container_info = crate::containerenv::get_container_execution_info()?;
+    let container_info = crate::containerenv::get_container_execution_info(&rootfs)?;
     let source = SourceInfo::from_container(&container_info)?;
 
     ensure_var()?;
