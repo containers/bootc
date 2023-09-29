@@ -10,7 +10,7 @@ use crate::ostreeutil;
 
 /// Parse the output of `rpm -q`
 fn rpm_parse_metadata(stdout: &[u8]) -> Result<ContentMetadata> {
-    let pkgs = std::str::from_utf8(&stdout)?
+    let pkgs = std::str::from_utf8(stdout)?
         .split_whitespace()
         .map(|s| -> Result<_> {
             let parts: Vec<_> = s.splitn(2, ',').collect();
