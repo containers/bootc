@@ -14,12 +14,11 @@ use anyhow::{bail, Context, Result};
 use openat_ext::OpenatDirExt;
 use widestring::U16CString;
 
-use crate::component::*;
 use crate::filetree;
 use crate::model::*;
 use crate::ostreeutil;
-use crate::util;
 use crate::util::CommandRunExt;
+use crate::{component::*, packagesystem};
 
 /// Well-known paths to the ESP that may have been mounted external to us.
 pub(crate) const ESP_MOUNTS: &[&str] = &["boot", "boot/efi", "efi"];
@@ -344,14 +343,14 @@ impl Component for Efi {
         // Query the rpm database and list the package and build times for all the
         // files in the EFI system partition. If any files are not owned it is considered
         // and error condition.
-        let mut rpmout = util::rpm_query(sysroot_path, &dest_efidir)?;
+        let mut rpmout = packagesystem::query(sysroot_path, &dest_efidir)?;
         let rpmout = rpmout.output()?;
         if !rpmout.status.success() {
             std::io::stderr().write_all(&rpmout.stderr)?;
             bail!("Failed to invoke rpm -qf");
         }
 
-        let meta = util::parse_rpm_metadata(rpmout.stdout)?;
+        let meta = packagesystem::parse_metadata(rpmout.stdout)?;
         write_update_metadata(sysroot_path, self, &meta)?;
         Ok(meta)
     }

@@ -28,6 +28,7 @@ mod ipc;
 mod model;
 mod model_legacy;
 mod ostreeutil;
+mod packagesystem;
 mod sha512string;
 mod util;
 

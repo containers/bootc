@@ -4,6 +4,7 @@ use std::process::Command;
 
 use crate::component::*;
 use crate::model::*;
+use crate::packagesystem;
 use anyhow::{bail, Result};
 
 use crate::util;
@@ -114,14 +115,14 @@ impl Component for Bios {
         }
 
         // Query the rpm database and list the package and build times for /usr/sbin/grub2-install
-        let mut rpmout = util::rpm_query(sysroot_path, &grub_install)?;
+        let mut rpmout = packagesystem::query(sysroot_path, &grub_install)?;
         let rpmout = rpmout.output()?;
         if !rpmout.status.success() {
             std::io::stderr().write_all(&rpmout.stderr)?;
             bail!("Failed to invoke rpm -qf");
         }
 
-        let meta = util::parse_rpm_metadata(rpmout.stdout)?;
+        let meta = packagesystem::parse_metadata(rpmout.stdout)?;
         write_update_metadata(sysroot_path, self, &meta)?;
         Ok(meta)
     }
