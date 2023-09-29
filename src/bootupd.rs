@@ -75,6 +75,7 @@ pub(crate) fn install(
         let meta = component
             .install(&source_root, dest_root, device)
             .with_context(|| format!("installing component {}", component.name()))?;
+        log::info!("Installed {} {}", component.name(), meta.meta.version);
         state.installed.insert(component.name().into(), meta);
     }
 

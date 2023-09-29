@@ -105,6 +105,7 @@ impl Efi {
             if !status.success() {
                 anyhow::bail!("Failed to unmount {mount:?}: {status:?}");
             }
+            log::trace!("Unmounted");
         }
         Ok(())
     }
@@ -261,6 +262,7 @@ impl Component for Efi {
         } else {
             anyhow::bail!("No update metadata for component {} found", self.name());
         };
+        log::debug!("Found metadata {}", meta.version);
         let srcdir_name = component_updatedirname(self);
         let ft = crate::filetree::FileTree::new_from_dir(&src_root.sub_dir(&srcdir_name)?)?;
         let destdir = &self.ensure_mounted_esp(Path::new(dest_root))?;
