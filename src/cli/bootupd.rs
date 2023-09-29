@@ -61,7 +61,7 @@ pub struct InstallOpts {
 pub struct GenerateOpts {
     /// Physical root mountpoint
     #[clap(value_parser)]
-    sysroot: String,
+    sysroot: Option<String>,
 }
 
 impl DCommand {
@@ -76,7 +76,11 @@ impl DCommand {
 
     /// Runner for `generate-install-metadata` verb.
     pub(crate) fn run_generate_meta(opts: GenerateOpts) -> Result<()> {
-        bootupd::generate_update_metadata(&opts.sysroot).context("generating metadata failed")?;
+        let sysroot = opts.sysroot.as_deref().unwrap_or("/");
+        if sysroot != "/" {
+            anyhow::bail!("Using a non-default sysroot is not supported: {}", sysroot);
+        }
+        bootupd::generate_update_metadata(sysroot).context("generating metadata failed")?;
         Ok(())
     }
 
