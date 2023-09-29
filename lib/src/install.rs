@@ -465,7 +465,17 @@ async fn initialize_ostree_root_from_self(
         ["admin", "init-fs", "--modern", rootfs.as_str()],
     )?;
 
-    for (k, v) in [("sysroot.bootloader", "none"), ("sysroot.readonly", "true")] {
+    // Default to avoiding grub2-mkconfig etc., but we need to use zipl on s390x.
+    // TODO: Lower this logic into ostree proper.
+    let bootloader = if cfg!(target_arch = "s390x") {
+        "zipl"
+    } else {
+        "none"
+    };
+    for (k, v) in [
+        ("sysroot.bootloader", bootloader),
+        ("sysroot.readonly", "true"),
+    ] {
         Task::new("Configuring ostree repo", "ostree")
             .args(["config", "--repo", "ostree/repo", "set", k, v])
             .cwd(rootfs_dir)?
