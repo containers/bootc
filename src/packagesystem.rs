@@ -44,26 +44,18 @@ fn rpm_parse_metadata(stdout: &[u8]) -> Result<ContentMetadata> {
     })
 }
 
-/// Query the rpm database and list the package and build times, for all the
-/// files in the EFI system partition, or for grub2-install file
-pub(crate) fn query(sysroot_path: &str, path: &Path) -> Result<ContentMetadata> {
+/// Query the rpm database and list the package and build times.
+pub(crate) fn query_files<T>(
+    sysroot_path: &str,
+    paths: impl IntoIterator<Item = T>,
+) -> Result<ContentMetadata>
+where
+    T: AsRef<Path>,
+{
     let mut c = ostreeutil::rpm_cmd(sysroot_path);
     c.args(["-q", "--queryformat", "%{nevra},%{buildtime} ", "-f"]);
-
-    match path.file_name().expect("filename").to_str() {
-        Some("EFI") => {
-            let efidir = openat::Dir::open(path)?;
-            c.args(crate::util::filenames(&efidir)?.drain().map(|mut f| {
-                f.insert_str(0, "/boot/efi/EFI/");
-                f
-            }));
-        }
-        Some("grub2-install") => {
-            c.arg(path);
-        }
-        _ => {
-            bail!("Unsupported file/directory {:?}", path)
-        }
+    for arg in paths {
+        c.arg(arg.as_ref());
     }
 
     let rpmout = c.output()?;

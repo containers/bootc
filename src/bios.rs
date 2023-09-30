@@ -115,7 +115,7 @@ impl Component for Bios {
         }
 
         // Query the rpm database and list the package and build times for /usr/sbin/grub2-install
-        let meta = packagesystem::query(sysroot_path, &grub_install)?;
+        let meta = packagesystem::query_files(sysroot_path, [&grub_install])?;
         write_update_metadata(sysroot_path, self, &meta)?;
         Ok(meta)
     }

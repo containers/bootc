@@ -339,7 +339,13 @@ impl Component for Efi {
             Command::new("mv").args([&efisrc, &dest_efidir]).run()?;
         }
 
-        let meta = packagesystem::query(sysroot_path, &dest_efidir)?;
+        let efidir = openat::Dir::open(&dest_efidir)?;
+        let files = crate::util::filenames(&efidir)?.into_iter().map(|mut f| {
+            f.insert_str(0, "/boot/efi/EFI/");
+            f
+        });
+
+        let meta = packagesystem::query_files(sysroot_path, files)?;
         write_update_metadata(sysroot_path, self, &meta)?;
         Ok(meta)
     }
