@@ -30,12 +30,13 @@ pub(crate) fn install(
     source_root: &str,
     dest_root: &str,
     device: Option<&str>,
+    with_static_configs: bool,
     target_components: Option<&[String]>,
 ) -> Result<()> {
     // TODO: Change this to an Option<&str>; though this probably balloons into having
     // DeviceComponent and FileBasedComponent
     let device = device.unwrap_or("");
-    let source_root = openat::Dir::open(source_root)?;
+    let source_root = openat::Dir::open(source_root).context("Opening source root")?;
     SavedState::ensure_not_present(dest_root)
         .context("failed to install, invalid re-install attempted")?;
 
@@ -62,7 +63,8 @@ pub(crate) fn install(
     }
 
     let mut state = SavedState::default();
-    for component in target_components {
+    let mut installed_efi = false;
+    for &component in target_components.iter() {
         // skip for BIOS if device is empty
         if component.name() == "BIOS" && device.is_empty() {
             println!(
@@ -77,10 +79,22 @@ pub(crate) fn install(
             .with_context(|| format!("installing component {}", component.name()))?;
         log::info!("Installed {} {}", component.name(), meta.meta.version);
         state.installed.insert(component.name().into(), meta);
+        // Yes this is a hack...the Component thing just turns out to be too generic.
+        if component.name() == "EFI" {
+            installed_efi = true;
+        }
+    }
+    let sysroot = &openat::Dir::open(dest_root)?;
+
+    if with_static_configs {
+        crate::grubconfigs::install(sysroot, installed_efi)?;
     }
 
-    let sysroot = openat::Dir::open(dest_root)?;
-    let mut state_guard = SavedState::unlocked(sysroot).context("failed to acquire write lock")?;
+    // Unmount the ESP, etc.
+    drop(target_components);
+
+    let mut state_guard =
+        SavedState::unlocked(sysroot.try_clone()?).context("failed to acquire write lock")?;
     state_guard
         .update_state(&state)
         .context("failed to update state")?;
