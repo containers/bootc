@@ -20,8 +20,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Ok;
 use anyhow::{anyhow, Context, Result};
+use anyhow::{ensure, Ok};
 use bootc_utils::CommandRunExt;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
@@ -576,7 +576,7 @@ pub(crate) fn print_configuration() -> Result<()> {
 }
 
 #[context("Creating ostree deployment")]
-async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result<Storage> {
+async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result<(Storage, bool)> {
     let sepolicy = state.load_policy()?;
     let sepolicy = sepolicy.as_ref();
     // Load a fd for the mounted target physical root
@@ -584,17 +584,27 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
     let rootfs = root_setup.rootfs.as_path();
     let cancellable = gio::Cancellable::NONE;
 
+    let stateroot = state.stateroot();
+
+    let has_ostree = rootfs_dir.try_exists("ostree/repo")?;
+    if !has_ostree {
+        Task::new_and_run(
+            "Initializing ostree layout",
+            "ostree",
+            ["admin", "init-fs", "--modern", rootfs.as_str()],
+        )?;
+    } else {
+        println!("Reusing extant ostree layout");
+
+        let path = ".".into();
+        let _ = crate::utils::open_dir_remount_rw(rootfs_dir, path)
+            .context("remounting target as read-write")?;
+        crate::utils::remove_immutability(rootfs_dir, path)?;
+    }
+
     // Ensure that the physical root is labeled.
     // Another implementation: https://github.com/coreos/coreos-assembler/blob/3cd3307904593b3a131b81567b13a4d0b6fe7c90/src/create_disk.sh#L295
     crate::lsm::ensure_dir_labeled(rootfs_dir, "", Some("/".into()), 0o755.into(), sepolicy)?;
-
-    let stateroot = state.stateroot();
-
-    Task::new_and_run(
-        "Initializing ostree layout",
-        "ostree",
-        ["admin", "init-fs", "--modern", rootfs.as_str()],
-    )?;
 
     // And also label /boot AKA xbootldr, if it exists
     let bootdir = rootfs.join("boot");
@@ -619,6 +629,11 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
 
+    let stateroot_exists = rootfs_dir.try_exists(format!("ostree/deploy/{stateroot}"))?;
+    ensure!(
+        !stateroot_exists,
+        "Cannot redeploy over extant stateroot {stateroot}"
+    );
     sysroot
         .init_osname(stateroot, cancellable)
         .context("initializing stateroot")?;
@@ -649,7 +664,7 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
     let sysroot = SysrootLock::new_from_sysroot(&sysroot).await?;
-    Storage::new(sysroot, &temp_run)
+    Ok((Storage::new(sysroot, &temp_run)?, has_ostree))
 }
 
 #[context("Creating ostree deployment")]
@@ -657,6 +672,7 @@ async fn install_container(
     state: &State,
     root_setup: &RootSetup,
     sysroot: &ostree::Sysroot,
+    has_ostree: bool,
 ) -> Result<(ostree::Deployment, InstallAleph)> {
     let sepolicy = state.load_policy()?;
     let sepolicy = sepolicy.as_ref();
@@ -749,6 +765,7 @@ async fn install_container(
     options.kargs = Some(kargs.as_slice());
     options.target_imgref = Some(&state.target_imgref);
     options.proxy_cfg = proxy_cfg;
+    options.no_clean = has_ostree;
     let imgstate = crate::utils::async_task_with_spinner(
         "Deploying container image",
         ostree_container::deploy::deploy(&sysroot, stateroot, &src_imageref, Some(options)),
@@ -1295,10 +1312,11 @@ async fn install_with_sysroot(
     sysroot: &Storage,
     boot_uuid: &str,
     bound_images: &[crate::boundimage::ResolvedBoundImage],
+    has_ostree: bool,
 ) -> Result<()> {
     // And actually set up the container in that root, returning a deployment and
     // the aleph state (see below).
-    let (_deployment, aleph) = install_container(state, rootfs, &sysroot).await?;
+    let (_deployment, aleph) = install_container(state, rootfs, &sysroot, has_ostree).await?;
     // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
     rootfs
         .rootfs_fd
@@ -1359,6 +1377,12 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
     tracing::debug!("boot uuid={boot_uuid}");
 
+    // If we're doing an alongside install, then the /dev bootupd sees needs to be the host's.
+    ensure!(
+        crate::mount::is_same_as_host(Utf8Path::new("/dev"))?,
+        "Missing /dev mount to host /dev"
+    );
+
     let bound_images = if state.config_opts.skip_bound_images {
         Vec::new()
     } else {
@@ -1379,8 +1403,16 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
 
     // Initialize the ostree sysroot (repo, stateroot, etc.)
     {
-        let sysroot = initialize_ostree_root(state, rootfs).await?;
-        install_with_sysroot(state, rootfs, &sysroot, &boot_uuid, &bound_images).await?;
+        let (sysroot, has_ostree) = initialize_ostree_root(state, rootfs).await?;
+        install_with_sysroot(
+            state,
+            rootfs,
+            &sysroot,
+            &boot_uuid,
+            &bound_images,
+            has_ostree,
+        )
+        .await?;
         // We must drop the sysroot here in order to close any open file
         // descriptors.
     }
@@ -1521,7 +1553,8 @@ fn remove_all_in_dir_no_xdev(d: &Dir) -> Result<()> {
 
 #[context("Removing boot directory content")]
 fn clean_boot_directories(rootfs: &Dir) -> Result<()> {
-    let bootdir = rootfs.open_dir(BOOT).context("Opening /boot")?;
+    let bootdir =
+        crate::utils::open_dir_remount_rw(rootfs, BOOT.into()).context("Opening /boot")?;
     // This should not remove /boot/efi note.
     remove_all_in_dir_no_xdev(&bootdir)?;
     if ARCH_USES_EFI {
@@ -1612,11 +1645,32 @@ pub(crate) async fn install_to_filesystem(
     if !st.is_dir() {
         anyhow::bail!("Not a directory: {root_path}");
     }
+
+    let possible_physical_root = fsopts.root_path.join("sysroot");
+    let possible_ostree_dir = possible_physical_root.join("ostree");
+    let root_path = if possible_ostree_dir.exists() {
+        tracing::debug!(
+            "ostree detected in {possible_ostree_dir}, assuming / is a deployment root and using {possible_physical_root} instead of {root_path} as target root"
+        );
+        &possible_physical_root
+    } else {
+        root_path
+    };
+
     let rootfs_fd = Dir::open_ambient_dir(root_path, cap_std::ambient_authority())
         .with_context(|| format!("Opening target root directory {root_path}"))?;
+
+    tracing::debug!("Root filesystem: {root_path}");
+
     if let Some(false) = ostree_ext::mountutil::is_mountpoint(&rootfs_fd, ".")? {
         anyhow::bail!("Not a mountpoint: {root_path}");
     }
+
+    let fsopts = {
+        let mut fsopts = fsopts.clone();
+        fsopts.root_path = root_path.clone();
+        fsopts
+    };
 
     // Gather global state, destructuring the provided options.
     // IMPORTANT: We might re-execute the current process in this function (for SELinux among other things)
