@@ -5,10 +5,13 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use cap_std_ext::cap_std::fs::Dir;
+use camino::Utf8Path;
+use cap_std_ext::{cap_std::fs::Dir, prelude::CapStdExtCommandExt};
+use fn_error_context::context;
 use ostree::glib;
 use ostree_ext::container::SignatureSource;
 use ostree_ext::ostree;
+use std::os::fd::AsFd;
 
 /// Try to look for keys injected by e.g. rpm-ostree requesting machine-local
 /// changes; if any are present, return `true`.
@@ -53,6 +56,44 @@ pub(crate) fn find_mount_option<'a>(
         .filter_map(|k| k.split_once('='))
         .filter_map(|(k, v)| (k == optname).then_some(v))
         .next()
+}
+
+/// Try to (heuristically) determine if the provided path is a mount root.
+pub(crate) fn is_mountpoint(root: &Dir, path: &Utf8Path) -> Result<Option<bool>> {
+    // https://github.com/systemd/systemd/blob/8fbf0a214e2fe474655b17a4b663122943b55db0/src/basic/mountpoint-util.c#L176
+    use rustix::fs::{AtFlags, StatxFlags};
+
+    // SAFETY(unwrap): We can infallibly convert an i32 into a u64.
+    let mountroot_flag: u64 = libc::STATX_ATTR_MOUNT_ROOT.try_into().unwrap();
+    match rustix::fs::statx(
+        root.as_fd(),
+        path.as_std_path(),
+        AtFlags::NO_AUTOMOUNT | AtFlags::SYMLINK_NOFOLLOW,
+        StatxFlags::empty(),
+    ) {
+        Ok(r) => {
+            let present = (r.stx_attributes_mask & mountroot_flag) > 0;
+            Ok(present.then(|| r.stx_attributes & mountroot_flag > 0))
+        }
+        Err(e) if e == rustix::io::Errno::NOSYS => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Given a target directory, if it's a read-only mount, then remount it writable
+#[context("Opening {target} with writable mount")]
+pub(crate) fn open_dir_remount_rw(root: &Dir, target: &Utf8Path) -> Result<Dir> {
+    if is_mountpoint(root, target)?.unwrap_or_default() {
+        tracing::debug!("Target {target} is a mountpoint, remounting rw");
+        let st = Command::new("mount")
+            .args(["-o", "remount,rw", target.as_str()])
+            .cwd_dir(root.try_clone()?)
+            .status()?;
+        if !st.success() {
+            anyhow::bail!("Failed to remount: {st:?}");
+        }
+    }
+    root.open_dir(target).map_err(anyhow::Error::new)
 }
 
 pub(crate) fn spawn_editor(tmpf: &tempfile::NamedTempFile) -> Result<()> {
