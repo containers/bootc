@@ -156,6 +156,23 @@ fn boot_entry_from_deployment(
     Ok(r)
 }
 
+impl BootEntry {
+    /// Given a boot entry, find its underlying ostree container image
+    pub(crate) fn query_image(
+        &self,
+        repo: &ostree::Repo,
+    ) -> Result<Option<Box<ostree_container::store::LayeredImageState>>> {
+        if self.image.is_none() {
+            return Ok(None);
+        }
+        if let Some(checksum) = self.ostree.as_ref().map(|c| c.checksum.as_str()) {
+            ostree_container::store::query_image_commit(repo, checksum).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+}
+
 /// Gather the ostree deployment objects, but also extract metadata from them into
 /// a more native Rust structure.
 pub(crate) fn get_status(
