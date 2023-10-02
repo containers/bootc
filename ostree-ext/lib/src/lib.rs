@@ -38,6 +38,7 @@ pub mod diff;
 pub mod ima;
 pub mod keyfileext;
 pub(crate) mod logging;
+pub mod mountutil;
 pub mod refescape;
 #[doc(hidden)]
 pub mod repair;
