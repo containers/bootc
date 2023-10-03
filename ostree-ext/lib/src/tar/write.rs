@@ -286,7 +286,7 @@ async fn filter_tar_async(
 
 /// Write the contents of a tarball as an ostree commit.
 #[allow(unsafe_code)] // For raw fd bits
-#[instrument(skip(repo, src))]
+#[instrument(level = "debug", skip_all)]
 pub async fn write_tar(
     repo: &ostree::Repo,
     src: impl tokio::io::AsyncRead + Send + Unpin + 'static,
