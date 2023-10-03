@@ -780,13 +780,15 @@ r usr/bin/bash bash-v0
     {
         let cached = store::query_image_ref(fixture.destrepo(), &imgref.imgref)
             .unwrap()
-            .unwrap()
-            .cached_update
             .unwrap();
+        assert_eq!(cached.version(), Some("42.0"));
+
+        let cached_update = cached.cached_update.unwrap();
         assert_eq!(
-            cached.manifest_digest.as_str(),
+            cached_update.manifest_digest.as_str(),
             prep.manifest_digest.as_str()
         );
+        assert_eq!(cached_update.version(), Some("42.0"));
     }
     let to_fetch = prep.layers_to_fetch().collect::<Result<Vec<_>>>()?;
     assert_eq!(to_fetch.len(), 2);

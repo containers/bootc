@@ -140,6 +140,13 @@ impl LayeredImageState {
             self.base_commit.as_str()
         }
     }
+
+    /// Retrieve the container image version.
+    pub fn version(&self) -> Option<&str> {
+        self.configuration
+            .as_ref()
+            .and_then(super::version_for_config)
+    }
 }
 
 /// Locally cached metadata for an update to an existing image.
@@ -151,6 +158,13 @@ pub struct CachedImageUpdate {
     pub config: ImageConfiguration,
     /// The digest of the manifest
     pub manifest_digest: String,
+}
+
+impl CachedImageUpdate {
+    /// Retrieve the container image version.
+    pub fn version(&self) -> Option<&str> {
+        super::version_for_config(&self.config)
+    }
 }
 
 /// Context for importing a container image.
