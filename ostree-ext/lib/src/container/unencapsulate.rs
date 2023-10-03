@@ -178,7 +178,7 @@ pub(crate) async fn join_fetch<T: std::fmt::Debug>(
 
 /// Fetch a container image and import its embedded OSTree commit.
 #[context("Importing {}", imgref)]
-#[instrument(skip(repo))]
+#[instrument(level = "debug", skip(repo))]
 pub async fn unencapsulate(repo: &ostree::Repo, imgref: &OstreeImageReference) -> Result<Import> {
     let importer = super::store::ImageImporter::new(repo, imgref, Default::default()).await?;
     importer.unencapsulate().await
@@ -199,7 +199,6 @@ fn new_async_decompressor<'a>(
 }
 
 /// A wrapper for [`get_blob`] which fetches a layer and decompresses it.
-//#[instrument(skip(proxy, img, layer))]
 pub(crate) async fn fetch_layer_decompress<'a>(
     proxy: &'a mut ImageProxy,
     img: &OpenedImage,
