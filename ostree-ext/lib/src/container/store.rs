@@ -1154,7 +1154,7 @@ pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<Layer
         configuration,
         cached_update,
     });
-    tracing::debug!(state = ?state);
+    tracing::debug!("Wrote merge commit {}", state.merge_commit);
     Ok(state)
 }
 
