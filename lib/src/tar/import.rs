@@ -806,7 +806,7 @@ pub struct TarImportOptions {
 
 /// Read the contents of a tarball and import the ostree commit inside.
 /// Returns the sha256 of the imported commit.
-#[instrument(skip(repo, src))]
+#[instrument(level = "debug", skip_all)]
 pub async fn import_tar(
     repo: &ostree::Repo,
     src: impl tokio::io::AsyncRead + Send + Unpin + 'static,
@@ -831,7 +831,7 @@ pub async fn import_tar(
 
 /// Read the contents of a tarball and import the content objects inside.
 /// Generates a synthetic commit object referencing them.
-#[instrument(skip(repo, src))]
+#[instrument(level = "debug", skip_all)]
 pub async fn import_tar_objects(
     repo: &ostree::Repo,
     src: impl tokio::io::AsyncRead + Send + Unpin + 'static,

@@ -317,7 +317,7 @@ pub(crate) fn parse_oci_path_and_tag(path: &str) -> (&str, Option<&str>) {
 }
 
 /// Helper for `build()` that avoids generics
-#[instrument(skip(repo, config, opts))]
+#[instrument(level = "debug", skip_all)]
 async fn build_impl(
     repo: &ostree::Repo,
     ostree_ref: &str,
