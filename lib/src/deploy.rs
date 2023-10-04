@@ -72,7 +72,7 @@ async fn deploy(
     sysroot: &SysrootLock,
     merge_deployment: Option<&Deployment>,
     stateroot: &str,
-    image: Box<LayeredImageState>,
+    image: &LayeredImageState,
     origin: &glib::KeyFile,
 ) -> Result<()> {
     let stateroot = Some(stateroot);
@@ -95,7 +95,7 @@ async fn deploy(
 pub(crate) async fn stage(
     sysroot: &SysrootLock,
     stateroot: &str,
-    image: Box<LayeredImageState>,
+    image: &LayeredImageState,
     spec: &HostSpec,
 ) -> Result<()> {
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
@@ -115,13 +115,21 @@ pub(crate) async fn stage(
         sysroot,
         merge_deployment.as_ref(),
         stateroot,
-        image,
+        &image,
         &origin,
     )
     .await?;
     crate::deploy::cleanup(sysroot).await?;
     if let Some(imgref) = ostree_imgref.as_ref() {
         println!("Queued for next boot: {imgref}");
+        if let Some(version) = image
+            .configuration
+            .as_ref()
+            .and_then(ostree_container::version_for_config)
+        {
+            println!("  Version: {version}");
+        }
+        println!("  Digest: {}", image.manifest_digest);
     }
     ostree_container::deploy::remove_undeployed_images(sysroot).context("Pruning images")?;
 

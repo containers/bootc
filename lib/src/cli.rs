@@ -276,50 +276,67 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     let status = host.status.unwrap();
     let imgref = host.spec.image.as_ref();
     // If there's no specified image, let's be nice and check if the booted system is using rpm-ostree
-    if imgref.is_none() && status.booted.map_or(false, |b| b.incompatible) {
+    if imgref.is_none() && status.booted.as_ref().map_or(false, |b| b.incompatible) {
         return Err(anyhow::anyhow!(
             "Booted deployment contains local rpm-ostree modifications; cannot upgrade via bootc"
         ));
     }
+    let booted_image = status
+        .booted
+        .map(|b| b.query_image(repo))
+        .transpose()?
+        .flatten();
     let imgref = imgref.ok_or_else(|| anyhow::anyhow!("No image source specified"))?;
     // Find the currently queued digest, if any before we pull
-    let queued_digest = status
-        .staged
-        .as_ref()
-        .and_then(|e| e.image.as_ref())
-        .map(|img| img.image_digest.as_str());
+    let staged = status.staged.as_ref();
+    let staged_image = staged.as_ref().and_then(|s| s.image.as_ref());
+    let mut changed = false;
     if opts.check {
         let imgref = imgref.clone().into();
         let mut imp = new_importer(repo, &imgref).await?;
         match imp.prepare().await? {
             PrepareResult::AlreadyPresent(_) => {
                 println!("No changes in: {}", imgref);
-                return Ok(());
             }
             PrepareResult::Ready(r) => {
                 println!("Update available for: {}", imgref);
+                if let Some(version) = r.version() {
+                    println!("  Version: {version}");
+                }
                 println!("  Digest: {}", r.manifest_digest);
-                if let Some(previous) = r.previous_state.as_ref() {
-                    let diff = ostree_container::ManifestDiff::new(&previous.manifest, &r.manifest);
+                changed = true;
+                if let Some(previous_image) = booted_image.as_ref() {
+                    let diff =
+                        ostree_container::ManifestDiff::new(&previous_image.manifest, &r.manifest);
                     diff.print();
                 }
-                // Note fallthrough to -- touch-if-changed
             }
         }
     } else {
         let fetched = pull(&sysroot.repo(), imgref, opts.quiet).await?;
-        if let Some(queued_digest) = queued_digest {
-            if fetched.merge_commit.as_str() == queued_digest {
-                println!("Already queued: {queued_digest}");
-                return Ok(());
+        let staged_digest = staged_image.as_ref().map(|s| s.image_digest.as_str());
+        let fetched_digest = fetched.manifest_digest.as_str();
+        tracing::debug!("staged: {staged_digest:?}");
+        tracing::debug!("fetched: {fetched_digest}");
+        let staged_unchanged = staged_digest
+            .map(|d| d == fetched_digest)
+            .unwrap_or_default();
+        if staged_unchanged {
+            println!("Staged update present, not changed.");
+        } else {
+            let osname = booted_deployment.osname();
+            crate::deploy::stage(sysroot, &osname, &fetched, &host.spec).await?;
+            changed = true;
+            if let Some(prev) = booted_image.as_ref() {
+                let diff = ostree_container::ManifestDiff::new(&prev.manifest, &fetched.manifest);
+                diff.print();
             }
         }
-
-        let osname = booted_deployment.osname();
-        crate::deploy::stage(sysroot, &osname, fetched, &host.spec).await?;
     }
-    if let Some(path) = opts.touch_if_changed {
-        std::fs::write(&path, "").with_context(|| format!("Writing {path}"))?;
+    if changed {
+        if let Some(path) = opts.touch_if_changed {
+            std::fs::write(&path, "").with_context(|| format!("Writing {path}"))?;
+        }
     }
 
     Ok(())
@@ -375,7 +392,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     }
 
     let stateroot = booted_deployment.osname();
-    crate::deploy::stage(sysroot, &stateroot, fetched, &new_spec).await?;
+    crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec).await?;
 
     Ok(())
 }
@@ -413,7 +430,7 @@ async fn edit(opts: EditOpts) -> Result<()> {
     // TODO gc old layers here
 
     let stateroot = booted_deployment.osname();
-    crate::deploy::stage(sysroot, &stateroot, fetched, &new_host.spec).await?;
+    crate::deploy::stage(sysroot, &stateroot, &fetched, &new_host.spec).await?;
 
     Ok(())
 }
