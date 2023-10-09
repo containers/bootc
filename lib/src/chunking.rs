@@ -462,8 +462,12 @@ fn get_partitions_with_threshold<'a>(
     }
 
     // Extra high-size packages
-    let mut remaining_pkgs: Vec<_> = high_size.drain(limit_hs_bins..).collect();
-    assert_eq!(high_size.len(), limit_hs_bins);
+    let mut remaining_pkgs: Vec<_> = if high_size.len() <= limit_hs_bins {
+        Vec::new()
+    } else {
+        high_size.drain(limit_hs_bins..).collect()
+    };
+    assert!(high_size.len() <= limit_hs_bins);
 
     // Concatenate extra high-size packages + med_sizes to keep it descending sorted
     remaining_pkgs.append(&mut med_size);
