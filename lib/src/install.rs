@@ -785,6 +785,10 @@ async fn prepare_install(
 
     // This command currently *must* be run inside a privileged container.
     let container_info = crate::containerenv::get_container_execution_info(&rootfs)?;
+    if let Some("1") = container_info.rootless.as_deref() {
+        anyhow::bail!("Cannot install from rootless podman; this command must be run as root");
+    }
+
     let source = SourceInfo::from_container(&container_info)?;
 
     ensure_var()?;

@@ -16,6 +16,7 @@ pub(crate) struct ContainerExecutionInfo {
     pub(crate) id: String,
     pub(crate) image: String,
     pub(crate) imageid: String,
+    pub(crate) rootless: Option<String>,
 }
 
 /// Load and parse the `/run/.containerenv` file.
