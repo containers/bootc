@@ -111,7 +111,16 @@ pub(crate) enum TestingOpts {
     },
 }
 
-/// Deploy and upgrade via bootable container images.
+/// Deploy and transactionally in-place with bootable container images.
+///
+/// The `bootc` project currently uses ostree-containers as a backend
+/// to support a model of bootable container images.  Once installed,
+/// whether directly via `bootc install` (executed as part of a container)
+/// or via another mechanism such as an OS installer tool, further
+/// updates can be pulled via e.g. `bootc upgrade`.
+///
+/// Changes in `/etc` and `/var` persist.
+///
 #[derive(Debug, Parser)]
 #[clap(name = "bootc")]
 #[clap(rename_all = "kebab-case")]

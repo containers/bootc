@@ -20,6 +20,7 @@ fn main() {
 #[allow(clippy::type_complexity)]
 const TASKS: &[(&str, fn(&Shell) -> Result<()>)] = &[
     ("vendor", vendor),
+    ("manpages", manpages),
     ("package", package),
     ("package-srpm", package_srpm),
     ("custom-lints", custom_lints),
@@ -57,13 +58,29 @@ fn gitrev_to_version(v: &str) -> String {
 
 #[context("Finding gitrev")]
 fn gitrev(sh: &Shell) -> Result<String> {
-    if let Ok(rev) = cmd!(sh, "git describe --tags").ignore_stderr().read() {
+    if let Ok(rev) = cmd!(sh, "git describe --tags --exact-match")
+        .ignore_stderr()
+        .read()
+    {
         Ok(gitrev_to_version(&rev))
     } else {
         let mut desc = cmd!(sh, "git describe --tags --always").read()?;
         desc.insert_str(0, "0.");
-        Ok(desc)
+        let timestamp = git_timestamp(sh)?;
+        // We always inject the timestamp first to ensure that newer is better.
+        Ok(format!("{timestamp}.{desc}"))
     }
+}
+
+#[context("Manpages")]
+fn manpages(sh: &Shell) -> Result<()> {
+    sh.create_dir("target/man")?;
+    cmd!(
+        sh,
+        "cargo run --features=docgen -- man --directory target/man"
+    )
+    .run()?;
+    Ok(())
 }
 
 /// Return a string formatted version of the git commit timestamp, up to the minute
@@ -82,14 +99,28 @@ struct Package {
     srcpath: Utf8PathBuf,
 }
 
+/// Return the timestamp of the latest git commit in seconds since the Unix epoch.
+fn git_source_date_epoch(dir: &Utf8Path) -> Result<u64> {
+    let o = Command::new("git")
+        .args(["log", "-1", "--pretty=%ct"])
+        .current_dir(dir)
+        .output()?;
+    if !o.status.success() {
+        anyhow::bail!("git exited with an error: {:?}", o);
+    }
+    let buf = String::from_utf8(o.stdout).context("Failed to parse git log output")?;
+    let r = buf.trim().parse()?;
+    Ok(r)
+}
+
 #[context("Packaging")]
 fn impl_package(sh: &Shell) -> Result<Package> {
+    let source_date_epoch = git_source_date_epoch(".".into())?;
+    manpages(sh)?;
     let v = gitrev(sh)?;
-    let timestamp = git_timestamp(sh)?;
-    // We always inject the timestamp first to ensure that newer is better.
-    let v = format!("{timestamp}.{v}");
+
     let namev = format!("{NAME}-{v}");
-    let p = Utf8Path::new("target").join(format!("{namev}.tar.zstd"));
+    let p = Utf8Path::new("target").join(format!("{namev}.tar"));
     let o = File::create(&p)?;
     let prefix = format!("{namev}/");
     let st = Command::new("git")
@@ -105,9 +136,29 @@ fn impl_package(sh: &Shell) -> Result<Package> {
     if !st.success() {
         anyhow::bail!("Failed to run {st:?}");
     }
+    let st = Command::new("tar")
+        .args([
+            "-r",
+            "-C",
+            "target",
+            "--sort=name",
+            "--owner=0",
+            "--group=0",
+            "--numeric-owner",
+            "--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime",
+        ])
+        .arg(format!("--transform=s,^,{prefix},"))
+        .arg(format!("--mtime=@{source_date_epoch}"))
+        .args(["-f", p.as_str(), "man"])
+        .status()
+        .context("Failed to execute tar")?;
+    if !st.success() {
+        anyhow::bail!("Failed to run {st:?}");
+    }
+    cmd!(sh, "zstd -f {p}").run()?;
     Ok(Package {
         version: v,
-        srcpath: p,
+        srcpath: format!("{p}.zst").into(),
     })
 }
 
@@ -118,6 +169,16 @@ fn package(sh: &Shell) -> Result<()> {
 }
 
 fn impl_srpm(sh: &Shell) -> Result<Utf8PathBuf> {
+    {
+        let _g = sh.push_dir("target");
+        for name in sh.read_dir(".")? {
+            if let Some(name) = name.to_str() {
+                if name.ends_with(".src.rpm") {
+                    sh.remove_path(name)?;
+                }
+            }
+        }
+    }
     let pkg = impl_package(sh)?;
     vendor(sh)?;
     let td = tempfile::tempdir_in("target").context("Allocating tmpdir")?;
@@ -126,7 +187,7 @@ fn impl_srpm(sh: &Shell) -> Result<Utf8PathBuf> {
     let srcpath = td.join(pkg.srcpath.file_name().unwrap());
     std::fs::rename(pkg.srcpath, srcpath)?;
     let v = pkg.version;
-    let vendorpath = td.join(format!("{NAME}-{v}-vendor.tar.zstd"));
+    let vendorpath = td.join(format!("{NAME}-{v}-vendor.tar.zst"));
     std::fs::rename(VENDORPATH, vendorpath)?;
     {
         let specin = File::open(format!("contrib/packaging/{NAME}.spec"))
