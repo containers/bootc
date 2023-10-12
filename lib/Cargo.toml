@@ -8,6 +8,8 @@ repository = "https://github.com/cgwalters/bootc"
 version = "0.1.0"
 rust-version = "1.64.0"
 
+include = ["/src", "LICENSE-APACHE", "LICENSE-MIT"]
+
 [dependencies]
 anyhow = "1.0"
 camino = { version = "1.0.4", features = ["serde1"] }
