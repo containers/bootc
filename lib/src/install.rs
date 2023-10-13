@@ -459,11 +459,17 @@ async fn initialize_ostree_root_from_self(
 
     // TODO: make configurable?
     let stateroot = STATEROOT_DEFAULT;
-    Task::new_and_run(
-        "Initializing ostree layout",
-        "ostree",
-        ["admin", "init-fs", "--modern", rootfs.as_str()],
-    )?;
+    let has_ostree = rootfs_dir.try_exists("ostree/repo")?;
+    if !has_ostree {
+        Task::new_and_run(
+            "Initializing ostree layout",
+            "ostree",
+            ["admin", "init-fs", "--modern", rootfs.as_str()],
+        )?;
+    } else {
+        println!("Reusing extant ostree layout");
+        let _ = crate::utils::open_dir_remount_rw(rootfs_dir, "sysroot".into())?;
+    }
 
     // Default to avoiding grub2-mkconfig etc., but we need to use zipl on s390x.
     // TODO: Lower this logic into ostree proper.
@@ -482,10 +488,15 @@ async fn initialize_ostree_root_from_self(
             .quiet()
             .run()?;
     }
-    Task::new("Initializing sysroot", "ostree")
-        .args(["admin", "os-init", stateroot, "--sysroot", "."])
-        .cwd(rootfs_dir)?
-        .run()?;
+    let stateroot_exists = rootfs_dir.try_exists(format!("ostree/deploy/{stateroot}"))?;
+    if stateroot_exists {
+        anyhow::bail!("Cannot redeploy over extant stateroot {stateroot}");
+    } else {
+        Task::new("Initializing sysroot", "ostree")
+            .args(["admin", "os-init", stateroot, "--sysroot", "."])
+            .cwd(rootfs_dir)?
+            .run()?;
+    }
 
     // Ensure everything in the ostree repo is labeled
     state.lsm_label(&rootfs.join("ostree"), "/usr".into(), true)?;
@@ -532,6 +543,7 @@ async fn initialize_ostree_root_from_self(
     options.kargs = Some(kargs.as_slice());
     options.target_imgref = Some(&target_imgref);
     options.proxy_cfg = Some(proxy_cfg);
+    options.no_clean = has_ostree;
     println!("Creating initial deployment");
     let state =
         ostree_container::deploy::deploy(&sysroot, stateroot, &src_imageref, Some(options)).await?;
@@ -849,6 +861,18 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
     }
 
     let boot_uuid = rootfs.get_boot_uuid()?;
+    // If we're doing an alongside install, then the /dev bootupd sees needs to be the host's.
+    // What we probably really want to do here is tunnel in the host's /dev properly, but for now
+    // just copy /dev/disk
+    if rootfs.skip_finalize {
+        if !Utf8Path::new("/dev/disk").try_exists()? {
+            Task::new_and_run(
+                "Copying host /dev/disk",
+                "cp",
+                ["-a", "/proc/1/root/dev/disk", "/dev/disk"],
+            )?;
+        }
+    }
     crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, boot_uuid)?;
     tracing::debug!("Installed bootloader");
 
@@ -962,7 +986,8 @@ fn remove_all_in_dir_no_xdev(d: &Dir) -> Result<()> {
 
 #[context("Removing boot directory content")]
 fn clean_boot_directories(rootfs: &Dir) -> Result<()> {
-    let bootdir = rootfs.open_dir(BOOT).context("Opening /boot")?;
+    let bootdir =
+        crate::utils::open_dir_remount_rw(rootfs, BOOT.into()).context("Opening /boot")?;
     // This should not remove /boot/efi note.
     remove_all_in_dir_no_xdev(&bootdir)?;
     if ARCH_USES_EFI {

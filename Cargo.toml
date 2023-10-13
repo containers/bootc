@@ -33,3 +33,6 @@ exclude-crate-paths = [ { name = "libz-sys", exclude = "src/zlib" },
                         { name = "k8s-openapi", exclude = "src/v1_25" },
                         { name = "k8s-openapi", exclude = "src/v1_27" },
                       ]
+
+[patch.crates-io]
+ostree-ext = { path = "../../ostreedev/ostree-rs-ext/lib" }
