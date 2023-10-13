@@ -19,6 +19,7 @@ const STATIC_GRUB_CFG_EFI: &str = include_str!("grub-efi.cfg");
 /// The name of the mountpoint for efi (as a subdirectory of /boot, or at the toplevel)
 pub(crate) const EFI_DIR: &str = "efi";
 
+#[context("Installing grub2 EFI")]
 fn install_grub2_efi(efidir: &Dir, uuid: &str) -> Result<()> {
     let mut vendordir = None;
     let efidir = efidir.open_dir("EFI").context("Opening EFI/")?;
@@ -69,14 +70,17 @@ pub(crate) fn install_via_bootupd(
     let grub2_uuid_contents = format!("set BOOT_UUID=\"{boot_uuid}\"\n");
 
     let bootfs = &rootfs.join("boot");
-    let bootfs = Dir::open_ambient_dir(bootfs, cap_std::ambient_authority())?;
+    let bootfs =
+        Dir::open_ambient_dir(bootfs, cap_std::ambient_authority()).context("Opening boot")?;
 
     if super::install::ARCH_USES_EFI {
-        let efidir = bootfs.open_dir("efi")?;
+        let efidir = bootfs.open_dir("efi").context("Opening efi")?;
         install_grub2_efi(&efidir, &grub2_uuid_contents)?;
     }
 
-    bootfs.ensure_dir_with("grub2", &DirBuilder::new())?;
+    bootfs
+        .ensure_dir_with("grub2", &DirBuilder::new())
+        .context("Creating boot/grub2")?;
     let grub2 = bootfs.open_dir("grub2")?;
 
     // Mode 0700 to support passwords etc.
