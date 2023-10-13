@@ -561,7 +561,9 @@ async fn initialize_ostree_root_from_self(
             .context("Opening etc/fstab")
             .map(BufWriter::new)?
     };
-    writeln!(f, "{}", root_setup.boot.to_fstab())?;
+    if let Some(boot) = root_setup.boot.as_ref() {
+        writeln!(f, "{}", boot.to_fstab())?;
+    }
     f.flush()?;
 
     let uname = rustix::system::uname();
@@ -627,9 +629,10 @@ pub(crate) struct RootSetup {
     device: Utf8PathBuf,
     rootfs: Utf8PathBuf,
     rootfs_fd: Dir,
+    rootfs_uuid: Option<String>,
     /// If true, do not try to remount the root read-only and flush the journal, etc.
     skip_finalize: bool,
-    boot: MountSpec,
+    boot: Option<MountSpec>,
     kargs: Vec<String>,
 }
 
@@ -639,10 +642,10 @@ fn require_boot_uuid(spec: &MountSpec) -> Result<&str> {
 }
 
 impl RootSetup {
-    /// Get the UUID= mount specifier for the /boot filesystem.  At the current time this is
-    /// required.
-    fn get_boot_uuid(&self) -> Result<&str> {
-        require_boot_uuid(&self.boot)
+    /// Get the UUID= mount specifier for the /boot filesystem; if there isn't one, the root UUID will
+    /// be returned.
+    fn get_boot_uuid(&self) -> Result<Option<&str>> {
+        self.boot.as_ref().map(require_boot_uuid).transpose()
     }
 
     // Drop any open file descriptors and return just the mount path and backing luks device, if any
@@ -848,7 +851,10 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
             .context("Writing aleph version")?;
     }
 
-    let boot_uuid = rootfs.get_boot_uuid()?;
+    let boot_uuid = rootfs
+        .get_boot_uuid()?
+        .or(rootfs.rootfs_uuid.as_deref())
+        .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
     crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, boot_uuid)?;
     tracing::debug!("Installed bootloader");
 
@@ -1010,10 +1016,11 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     let (root_mount_spec, root_extra) = if let Some(s) = fsopts.root_mount_spec {
         (s, None)
     } else {
-        let mut uuid = inspect
+        let uuid = inspect
             .uuid
+            .as_deref()
             .ok_or_else(|| anyhow!("No filesystem uuid found in target root"))?;
-        uuid.insert_str(0, "UUID=");
+        let uuid = format!("UUID={uuid}");
         tracing::debug!("root {uuid}");
         let opts = match inspect.fstype.as_str() {
             "btrfs" => {
@@ -1026,8 +1033,7 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     };
     tracing::debug!("Root mount spec: {root_mount_spec}");
 
-    // Verify /boot is a separate mount
-    {
+    let boot_is_mount = {
         let root_dev = rootfs_fd.dir_metadata()?.dev();
         let boot_dev = rootfs_fd
             .symlink_metadata_optional(BOOT)?
@@ -1036,17 +1042,20 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
             })?
             .dev();
         tracing::debug!("root_dev={root_dev} boot_dev={boot_dev}");
-        if root_dev == boot_dev {
-            anyhow::bail!("/{BOOT} must currently be a separate mounted filesystem");
-        }
-    }
+        root_dev != boot_dev
+    };
     // Find the UUID of /boot because we need it for GRUB.
-    let boot_path = fsopts.root_path.join(BOOT);
-    let boot_uuid = crate::mount::inspect_filesystem(&boot_path)
-        .context("Inspecting /{BOOT}")?
-        .uuid
-        .ok_or_else(|| anyhow!("No UUID found for /{BOOT}"))?;
-    tracing::debug!("boot UUID: {boot_uuid}");
+    let boot_uuid = if boot_is_mount {
+        let boot_path = fsopts.root_path.join(BOOT);
+        let u = crate::mount::inspect_filesystem(&boot_path)
+            .context("Inspecting /{BOOT}")?
+            .uuid
+            .ok_or_else(|| anyhow!("No UUID found for /{BOOT}"))?;
+        Some(u)
+    } else {
+        None
+    };
+    tracing::debug!("boot UUID: {boot_uuid:?}");
 
     // Find the real underlying backing device for the root.  This is currently just required
     // for GRUB (BIOS) and in the future zipl (I think).
@@ -1073,17 +1082,20 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
 
     let rootarg = format!("root={root_mount_spec}");
     let boot = if let Some(spec) = fsopts.boot_mount_spec {
-        MountSpec::new(&spec, "/boot")
+        Some(MountSpec::new(&spec, "/boot"))
+    } else if let Some(boot_uuid) = boot_uuid.as_deref() {
+        Some(MountSpec::new_uuid_src(&boot_uuid, "/boot"))
     } else {
-        MountSpec::new_uuid_src(&boot_uuid, "/boot")
+        None
     };
     // By default, we inject a boot= karg because things like FIPS compliance currently
     // require checking in the initramfs.
-    let bootarg = format!("boot={}", &boot.source);
+    let bootarg = boot.as_ref().map(|boot| format!("boot={}", &boot.source));
     let kargs = [rootarg]
         .into_iter()
         .chain(root_extra)
-        .chain([RW_KARG.to_string(), bootarg])
+        .chain([RW_KARG.to_string()])
+        .chain(bootarg)
         .collect::<Vec<_>>();
 
     let mut rootfs = RootSetup {
@@ -1091,6 +1103,7 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
         device: backing_device.into(),
         rootfs: fsopts.root_path,
         rootfs_fd,
+        rootfs_uuid: inspect.uuid.clone(),
         boot,
         kargs,
         skip_finalize: matches!(fsopts.replace, Some(ReplaceMode::Alongside)),
