@@ -56,19 +56,15 @@ pub(crate) fn install_via_bootupd(
     rootfs: &Utf8Path,
     boot_uuid: &str,
 ) -> Result<()> {
-    Task::new_and_run(
-        "Running bootupctl to install bootloader",
-        "bootupctl",
-        [
-            "backend",
-            "install",
-            "--src-root",
-            "/",
-            "--device",
-            device.as_str(),
-            rootfs.as_str(),
-        ],
-    )?;
+    let verbose = std::env::var_os("BOOTC_BOOTLOADER_DEBUG").map(|_| "-vvvv");
+    let args = ["backend", "install"].into_iter().chain(verbose).chain([
+        "--src-root",
+        "/",
+        "--device",
+        device.as_str(),
+        rootfs.as_str(),
+    ]);
+    Task::new_and_run("Running bootupctl to install bootloader", "bootupctl", args)?;
 
     let grub2_uuid_contents = format!("set BOOT_UUID=\"{boot_uuid}\"\n");
 
