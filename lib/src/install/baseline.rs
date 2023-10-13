@@ -233,7 +233,7 @@ pub(crate) fn install_create_rootfs(
         anyhow::bail!("Unsupported architecture: {}", std::env::consts::ARCH);
     }
 
-    let espdev = if super::ARCH_USES_EFI {
+    let esp_partno = if super::ARCH_USES_EFI {
         sgdisk_partition(
             &mut sgdisk.cmd,
             EFIPN,
@@ -241,7 +241,7 @@ pub(crate) fn install_create_rootfs(
             "EFI-SYSTEM",
             Some("C12A7328-F81F-11D2-BA4B-00A0C93EC93B"),
         );
-        Some(format!("{device}{EFIPN}"))
+        Some(EFIPN)
     } else {
         None
     };
@@ -278,7 +278,22 @@ pub(crate) fn install_create_rootfs(
 
     crate::blockdev::udev_settle()?;
 
-    let base_rootdev = format!("{device}{ROOTPN}");
+    // Now inspect the partitioned device again so we can find the names of the child devices.
+    let device_partitions = crate::blockdev::list_dev(&device)?
+        .children
+        .ok_or_else(|| anyhow::anyhow!("Failed to find children after partitioning"))?;
+    // Given a partition number, return the path to its device.
+    let findpart = |idx: u32| -> Result<String> {
+        // checked_sub is here because our partition numbers start at 1, but the vec starts at 0
+        let devname = device_partitions
+            .get(idx.checked_sub(1).unwrap() as usize)
+            .ok_or_else(|| anyhow::anyhow!("Missing partition for index {idx}"))?
+            .name
+            .as_str();
+        Ok(devdir.join(devname).to_string())
+    };
+
+    let base_rootdev = findpart(ROOTPN)?;
     let (rootdev, root_blockdev_kargs) = match opts.block_setup {
         BlockSetup::Direct => (base_rootdev, None),
         BlockSetup::Tpm2Luks => {
@@ -318,7 +333,7 @@ pub(crate) fn install_create_rootfs(
     let bootfs_type = Filesystem::Ext4;
 
     // Initialize the /boot filesystem
-    let bootdev = &format!("{device}{BOOTPN}");
+    let bootdev = &findpart(BOOTPN)?;
     let boot_uuid = mkfs(bootdev, bootfs_type, Some("boot"), []).context("Initializing /boot")?;
 
     // Initialize rootfs
@@ -349,7 +364,8 @@ pub(crate) fn install_create_rootfs(
     state.lsm_label(&bootfs, "/boot".into(), false)?;
 
     // Create the EFI system partition, if applicable
-    if let Some(espdev) = espdev {
+    if let Some(esp_partno) = esp_partno {
+        let espdev = &findpart(esp_partno)?;
         Task::new("Creating ESP filesystem", "mkfs.fat")
             .args([espdev.as_str(), "-n", "EFI-SYSTEM"])
             .quiet_output()
