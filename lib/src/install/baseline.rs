@@ -368,7 +368,8 @@ pub(crate) fn install_create_rootfs(
         device,
         rootfs,
         rootfs_fd,
-        boot,
+        rootfs_uuid: Some(root_uuid.to_string()),
+        boot: Some(boot),
         kargs,
         skip_finalize: false,
     })
