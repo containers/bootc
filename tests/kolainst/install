@@ -11,7 +11,7 @@
 set -xeuo pipefail
 
 # See https://github.com/cgwalters/bootc-base-images
-IMAGE=ghcr.io/cgwalters/fedora-oscore:latest
+IMAGE=registry.gitlab.com/centos/cloud/sagano/fedora-boot-tier-0:38
 # TODO: better detect this, e.g. look for an empty device
 DEV=/dev/vda
 
@@ -20,7 +20,7 @@ cd $(mktemp -d)
 
 case "${AUTOPKGTEST_REBOOT_MARK:-}" in
   "")
-    podman run --rm -ti --privileged --pid=host --net=none -v /usr/bin/bootc:/usr/bin/bootc -v /usr/lib/bootc:/usr/lib/bootc ${IMAGE} bootc install --karg=foo=bar ${DEV}
+    podman run --rm -ti --privileged --pid=host --net=none -v /usr/bin/bootc:/usr/bin/bootc ${IMAGE} bootc install --karg=foo=bar ${DEV}
     # In theory we could e.g. wipe the bootloader setup on the primary disk, then reboot;
     # but for now let's just sanity test that the install command executes.
     lsblk ${DEV}

@@ -43,7 +43,7 @@ other options.
 Here's an example:
 
 ```
-$ podman run --privileged --pid=host --net=none --security-opt label=type:unconfined_t ghcr.io/cgwalters/c9s-oscore bootc install --target-no-signature-verification /path/to/disk
+$ podman run --privileged --pid=host --net=none --security-opt label=type:unconfined_t <image> bootc install --target-no-signature-verification /path/to/disk
 ```
 
 Note that while `--privileged` is used, this command will not
@@ -57,6 +57,23 @@ The `--net=none` argument is just to emphasize the fact that
 an installation by default is not fetching anything else external
 from the network - the content to be installed
 *is the running container image content*.
+
+### Operating system install configuration required
+
+The container image must define its default install configuration.  For example,
+create `/usr/lib/bootc/install/00-exampleos.toml` with the contents:
+
+```
+[install]
+root-fs-type = "xfs"
+```
+
+At the current time, `root-fs-type` is the only available configuration option, and it must be set.
+
+Configuration files found in this directory will be merged, with higher alphanumeric values
+taking precedence.  If for example you are building a derived container image from the above OS,
+you coudl create a `50-myos.toml`  that sets `root-fs-type = "btrfs"` which will override the
+prior setting.
 
 ### Note: Today `bootc install` has a host requirement on `skopeo`
 
@@ -110,7 +127,7 @@ The `AuthorizedKeysFile` invocation below then configures sshd to look
 for keys in this location.
 
 ```
-FROM ghcr.io/cgwalters/c9s-oscore
+FROM <image>
 RUN mkdir -p /usr/etc-system/ && \
     echo 'AuthorizedKeysFile /usr/etc-system/%u.keys' >> /etc/ssh/sshd_config.d/30-auth-system.conf && \
     echo 'ssh-ed25519 AAAAC3Nza... root@example.com' > /usr/etc-system/root.keys && chmod 0600 /usr/etc-system/keys && \

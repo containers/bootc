@@ -8,7 +8,7 @@ all-test:
 
 install:
 	install -D -m 0755 -t $(DESTDIR)$(prefix)/bin target/release/bootc
-	install -D -m 0644 -t $(DESTDIR)$(prefix)/lib/bootc/install lib/src/install/*.toml
+	install -d $(DESTDIR)$(prefix)/lib/bootc/install
 	if test -d man; then install -D -m 0644 -t $(DESTDIR)$(prefix)/share/man/man8 man/*.8; fi
 
 bin-archive: all
