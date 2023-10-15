@@ -19,6 +19,7 @@ use std::io::Seek;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
+use crate::deploy::RequiredHostSpec;
 use crate::spec::Host;
 use crate::spec::ImageReference;
 
@@ -290,6 +291,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             "Booted deployment contains local rpm-ostree modifications; cannot upgrade via bootc"
         ));
     }
+    let spec = RequiredHostSpec::from_spec(&host.spec)?;
     let booted_image = status
         .booted
         .map(|b| b.query_image(repo))
@@ -334,7 +336,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             println!("Staged update present, not changed.");
         } else {
             let osname = booted_deployment.osname();
-            crate::deploy::stage(sysroot, &osname, &fetched, &host.spec).await?;
+            crate::deploy::stage(sysroot, &osname, &fetched, &spec).await?;
             changed = true;
             if let Some(prev) = booted_image.as_ref() {
                 let diff = ostree_container::ManifestDiff::new(&prev.manifest, &fetched.manifest);
@@ -386,6 +388,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     if new_spec == host.spec {
         anyhow::bail!("No changes in current host spec");
     }
+    let new_spec = RequiredHostSpec::from_spec(&new_spec)?;
 
     let fetched = pull(repo, &target, opts.quiet).await?;
 
@@ -429,17 +432,13 @@ async fn edit(opts: EditOpts) -> Result<()> {
     if new_host.spec == host.spec {
         anyhow::bail!("No changes in current host spec");
     }
-    let new_image = new_host
-        .spec
-        .image
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Unable to transition to unset image"))?;
-    let fetched = pull(repo, new_image, opts.quiet).await?;
+    let new_spec = RequiredHostSpec::from_spec(&new_host.spec)?;
+    let fetched = pull(repo, &new_spec.image, opts.quiet).await?;
 
     // TODO gc old layers here
 
     let stateroot = booted_deployment.osname();
-    crate::deploy::stage(sysroot, &stateroot, &fetched, &new_host.spec).await?;
+    crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec).await?;
 
     Ok(())
 }

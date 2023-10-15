@@ -14,12 +14,30 @@ use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
 
 use crate::spec::HostSpec;
+use crate::spec::ImageReference;
 
 // TODO use https://github.com/ostreedev/ostree-rs-ext/pull/493/commits/afc1837ff383681b947de30c0cefc70080a4f87a
 const BASE_IMAGE_PREFIX: &str = "ostree/container/baseimage/bootc";
 
 /// Set on an ostree commit if this is a derived commit
 const BOOTC_DERIVED_KEY: &str = "bootc.derived";
+
+/// Variant of HostSpec but required to be filled out
+pub(crate) struct RequiredHostSpec<'a> {
+    pub(crate) image: &'a ImageReference,
+}
+
+impl<'a> RequiredHostSpec<'a> {
+    /// Given a (borrowed) host specification, "unwrap" its internal
+    /// options, giving a spec that is required to have a base container image.
+    pub(crate) fn from_spec(spec: &'a HostSpec) -> Result<Self> {
+        let image = spec
+            .image
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Missing image in specification"))?;
+        Ok(Self { image })
+    }
+}
 
 pub(crate) async fn cleanup(sysroot: &SysrootLock) -> Result<()> {
     let repo = sysroot.repo();
@@ -96,21 +114,16 @@ pub(crate) async fn stage(
     sysroot: &SysrootLock,
     stateroot: &str,
     image: &LayeredImageState,
-    spec: &HostSpec,
+    spec: &RequiredHostSpec<'_>,
 ) -> Result<()> {
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
     let origin = glib::KeyFile::new();
-    let ostree_imgref = spec
-        .image
-        .as_ref()
-        .map(|imgref| OstreeImageReference::from(imgref.clone()));
-    if let Some(imgref) = ostree_imgref.as_ref() {
-        origin.set_string(
-            "origin",
-            ostree_container::deploy::ORIGIN_CONTAINER,
-            imgref.to_string().as_str(),
-        );
-    }
+    let imgref = OstreeImageReference::from(spec.image.clone());
+    origin.set_string(
+        "origin",
+        ostree_container::deploy::ORIGIN_CONTAINER,
+        imgref.to_string().as_str(),
+    );
     crate::deploy::deploy(
         sysroot,
         merge_deployment.as_ref(),
@@ -120,17 +133,15 @@ pub(crate) async fn stage(
     )
     .await?;
     crate::deploy::cleanup(sysroot).await?;
-    if let Some(imgref) = ostree_imgref.as_ref() {
-        println!("Queued for next boot: {imgref}");
-        if let Some(version) = image
-            .configuration
-            .as_ref()
-            .and_then(ostree_container::version_for_config)
-        {
-            println!("  Version: {version}");
-        }
-        println!("  Digest: {}", image.manifest_digest);
+    println!("Queued for next boot: {imgref}");
+    if let Some(version) = image
+        .configuration
+        .as_ref()
+        .and_then(ostree_container::version_for_config)
+    {
+        println!("  Version: {version}");
     }
+    println!("  Digest: {}", image.manifest_digest);
     ostree_container::deploy::remove_undeployed_images(sysroot).context("Pruning images")?;
 
     Ok(())
