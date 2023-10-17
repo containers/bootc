@@ -101,3 +101,18 @@ pub struct HostStatus {
     /// Whether or not the current system state is an ostree-based container
     pub is_container: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_spec() {
+        const SPEC_FIXTURE: &str = include_str!("fixtures/spec.yaml");
+        let host: Host = serde_yaml::from_str(SPEC_FIXTURE).unwrap();
+        assert_eq!(
+            host.spec.image.as_ref().unwrap().image.as_str(),
+            "quay.io/example/someimage:latest"
+        );
+    }
+}
