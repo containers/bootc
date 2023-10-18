@@ -3,7 +3,6 @@ use std::collections::VecDeque;
 use crate::spec::{BootEntry, Host, HostSpec, HostStatus, ImageStatus};
 use crate::spec::{ImageReference, ImageSignature};
 use anyhow::{Context, Result};
-use k8s_openapi::apimachinery::pkg::apis::meta::v1 as k8smeta;
 use ostree::glib;
 use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
@@ -89,9 +88,9 @@ pub(crate) struct Deployments {
     pub(crate) other: VecDeque<ostree::Deployment>,
 }
 
-fn try_deserialize_timestamp(t: &str) -> Option<k8smeta::Time> {
+fn try_deserialize_timestamp(t: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     match chrono::DateTime::parse_from_rfc3339(t).context("Parsing timestamp") {
-        Ok(t) => Some(k8smeta::Time(t.with_timezone(&chrono::Utc))),
+        Ok(t) => Some(t.into()),
         Err(e) => {
             tracing::warn!("Invalid timestamp in image: {:#}", e);
             None

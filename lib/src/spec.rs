@@ -1,25 +1,30 @@
 //! The definition for host system state.
 
-use k8s_openapi::apimachinery::pkg::apis::meta::v1 as k8smeta;
-use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Representation of a bootc host system
-#[derive(
-    CustomResource, Serialize, Deserialize, Default, Debug, PartialEq, Eq, Clone, JsonSchema,
-)]
-#[kube(
-    group = "org.containers.bootc",
-    version = "v1alpha1",
-    kind = "BootcHost",
-    struct = "Host",
-    namespaced,
-    status = "HostStatus",
-    derive = "PartialEq",
-    derive = "Default"
-)]
+use crate::k8sapitypes;
+
+const API_VERSION: &str = "org.containers.bootc/v1alpha1";
+const KIND: &str = "BootcHost";
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+/// The core host definition
+pub struct Host {
+    /// Metadata
+    #[serde(flatten)]
+    pub resource: k8sapitypes::Resource,
+    /// The spec
+    #[serde(default)]
+    pub spec: HostSpec,
+    /// The status
+    pub status: Option<HostStatus>,
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+/// The host specification
 pub struct HostSpec {
     /// The host image
     pub image: Option<ImageReference>,
@@ -58,7 +63,7 @@ pub struct ImageStatus {
     /// The version string, if any
     pub version: Option<String>,
     /// The build timestamp, if any
-    pub timestamp: Option<k8smeta::Time>,
+    pub timestamp: Option<chrono::DateTime<chrono::Utc>>,
     /// The digest of the fetched image (e.g. sha256:a0...);
     pub image_digest: String,
 }
@@ -100,6 +105,25 @@ pub struct HostStatus {
 
     /// Whether or not the current system state is an ostree-based container
     pub is_container: bool,
+}
+
+impl Host {
+    /// Create a new host
+    pub fn new(name: &str, spec: HostSpec) -> Self {
+        let metadata = k8sapitypes::ObjectMeta {
+            name: Some(name.to_owned()),
+            ..Default::default()
+        };
+        Self {
+            resource: k8sapitypes::Resource {
+                api_version: API_VERSION.to_owned(),
+                kind: KIND.to_owned(),
+                metadata,
+            },
+            spec,
+            status: None,
+        }
+    }
 }
 
 #[cfg(test)]
