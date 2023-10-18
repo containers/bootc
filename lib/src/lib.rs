@@ -39,6 +39,8 @@ pub(crate) mod mount;
 mod podman;
 pub mod spec;
 #[cfg(feature = "install")]
+pub(crate) mod systemtakeover;
+#[cfg(feature = "install")]
 mod task;
 
 #[cfg(feature = "docgen")]
