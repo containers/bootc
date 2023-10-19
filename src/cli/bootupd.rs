@@ -52,6 +52,10 @@ pub struct InstallOpts {
     #[clap(long)]
     device: Option<String>,
 
+    /// Enable installation of the built-in static config files
+    #[clap(long)]
+    with_static_configs: bool,
+
     #[clap(long = "component")]
     /// Only install these components
     components: Option<Vec<String>>,
@@ -90,6 +94,7 @@ impl DCommand {
             &opts.src_root,
             &opts.dest_root,
             opts.device.as_deref(),
+            opts.with_static_configs,
             opts.components.as_deref(),
         )
         .context("boot data installation failed")?;

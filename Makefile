@@ -46,4 +46,5 @@ install: install-units
 	ln -s ../bootupd.socket "${DESTDIR}$(PREFIX)/lib/systemd/system/multi-user.target.wants"
 
 install-grub-static:
-	install -D -t ${DESTDIR}$(PREFIX)/lib/bootupd/grub2-static src/grub2/*.cfg
+	install -m 644 -D -t ${DESTDIR}$(PREFIX)/lib/bootupd/grub2-static src/grub2/*.cfg
+	install -m 755 -d ${DESTDIR}$(PREFIX)/lib/bootupd/grub2-static/configs.d

@@ -20,7 +20,7 @@ use crate::util::CommandRunExt;
 use crate::{component::*, packagesystem};
 
 /// Well-known paths to the ESP that may have been mounted external to us.
-pub(crate) const ESP_MOUNTS: &[&str] = &["boot", "boot/efi", "efi"];
+pub(crate) const ESP_MOUNTS: &[&str] = &["boot/efi", "efi", "boot"];
 
 /// The ESP partition label on Fedora CoreOS derivatives
 pub(crate) const COREOS_ESP_PART_LABEL: &str = "EFI-SYSTEM";
@@ -54,7 +54,7 @@ impl Efi {
         Ok(esp)
     }
 
-    fn ensure_mounted_esp(&self, root: &Path) -> Result<PathBuf> {
+    pub(crate) fn ensure_mounted_esp(&self, root: &Path) -> Result<PathBuf> {
         let mut mountpoint = self.mountpoint.borrow_mut();
         if let Some(mountpoint) = mountpoint.as_deref() {
             return Ok(mountpoint.to_owned());
@@ -84,16 +84,22 @@ impl Efi {
             }
         }
         let esp_device = esp_device.ok_or_else(|| anyhow::anyhow!("Failed to find ESP device"))?;
-        let tmppath = tempfile::tempdir_in("/tmp")?.into_path();
-        let status = std::process::Command::new("mount")
-            .arg(&esp_device)
-            .arg(&tmppath)
-            .status()?;
-        if !status.success() {
-            anyhow::bail!("Failed to mount {:?}", esp_device);
+        for &mnt in ESP_MOUNTS.iter() {
+            let mnt = root.join(mnt);
+            if !mnt.exists() {
+                continue;
+            }
+            let status = std::process::Command::new("mount")
+                .arg(&esp_device)
+                .arg(&mnt)
+                .status()?;
+            if !status.success() {
+                anyhow::bail!("Failed to mount {:?}", esp_device);
+            }
+            log::debug!("Mounted at {mnt:?}");
+            *mountpoint = Some(mnt);
+            break;
         }
-        log::debug!("Mounted at {tmppath:?}");
-        *mountpoint = Some(tmppath);
         Ok(mountpoint.as_deref().unwrap().to_owned())
     }
 
@@ -380,6 +386,7 @@ impl Component for Efi {
 
 impl Drop for Efi {
     fn drop(&mut self) {
+        log::debug!("Unmounting");
         let _ = self.unmount();
     }
 }
