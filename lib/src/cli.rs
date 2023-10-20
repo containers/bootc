@@ -135,6 +135,10 @@ pub(crate) enum Opt {
     /// Change host specification
     Edit(EditOpts),
     /// Display status
+    ///
+    /// This will output a YAML-formatted object using a schema intended to match a Kubernetes resource
+    /// that describes the state of the booted container.
+    /// The exact API format is not currently declared stable.
     Status(StatusOpts),
     /// Add a transient writable overlayfs on `/usr` that will be discarded on reboot.
     #[clap(alias = "usroverlay")]
