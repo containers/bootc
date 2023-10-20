@@ -1,5 +1,5 @@
 srpm:
-	dnf -y install cargo git openssl-devel
+	dnf -y install cargo git openssl-devel ostree-devel
 	# similar to https://github.com/actions/checkout/issues/760, but for COPR
 	git config --global --add safe.directory '*'
 	cargo install cargo-vendor-filterer
