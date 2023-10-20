@@ -81,7 +81,7 @@ pub async fn deploy(
             imp.import(prep).await?
         }
     };
-    let commit = state.get_commit();
+    let commit = state.merge_commit.as_str();
     let origin = glib::KeyFile::new();
     let target_imgref = options.target_imgref.unwrap_or(imgref);
     origin.set_string("origin", ORIGIN_CONTAINER, &target_imgref.to_string());
