@@ -19,7 +19,8 @@ pub struct Host {
     #[serde(default)]
     pub spec: HostSpec,
     /// The status
-    pub status: Option<HostStatus>,
+    #[serde(default)]
+    pub status: HostStatus,
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
@@ -121,7 +122,7 @@ impl Host {
                 metadata,
             },
             spec,
-            status: None,
+            status: Default::default(),
         }
     }
 }
