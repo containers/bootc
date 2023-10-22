@@ -172,6 +172,15 @@ impl BootEntry {
     }
 }
 
+/// A variant of [`get_status`] that requires a booted deployment.
+pub(crate) fn get_status_require_booted(
+    sysroot: &SysrootLock,
+) -> Result<(ostree::Deployment, Deployments, Host)> {
+    let booted_deployment = sysroot.require_booted_deployment()?;
+    let (deployments, host) = get_status(sysroot, Some(&booted_deployment))?;
+    Ok((booted_deployment, deployments, host))
+}
+
 /// Gather the ostree deployment objects, but also extract metadata from them into
 /// a more native Rust structure.
 pub(crate) fn get_status(
@@ -227,12 +236,12 @@ pub(crate) fn get_status(
         })
         .unwrap_or_default();
     let mut host = Host::new(OBJECT_NAME, spec);
-    host.status = Some(HostStatus {
+    host.status = HostStatus {
         staged,
         booted,
         rollback,
         is_container,
-    });
+    };
     Ok((deployments, host))
 }
 
@@ -244,7 +253,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
             ..Default::default()
         };
         let mut r = Host::new(OBJECT_NAME, HostSpec { image: None });
-        r.status = Some(status);
+        r.status = status;
         r
     } else {
         let sysroot = super::cli::get_locked_sysroot().await?;

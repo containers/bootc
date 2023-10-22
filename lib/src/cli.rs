@@ -284,26 +284,31 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     prepare_for_write().await?;
     let sysroot = &get_locked_sysroot().await?;
     let repo = &sysroot.repo();
-    let booted_deployment = &sysroot.require_booted_deployment()?;
-    let (_deployments, host) = crate::status::get_status(sysroot, Some(booted_deployment))?;
-    // SAFETY: There must be a status if we have a booted deployment
-    let status = host.status.unwrap();
+    let (booted_deployment, _deployments, host) =
+        crate::status::get_status_require_booted(sysroot)?;
     let imgref = host.spec.image.as_ref();
     // If there's no specified image, let's be nice and check if the booted system is using rpm-ostree
-    if imgref.is_none() && status.booted.as_ref().map_or(false, |b| b.incompatible) {
+    if imgref.is_none()
+        && host
+            .status
+            .booted
+            .as_ref()
+            .map_or(false, |b| b.incompatible)
+    {
         return Err(anyhow::anyhow!(
             "Booted deployment contains local rpm-ostree modifications; cannot upgrade via bootc"
         ));
     }
     let spec = RequiredHostSpec::from_spec(&host.spec)?;
-    let booted_image = status
+    let booted_image = host
+        .status
         .booted
         .map(|b| b.query_image(repo))
         .transpose()?
         .flatten();
     let imgref = imgref.ok_or_else(|| anyhow::anyhow!("No image source specified"))?;
     // Find the currently queued digest, if any before we pull
-    let staged = status.staged.as_ref();
+    let staged = host.status.staged.as_ref();
     let staged_image = staged.as_ref().and_then(|s| s.image.as_ref());
     let mut changed = false;
     if opts.check {
@@ -365,8 +370,8 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
 
     let sysroot = &get_locked_sysroot().await?;
     let repo = &sysroot.repo();
-    let booted_deployment = &sysroot.require_booted_deployment()?;
-    let (_deployments, host) = crate::status::get_status(sysroot, Some(booted_deployment))?;
+    let (booted_deployment, _deployments, host) =
+        crate::status::get_status_require_booted(sysroot)?;
 
     let transport = ostree_container::Transport::try_from(opts.transport.as_str())?;
     let imgref = ostree_container::ImageReference {
@@ -419,9 +424,8 @@ async fn edit(opts: EditOpts) -> Result<()> {
     prepare_for_write().await?;
     let sysroot = &get_locked_sysroot().await?;
     let repo = &sysroot.repo();
-    let booted_deployment = &sysroot.require_booted_deployment()?;
-    let (_deployments, host) = crate::status::get_status(sysroot, Some(booted_deployment))?;
-
+    let (booted_deployment, _deployments, host) =
+        crate::status::get_status_require_booted(sysroot)?;
     let new_host: Host = if opts.filename == "-" {
         let tmpf = tempfile::NamedTempFile::new()?;
         serde_yaml::to_writer(std::io::BufWriter::new(tmpf.as_file()), &host)?;
