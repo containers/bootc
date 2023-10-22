@@ -25,6 +25,15 @@ storage:
     - path: /etc/ostree/auth.json
       contents:
         local: auth.json
+systemd:
+  units:
+    - name: zincati.service
+      dropins:
+        - name: disabled.conf
+          contents: |
+            [Unit]
+            ConditionPathExists=/enoent
+
 EOF
     butane -d . < pull-secret.bu > pull-secret.ign
     kola_args+=("--append-ignition" "pull-secret.ign")
