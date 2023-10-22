@@ -203,6 +203,8 @@ pub(crate) struct State {
     pub(crate) source: SourceInfo,
     /// Force SELinux off in target system
     pub(crate) override_disable_selinux: bool,
+    /// True if the skoepo on host supports containers-storage:
+    pub(crate) skopeo_supports_containers_storage: bool,
     #[allow(dead_code)]
     pub(crate) setenforce_guard: Option<crate::lsm::SetEnforceGuard>,
     pub(crate) config_opts: InstallConfigOpts,
@@ -501,7 +503,7 @@ async fn initialize_ostree_root_from_self(
     };
 
     let mut temporary_dir = None;
-    let src_imageref = if skopeo_supports_containers_storage()? {
+    let src_imageref = if state.skopeo_supports_containers_storage {
         // We always use exactly the digest of the running image to ensure predictability.
         let spec =
             crate::utils::digested_pullspec(&state.source.imageref.name, &state.source.digest);
@@ -792,6 +794,9 @@ async fn prepare_install(
         anyhow::bail!("Cannot install from rootless podman; this command must be run as root");
     }
 
+    let skopeo_supports_containers_storage = skopeo_supports_containers_storage()
+        .context("Failed to run skopeo (it currently must be installed in the host root)")?;
+
     let source = SourceInfo::from_container(&container_info)?;
 
     ensure_var()?;
@@ -815,6 +820,7 @@ async fn prepare_install(
     // combines our command line options along with some bind mounts from the host.
     let state = Arc::new(State {
         override_disable_selinux,
+        skopeo_supports_containers_storage,
         setenforce_guard,
         source,
         config_opts,
