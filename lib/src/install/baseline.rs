@@ -387,6 +387,6 @@ pub(crate) fn install_create_rootfs(
         rootfs_uuid: Some(root_uuid.to_string()),
         boot: Some(boot),
         kargs,
-        skip_finalize: false,
+        is_alongside: false,
     })
 }
