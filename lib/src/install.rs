@@ -861,7 +861,12 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         .get_boot_uuid()?
         .or(rootfs.rootfs_uuid.as_deref())
         .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
-    crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, boot_uuid)?;
+    crate::bootloader::install_via_bootupd(
+        &rootfs.device,
+        &rootfs.rootfs,
+        boot_uuid,
+        rootfs.is_alongside,
+    )?;
     tracing::debug!("Installed bootloader");
 
     // If Ignition is specified, enable it

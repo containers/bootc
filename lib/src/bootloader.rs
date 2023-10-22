@@ -1,4 +1,5 @@
 use std::os::unix::prelude::PermissionsExt;
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use camino::Utf8Path;
@@ -51,20 +52,51 @@ fn install_grub2_efi(efidir: &Dir, uuid: &str) -> Result<()> {
     Ok(())
 }
 
+/// Return `true` if the system is booted via EFI
+pub(crate) fn is_efi_booted() -> Result<bool> {
+    if !super::install::ARCH_USES_EFI {
+        return Ok(false);
+    }
+    Path::new("/sys/firmware/efi")
+        .try_exists()
+        .map_err(Into::into)
+}
+
 #[context("Installing bootloader")]
 pub(crate) fn install_via_bootupd(
     device: &Utf8Path,
     rootfs: &Utf8Path,
     boot_uuid: &str,
+    is_alongside: bool,
 ) -> Result<()> {
     let verbose = std::env::var_os("BOOTC_BOOTLOADER_DEBUG").map(|_| "-vvvv");
-    let args = ["backend", "install"].into_iter().chain(verbose).chain([
-        "--src-root",
-        "/",
-        "--device",
-        device.as_str(),
-        rootfs.as_str(),
-    ]);
+    // If we're doing an alongside install, only match the boot method because Anaconda defaults
+    // to only doing that.  This is only on x86_64 because that's the only arch that has multiple
+    // components right now.
+    // TODO: Add --component=auto which moves this logic into bootupd
+    let (install_efi, component_args) = if cfg!(target_arch = "x86_64") && is_alongside {
+        assert!(super::install::ARCH_USES_EFI);
+        let install_efi = is_efi_booted()?;
+        let component_arg = if install_efi {
+            "--component=EFI"
+        } else {
+            "--component=BIOS"
+        };
+        (install_efi, Some(component_arg))
+    } else {
+        (super::install::ARCH_USES_EFI, None)
+    };
+    let args = ["backend", "install"]
+        .into_iter()
+        .chain(verbose)
+        .chain(component_args)
+        .chain([
+            "--src-root",
+            "/",
+            "--device",
+            device.as_str(),
+            rootfs.as_str(),
+        ]);
     Task::new_and_run("Running bootupctl to install bootloader", "bootupctl", args)?;
 
     let grub2_uuid_contents = format!("set BOOT_UUID=\"{boot_uuid}\"\n");
@@ -73,7 +105,7 @@ pub(crate) fn install_via_bootupd(
     let bootfs =
         Dir::open_ambient_dir(bootfs, cap_std::ambient_authority()).context("Opening boot")?;
 
-    if super::install::ARCH_USES_EFI {
+    if super::install::ARCH_USES_EFI && install_efi {
         let efidir = bootfs.open_dir("efi").context("Opening efi")?;
         install_grub2_efi(&efidir, &grub2_uuid_contents)?;
     }
