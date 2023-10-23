@@ -637,8 +637,8 @@ pub(crate) struct RootSetup {
     rootfs: Utf8PathBuf,
     rootfs_fd: Dir,
     rootfs_uuid: Option<String>,
-    /// If true, do not try to remount the root read-only and flush the journal, etc.
-    skip_finalize: bool,
+    /// True if this is an "alongside" install where we didn't create the filesystem
+    is_alongside: bool,
     boot: Option<MountSpec>,
     kargs: Vec<String>,
 }
@@ -866,7 +866,12 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         .get_boot_uuid()?
         .or(rootfs.rootfs_uuid.as_deref())
         .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
-    crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, boot_uuid)?;
+    crate::bootloader::install_via_bootupd(
+        &rootfs.device,
+        &rootfs.rootfs,
+        boot_uuid,
+        rootfs.is_alongside,
+    )?;
     tracing::debug!("Installed bootloader");
 
     // If Ignition is specified, enable it
@@ -887,7 +892,7 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         .run()?;
 
     // Finalize mounted filesystems
-    if !rootfs.skip_finalize {
+    if !rootfs.is_alongside {
         let bootfs = rootfs.rootfs.join("boot");
         for fs in [bootfs.as_path(), rootfs.rootfs.as_path()] {
             finalize_filesystem(fs)?;
@@ -1117,7 +1122,7 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
         rootfs_uuid: inspect.uuid.clone(),
         boot,
         kargs,
-        skip_finalize: matches!(fsopts.replace, Some(ReplaceMode::Alongside)),
+        is_alongside: matches!(fsopts.replace, Some(ReplaceMode::Alongside)),
     };
 
     install_to_filesystem_impl(&state, &mut rootfs).await?;
