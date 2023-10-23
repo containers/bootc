@@ -405,15 +405,20 @@ pub(crate) mod config {
                 config = c.install;
             }
         }
-        config.ok_or_else(|| anyhow::anyhow!("Failed to find any installation config files"))
+        config.ok_or_else(|| anyhow::anyhow!("No bootc/install config found; this operating system must define a default configuration to be installable"))
     }
 
     #[test]
     /// Verify that we can parse our default config file
     fn test_parse_config() {
         use super::baseline::Filesystem;
-        let buf = include_str!("install/00-defaults.toml");
-        let c: InstallConfigurationToplevel = toml::from_str(buf).unwrap();
+
+        let c: InstallConfigurationToplevel = toml::from_str(
+            r##"[install]
+root-fs-type = "xfs"
+"##,
+        )
+        .unwrap();
         let mut install = c.install.unwrap();
         assert_eq!(install.root_fs_type.unwrap(), Filesystem::Xfs);
         let other = InstallConfigurationToplevel {
