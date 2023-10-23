@@ -10,8 +10,7 @@
 
 set -xeuo pipefail
 
-# See https://github.com/cgwalters/bootc-base-images
-IMAGE=registry.gitlab.com/centos/cloud/sagano/fedora-boot-tier-0:38
+IMAGE=registry.gitlab.com/centos/cloud/sagano/fedora-boot-tier-0:eln
 # TODO: better detect this, e.g. look for an empty device
 DEV=/dev/vda
 
