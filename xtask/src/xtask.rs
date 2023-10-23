@@ -64,11 +64,15 @@ fn gitrev(sh: &Shell) -> Result<String> {
     {
         Ok(gitrev_to_version(&rev))
     } else {
-        let mut desc = cmd!(sh, "git describe --tags --always").read()?;
-        desc.insert_str(0, "0.");
+        // Grab the abbreviated commit
+        let abbrev_commit = cmd!(sh, "git rev-parse HEAD")
+            .read()?
+            .chars()
+            .take(10)
+            .collect::<String>();
         let timestamp = git_timestamp(sh)?;
         // We always inject the timestamp first to ensure that newer is better.
-        Ok(format!("{timestamp}.{desc}"))
+        Ok(format!("{timestamp}.g{abbrev_commit}"))
     }
 }
 
