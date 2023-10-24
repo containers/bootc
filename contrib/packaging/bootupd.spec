@@ -31,6 +31,7 @@ BuildRequires: systemd-devel
 %{_bindir}/bootupctl
 %{_libexecdir}/bootupd  
 %{_unitdir}/*
+%{_prefix}/lib/bootupd/grub2-static/
 
 %prep
 %autosetup -n %{crate}-%{version} -p1 -Sgit
@@ -43,15 +44,6 @@ replace-with = "vendored-sources"
 [source.vendored-sources]
 directory = "vendor"
 EOF
-
-%package grub2-static
-Summary: Static grub2 configuration files for CoreOS-alike systems
-
-%description grub2-static
-This package includes static grub2 configuration files.
-
-%files grub2-static
-%{_prefix}/lib/bootupd
 
 %build
 cargo build --release
