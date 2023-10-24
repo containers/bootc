@@ -11,6 +11,8 @@ rust-version = "1.64.0"
 include = ["/src", "LICENSE-APACHE", "LICENSE-MIT"]
 
 [dependencies]
+anstream = "0.6.4"
+anstyle = "1.0.4"
 anyhow = "1.0"
 camino = { version = "1.0.4", features = ["serde1"] }
 ostree-ext = "0.12"

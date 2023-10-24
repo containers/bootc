@@ -60,6 +60,15 @@ pub(crate) fn spawn_editor(tmpf: &tempfile::NamedTempFile) -> Result<()> {
     Ok(())
 }
 
+/// Output a warning message
+pub(crate) fn warning(s: &str) {
+    anstream::eprintln!(
+        "{}{s}{}",
+        anstyle::AnsiColor::Red.render_fg(),
+        anstyle::Reset.render()
+    );
+}
+
 /// Given a possibly tagged image like quay.io/foo/bar:latest and a digest 0ab32..., return
 /// the digested form quay.io/foo/bar:latest@sha256:0ab32...
 /// If the image already has a digest, it will be replaced.

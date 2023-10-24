@@ -262,7 +262,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
         host
     };
 
-    eprintln!("note: The format of this API is not yet stable");
+    crate::utils::warning("note: The format of this API is not yet stable");
 
     // If we're in JSON mode, then convert the ostree data into Rust-native
     // structures that can be serialized.
