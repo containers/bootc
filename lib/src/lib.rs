@@ -30,8 +30,6 @@ mod bootloader;
 #[cfg(feature = "install")]
 mod containerenv;
 #[cfg(feature = "install")]
-pub(crate) mod ignition;
-#[cfg(feature = "install")]
 mod install;
 mod k8sapitypes;
 #[cfg(feature = "install")]
