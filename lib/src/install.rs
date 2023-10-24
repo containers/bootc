@@ -75,17 +75,6 @@ pub(crate) struct InstallTargetOpts {
 
 #[derive(clap::Args, Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct InstallConfigOpts {
-    /// Path to an Ignition config file
-    #[clap(long, value_parser)]
-    pub(crate) ignition_file: Option<Utf8PathBuf>,
-
-    /// Digest (type-value) of the Ignition config
-    ///
-    /// Verify that the Ignition config matches the specified digest,
-    /// formatted as <type>-<hexvalue>.  <type> can be sha256 or sha512.
-    #[clap(long, value_name = "digest", value_parser)]
-    pub(crate) ignition_hash: Option<crate::ignition::IgnitionHash>,
-
     /// Disable SELinux in the target (installed) system.
     ///
     /// This is currently necessary to install *from* a system with SELinux disabled
@@ -207,6 +196,7 @@ pub(crate) struct State {
     pub(crate) skopeo_supports_containers_storage: bool,
     #[allow(dead_code)]
     pub(crate) setenforce_guard: Option<crate::lsm::SetEnforceGuard>,
+    #[allow(dead_code)]
     pub(crate) config_opts: InstallConfigOpts,
     pub(crate) target_opts: InstallTargetOpts,
     pub(crate) install_config: config::InstallConfiguration,
@@ -844,15 +834,6 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
     if state.override_disable_selinux {
         rootfs.kargs.push("selinux=0".to_string());
     }
-    // This is interpreted by our GRUB fragment
-    if state.config_opts.ignition_file.is_some() {
-        rootfs
-            .kargs
-            .push(crate::ignition::PLATFORM_METAL_KARG.to_string());
-        rootfs
-            .kargs
-            .push(crate::bootloader::IGNITION_VARIABLE.to_string());
-    }
 
     // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
     {
@@ -877,16 +858,6 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         rootfs.is_alongside,
     )?;
     tracing::debug!("Installed bootloader");
-
-    // If Ignition is specified, enable it
-    if let Some(ignition_file) = state.config_opts.ignition_file.as_deref() {
-        let src = std::fs::File::open(ignition_file)
-            .with_context(|| format!("Opening {ignition_file}"))?;
-        let bootfs = rootfs.rootfs.join("boot");
-        crate::ignition::write_ignition(&bootfs, &state.config_opts.ignition_hash, &src)?;
-        crate::ignition::enable_firstboot(&bootfs)?;
-        println!("Installed Ignition config from {ignition_file}");
-    }
 
     // ostree likes to have the immutable bit on the physical sysroot to ensure
     // that it doesn't accumulate junk; all system state should be in deployments.

@@ -11,8 +11,6 @@ use fn_error_context::context;
 
 use crate::task::Task;
 
-/// This variable is referenced by our GRUB fragment
-pub(crate) const IGNITION_VARIABLE: &str = "$ignition_firstboot";
 const GRUB_BOOT_UUID_FILE: &str = "bootuuid.cfg";
 /// The name of the mountpoint for efi (as a subdirectory of /boot, or at the toplevel)
 pub(crate) const EFI_DIR: &str = "efi";
