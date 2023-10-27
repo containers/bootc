@@ -21,7 +21,9 @@ use camino::Utf8PathBuf;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtDirExt;
+use chrono::prelude::*;
 use clap::ValueEnum;
+use ostree_ext::oci_spec;
 use rustix::fs::MetadataExt;
 
 use fn_error_context::context;
@@ -228,6 +230,11 @@ const BOOTC_ALEPH_PATH: &str = ".bootc-aleph.json";
 struct InstallAleph {
     /// Digested pull spec for installed image
     image: String,
+    /// The version number
+    version: Option<String>,
+    /// The timestamp
+    timestamp: Option<chrono::DateTime<Utc>>,
+    /// The `uname -r` of the kernel doing the installation
     kernel: String,
 }
 
@@ -533,7 +540,7 @@ async fn initialize_ostree_root_from_self(
     let state =
         ostree_container::deploy::deploy(&sysroot, stateroot, &src_imageref, Some(options)).await?;
     let target_image = target_imgref.to_string();
-    let digest = state.manifest_digest;
+    let digest = state.manifest_digest.as_str();
     println!("Installed: {target_image}");
     println!("   Digest: {digest}");
 
@@ -565,8 +572,18 @@ async fn initialize_ostree_root_from_self(
 
     let uname = rustix::system::uname();
 
+    let config = state.configuration.as_ref();
+    let labels = config.and_then(crate::status::labels_of_config);
+    let timestamp = labels
+        .and_then(|l| {
+            l.get(oci_spec::image::ANNOTATION_CREATED)
+                .map(|s| s.as_str())
+        })
+        .and_then(crate::status::try_deserialize_timestamp);
     let aleph = InstallAleph {
         image: src_imageref.imgref.name.clone(),
+        version: state.version().as_ref().map(|s| s.to_string()),
+        timestamp,
         kernel: uname.release().to_str()?.to_string(),
     };
 
