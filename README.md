@@ -39,19 +39,23 @@ mounted, persistent volumes.  More on this in [the ostree docs](https://ostreede
 
 ## Status
 
-At the current time, bootc is in active development and is not quite
-considered ready for production use.  The command line interface
-*might* change.  There is not yet stable RPC API.
+The core `bootc update` functionality is really just the same
+technology which has shipped for some time in rpm-ostree so there
+should be absolutely no worries about using it for OS updates.
+A number of people do this today.
 
-However, it heavily relies on a lot of underlying technologies which
-are tested, and the goal is to stabilize everything sometime in
-2023.
+That said bootc is in active development and some parts
+are subject to change, such as the command line interface and
+the CRD-like API exposed via `bootc edit`.`
+
+The `bootc install` functionality is also more experimental.
 
 ## Using bootc
 
 ### Installing
 
- * Fedora, CentOS Stream 9: There is a [COPR](https://copr.fedorainfracloud.org/coprs/rhcontainerbot/bootc/) tracking git main with binary packages.
+ * Fedora: [bootc is packaged](https://bodhi.fedoraproject.org/updates/?packages=bootc) and be available in the main repositories soon.
+ * CentOS Stream 9: There is a [COPR](https://copr.fedorainfracloud.org/coprs/rhcontainerbot/bootc/) tracking git main with binary packages.
 
 You can also build this project like any other Rust project, e.g. `cargo build --release` from a git clone.
 
