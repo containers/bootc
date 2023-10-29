@@ -334,14 +334,15 @@ pub async fn write_tar(
     let mut c = tokio::process::Command::from(c);
     c.kill_on_drop(true);
     let mut r = c.spawn()?;
+    tracing::trace!("Spawned ostree child process");
     // Safety: We passed piped() for all of these
     let child_stdin = r.stdin.take().unwrap();
     let mut child_stdout = r.stdout.take().unwrap();
     let mut child_stderr = r.stderr.take().unwrap();
     // Copy the filtered tar stream to child stdin
     let filtered_result = filter_tar_async(src, child_stdin);
-    // Gather stdout/stderr to buffers
     let output_copier = async move {
+        // Gather stdout/stderr to buffers
         let mut child_stdout_buf = String::new();
         let mut child_stderr_buf = String::new();
         let (_a, _b) = tokio::try_join!(
@@ -351,18 +352,35 @@ pub async fn write_tar(
         Ok::<_, anyhow::Error>((child_stdout_buf, child_stderr_buf))
     };
 
-    let (filtered_result, (child_stdout, child_stderr)) =
-        tokio::try_join!(filtered_result, output_copier)?;
-    let status = r.wait().await?;
-    // Ensure this lasted until the process exited
+    // We must convert the child exit status here to an error to
+    // ensure we break out of the try_join! below.
+    let status = async move {
+        let status = r.wait().await?;
+        if !status.success() {
+            return Err(anyhow!("Failed to commit tar: {:?}", status));
+        }
+        anyhow::Ok(())
+    };
+    tracing::debug!("Waiting on child process");
+    let (filtered_result, child_stdout) =
+        match tokio::try_join!(status, filtered_result).context("Processing tar via ostree") {
+            Ok(((), filtered_result)) => {
+                let (child_stdout, _) = output_copier.await.context("Copying child output")?;
+                (filtered_result, child_stdout)
+            }
+            Err(e) => {
+                if let Ok((_, child_stderr)) = output_copier.await {
+                    // Avoid trailing newline
+                    let child_stderr = child_stderr.trim();
+                    Err(e.context(format!("{child_stderr}")))?
+                } else {
+                    Err(e)?
+                }
+            }
+        };
     drop(sepolicy);
-    if !status.success() {
-        return Err(anyhow!(
-            "Failed to commit tar: {:?}: {}",
-            status,
-            child_stderr
-        ));
-    }
+
+    tracing::trace!("tar written successfully");
     // TODO: trim string in place
     let s = child_stdout.trim();
     Ok(WriteTarResult {
