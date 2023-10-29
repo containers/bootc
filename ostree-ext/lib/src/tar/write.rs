@@ -223,12 +223,12 @@ pub(crate) fn filter_tar(
                     dest.append_data(&mut header, path, data)?;
                     // And cache this file path as the new link target
                     new_sysroot_link_targets.insert(target.to_owned(), path.to_owned());
-                } else if let Some(target) = new_sysroot_link_targets.get(path) {
-                    tracing::debug!("Relinking {path} to {target}");
+                } else if let Some(real_target) = new_sysroot_link_targets.get(target) {
+                    tracing::debug!("Relinking {path} to {real_target}");
                     // We found a 2nd (or 3rd, etc.) link into /sysroot; rewrite the link
                     // target to be the first file outside of /sysroot we found.
                     let mut header = header.clone();
-                    dest.append_link(&mut header, path, target)?;
+                    dest.append_link(&mut header, path, real_target)?;
                 } else {
                     tracing::debug!("Found unhandled modified link from {path} to {target}");
                 }
