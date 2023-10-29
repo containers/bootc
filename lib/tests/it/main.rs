@@ -1261,12 +1261,14 @@ async fn test_container_write_derive_sysroot_hardlink() -> Result<()> {
             h.set_size(data.len() as u64);
             tar.append_data(&mut h, objpath, std::io::Cursor::new(data))
                 .context("appending object")?;
-            let targetpath = Utf8Path::new("usr/bin/bash");
-            h.set_size(0);
-            h.set_mtime(now);
-            h.set_entry_type(tar::EntryType::Link);
-            tar.append_link(&mut h, targetpath, objpath)
-                .context("appending target")?;
+            for path in ["usr/bin/bash", "usr/bin/bash-hardlinked"] {
+                let targetpath = Utf8Path::new(path);
+                h.set_size(0);
+                h.set_mtime(now);
+                h.set_entry_type(tar::EntryType::Link);
+                tar.append_link(&mut h, targetpath, objpath)
+                    .context("appending target")?;
+            }
             Ok::<_, anyhow::Error>(())
         },
         None,
@@ -1294,12 +1296,10 @@ async fn test_container_write_derive_sysroot_hardlink() -> Result<()> {
     )
     .ignore_stdout()
     .run()?;
-    let r = cmd!(
-        sh,
-        "ostree --repo=dest/repo cat {merge_commit} /usr/bin/bash"
-    )
-    .read()?;
-    assert_eq!(r.as_str(), "hello");
+    for path in ["/usr/bin/bash", "/usr/bin/bash-hardlinked"] {
+        let r = cmd!(sh, "ostree --repo=dest/repo cat {merge_commit} {path}").read()?;
+        assert_eq!(r.as_str(), "hello");
+    }
 
     Ok(())
 }
