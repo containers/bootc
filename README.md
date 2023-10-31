@@ -63,7 +63,7 @@ You can also build this project like any other Rust project, e.g. `cargo build -
 
 Many users will be more interested in base (container) images.
 
-To build base images "from scratch", see [docs/bootc-images.md].
+To build base images "from scratch", see [docs/bootc-images.md](docs/bootc-images.md).
 
 For pre-built base images:
 
