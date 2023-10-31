@@ -56,9 +56,16 @@ pub struct InstallOpts {
     #[clap(long)]
     with_static_configs: bool,
 
-    #[clap(long = "component")]
+    #[clap(long = "component", conflicts_with = "auto")]
     /// Only install these components
     components: Option<Vec<String>>,
+
+    /// Automatically choose components based on booted host state.
+    ///
+    /// For example on x86_64, if the host system is booted via EFI,
+    /// then only enable installation to the ESP.
+    #[clap(long)]
+    auto: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -96,6 +103,7 @@ impl DCommand {
             opts.device.as_deref(),
             opts.with_static_configs,
             opts.components.as_deref(),
+            opts.auto,
         )
         .context("boot data installation failed")?;
         Ok(())

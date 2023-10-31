@@ -32,6 +32,7 @@ pub(crate) fn install(
     device: Option<&str>,
     with_static_configs: bool,
     target_components: Option<&[String]>,
+    auto_components: bool,
 ) -> Result<()> {
     // TODO: Change this to an Option<&str>; though this probably balloons into having
     // DeviceComponent and FileBasedComponent
@@ -40,12 +41,14 @@ pub(crate) fn install(
     SavedState::ensure_not_present(dest_root)
         .context("failed to install, invalid re-install attempted")?;
 
-    let all_components = get_components();
+    let all_components = get_components_impl(auto_components);
     if all_components.is_empty() {
         println!("No components available for this platform.");
         return Ok(());
     }
     let target_components = if let Some(target_components) = target_components {
+        // Checked by CLI parser
+        assert!(!auto_components);
         target_components
             .iter()
             .map(|name| {
@@ -104,22 +107,45 @@ pub(crate) fn install(
 
 type Components = BTreeMap<&'static str, Box<dyn Component>>;
 
-pub(crate) fn get_components() -> Components {
+#[allow(clippy::box_default)]
+/// Return the set of known components; if `auto` is specified then the system
+/// filters to the target booted state.
+pub(crate) fn get_components_impl(auto: bool) -> Components {
     let mut components = BTreeMap::new();
 
     fn insert_component(components: &mut Components, component: Box<dyn Component>) {
         components.insert(component.name(), component);
     }
 
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    #[allow(clippy::box_default)]
+    #[cfg(target_arch = "x86_64")]
+    {
+        if auto {
+            let is_efi_booted = Path::new("/sys/firmware/efi").exists();
+            log::info!(
+                "System boot method: {}",
+                if is_efi_booted { "EFI" } else { "BIOS" }
+            );
+            if is_efi_booted {
+                insert_component(&mut components, Box::new(efi::Efi::default()));
+            } else {
+                insert_component(&mut components, Box::new(bios::Bios::default()));
+            }
+        } else {
+            insert_component(&mut components, Box::new(bios::Bios::default()));
+            insert_component(&mut components, Box::new(efi::Efi::default()));
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
     insert_component(&mut components, Box::new(efi::Efi::default()));
 
-    #[cfg(any(target_arch = "x86_64", target_arch = "powerpc64"))]
-    #[allow(clippy::box_default)]
+    #[cfg(target_arch = "powerpc64")]
     insert_component(&mut components, Box::new(bios::Bios::default()));
 
     components
+}
+
+pub(crate) fn get_components() -> Components {
+    get_components_impl(false)
 }
 
 pub(crate) fn generate_update_metadata(sysroot_path: &str) -> Result<()> {
