@@ -1,5 +1,4 @@
 use std::os::unix::prelude::PermissionsExt;
-use std::path::Path;
 
 use anyhow::{Context, Result};
 use camino::Utf8Path;
@@ -15,16 +14,6 @@ const GRUB_BOOT_UUID_FILE: &str = "bootuuid.cfg";
 /// The name of the mountpoint for efi (as a subdirectory of /boot, or at the toplevel)
 pub(crate) const EFI_DIR: &str = "efi";
 
-/// Return `true` if the system is booted via EFI
-pub(crate) fn is_efi_booted() -> Result<bool> {
-    if !super::install::ARCH_USES_EFI {
-        return Ok(false);
-    }
-    Path::new("/sys/firmware/efi")
-        .try_exists()
-        .map_err(Into::into)
-}
-
 #[context("Installing bootloader")]
 pub(crate) fn install_via_bootupd(
     device: &Utf8Path,
@@ -33,22 +22,9 @@ pub(crate) fn install_via_bootupd(
     is_alongside: bool,
 ) -> Result<()> {
     let verbose = std::env::var_os("BOOTC_BOOTLOADER_DEBUG").map(|_| "-vvvv");
-    // If we're doing an alongside install, only match the boot method because Anaconda defaults
-    // to only doing that.  This is only on x86_64 because that's the only arch that has multiple
-    // components right now.
-    // TODO: Add --component=auto which moves this logic into bootupd
-    let component_args = if cfg!(target_arch = "x86_64") && is_alongside {
-        assert!(super::install::ARCH_USES_EFI);
-        let install_efi = is_efi_booted()?;
-        let component_arg = if install_efi {
-            "--component=EFI"
-        } else {
-            "--component=BIOS"
-        };
-        Some(component_arg)
-    } else {
-        None
-    };
+    // If we're doing an alongside install, only match the host boot method because Anaconda defaults
+    // to only doing that.
+    let component_args = is_alongside.then_some("--auto");
     let args = ["backend", "install", "--with-static-configs"]
         .into_iter()
         .chain(verbose)
