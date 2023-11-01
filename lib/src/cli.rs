@@ -438,7 +438,8 @@ async fn edit(opts: EditOpts) -> Result<()> {
     };
 
     if new_host.spec == host.spec {
-        anyhow::bail!("No changes in current host spec");
+        println!("Edit cancelled, no changes made.");
+        return Ok(());
     }
     let new_spec = RequiredHostSpec::from_spec(&new_host.spec)?;
     let fetched = pull(repo, &new_spec.image, opts.quiet).await?;
