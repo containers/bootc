@@ -20,6 +20,11 @@ test-bin-archive: all-test
 install-kola-tests:
 	install -D -t $(DESTDIR)$(prefix)/lib/coreos-assembler/tests/kola/bootc tests/kolainst/*
 
+validate:
+	cargo fmt
+	cargo clippy
+.PHONY: validate
+
 vendor:
 	cargo xtask $@
 .PHONY: vendor
