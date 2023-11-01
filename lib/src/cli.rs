@@ -68,8 +68,9 @@ pub(crate) struct SwitchOpts {
 /// Perform an edit operation
 #[derive(Debug, Parser)]
 pub(crate) struct EditOpts {
-    /// Path to new system specification; use `-` for stdin
-    pub(crate) filename: String,
+    /// Use filename to edit system specification
+    #[clap(long, short = 'f')]
+    pub(crate) filename: Option<String>,
 
     /// Don't display progress
     #[clap(long)]
@@ -426,15 +427,15 @@ async fn edit(opts: EditOpts) -> Result<()> {
     let repo = &sysroot.repo();
     let (booted_deployment, _deployments, host) =
         crate::status::get_status_require_booted(sysroot)?;
-    let new_host: Host = if opts.filename == "-" {
+    let new_host: Host = if let Some(filename) = opts.filename {
+        let mut r = std::io::BufReader::new(std::fs::File::open(&filename)?);
+        serde_yaml::from_reader(&mut r)?
+    } else {
         let tmpf = tempfile::NamedTempFile::new()?;
         serde_yaml::to_writer(std::io::BufWriter::new(tmpf.as_file()), &host)?;
         crate::utils::spawn_editor(&tmpf)?;
         tmpf.as_file().seek(std::io::SeekFrom::Start(0))?;
         serde_yaml::from_reader(&mut tmpf.as_file())?
-    } else {
-        let mut r = std::io::BufReader::new(std::fs::File::open(opts.filename)?);
-        serde_yaml::from_reader(&mut r)?
     };
 
     if new_host.spec == host.spec {
