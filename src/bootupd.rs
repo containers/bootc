@@ -61,7 +61,7 @@ pub(crate) fn install(
         all_components.values().collect()
     };
 
-    if target_components.is_empty() {
+    if target_components.is_empty() && !auto_components {
         anyhow::bail!("No components specified");
     }
 
