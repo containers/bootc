@@ -128,7 +128,7 @@ pub(crate) async fn stage(
         sysroot,
         merge_deployment.as_ref(),
         stateroot,
-        &image,
+        image,
         &origin,
     )
     .await?;

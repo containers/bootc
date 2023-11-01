@@ -441,7 +441,7 @@ async fn edit(opts: EditOpts) -> Result<()> {
         anyhow::bail!("No changes in current host spec");
     }
     let new_spec = RequiredHostSpec::from_spec(&new_host.spec)?;
-    let fetched = pull(repo, &new_spec.image, opts.quiet).await?;
+    let fetched = pull(repo, new_spec.image, opts.quiet).await?;
 
     // TODO gc old layers here
 
