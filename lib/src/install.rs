@@ -1091,10 +1091,10 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     let rootarg = format!("root={root_mount_spec}");
     let boot = if let Some(spec) = fsopts.boot_mount_spec {
         Some(MountSpec::new(&spec, "/boot"))
-    } else if let Some(boot_uuid) = boot_uuid.as_deref() {
-        Some(MountSpec::new_uuid_src(&boot_uuid, "/boot"))
     } else {
-        None
+        boot_uuid
+            .as_deref()
+            .map(|boot_uuid| MountSpec::new_uuid_src(boot_uuid, "/boot"))
     };
     // By default, we inject a boot= karg because things like FIPS compliance currently
     // require checking in the initramfs.
