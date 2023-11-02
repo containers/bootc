@@ -97,3 +97,27 @@ jobs:
         run: sudo tar -C / -xvf bootc.tar.zst
       - name: Integration tests
         run: bootc internal-tests run-container-integration
+  privtest-alongside:
+    name: "Test install-alongside"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download
+        uses: actions/download-artifact@v2
+        with:
+          name: bootc.tar.zst
+      - name: Install
+        run: tar -xvf bootc.tar.zst
+      - name: Update host skopeo
+        run: |
+          echo 'deb http://cz.archive.ubuntu.com/ubuntu lunar main universe' | sudo tee -a /etc/apt/sources.list 
+          sudo apt update
+          sudo apt upgrade skopeo
+      - name: Integration tests
+        run: |
+          set -xeuo pipefail
+          sudo podman run --rm -ti --privileged -v /:/target -v ./usr/bin/bootc:/usr/bin/bootc --pid=host --security-opt label=disable \
+            registry.gitlab.com/centos/cloud/sagano/fedora-boot-tier-1-dev:eln bootc install-to-filesystem --target-no-signature-verification \
+            --karg=foo=bar --disable-selinux --replace=alongside /target
+          ls -al /boot/loader/
+          sudo grep foo=bar /boot/loader/entries/*.conf
