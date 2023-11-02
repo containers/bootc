@@ -19,6 +19,11 @@ case "${AUTOPKGTEST_REBOOT_MARK:-}" in
     echo "booted into $image"
     echo "ok status test"
 
+    test "null" = $(jq '.status.staged' < status.json)
+    # Should be a no-op
+    bootc update
+    test "null" = $(jq '.status.staged' < status.json)
+
     test '!' -w /usr
     bootc usroverlay
     test -w /usr
