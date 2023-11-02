@@ -61,7 +61,7 @@ pub(crate) fn install(
         all_components.values().collect()
     };
 
-    if target_components.is_empty() {
+    if target_components.is_empty() && !auto_components {
         anyhow::bail!("No components specified");
     }
 
@@ -90,7 +90,13 @@ pub(crate) fn install(
     let sysroot = &openat::Dir::open(dest_root)?;
 
     if with_static_configs {
+        #[cfg(any(
+            target_arch = "x86_64",
+            target_arch = "aarch64",
+            target_arch = "powerpc64"
+        ))]
         crate::grubconfigs::install(sysroot, installed_efi)?;
+        // On other architectures, assume that there's nothing to do.
     }
 
     // Unmount the ESP, etc.
