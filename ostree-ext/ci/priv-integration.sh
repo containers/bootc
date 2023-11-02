@@ -33,6 +33,8 @@ ostree-ext-cli container image prune-images --sysroot "${sysroot}"
 ostree-ext-cli container image deploy --sysroot "${sysroot}" \
     --stateroot "${stateroot}" --imgref "${imgref}"
 ostree admin --sysroot="${sysroot}" status
+ostree-ext-cli container image metadata --repo "${sysroot}/ostree/repo" registry:"${image}" > manifest.json
+jq '.schemaVersion' < manifest.json
 ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"${image}"
 ostree admin --sysroot="${sysroot}" undeploy 0
 # Now test the new syntax which has a nicer --image that defaults to registry.

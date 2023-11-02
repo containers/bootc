@@ -17,7 +17,7 @@ use ostree::{gio, glib};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use tokio::sync::mpsc::Receiver;
@@ -239,6 +239,21 @@ pub(crate) enum ContainerImageOpts {
         /// Container image reference, e.g. registry:quay.io/exampleos/exampleos:latest
         #[clap(value_parser = parse_base_imgref)]
         imgref: ImageReference,
+    },
+
+    /// Output manifest or configuration for an already stored container image.
+    Metadata {
+        /// Path to the repository
+        #[clap(long, value_parser)]
+        repo: Utf8PathBuf,
+
+        /// Container image reference, e.g. registry:quay.io/exampleos/exampleos:latest
+        #[clap(value_parser = parse_base_imgref)]
+        imgref: ImageReference,
+
+        /// Output the config, not the manifest
+        #[clap(long)]
+        config: bool,
     },
 
     /// Copy a pulled container image from one repo to another.
@@ -928,6 +943,27 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 ContainerImageOpts::History { repo, imgref } => {
                     let repo = parse_repo(&repo)?;
                     container_history(&repo, &imgref).await
+                }
+                ContainerImageOpts::Metadata {
+                    repo,
+                    imgref,
+                    config,
+                } => {
+                    let repo = parse_repo(&repo)?;
+                    let image = crate::container::store::query_image_ref(&repo, &imgref)?
+                        .ok_or_else(|| anyhow::anyhow!("No such image"))?;
+                    let stdout = std::io::stdout().lock();
+                    let mut stdout = std::io::BufWriter::new(stdout);
+                    if config {
+                        let config = image
+                            .configuration
+                            .ok_or_else(|| anyhow::anyhow!("Missing configuration"))?;
+                        serde_json::to_writer(&mut stdout, &config)?;
+                    } else {
+                        serde_json::to_writer(&mut stdout, &image.manifest)?;
+                    }
+                    stdout.flush()?;
+                    Ok(())
                 }
                 ContainerImageOpts::Remove {
                     repo,
