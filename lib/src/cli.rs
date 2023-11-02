@@ -342,8 +342,14 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         let staged_unchanged = staged_digest
             .map(|d| d == fetched_digest)
             .unwrap_or_default();
+        let booted_unchanged = booted_image
+            .as_ref()
+            .map(|img| img.manifest_digest.as_str() == fetched_digest)
+            .unwrap_or_default();
         if staged_unchanged {
             println!("Staged update present, not changed.");
+        } else if booted_unchanged {
+            println!("No update available.")
         } else {
             let osname = booted_deployment.osname();
             crate::deploy::stage(sysroot, &osname, &fetched, &spec).await?;
