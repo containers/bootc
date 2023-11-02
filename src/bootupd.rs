@@ -90,7 +90,13 @@ pub(crate) fn install(
     let sysroot = &openat::Dir::open(dest_root)?;
 
     if with_static_configs {
+        #[cfg(any(
+            target_arch = "x86_64",
+            target_arch = "aarch64",
+            target_arch = "powerpc64"
+        ))]
         crate::grubconfigs::install(sysroot, installed_efi)?;
+        // On other architectures, assume that there's nothing to do.
     }
 
     // Unmount the ESP, etc.
