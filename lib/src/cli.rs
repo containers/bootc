@@ -33,9 +33,17 @@ pub(crate) struct UpgradeOpts {
     #[clap(long)]
     pub(crate) touch_if_changed: Option<Utf8PathBuf>,
 
-    /// Check if an update is available without applying it
-    #[clap(long)]
+    /// Check if an update is available without applying it.
+    #[clap(long, conflicts_with = "apply")]
     pub(crate) check: bool,
+
+    /// Restart or reboot into the new target image.
+    ///
+    /// Currently, this option always reboots.  In the future this command
+    /// will detect the case where no kernel changes are queued, and perform
+    /// a userspace-only restart.
+    #[clap(long, conflicts_with = "check")]
+    pub(crate) apply: bool,
 }
 
 /// Perform an switch operation
@@ -364,6 +372,11 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         if let Some(path) = opts.touch_if_changed {
             std::fs::write(&path, "").with_context(|| format!("Writing {path}"))?;
         }
+        if opts.apply {
+            crate::reboot::reboot()?;
+        }
+    } else {
+        tracing::debug!("No changes");
     }
 
     Ok(())
