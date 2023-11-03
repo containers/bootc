@@ -79,12 +79,37 @@ fn gitrev(sh: &Shell) -> Result<String> {
 
 #[context("Manpages")]
 fn manpages(sh: &Shell) -> Result<()> {
+    // We currently go: clap (Rust) -> man -> markdown for the CLI
     sh.create_dir("target/man")?;
     cmd!(
         sh,
         "cargo run --features=docgen -- man --directory target/man"
     )
     .run()?;
+    // We also have some man pages for the systemd units which are canonically
+    // maintained as markdown; convert them to man pages.
+    let extradir = sh.current_dir().join("manpages-md-extra");
+    for ent in std::fs::read_dir(extradir)? {
+        let ent = ent?;
+        let srcpath = ent.path();
+        let extension = if let Some(extension) = srcpath.extension() {
+            extension
+        } else {
+            continue;
+        };
+        if extension != "md" {
+            continue;
+        }
+        let base_filename = srcpath
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow!("Expected filename in {srcpath:?}"))?;
+        cmd!(
+            sh,
+            "pandoc --from=markdown --to=man --output=target/man/{base_filename}.5 {srcpath}"
+        )
+        .run()?;
+    }
     Ok(())
 }
 
