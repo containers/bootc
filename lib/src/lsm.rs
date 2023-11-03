@@ -126,7 +126,14 @@ pub(crate) fn selinux_set_permissive(permissive: bool) -> Result<()> {
     }
     let mut f = std::fs::File::options().write(true).open(enforce_path)?;
     f.write_all(if permissive { b"0" } else { b"1" })?;
-    tracing::debug!("Set SELinux permissive mode");
+    tracing::debug!(
+        "Set SELinux mode: {}",
+        if permissive {
+            "permissive"
+        } else {
+            "enforcing"
+        }
+    );
     Ok(())
 }
 
