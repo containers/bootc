@@ -531,6 +531,7 @@ async fn initialize_ostree_root_from_self(
         .kargs
         .iter()
         .map(|v| v.as_str())
+        .chain(state.config_opts.karg.iter().flatten().map(|v| v.as_str()))
         .collect::<Vec<_>>();
     let mut options = ostree_container::deploy::DeployOpts::default();
     options.kargs = Some(kargs.as_slice());

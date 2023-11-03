@@ -23,6 +23,9 @@ case "${AUTOPKGTEST_REBOOT_MARK:-}" in
     # In theory we could e.g. wipe the bootloader setup on the primary disk, then reboot;
     # but for now let's just sanity test that the install command executes.
     lsblk ${DEV}
+    mount /dev/vda3 /var/mnt
+    grep foo=bar /var/mnt/loader/entries/*.conf
+    umount /var/mnt
     echo "ok install"
 
     # Now test install-to-filesystem
