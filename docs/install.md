@@ -1,4 +1,8 @@
-# Understanding `bootc install`
+---
+nav_order: 2
+---
+
+# `bootc install`
 
 A key goal of the bootc project is to think of bootable operating systems
 as container images.  Docker/OCI container images are just tarballs

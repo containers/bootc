@@ -1,0 +1,58 @@
+title: containers/bootc
+description: bootc documentation
+baseurl: "/bootc"
+url: "https://containers.github.io"
+# Comment above and use below for local development
+# url: "http://localhost:4000"
+permalink: /:title/
+markdown: kramdown
+kramdown:
+  typographic_symbols:
+    ndash: "--"
+    mdash: "---"
+
+# Exclude the README and the bundler files that would normally be
+# ignored by default.
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - prep-docs.sh
+  - vendor/
+
+# These are copies of the apidoc/html and man/html directories. Run
+# prep-docs.sh before jekyll to put it in place.
+include: [reference, man]
+
+remote_theme: just-the-docs/just-the-docs@v0.4.1
+plugins:
+  - jekyll-remote-theme
+
+color_scheme: coreos
+
+# Aux links for the upper right navigation
+aux_links:
+  "bootc on GitHub":
+    - "https://github.com/containers/bootc"
+
+footer_content: "Copyright &copy; <a href=\"https://www.redhat.com\">Red Hat, Inc.</a> and <a href=\"https://github.com/containers\">others</a>."
+
+# Footer last edited timestamp
+last_edit_timestamp: true
+last_edit_time_format: "%b %e %Y at %I:%M %p"
+
+# Footer "Edit this page on GitHub" link text
+gh_edit_link: true
+gh_edit_link_text: "Edit this page on GitHub"
+gh_edit_repository: "https://github.com/containers/bootc"
+gh_edit_branch: "main"
+gh_edit_source: docs
+gh_edit_view_mode: "tree"
+
+compress_html:
+  clippings: all
+  comments: all
+  endings: all
+  startings: []
+  blanklines: false
+  profile: false
