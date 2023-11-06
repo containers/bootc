@@ -37,9 +37,6 @@ For example, the [rpm-ostree compose image](https://coreos.github.io/rpm-ostree/
 tooling currently streamlines creating base images, operating just
 on a declarative input and writing to a registry.
 
-This is how the [Project Sagano](https://github.com/centos/sagano)
-base images are built.
-
 # Deriving from existing base images
 
 However, it's important to emphasize that from one
