@@ -59,6 +59,26 @@ The `--pid=host --security-opt label=type:unconfined_t` today
 make it more convenient for bootc to perform some privileged
 operations; in the future these requirement may be dropped.
 
+### "day 2" updates, security and fetch configuration
+
+Note that by default the `bootc install` path will find the pull specification used
+for the `podman run` invocation and use it to set up "day 2" OS updates that `bootc update`
+will use.
+
+For example, if you invoke `podman run --privileged ... quay.io/examplecorp/exampleos:latest bootc install ...`
+then the installed operating system will fetch updates from `quay.io/examplecorp/exampleos:latest`.
+This can be overridden via `--target_imgref`; this is handy in cases like performing
+installation in a manufacturing environment from a mirrored registry.
+
+By default, the installation process will verify that the container (representing the target OS)
+can fetch its own updates.  A common cause of failure here is not changing the security settings
+in `/etc/containers/policy.json` in the target OS to verify signatures.
+
+If you are pushing an unsigned image, you must specify `bootc install --target-no-signature-verification`.
+
+Additionally note that to perform an install from an authenticated registry, you must also embed
+the pull secret into the image to pass this check.  If you are fetching
+
 ### Operating system install configuration required
 
 The container image must define its default install configuration.  For example,
