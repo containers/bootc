@@ -50,8 +50,10 @@ Here's an example:
 $ podman run --privileged --pid=host --net=none --security-opt label=type:unconfined_t <image> bootc install --target-no-signature-verification /path/to/disk
 ```
 
-Note that while `--privileged` is used, this command will not
-perform any destructive action on the host system.
+Note that while `--privileged` is used, this command will not perform any
+destructive action on the host system.  Among other things, `--privileged`
+makes sure that all host devices are mounted into container. `/path/to/disk` is
+the host's block device `<image>` will be installed on.
 
 The `--pid=host --security-opt label=type:unconfined_t` today
 make it more convenient for bootc to perform some privileged
@@ -121,7 +123,7 @@ in the image - it is per machine state.
 
 #### Injecting SSH keys in a container image
 
-In this example, we will configure OpenSSH to read the
+In the following example, we will configure OpenSSH to read the
 set of authorized keys for the root user from content
 that lives in `/usr` (i.e. is owned by the container image).
 We will also create a `/usr/etc-system` directory which is intentionally distinct
