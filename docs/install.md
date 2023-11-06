@@ -47,7 +47,7 @@ other options.
 Here's an example:
 
 ```
-$ podman run --privileged --pid=host --net=none --security-opt label=type:unconfined_t <image> bootc install --target-no-signature-verification /path/to/disk
+$ podman run --privileged --pid=host --security-opt label=type:unconfined_t <image> bootc install --target-no-signature-verification /path/to/disk
 ```
 
 Note that while `--privileged` is used, this command will not perform any
@@ -58,11 +58,6 @@ the host's block device `<image>` will be installed on.
 The `--pid=host --security-opt label=type:unconfined_t` today
 make it more convenient for bootc to perform some privileged
 operations; in the future these requirement may be dropped.
-
-The `--net=none` argument is just to emphasize the fact that
-an installation by default is not fetching anything else external
-from the network - the content to be installed
-*is the running container image content*.
 
 ### Operating system install configuration required
 
@@ -195,7 +190,7 @@ support the root storage setup already initialized.
 The core command should look like this:
 
 ```
-$ podman run --privileged -v /:/target --pid=host --net=none --security-opt label=type:install_t \
+$ podman run --privileged -v /:/target --pid=host --security-opt label=type:install_t \
   <image> \
   bootc install-to-filesystem --replace=alongside /target
 ```
