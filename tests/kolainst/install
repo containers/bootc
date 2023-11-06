@@ -10,7 +10,7 @@
 
 set -xeuo pipefail
 
-IMAGE=registry.gitlab.com/centos/cloud/sagano/fedora-boot-tier-0:eln
+IMAGE=quay.io/centos-boot/fedora-tier-1:eln
 # TODO: better detect this, e.g. look for an empty device
 DEV=/dev/vda
 

@@ -73,7 +73,7 @@ To build base images "from scratch", see [bootc-images.md](bootc-images.md).
 For pre-built base images:
 
 * [Fedora CoreOS](https://quay.io/repository/fedora/fedora-coreos) can be used as a base image; you will need to [enable bootc](https://github.com/coreos/rpm-ostree/blob/main/docs/bootc.md) there.
-* There is also an in-development [Project Sagano](https://github.com/centos/sagano) for Fedora/CentOS.
+* There is also an in-development [centos-boot](https://github.com/centos/centos-boot) project.
 
 However, bootc itself is not tied to Fedora derivatives; [this issue](https://github.com/coreos/bootupd/issues/468) tracks the main blocker for other distributions.
 

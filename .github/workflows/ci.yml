@@ -117,7 +117,7 @@ jobs:
         run: |
           set -xeuo pipefail
           sudo podman run --rm -ti --privileged -v /:/target -v ./usr/bin/bootc:/usr/bin/bootc --pid=host --security-opt label=disable \
-            registry.gitlab.com/centos/cloud/sagano/fedora-boot-tier-1-dev:eln bootc install-to-filesystem --target-no-signature-verification \
+            quay.io/centos-boot/fedora-tier-1:eln bootc install-to-filesystem --target-no-signature-verification \
             --karg=foo=bar --disable-selinux --replace=alongside /target
           ls -al /boot/loader/
           sudo grep foo=bar /boot/loader/entries/*.conf
