@@ -1,4 +1,8 @@
-# Understanding "bootc compatible" images
+---
+nav_order: 2
+---
+
+# "bootc compatible" images
 
 At the current time, it does not work to just do:
 ```
