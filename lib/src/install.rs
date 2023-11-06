@@ -73,6 +73,18 @@ pub(crate) struct InstallTargetOpts {
     /// Enable verification via an ostree remote
     #[clap(long)]
     pub(crate) target_ostree_remote: Option<String>,
+
+    /// By default, the accessiblity of the target image will be verified (just the manifest will be fetched).
+    /// Specifying this option suppresses the check; use this when you know the issues it might find
+    /// are addressed.
+    ///
+    /// Two main reasons this might fail:
+    ///
+    ///  - Forgetting `--target-no-signature-verification` if needed
+    ///  - Using a registry which requires authentication, but not embedding the pull secret in the image.
+    #[clap(long)]
+    #[serde(default)]
+    pub(crate) skip_fetch_check: bool,
 }
 
 #[derive(clap::Args, Debug, Clone, Serialize, Deserialize)]
@@ -765,6 +777,28 @@ pub(crate) fn propagate_tmp_mounts_to_host() -> Result<()> {
     Ok(())
 }
 
+/// Verify that we can load the manifest of the target image
+#[context("Verifying fetch")]
+async fn verify_target_fetch(imgref: &ostree_container::OstreeImageReference) -> Result<()> {
+    let tmpdir = tempfile::tempdir()?;
+    let tmprepo = &ostree::Repo::new_for_path(tmpdir.path());
+    tmprepo
+        .create(ostree::RepoMode::Bare, ostree::gio::Cancellable::NONE)
+        .context("Init tmp repo")?;
+
+    tracing::trace!("Verifying fetch for {imgref}");
+    let mut imp =
+        ostree_container::store::ImageImporter::new(&tmprepo, imgref, Default::default()).await?;
+    use ostree_container::store::PrepareResult;
+    let prep = match imp.prepare().await? {
+        // SAFETY: It's impossible that the image was already fetched into this newly created temporary repository
+        PrepareResult::AlreadyPresent(_) => unreachable!(),
+        PrepareResult::Ready(r) => r,
+    };
+    tracing::debug!("Fetched manifest with digest {}", prep.manifest_digest);
+    Ok(())
+}
+
 /// Preparation for an install; validates and prepares some (thereafter immutable) global state.
 async fn prepare_install(
     config_opts: InstallConfigOpts,
@@ -815,6 +849,10 @@ async fn prepare_install(
         },
     };
     tracing::debug!("Target image reference: {target_imgref}");
+
+    if !target_opts.skip_fetch_check {
+        verify_target_fetch(&target_imgref).await?;
+    }
 
     ensure_var()?;
     propagate_tmp_mounts_to_host()?;
