@@ -200,7 +200,7 @@ pub(crate) struct State {
     pub(crate) setenforce_guard: Option<crate::lsm::SetEnforceGuard>,
     #[allow(dead_code)]
     pub(crate) config_opts: InstallConfigOpts,
-    pub(crate) target_opts: InstallTargetOpts,
+    pub(crate) target_imgref: ostree_container::OstreeImageReference,
     pub(crate) install_config: config::InstallConfiguration,
 }
 
@@ -435,31 +435,7 @@ async fn initialize_ostree_root_from_self(
 ) -> Result<InstallAleph> {
     let rootfs_dir = &root_setup.rootfs_fd;
     let rootfs = root_setup.rootfs.as_path();
-    let opts = &state.target_opts;
     let cancellable = gio::Cancellable::NONE;
-
-    // Parse the target CLI image reference options and create the *target* image
-    // reference, which defaults to pulling from a registry.
-    let target_sigverify = if opts.target_no_signature_verification {
-        SignatureSource::ContainerPolicyAllowInsecure
-    } else if let Some(remote) = opts.target_ostree_remote.as_deref() {
-        SignatureSource::OstreeRemote(remote.to_string())
-    } else {
-        SignatureSource::ContainerPolicy
-    };
-    let target_imgname = opts
-        .target_imgref
-        .as_deref()
-        .unwrap_or(state.source.imageref.name.as_str());
-    let target_transport = ostree_container::Transport::try_from(opts.target_transport.as_str())?;
-    let target_imgref = ostree_container::OstreeImageReference {
-        sigverify: target_sigverify,
-        imgref: ostree_container::ImageReference {
-            transport: target_transport,
-            name: target_imgname.to_string(),
-        },
-    };
-    tracing::debug!("Target image reference: {target_imgref}");
 
     // TODO: make configurable?
     let stateroot = STATEROOT_DEFAULT;
@@ -535,12 +511,12 @@ async fn initialize_ostree_root_from_self(
         .collect::<Vec<_>>();
     let mut options = ostree_container::deploy::DeployOpts::default();
     options.kargs = Some(kargs.as_slice());
-    options.target_imgref = Some(&target_imgref);
+    options.target_imgref = Some(&state.target_imgref);
     options.proxy_cfg = Some(proxy_cfg);
     println!("Creating initial deployment");
+    let target_image = state.target_imgref.to_string();
     let state =
         ostree_container::deploy::deploy(&sysroot, stateroot, &src_imageref, Some(options)).await?;
-    let target_image = target_imgref.to_string();
     let digest = state.manifest_digest.as_str();
     println!("Installed: {target_image}");
     println!("   Digest: {digest}");
@@ -816,6 +792,30 @@ async fn prepare_install(
 
     let source = SourceInfo::from_container(&container_info)?;
 
+    // Parse the target CLI image reference options and create the *target* image
+    // reference, which defaults to pulling from a registry.
+    let target_sigverify = if target_opts.target_no_signature_verification {
+        SignatureSource::ContainerPolicyAllowInsecure
+    } else if let Some(remote) = target_opts.target_ostree_remote.as_deref() {
+        SignatureSource::OstreeRemote(remote.to_string())
+    } else {
+        SignatureSource::ContainerPolicy
+    };
+    let target_imgname = target_opts
+        .target_imgref
+        .as_deref()
+        .unwrap_or(source.imageref.name.as_str());
+    let target_transport =
+        ostree_container::Transport::try_from(target_opts.target_transport.as_str())?;
+    let target_imgref = ostree_container::OstreeImageReference {
+        sigverify: target_sigverify,
+        imgref: ostree_container::ImageReference {
+            transport: target_transport,
+            name: target_imgname.to_string(),
+        },
+    };
+    tracing::debug!("Target image reference: {target_imgref}");
+
     ensure_var()?;
     propagate_tmp_mounts_to_host()?;
 
@@ -841,7 +841,7 @@ async fn prepare_install(
         setenforce_guard,
         source,
         config_opts,
-        target_opts,
+        target_imgref,
         install_config,
     });
 
