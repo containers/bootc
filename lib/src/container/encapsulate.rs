@@ -157,8 +157,9 @@ fn export_chunked(
     // Add the component/content layers
     let mut buf = [0; 8];
     let sep = COMPONENT_SEPARATOR.encode_utf8(&mut buf);
-    for (layer, name, packages) in layers {
+    for (layer, name, mut packages) in layers {
         let mut annotation_component_layer = HashMap::new();
+        packages.sort();
         annotation_component_layer.insert(CONTENT_ANNOTATION.to_string(), packages.join(sep));
         ociw.push_layer(
             manifest,
