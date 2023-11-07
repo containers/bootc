@@ -59,7 +59,7 @@ The `bootc install` functionality is also more experimental.
 
 ### Installing
 
- * Fedora: [bootc is packaged](https://bodhi.fedoraproject.org/updates/?packages=bootc) and be available in the main repositories soon.
+ * Fedora: [bootc is packaged](https://bodhi.fedoraproject.org/updates/?packages=bootc).
  * CentOS Stream 9: There is a [COPR](https://copr.fedorainfracloud.org/coprs/rhcontainerbot/bootc/) tracking git main with binary packages.
 
 You can also build this project like any other Rust project, e.g. `cargo build --release` from a git clone.
@@ -116,6 +116,7 @@ preserving state.
 
 # More links
 
-- https://coreos.github.io/rpm-ostree/container/
-- https://github.com/coreos/layering-examples
+- [rpm-ostree container](https://coreos.github.io/rpm-ostree/container/)
+- [centos-boot](https://github.com/centos/centos-boot)
+- [coreos/layering-examples](https://github.com/coreos/layering-examples)
 
