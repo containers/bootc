@@ -76,8 +76,11 @@ in `/etc/containers/policy.json` in the target OS to verify signatures.
 
 If you are pushing an unsigned image, you must specify `bootc install --target-no-signature-verification`.
 
-Additionally note that to perform an install from an authenticated registry, you must also embed
-the pull secret into the image to pass this check.  If you are fetching
+Additionally note that to perform an install with a target image reference set to an
+authenticated registry, you must provide a pull secret.  One path is to embed the pull secret into
+the image in `/etc/ostree/auth.json`.
+Alternatively, the secret can be added after an installation process completes and managed separately;
+in that case you will need to specify `--skip-fetch-check`.
 
 ### Operating system install configuration required
 
