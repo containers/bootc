@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use crate::spec::{BootEntry, Host, HostSpec, HostStatus, ImageStatus};
 use crate::spec::{ImageReference, ImageSignature};
 use anyhow::{Context, Result};
+use fn_error_context::context;
 use ostree::glib;
 use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
@@ -104,6 +105,7 @@ pub(crate) fn labels_of_config(
     config.config().as_ref().and_then(|c| c.labels().as_ref())
 }
 
+#[context("Reading deployment metadata")]
 fn boot_entry_from_deployment(
     sysroot: &SysrootLock,
     deployment: &ostree::Deployment,
@@ -183,6 +185,7 @@ pub(crate) fn get_status_require_booted(
 
 /// Gather the ostree deployment objects, but also extract metadata from them into
 /// a more native Rust structure.
+#[context("Computing status")]
 pub(crate) fn get_status(
     sysroot: &SysrootLock,
     booted_deployment: Option<&ostree::Deployment>,
@@ -217,16 +220,19 @@ pub(crate) fn get_status(
         .staged
         .as_ref()
         .map(|d| boot_entry_from_deployment(sysroot, d))
-        .transpose()?;
+        .transpose()
+        .context("Staged deployment")?;
     let booted = booted_deployment
         .as_ref()
         .map(|d| boot_entry_from_deployment(sysroot, d))
-        .transpose()?;
+        .transpose()
+        .context("Booted deployment")?;
     let rollback = deployments
         .rollback
         .as_ref()
         .map(|d| boot_entry_from_deployment(sysroot, d))
-        .transpose()?;
+        .transpose()
+        .context("Rollback deployment")?;
     let spec = staged
         .as_ref()
         .or(booted.as_ref())
