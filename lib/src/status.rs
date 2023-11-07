@@ -110,10 +110,13 @@ fn boot_entry_from_deployment(
 ) -> Result<BootEntry> {
     let repo = &sysroot.repo();
     let (image, incompatible) = if let Some(origin) = deployment.origin().as_ref() {
-        if let Some(image) = get_image_origin(origin)? {
+        let incompatible = crate::utils::origin_has_rpmostree_stuff(origin);
+        let image = if incompatible {
+            // If there are local changes, we can't represent it as a bootc compatible image.
+            None
+        } else if let Some(image) = get_image_origin(origin)? {
             let image = ImageReference::from(image);
             let csum = deployment.csum();
-            let incompatible = crate::utils::origin_has_rpmostree_stuff(origin);
             let imgstate = ostree_container::store::query_image_commit(repo, &csum)?;
             let config = imgstate.configuration.as_ref();
             let labels = config.and_then(labels_of_config);
@@ -127,18 +130,16 @@ fn boot_entry_from_deployment(
             let version = config
                 .and_then(ostree_container::version_for_config)
                 .map(ToOwned::to_owned);
-            (
-                Some(ImageStatus {
-                    image,
-                    version,
-                    timestamp,
-                    image_digest: imgstate.manifest_digest,
-                }),
-                incompatible,
-            )
+            Some(ImageStatus {
+                image,
+                version,
+                timestamp,
+                image_digest: imgstate.manifest_digest,
+            })
         } else {
-            (None, false)
-        }
+            None
+        };
+        (image, incompatible)
     } else {
         (None, false)
     };
