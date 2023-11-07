@@ -111,8 +111,15 @@ drift in this scenario however.
 ### Upgrading
 
 Once a chosen container image is used as the boot source, further
-invocations of `bootc upgrade` will look for newer versions - again
-preserving state.
+invocations of `bootc upgrade` from the installed operating system
+will fetch updates from the container image registry.
+
+This is backed today by ostree, implementing an A/B style upgrade system.
+Changes to the base image are staged, and the running system is not
+changed by default.
+
+Use `bootc upgrade --apply` to apply updates; today this will always
+reboot.
 
 # More links
 
