@@ -46,8 +46,8 @@ other options.
 
 Here's an example:
 
-```
-$ podman run --privileged --pid=host --security-opt label=type:unconfined_t <image> bootc install --target-no-signature-verification /path/to/disk
+```sh
+podman run --privileged --pid=host --security-opt label=type:unconfined_t <image> bootc install --target-no-signature-verification /path/to/disk
 ```
 
 Note that while `--privileged` is used, this command will not perform any
@@ -87,7 +87,7 @@ in that case you will need to specify `--skip-fetch-check`.
 The container image must define its default install configuration.  For example,
 create `/usr/lib/bootc/install/00-exampleos.toml` with the contents:
 
-```
+```toml
 [install]
 root-fs-type = "xfs"
 ```
@@ -103,7 +103,6 @@ prior setting.
 
 The one exception to host requirements today is that the host must
 have `skopeo` installed.  This is a bug; more information in [this issue](https://github.com/containers/bootc/issues/81).
-
 
 ## Installing an "unconfigured" image
 
@@ -123,7 +122,7 @@ Other tools in this space are:
 - [systemd-firstboot](https://www.freedesktop.org/software/systemd/man/systemd-firstboot.html)
 - [gnome-initial-setup](https://gitlab.gnome.org/GNOME/gnome-initial-setup)
 
-The general idea here is that things like users, passwords and ssh keys 
+The general idea here is that things like users, passwords and ssh keys
 are dynamically created on first boot (and in general managed per-system);
 the configuration comes from a place *external* to the image.
 
@@ -150,7 +149,7 @@ from the default ostree `/etc` which may be locally writable.
 The `AuthorizedKeysFile` invocation below then configures sshd to look
 for keys in this location.
 
-```
+```Dockerfile
 FROM <image>
 RUN mkdir -p /usr/etc-system/ && \
     echo 'AuthorizedKeysFile /usr/etc-system/%u.keys' >> /etc/ssh/sshd_config.d/30-auth-system.conf && \
@@ -163,7 +162,6 @@ by the container image - it will be read-only at runtime because
 the files are underneath `/usr`.  To rotate or change the set of keys,
 one would build a new container image.  Client systems using `bootc upgrade`
 will transactionally update to this new system state.
-
 
 ## More advanced installation
 
@@ -199,7 +197,6 @@ storage or filesystem setups, but reuses the "top half" of the logic.
 For example, a goal is to change [Anaconda](https://github.com/rhinstaller/anaconda/)
 to use this.
 
-
 ### Using `bootc install-to-filesystem --replace=alongside`
 
 This is a variant of `install-to-filesystem`, which maximizes convenience for using
@@ -212,8 +209,8 @@ support the root storage setup already initialized.
 
 The core command should look like this:
 
-```
-$ podman run --privileged -v /:/target --pid=host --security-opt label=type:install_t \
+```sh
+podman run --privileged -v /:/target --pid=host --security-opt label=type:unconfined_t \
   <image> \
   bootc install-to-filesystem --replace=alongside /target
 ```
