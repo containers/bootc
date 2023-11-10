@@ -2,7 +2,7 @@
 nav_order: 2
 ---
 
-# `bootc install`
+# Installing "bootc compatible" images
 
 A key goal of the bootc project is to think of bootable operating systems
 as container images.  Docker/OCI container images are just tarballs
@@ -17,51 +17,63 @@ The Linux kernel (and optionally initramfs) is embedded in the container image; 
 is `/usr/lib/modules/$kver/vmlinuz`, and the initramfs should be in `initramfs.img`
 in that directory.
 
-The `bootc install` command bridges the two worlds of a standard runnable OCI image
-and a bootable system by running tooling
-logic embedded in the container image to create the filesystem and
-bootloader setup dynamically, using tools already embedded in the container
-image.  This requires running the container via `--privileged`; it uses
-the running Linux kernel to write the file content from the running container image;
-not the kernel inside the container.
+The `bootc install` and `boot install-to-filesystem` commands bridge the two worlds
+of a standard, runnable OCI image and a bootable system by running tooling logic embedded
+in the container image to create the filesystem and bootloader setup dynamically.
+This requires running the container via `--privileged`; it uses the running Linux kernel
+on the host to write the file content from the running container image; not the kernel
+inside the container.
 
-However nothing *else* (external) is required to perform a basic installation
-to disk.  This is motivated by experience gained from the Fedora CoreOS
+However, nothing *else* (external) is required to perform a basic installation
+to disk.  (The one exception to host requirements today is that the host must
+have `skopeo` installed.  This is a bug; more information in
+[this issue](https://github.com/containers/bootc/issues/81).)
+
+This is motivated by experience gained from the Fedora CoreOS
 project where today the expectation is that one boots from a pre-existing disk
-image (AMI, qcow2, etc) or use [coreos-installer](https://github.com/coreos/coreos-installer)
+image (AMI, qcow2, etc) or uses [coreos-installer](https://github.com/coreos/coreos-installer)
 for many bare metal setups.  But the problem is that coreos-installer
 is oriented to installing raw disk images.  This means that if
 one creates a custom derived container, then it's required for
 one to also generate a raw disk image to install.  This is a large
 ergonomic hit.
 
-With `bootc install`, no extra steps are required.  Every container
+With the `bootc` install methods, no extra steps are required.  Every container
 image comes with a basic installer.
 
 ## Executing `bootc install`
 
-The installation command must be run from the container image
+The two installation commands allow you to install the container image
+either directly to a block device (`bootc install`) or to an existing
+filesystem (`bootc install-to-filesystem`).
+
+The installation commands **MUST** be run **from** the container image
 that will be installed, using `--privileged` and a few
-other options.
+other options. This means you are (currently) not able to install `bootc`
+to an existing system and install your container image. Failure to run
+`bootc` from a container image will result in an error.
 
-Here's an example:
+Here's an example of using `bootc install` (root/elevated permission required):
 
-```sh
+```bash
 podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t <image> bootc install --target-no-signature-verification /path/to/disk
 ```
 
 Note that while `--privileged` is used, this command will not perform any
 destructive action on the host system.  Among other things, `--privileged`
 makes sure that all host devices are mounted into container. `/path/to/disk` is
-the host's block device `<image>` will be installed on.
+the host's block device where `<image>` will be installed on.
 
 The `--pid=host --security-opt label=type:unconfined_t` today
 make it more convenient for bootc to perform some privileged
 operations; in the future these requirement may be dropped.
 
+Jump to the section for [`install-to-filesystem`](#more-advanced-installation) later
+in this document for additional information about that method.
+
 ### "day 2" updates, security and fetch configuration
 
-Note that by default the `bootc install` path will find the pull specification used
+By default the `bootc install` path will find the pull specification used
 for the `podman run` invocation and use it to set up "day 2" OS updates that `bootc update`
 will use.
 
@@ -74,7 +86,7 @@ By default, the installation process will verify that the container (representin
 can fetch its own updates.  A common cause of failure here is not changing the security settings
 in `/etc/containers/policy.json` in the target OS to verify signatures.
 
-If you are pushing an unsigned image, you must specify `bootc install --target-no-signature-verification`.
+If you are pushing an unsigned image, you **MUST** specify `bootc install --target-no-signature-verification`.
 
 Additionally note that to perform an install with a target image reference set to an
 authenticated registry, you must provide a pull secret.  One path is to embed the pull secret into
@@ -84,7 +96,7 @@ in that case you will need to specify `--skip-fetch-check`.
 
 ### Operating system install configuration required
 
-The container image must define its default install configuration.  For example,
+The container image **MUST** define its default install configuration.  For example,
 create `/usr/lib/bootc/install/00-exampleos.toml` with the contents:
 
 ```toml
@@ -92,17 +104,12 @@ create `/usr/lib/bootc/install/00-exampleos.toml` with the contents:
 root-fs-type = "xfs"
 ```
 
-At the current time, `root-fs-type` is the only available configuration option, and it must be set.
+At the current time, `root-fs-type` is the only available configuration option, and it **MUST** be set.
 
 Configuration files found in this directory will be merged, with higher alphanumeric values
 taking precedence.  If for example you are building a derived container image from the above OS,
-you coudl create a `50-myos.toml`  that sets `root-fs-type = "btrfs"` which will override the
+you could create a `50-myos.toml`  that sets `root-fs-type = "btrfs"` which will override the
 prior setting.
-
-### Note: Today `bootc install` has a host requirement on `skopeo`
-
-The one exception to host requirements today is that the host must
-have `skopeo` installed.  This is a bug; more information in [this issue](https://github.com/containers/bootc/issues/81).
 
 ## Installing an "unconfigured" image
 
@@ -128,12 +135,12 @@ the configuration comes from a place *external* to the image.
 
 ### Injecting configuration into a custom image
 
-But a new super-power with `bootc` is that you can also easily instead
+But a new super-power with `bootc` is that you can also easily
 create a derived container that injects your desired configuration,
-alongside any additional executable code (packages, etc).
+alongside any additional executable code (binaries, packages, scripts, etc).
 
 The expectation is that most operating systems will be designed such
-that user state i.e. `/root` and `/home` will be on a separate persistent data store.
+that user state i.e. `/root` and `/home` will be on a separate, persistent data store.
 For example, in the default ostree model, `/root` is `/var/roothome`
 and `/home` is `/var/home`.  Content in `/var` cannot be shipped
 in the image - it is per machine state.
@@ -207,15 +214,16 @@ somewhat destructive operation for the existing Linux installation.
 Also, because the filesystem is reused, it's required that the target system kernel
 support the root storage setup already initialized.
 
-The core command should look like this:
+The core command should look like this (root/elevated permission required):
 
-```sh
-podman run --rm --privileged -v /:/target --pid=host --security-opt label=type:unconfined_t \
-  <image> \
-  bootc install-to-filesystem --replace=alongside /target
+```bash
+podman run --rm --privileged -v /:/target \
+             --pid=host --security-opt label=type:unconfined_t \
+             <image> \
+             bootc install-to-filesystem --replace=alongside /target
 ```
 
-At the current time, leftover data in `/` is *not* automatically cleaned up.  This can
+At the current time, leftover data in `/` is **NOT** automatically cleaned up.  This can
 be useful, because it allows the new image to automatically import data from the previous
 host system!  For example, things like SSH keys or container images can be copied
 and then deleted from the original.
