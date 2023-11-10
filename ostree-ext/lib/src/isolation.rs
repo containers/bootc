@@ -31,6 +31,7 @@ pub(crate) fn unprivileged_subprocess(binary: &str, user: &str) -> Command {
     cmd.args([
         "--no-new-privs",
         "--init-groups",
+        "--reset-env",
         "--reuid",
         user,
         "--bounding-set",
