@@ -47,7 +47,7 @@ other options.
 Here's an example:
 
 ```sh
-podman run --privileged --pid=host --security-opt label=type:unconfined_t <image> bootc install --target-no-signature-verification /path/to/disk
+podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t <image> bootc install --target-no-signature-verification /path/to/disk
 ```
 
 Note that while `--privileged` is used, this command will not perform any
@@ -210,7 +210,7 @@ support the root storage setup already initialized.
 The core command should look like this:
 
 ```sh
-podman run --privileged -v /:/target --pid=host --security-opt label=type:unconfined_t \
+podman run --rm --privileged -v /:/target --pid=host --security-opt label=type:unconfined_t \
   <image> \
   bootc install-to-filesystem --replace=alongside /target
 ```
