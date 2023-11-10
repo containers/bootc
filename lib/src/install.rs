@@ -791,7 +791,7 @@ async fn verify_target_fetch(imgref: &ostree_container::OstreeImageReference) ->
 
     tracing::trace!("Verifying fetch for {imgref}");
     let mut imp =
-        ostree_container::store::ImageImporter::new(&tmprepo, imgref, Default::default()).await?;
+        ostree_container::store::ImageImporter::new(tmprepo, imgref, Default::default()).await?;
     use ostree_container::store::PrepareResult;
     let prep = match imp.prepare().await? {
         // SAFETY: It's impossible that the image was already fetched into this newly created temporary repository

@@ -447,7 +447,7 @@ async fn edit(opts: EditOpts) -> Result<()> {
     let (booted_deployment, _deployments, host) =
         crate::status::get_status_require_booted(sysroot)?;
     let new_host: Host = if let Some(filename) = opts.filename {
-        let mut r = std::io::BufReader::new(std::fs::File::open(&filename)?);
+        let mut r = std::io::BufReader::new(std::fs::File::open(filename)?);
         serde_yaml::from_reader(&mut r)?
     } else {
         let tmpf = tempfile::NamedTempFile::new()?;
