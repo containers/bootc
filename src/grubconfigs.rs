@@ -62,6 +62,10 @@ pub(crate) fn install(target_root: &openat::Dir, efi: bool) -> Result<()> {
         config.push_str(post.as_str());
     }
 
+    if !bootdir.exists(GRUB2DIR)? {
+        bootdir.create_dir(GRUB2DIR, 0o700)?;
+    }
+
     bootdir
         .write_file_contents(format!("{GRUB2DIR}/grub.cfg"), 0o644, config.as_bytes())
         .context("Copying grub-static.cfg")?;
