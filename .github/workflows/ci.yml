@@ -56,7 +56,7 @@ jobs:
       - name: Build
         run: make test-bin-archive
       - name: Upload binary
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: bootc.tar.zst
           path: target/bootc.tar.zst
@@ -76,7 +76,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
       - name: Download
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: bootc.tar.zst
       - name: Install
@@ -90,7 +90,7 @@ jobs:
     container: quay.io/fedora/fedora-coreos:testing-devel
     steps:
       - name: Download
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: bootc.tar.zst
       - name: Install
@@ -103,14 +103,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: bootc.tar.zst
       - name: Install
         run: tar -xvf bootc.tar.zst
       - name: Update host skopeo
         run: |
-          echo 'deb http://cz.archive.ubuntu.com/ubuntu lunar main universe' | sudo tee -a /etc/apt/sources.list 
+          echo 'deb http://cz.archive.ubuntu.com/ubuntu lunar main universe' | sudo tee -a /etc/apt/sources.list
           sudo apt update
           sudo apt upgrade skopeo
       - name: Integration tests
