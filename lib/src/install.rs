@@ -466,6 +466,9 @@ async fn initialize_ostree_root_from_self(
     };
     for (k, v) in [
         ("sysroot.bootloader", bootloader),
+        // Always flip this one on because we need to support alongside installs
+        // to systems without a separate boot partition.
+        ("sysroot.bootprefix", "true"),
         ("sysroot.readonly", "true"),
     ] {
         Task::new("Configuring ostree repo", "ostree")
