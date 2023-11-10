@@ -23,6 +23,7 @@ mod coreos;
 mod daemon;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod efi;
+mod filesystem;
 mod filetree;
 #[cfg(any(
     target_arch = "x86_64",
