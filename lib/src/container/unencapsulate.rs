@@ -45,6 +45,11 @@ use tokio::{
 };
 use tracing::instrument;
 
+/// The legacy MIME type returned by the skopeo/(containers/storage) code
+/// when we have local uncompressed docker-formatted image.
+/// TODO: change the skopeo code to shield us from this correctly
+const DOCKER_TYPE_LAYER_TAR: &str = "application/vnd.docker.image.rootfs.diff.tar";
+
 type Progress = tokio::sync::watch::Sender<u64>;
 
 /// A read wrapper that updates the download progress.
@@ -194,6 +199,7 @@ fn new_async_decompressor<'a>(
             async_compression::tokio::bufread::GzipDecoder::new(src),
         ))),
         oci_image::MediaType::ImageLayer => Ok(Box::new(src)),
+        oci_image::MediaType::Other(t) if t.as_str() == DOCKER_TYPE_LAYER_TAR => Ok(Box::new(src)),
         o => Err(anyhow::anyhow!("Unhandled layer type: {}", o)),
     }
 }
