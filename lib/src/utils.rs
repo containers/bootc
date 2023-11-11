@@ -32,14 +32,6 @@ pub(crate) fn find_mount_option<'a>(
         .next()
 }
 
-/// Run a command in the host mount namespace
-#[allow(dead_code)]
-pub(crate) fn run_in_host_mountns(cmd: &str) -> Command {
-    let mut c = Command::new("nsenter");
-    c.args(["-m", "-t", "1", "--", cmd]);
-    c
-}
-
 pub(crate) fn spawn_editor(tmpf: &tempfile::NamedTempFile) -> Result<()> {
     let v = "EDITOR";
     let editor = std::env::var_os(v)

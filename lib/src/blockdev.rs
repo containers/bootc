@@ -1,5 +1,5 @@
+use crate::install::run_in_host_mountns;
 use crate::task::Task;
-use crate::utils::run_in_host_mountns;
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use fn_error_context::context;
