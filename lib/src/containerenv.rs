@@ -7,6 +7,7 @@ use cap_std_ext::cap_std::fs::Dir;
 use cap_std_ext::prelude::CapStdExtDirExt;
 use fn_error_context::context;
 
+/// Path is relative to container rootfs (assumed to be /)
 const PATH: &str = "run/.containerenv";
 
 #[derive(Debug, Default)]
@@ -25,7 +26,9 @@ pub(crate) fn get_container_execution_info(rootfs: &Dir) -> Result<ContainerExec
     let f = match rootfs.open_optional(PATH)? {
         Some(f) => BufReader::new(f),
         None => {
-            anyhow::bail!("This command must be executed inside a podman container (missing {PATH}")
+            anyhow::bail!(
+                "This command must be executed inside a podman container (missing /{PATH})"
+            )
         }
     };
     let mut r = ContainerExecutionInfo::default();
