@@ -155,6 +155,11 @@ pub(crate) enum Opt {
     /// Install to the target block device
     #[cfg(feature = "install")]
     Install(crate::install::InstallOpts),
+    /// Execute the given command in the host mount namespace
+    #[cfg(feature = "install")]
+    #[clap(hide = true)]
+    #[command(external_subcommand)]
+    ExecInHostMountNamespace(Vec<OsString>),
     /// Install to the target filesystem.
     #[cfg(feature = "install")]
     InstallToFilesystem(crate::install::InstallToFilesystemOpts),
@@ -503,6 +508,10 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         Opt::Install(opts) => crate::install::install(opts).await,
         #[cfg(feature = "install")]
         Opt::InstallToFilesystem(opts) => crate::install::install_to_filesystem(opts).await,
+        #[cfg(feature = "install")]
+        Opt::ExecInHostMountNamespace(args) => {
+            crate::install::exec_in_host_mountns(args.as_slice())
+        }
         Opt::Status(opts) => super::status::status(opts).await,
         #[cfg(feature = "internal-testing-api")]
         Opt::InternalTests(opts) => crate::privtests::run(opts).await,
