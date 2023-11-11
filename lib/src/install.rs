@@ -722,13 +722,9 @@ pub(crate) fn finalize_filesystem(fs: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
-fn require_systemd_pid1() -> Result<()> {
+fn require_host_pidns() -> Result<()> {
     // We require --pid=host
-    let pid = std::fs::read_link("/proc/1/exe").context("reading /proc/1/exe")?;
-    let pid = pid
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("Non-UTF8 /proc/1/exe"))?;
-    if !pid.contains("systemd") {
+    if rustix::process::getpid().is_init() {
         anyhow::bail!("This command must be run with --pid=host")
     }
     Ok(())
@@ -809,7 +805,7 @@ async fn prepare_install(
 ) -> Result<Arc<State>> {
     // We need full root privileges, i.e. --privileged in podman
     crate::cli::require_root()?;
-    require_systemd_pid1()?;
+    require_host_pidns()?;
 
     if cfg!(target_arch = "s390x") {
         anyhow::bail!("Installation is not supported on this architecture yet");
