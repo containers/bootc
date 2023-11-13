@@ -19,12 +19,24 @@ cd $(mktemp -d)
 
 case "${AUTOPKGTEST_REBOOT_MARK:-}" in
   "")
-    podman run --rm -ti --privileged --pid=host -v /usr/bin/bootc:/usr/bin/bootc ${IMAGE} bootc install --target-no-signature-verification --karg=foo=bar ${DEV}
+    mkdir -p ~/.config/containers
+    cp -a /etc/ostree/auth.json ~/.config/containers
+    mkdir -p usr/{lib,bin}
+    cp -a /usr/lib/bootc usr/lib
+    cp -a /usr/bin/bootc usr/bin
+    cat > Dockerfile << EOF
+    FROM ${IMAGE}
+    COPY usr usr
+EOF
+    podman build -t localhost/testimage .
+    podman run --rm -ti --privileged --pid=host --env RUST_LOG=error,bootc_lib::install=debug \
+      localhost/testimage bootc install --target-no-signature-verification --skip-fetch-check --karg=foo=bar ${DEV}
     # In theory we could e.g. wipe the bootloader setup on the primary disk, then reboot;
     # but for now let's just sanity test that the install command executes.
     lsblk ${DEV}
     mount /dev/vda3 /var/mnt
     grep foo=bar /var/mnt/loader/entries/*.conf
+    grep localtestkarg=somevalue /var/mnt/loader/entries/*.conf
     grep -Ee '^linux /boot/ostree' /var/mnt/loader/entries/*.conf
     umount /var/mnt
     echo "ok install"

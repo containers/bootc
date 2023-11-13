@@ -381,7 +381,10 @@ pub(crate) mod config {
     #[derive(Debug, Clone, Serialize, Deserialize, Default)]
     #[serde(rename = "install", rename_all = "kebab-case", deny_unknown_fields)]
     pub(crate) struct InstallConfiguration {
+        /// Root filesystem type
         pub(crate) root_fs_type: Option<super::baseline::Filesystem>,
+        /// Kernel arguments, applied at installation time
+        pub(crate) kargs: Option<Vec<String>>,
     }
 
     impl InstallConfiguration {
@@ -392,7 +395,12 @@ pub(crate) mod config {
                     *s = Some(o);
                 }
             }
-            mergeopt(&mut self.root_fs_type, other.root_fs_type)
+            mergeopt(&mut self.root_fs_type, other.root_fs_type);
+            if let Some(other_kargs) = other.kargs {
+                self.kargs
+                    .get_or_insert_with(|| Default::default())
+                    .extend(other_kargs)
+            }
         }
     }
 
@@ -416,6 +424,7 @@ pub(crate) mod config {
             }
             if let Some(config) = config.as_mut() {
                 if let Some(install) = c.install {
+                    tracing::debug!("Merging install config: {install:?}");
                     config.merge(install);
                 }
             } else {
@@ -441,10 +450,43 @@ root-fs-type = "xfs"
         let other = InstallConfigurationToplevel {
             install: Some(InstallConfiguration {
                 root_fs_type: Some(Filesystem::Ext4),
+                kargs: None,
             }),
         };
         install.merge(other.install.unwrap());
         assert_eq!(install.root_fs_type.unwrap(), Filesystem::Ext4);
+
+        let c: InstallConfigurationToplevel = toml::from_str(
+            r##"[install]
+root-fs-type = "ext4"
+kargs = ["console=ttyS0", "foo=bar"]
+"##,
+        )
+        .unwrap();
+        let mut install = c.install.unwrap();
+        assert_eq!(install.root_fs_type.unwrap(), Filesystem::Ext4);
+        let other = InstallConfigurationToplevel {
+            install: Some(InstallConfiguration {
+                root_fs_type: None,
+                kargs: Some(
+                    ["console=tty0", "nosmt"]
+                        .into_iter()
+                        .map(ToOwned::to_owned)
+                        .collect(),
+                ),
+            }),
+        };
+        install.merge(other.install.unwrap());
+        assert_eq!(install.root_fs_type.unwrap(), Filesystem::Ext4);
+        assert_eq!(
+            install.kargs,
+            Some(
+                ["console=ttyS0", "foo=bar", "console=tty0", "nosmt"]
+                    .into_iter()
+                    .map(ToOwned::to_owned)
+                    .collect()
+            )
+        )
     }
 }
 
