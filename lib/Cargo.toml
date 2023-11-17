@@ -34,6 +34,7 @@ regex = "1.7.1"
 rustix = { "version" = "0.38", features = ["thread", "fs", "system", "process"] }
 schemars = { version = "0.8.6", features = ["chrono"] }
 serde = { features = ["derive"], version = "1.0.125" }
+serde_ignored = "0.1.9"
 serde_json = "1.0.64"
 serde_yaml = "0.9.17"
 serde_with = ">= 1.9.4, < 2"

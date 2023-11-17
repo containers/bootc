@@ -405,8 +405,15 @@ pub(crate) mod config {
         let mut config: Option<InstallConfiguration> = None;
         for (_name, path) in fragments {
             let buf = std::fs::read_to_string(&path)?;
-            let c: InstallConfigurationToplevel =
-                toml::from_str(&buf).with_context(|| format!("Parsing {path:?}"))?;
+            let mut unused = std::collections::HashSet::new();
+            let de = toml::Deserializer::new(&buf);
+            let c: InstallConfigurationToplevel = serde_ignored::deserialize(de, |path| {
+                unused.insert(path.to_string());
+            })
+            .with_context(|| format!("Parsing {path:?}"))?;
+            for key in unused {
+                eprintln!("warning: {path:?}: Unknown key {key}");
+            }
             if let Some(config) = config.as_mut() {
                 if let Some(install) = c.install {
                     config.merge(install);
