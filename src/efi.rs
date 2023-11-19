@@ -128,6 +128,10 @@ impl Efi {
 
     #[context("Updating EFI firmware variables")]
     fn update_firmware(&self, device: &str, espdir: &openat::Dir) -> Result<()> {
+        if !is_efi_booted()? {
+            log::debug!("Not booted via EFI, skipping firmware update");
+            return Ok(());
+        }
         let efidir = &espdir.sub_dir("EFI").context("Opening EFI")?;
         let vendordir = super::grubconfigs::find_efi_vendordir(efidir)?;
         let vendordir = vendordir
