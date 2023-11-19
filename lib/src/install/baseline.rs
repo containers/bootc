@@ -350,6 +350,14 @@ pub(crate) fn install_create_rootfs(
         .into_iter()
         .flatten()
         .chain([rootarg, RW_KARG.to_string(), bootarg].into_iter())
+        .chain(
+            state
+                .install_config
+                .kargs
+                .iter()
+                .flatten()
+                .map(ToOwned::to_owned),
+        )
         .collect::<Vec<_>>();
 
     mount::mount(&rootdev, &rootfs)?;

@@ -1,0 +1,2 @@
+[install]
+kargs = ["localtestkarg=somevalue", "otherlocalkarg=42"]

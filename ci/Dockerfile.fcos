@@ -7,4 +7,5 @@ RUN make test-bin-archive
 
 FROM quay.io/fedora/fedora-coreos:testing-devel
 COPY --from=builder /src/target/bootc.tar.zst /tmp
+COPY ci/usr usr
 RUN tar -xvf /tmp/bootc.tar.zst && ostree container commit 

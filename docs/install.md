@@ -96,20 +96,31 @@ in that case you will need to specify `--skip-fetch-check`.
 
 ### Operating system install configuration required
 
-The container image **MUST** define its default install configuration.  For example,
-create `/usr/lib/bootc/install/00-exampleos.toml` with the contents:
+The container image **MUST** define its default install configuration.  A key choice
+that bootc by default leaves up to the operating system image is the root filesystem
+type.
+
+To enable `bootc install` as part of your OS/distribution base image,
+create a file named `/usr/lib/bootc/install/00-<osname>.toml` with the contents of the form:
 
 ```toml
 [install]
 root-fs-type = "xfs"
 ```
 
-At the current time, `root-fs-type` is the only available configuration option, and it **MUST** be set.
+The `root-fs-type` value **MUST** be set.
 
 Configuration files found in this directory will be merged, with higher alphanumeric values
 taking precedence.  If for example you are building a derived container image from the above OS,
 you could create a `50-myos.toml`  that sets `root-fs-type = "btrfs"` which will override the
 prior setting.
+
+Other available options, also under the `[install]` section:
+
+`kargs`: This allows setting kernel arguments which apply only at the time of `bootc install`.
+This option is particularly useful when creating derived/layered images; for example, a cloud
+image may want to have its default `console=` set, in contrast with a default base image.
+The values in this field are space separated.
 
 ## Installing an "unconfigured" image
 
