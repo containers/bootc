@@ -29,8 +29,14 @@ pub(crate) fn find_efi_vendordir(efidir: &openat::Dir) -> Result<PathBuf> {
 
 /// Install the static GRUB config files.
 #[context("Installing static GRUB configs")]
-pub(crate) fn install(target_root: &openat::Dir, efi: bool) -> Result<()> {
+pub(crate) fn install(target_root: &openat::Dir, efi: bool, write_uuid: bool) -> Result<()> {
     let bootdir = &target_root.sub_dir("boot").context("Opening /boot")?;
+    let boot_is_mount = {
+        let root_dev = target_root.self_metadata()?.stat().st_dev;
+        let boot_dev = bootdir.self_metadata()?.stat().st_dev;
+        log::debug!("root_dev={root_dev} boot_dev={boot_dev}");
+        root_dev != boot_dev
+    };
 
     let mut config = std::fs::read_to_string(Path::new(CONFIGDIR).join("grub-static-pre.cfg"))?;
 
@@ -71,6 +77,22 @@ pub(crate) fn install(target_root: &openat::Dir, efi: bool) -> Result<()> {
         .context("Copying grub-static.cfg")?;
     println!("Installed: grub.cfg");
 
+    let uuid_path = if write_uuid {
+        let target_fs = if boot_is_mount { bootdir } else { target_root };
+        let bootfs_meta = crate::filesystem::inspect_filesystem(target_fs, ".")?;
+        let bootfs_uuid = bootfs_meta
+            .uuid
+            .ok_or_else(|| anyhow::anyhow!("Failed to find UUID for boot"))?;
+        let grub2_uuid_contents = format!("set BOOT_UUID=\"{bootfs_uuid}\"\n");
+        let uuid_path = format!("{GRUB2DIR}/bootuuid.cfg");
+        bootdir
+            .write_file_contents(&uuid_path, 0o644, grub2_uuid_contents)
+            .context("Writing bootuuid.cfg")?;
+        Some(uuid_path)
+    } else {
+        None
+    };
+
     let efidir = efi
         .then(|| {
             target_root
@@ -87,6 +109,14 @@ pub(crate) fn install(target_root: &openat::Dir, efi: bool) -> Result<()> {
             .copy_file(&Path::new(CONFIGDIR).join("grub-static-efi.cfg"), target)
             .context("Copying static EFI")?;
         println!("Installed: {target:?}");
+        if let Some(uuid_path) = uuid_path {
+            // SAFETY: we always have a filename
+            let filename = Path::new(&uuid_path).file_name().unwrap();
+            let target = &vendordir.join(filename);
+            bootdir
+                .copy_file_at(uuid_path, efidir, target)
+                .context("Writing bootuuid.cfg to efi dir")?;
+        }
     }
 
     Ok(())
@@ -106,7 +136,7 @@ mod tests {
         std::fs::create_dir_all(tdp.join("boot/grub2"))?;
         std::fs::create_dir_all(tdp.join("boot/efi/EFI/BOOT"))?;
         std::fs::create_dir_all(tdp.join("boot/efi/EFI/fedora"))?;
-        install(&td, true).unwrap();
+        install(&td, true, false).unwrap();
 
         assert!(td.exists("boot/grub2/grub.cfg")?);
         assert!(td.exists("boot/efi/EFI/fedora/grub.cfg")?);

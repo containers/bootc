@@ -26,11 +26,28 @@ pub(crate) enum ClientRequest {
     Status,
 }
 
+pub(crate) enum ConfigMode {
+    None,
+    Static,
+    WithUUID,
+}
+
+impl ConfigMode {
+    pub(crate) fn enabled_with_uuid(&self) -> Option<bool> {
+        match self {
+            ConfigMode::None => None,
+            ConfigMode::Static => Some(false),
+            ConfigMode::WithUUID => Some(true),
+        }
+    }
+}
+
 pub(crate) fn install(
     source_root: &str,
     dest_root: &str,
     device: Option<&str>,
-    with_static_configs: bool,
+    configs: ConfigMode,
+    update_firmware: bool,
     target_components: Option<&[String]>,
     auto_components: bool,
 ) -> Result<()> {
@@ -78,7 +95,7 @@ pub(crate) fn install(
         }
 
         let meta = component
-            .install(&source_root, dest_root, device)
+            .install(&source_root, dest_root, device, update_firmware)
             .with_context(|| format!("installing component {}", component.name()))?;
         log::info!("Installed {} {}", component.name(), meta.meta.version);
         state.installed.insert(component.name().into(), meta);
@@ -89,14 +106,17 @@ pub(crate) fn install(
     }
     let sysroot = &openat::Dir::open(dest_root)?;
 
-    if with_static_configs {
-        #[cfg(any(
-            target_arch = "x86_64",
-            target_arch = "aarch64",
-            target_arch = "powerpc64"
-        ))]
-        crate::grubconfigs::install(sysroot, installed_efi)?;
-        // On other architectures, assume that there's nothing to do.
+    match configs.enabled_with_uuid() {
+        Some(uuid) => {
+            #[cfg(any(
+                target_arch = "x86_64",
+                target_arch = "aarch64",
+                target_arch = "powerpc64"
+            ))]
+            crate::grubconfigs::install(sysroot, installed_efi, uuid)?;
+            // On other architectures, assume that there's nothing to do.
+        }
+        None => {}
     }
 
     // Unmount the ESP, etc.
@@ -126,7 +146,7 @@ pub(crate) fn get_components_impl(auto: bool) -> Components {
     #[cfg(target_arch = "x86_64")]
     {
         if auto {
-            let is_efi_booted = Path::new("/sys/firmware/efi").exists();
+            let is_efi_booted = crate::efi::is_efi_booted().unwrap();
             log::info!(
                 "System boot method: {}",
                 if is_efi_booted { "EFI" } else { "BIOS" }

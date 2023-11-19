@@ -93,6 +93,7 @@ impl Component for Bios {
         src_root: &openat::Dir,
         dest_root: &str,
         device: &str,
+        _update_firmware: bool,
     ) -> Result<InstalledContent> {
         let meta = if let Some(meta) = get_component_update(src_root, self)? {
             meta

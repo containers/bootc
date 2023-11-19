@@ -50,6 +50,7 @@ pub(crate) trait Component {
         src_root: &openat::Dir,
         dest_root: &str,
         device: &str,
+        update_firmware: bool,
     ) -> Result<InstalledContent>;
 
     /// Implementation of `bootupd generate-update-metadata` for a given component.

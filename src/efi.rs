@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
+use fn_error_context::context;
 use openat_ext::OpenatDirExt;
 use widestring::U16CString;
 
@@ -22,6 +23,10 @@ use crate::{component::*, packagesystem};
 /// Well-known paths to the ESP that may have been mounted external to us.
 pub(crate) const ESP_MOUNTS: &[&str] = &["boot/efi", "efi", "boot"];
 
+/// The binary to change EFI boot ordering
+const EFIBOOTMGR: &str = "efibootmgr";
+const SHIM: &str = "shimx64.efi";
+
 /// The ESP partition label on Fedora CoreOS derivatives
 pub(crate) const COREOS_ESP_PART_LABEL: &str = "EFI-SYSTEM";
 pub(crate) const ANACONDA_ESP_PART_LABEL: &str = "EFI\\x20System\\x20Partition";
@@ -29,6 +34,13 @@ pub(crate) const ANACONDA_ESP_PART_LABEL: &str = "EFI\\x20System\\x20Partition";
 /// Systemd boot loader info EFI variable names
 const LOADER_INFO_VAR_STR: &str = "LoaderInfo-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f";
 const STUB_INFO_VAR_STR: &str = "StubInfo-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f";
+
+/// Return `true` if the system is booted via EFI
+pub(crate) fn is_efi_booted() -> Result<bool> {
+    Path::new("/sys/firmware/efi")
+        .try_exists()
+        .map_err(Into::into)
+}
 
 #[derive(Default)]
 pub(crate) struct Efi {
@@ -112,6 +124,17 @@ impl Efi {
             log::trace!("Unmounted");
         }
         Ok(())
+    }
+
+    #[context("Updating EFI firmware variables")]
+    fn update_firmware(&self, device: &str, espdir: &openat::Dir) -> Result<()> {
+        let efidir = &espdir.sub_dir("EFI").context("Opening EFI")?;
+        let vendordir = super::grubconfigs::find_efi_vendordir(efidir)?;
+        let vendordir = vendordir
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid non-UTF-8 vendordir"))?;
+        clear_efi_current()?;
+        set_efi_current(device, espdir, vendordir)
     }
 }
 
@@ -259,7 +282,8 @@ impl Component for Efi {
         &self,
         src_root: &openat::Dir,
         dest_root: &str,
-        _: &str,
+        device: &str,
+        update_firmware: bool,
     ) -> Result<InstalledContent> {
         let meta = if let Some(meta) = get_component_update(src_root, self)? {
             meta
@@ -270,11 +294,11 @@ impl Component for Efi {
         let srcdir_name = component_updatedirname(self);
         let ft = crate::filetree::FileTree::new_from_dir(&src_root.sub_dir(&srcdir_name)?)?;
         let destdir = &self.ensure_mounted_esp(Path::new(dest_root))?;
-        {
-            let destd = openat::Dir::open(destdir)
-                .with_context(|| format!("opening dest dir {}", destdir.display()))?;
-            validate_esp(&destd)?;
-        }
+
+        let destd = &openat::Dir::open(destdir)
+            .with_context(|| format!("opening dest dir {}", destdir.display()))?;
+        validate_esp(destd)?;
+
         // TODO - add some sort of API that allows directly setting the working
         // directory to a file descriptor.
         let r = std::process::Command::new("cp")
@@ -285,6 +309,9 @@ impl Component for Efi {
             .status()?;
         if !r.success() {
             anyhow::bail!("Failed to copy");
+        }
+        if update_firmware {
+            self.update_firmware(device, destd)?
         }
         Ok(InstalledContent {
             meta,
@@ -398,4 +425,70 @@ fn validate_esp(dir: &openat::Dir) -> Result<()> {
         bail!("EFI mount is not a msdos filesystem, but is {:?}", fstype);
     };
     Ok(())
+}
+
+#[context("Clearing current EFI boot entry")]
+pub(crate) fn clear_efi_current() -> Result<()> {
+    const BOOTCURRENT: &str = "BootCurrent";
+    if !crate::efi::is_efi_booted()? {
+        log::debug!("System is not booted via EFI");
+        return Ok(());
+    }
+    let output = Command::new(EFIBOOTMGR).output()?;
+    if !output.status.success() {
+        anyhow::bail!("Failed to invoke {EFIBOOTMGR}")
+    }
+    let output = String::from_utf8(output.stdout)?;
+    let current = output
+        .lines()
+        .filter_map(|l| l.split_once(':'))
+        .filter_map(|(k, v)| (k == BOOTCURRENT).then_some(v.trim()))
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Failed to find BootCurrent"))?;
+    let output = Command::new(EFIBOOTMGR)
+        .args(["-b", current, "-B"])
+        .output()?;
+    if !output.status.success() {
+        std::io::copy(
+            &mut std::io::Cursor::new(output.stderr),
+            &mut std::io::stderr().lock(),
+        )?;
+        anyhow::bail!("Failed to invoke {EFIBOOTMGR}");
+    }
+    anyhow::Ok(())
+}
+
+#[context("Adding new EFI boot entry")]
+pub(crate) fn set_efi_current(device: &str, espdir: &openat::Dir, vendordir: &str) -> Result<()> {
+    let fsinfo = crate::filesystem::inspect_filesystem(espdir, ".")?;
+    let source = fsinfo.source;
+    let devname = source
+        .rsplit_once('/')
+        .ok_or_else(|| anyhow::anyhow!("Failed to parse {source}"))?
+        .1;
+    let partition_path = format!("/sys/class/block/{devname}/partition");
+    let partition_number = std::fs::read_to_string(&partition_path)
+        .with_context(|| format!("Failed to read {partition_path}"))?;
+    let shim = format!("{vendordir}/{SHIM}");
+    if espdir.exists(&shim)? {
+        anyhow::bail!("Failed to find {SHIM}");
+    }
+    let loader = format!("\\EFI\\{}\\shimx64.efi", vendordir);
+    let st = Command::new(EFIBOOTMGR)
+        .args([
+            "--create",
+            "--disk",
+            device,
+            "--part",
+            partition_number.as_str(),
+            "--loader",
+            loader.as_str(),
+            "--label",
+            vendordir,
+        ])
+        .status()?;
+    if !st.success() {
+        anyhow::bail!("Failed to invoke {EFIBOOTMGR}")
+    }
+    anyhow::Ok(())
 }

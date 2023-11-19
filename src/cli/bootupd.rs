@@ -1,4 +1,4 @@
-use crate::bootupd;
+use crate::bootupd::{self, ConfigMode};
 use anyhow::{Context, Result};
 use clap::Parser;
 use log::LevelFilter;
@@ -56,6 +56,15 @@ pub struct InstallOpts {
     #[clap(long)]
     with_static_configs: bool,
 
+    /// Implies `--with-static-configs`.  When present, this also writes a
+    /// file with the UUID of the target filesystems.
+    #[clap(long)]
+    write_uuid: bool,
+
+    /// On EFI systems, invoke `efibootmgr` to update the firmware.
+    #[clap(long)]
+    update_firmware: bool,
+
     #[clap(long = "component", conflicts_with = "auto")]
     /// Only install these components
     components: Option<Vec<String>>,
@@ -97,11 +106,19 @@ impl DCommand {
 
     /// Runner for `install` verb.
     pub(crate) fn run_install(opts: InstallOpts) -> Result<()> {
+        let configmode = if opts.write_uuid {
+            ConfigMode::WithUUID
+        } else if opts.with_static_configs {
+            ConfigMode::Static
+        } else {
+            ConfigMode::None
+        };
         bootupd::install(
             &opts.src_root,
             &opts.dest_root,
             opts.device.as_deref(),
-            opts.with_static_configs,
+            configmode,
+            opts.update_firmware,
             opts.components.as_deref(),
             opts.auto,
         )
