@@ -443,12 +443,17 @@ pub(crate) fn clear_efi_current() -> Result<()> {
         anyhow::bail!("Failed to invoke {EFIBOOTMGR}")
     }
     let output = String::from_utf8(output.stdout)?;
-    let current = output
+    let current = if let Some(current) = output
         .lines()
         .filter_map(|l| l.split_once(':'))
         .filter_map(|(k, v)| (k == BOOTCURRENT).then_some(v.trim()))
         .next()
-        .ok_or_else(|| anyhow::anyhow!("Failed to find BootCurrent"))?;
+    {
+        current
+    } else {
+        log::debug!("No EFI {BOOTCURRENT} found");
+        return Ok(());
+    };
     let output = Command::new(EFIBOOTMGR)
         .args(["-b", current, "-B"])
         .output()?;
