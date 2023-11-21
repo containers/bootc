@@ -6,34 +6,9 @@ nav_order: 4
 
 ## How do users include their own packages/binaries in a custom "bootc compatible" container?
 
-The "bootc compatible" containers are OCI container images, so you can customize them in the same way you build containers today.
+The "bootc compatible" containers are OCI container images, so you can customize them in the same way you build containers today. This means using a Containerfile to customize your image and build tools like `buildah`, `podman build`, or `docker build` to generate your customized "bootc compatible" container image.
 
-For example, using your own yum/dnf repo in a Dockerfile:
-
-```Dockerfile
-FROM quay.io/redhat/rhel-base:10
-COPY custom.repo /etc/yum.repos.d/
-RUN dnf -y install custom-rpm & \
-    dnf clean all && \
-    ostree container commit
-```
-
-Or using multi-stage builds in your Dockerfile:
-
-```Dockerfile
-# Build a small Go program
-FROM registry.access.redhat.com/ubi8/ubi:latest as builder
-WORKDIR /build
-COPY . .
-RUN yum -y install go-toolset
-RUN go build hello-world.go
-
-FROM quay.io/redhat/rhel-base:10
-COPY --from=builder /build/hello-world /usr/bin
-RUN ostree container commit
-```
-
-You can find more examples at the [centos-boot-layered repo](https://github.com/CentOS/centos-boot-layered) repo or the [CoreOS layering-examples repo](https://github.com/coreos/layering-examples).
+For examples of how use build a "bootc compatible" base image, see the [centos-boot repo](https://github.com/CentOS/centos-boot) as a starting point. For examples of how to use a Containerfile to build a customized "bootc compatible" image, see the [centos-boot-layered repo](https://github.com/CentOS/centos-boot-layered).
 
 ## How does the use of OCI artifacts intersect with this effort?
 
