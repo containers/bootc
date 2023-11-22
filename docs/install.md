@@ -171,7 +171,7 @@ for keys in this location.
 FROM <image>
 RUN mkdir -p /usr/etc-system/ && \
     echo 'AuthorizedKeysFile /usr/etc-system/%u.keys' >> /etc/ssh/sshd_config.d/30-auth-system.conf && \
-    echo 'ssh-ed25519 AAAAC3Nza... root@example.com' > /usr/etc-system/root.keys && chmod 0600 /usr/etc-system/keys && \
+    echo 'ssh-ed25519 AAAAC3Nza... root@example.com' > /usr/etc-system/root.keys && chmod 0600 /usr/etc-system/root.keys && \
     ostree container commit
 ```
 
