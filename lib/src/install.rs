@@ -105,6 +105,15 @@ pub(crate) struct InstallConfigOpts {
     #[clap(long)]
     /// Add a kernel argument
     karg: Option<Vec<String>>,
+
+    /// Perform configuration changes suitable for a "generic" disk image.
+    /// At the moment:
+    ///
+    /// - All bootloader types will be installed
+    /// - Changes to the system firmware will be skipped
+    #[clap(long)]
+    #[serde(default)]
+    pub(crate) generic_image: bool,
 }
 
 /// Perform an installation to a block device.
@@ -964,6 +973,13 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         rootfs.kargs.push("selinux=0".to_string());
     }
 
+    // We verify this upfront because it's currently required by bootupd
+    let boot_uuid = rootfs
+        .get_boot_uuid()?
+        .or(rootfs.rootfs_uuid.as_deref())
+        .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
+    tracing::debug!("boot uuid={boot_uuid}");
+
     // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
     {
         let aleph = initialize_ostree_root_from_self(state, rootfs).await?;
@@ -976,16 +992,7 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
             .context("Writing aleph version")?;
     }
 
-    let boot_uuid = rootfs
-        .get_boot_uuid()?
-        .or(rootfs.rootfs_uuid.as_deref())
-        .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
-    crate::bootloader::install_via_bootupd(
-        &rootfs.device,
-        &rootfs.rootfs,
-        boot_uuid,
-        rootfs.is_alongside,
-    )?;
+    crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, &state.config_opts)?;
     tracing::debug!("Installed bootloader");
 
     // ostree likes to have the immutable bit on the physical sysroot to ensure

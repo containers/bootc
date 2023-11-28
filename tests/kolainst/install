@@ -10,7 +10,7 @@
 
 set -xeuo pipefail
 
-IMAGE=quay.io/centos-boot/fedora-tier-1:eln
+IMAGE=quay.io/centos-boot/fedora-tier-1-dev:eln
 # TODO: better detect this, e.g. look for an empty device
 DEV=/dev/vda
 
