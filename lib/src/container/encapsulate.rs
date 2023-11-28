@@ -214,7 +214,7 @@ fn build_oci(
     let commit_meta = &commit_v.child_value(0);
     let commit_meta = glib::VariantDict::new(Some(commit_meta));
 
-    let mut ctrcfg = oci_image::Config::default();
+    let mut ctrcfg = opts.container_config.clone().unwrap_or_default();
     let mut imgcfg = oci_image::ImageConfiguration::default();
     imgcfg.set_created(Some(
         commit_timestamp.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
@@ -381,6 +381,8 @@ pub struct ExportOpts<'m, 'o> {
     // TODO semver-break: remove this
     /// Use only the standard OCI version label
     pub no_legacy_version_label: bool,
+    /// Image runtime configuration that will be used as a base
+    pub container_config: Option<oci_image::Config>,
     /// A reference to the metadata for a previous build; used to optimize
     /// the packing structure.
     pub prior_build: Option<&'m oci_image::ImageManifest>,
