@@ -454,10 +454,15 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
         })
         .transpose()?;
     let mut opts = ExportOpts::default();
+    let container_config = oci_spec::image::ConfigBuilder::default()
+        .stop_signal("SIGRTMIN+3")
+        .build()
+        .unwrap();
     opts.copy_meta_keys = vec!["buildsys.checksum".to_string()];
     opts.copy_meta_opt_keys = vec!["nosuchvalue".to_string()];
     opts.max_layers = std::num::NonZeroU32::new(PKGS_V0_LEN as u32);
     opts.contentmeta = contentmeta.as_ref();
+    opts.container_config = Some(container_config);
     let digest = ostree_ext::container::encapsulate(
         fixture.srcrepo(),
         fixture.testref(),
@@ -483,11 +488,10 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
     let creation_time =
         chrono::NaiveDateTime::parse_from_str(cfg.created().as_deref().unwrap(), "%+").unwrap();
     assert_eq!(creation_time.timestamp(), 872879442);
+    let found_cfg = cfg.config().as_ref().unwrap();
     // unwrap.  Unwrap.  UnWrap.  UNWRAP!!!!!!!
     assert_eq!(
-        cfg.config()
-            .as_ref()
-            .unwrap()
+        found_cfg
             .cmd()
             .as_ref()
             .unwrap()
@@ -497,6 +501,7 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
             .as_str(),
         "/usr/bin/bash"
     );
+    assert_eq!(found_cfg.stop_signal().as_deref().unwrap(), "SIGRTMIN+3");
 
     let n_chunks = if chunked { LAYERS_V0_LEN } else { 1 };
     assert_eq!(cfg.rootfs().diff_ids().len(), n_chunks);
