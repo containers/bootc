@@ -17,7 +17,8 @@ use ostree::{gio, glib};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::io::{BufWriter, Write};
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use tokio::sync::mpsc::Receiver;
@@ -137,6 +138,11 @@ pub(crate) enum ContainerOpts {
         #[clap(long)]
         /// Path to Docker-formatted authentication file.
         authfile: Option<PathBuf>,
+
+        /// Path to a JSON-formatted serialized container configuration; this is the
+        /// `config` property of https://github.com/opencontainers/image-spec/blob/main/config.md
+        #[clap(long)]
+        config: Option<Utf8PathBuf>,
 
         /// Propagate an OSTree commit metadata key to container label
         #[clap(name = "copymeta", long)]
@@ -660,6 +666,7 @@ async fn container_export(
     authfile: Option<PathBuf>,
     copy_meta_keys: Vec<String>,
     copy_meta_opt_keys: Vec<String>,
+    container_config: Option<Utf8PathBuf>,
     cmd: Option<Vec<String>>,
     compression_fast: bool,
 ) -> Result<()> {
@@ -667,9 +674,15 @@ async fn container_export(
         labels: Some(labels),
         cmd,
     };
+    let container_config = if let Some(container_config) = container_config {
+        serde_json::from_reader(File::open(container_config).map(BufReader::new)?)?
+    } else {
+        None
+    };
     let opts = crate::container::ExportOpts {
         copy_meta_keys,
         copy_meta_opt_keys,
+        container_config,
         authfile,
         skip_compression: compression_fast, // TODO rename this in the struct at the next semver break
         ..Default::default()
@@ -896,6 +909,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 authfile,
                 copy_meta_keys,
                 copy_meta_opt_keys,
+                config,
                 cmd,
                 compression_fast,
             } => {
@@ -917,6 +931,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     authfile,
                     copy_meta_keys,
                     copy_meta_opt_keys,
+                    config,
                     cmd,
                     compression_fast,
                 )
