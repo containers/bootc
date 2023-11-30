@@ -391,8 +391,8 @@ async fn test_tar_write() -> Result<()> {
     )
     .ignore_stdout()
     .run()?;
-    assert_eq!(r.filtered.len(), 2);
-    assert_eq!(*r.filtered.get("var").unwrap(), 4);
+    assert_eq!(r.filtered.len(), 1);
+    assert!(r.filtered.get("var").is_none());
     assert_eq!(*r.filtered.get("boot").unwrap(), 1);
 
     Ok(())
@@ -943,7 +943,7 @@ async fn test_container_var_content() -> Result<()> {
     assert!(
         store::image_filtered_content_warning(fixture.destrepo(), &derived_imgref.imgref)
             .unwrap()
-            .is_some()
+            .is_none()
     );
 
     Ok(())
