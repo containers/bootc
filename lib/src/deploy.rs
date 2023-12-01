@@ -54,10 +54,11 @@ pub(crate) async fn new_importer(
 /// Wrapper for pulling a container image, wiring up status output.
 #[context("Pulling")]
 pub(crate) async fn pull(
-    repo: &ostree::Repo,
+    sysroot: &SysrootLock,
     imgref: &ImageReference,
     quiet: bool,
 ) -> Result<Box<LayeredImageState>> {
+    let repo = &sysroot.repo();
     let imgref = &OstreeImageReference::from(imgref.clone());
     let mut imp = new_importer(repo, imgref).await?;
     let prep = match imp.prepare().await? {
