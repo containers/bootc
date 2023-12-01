@@ -129,11 +129,16 @@ fn normalize_validate_path(path: &Utf8Path) -> Result<NormalizedPathResult<'_>> 
         if !found_first {
             if let Utf8Component::Normal(part) = part {
                 found_first = true;
-                // Now, rewrite /etc -> /usr/etc, and discard everything not in /usr.
                 match part {
+                    // We expect all the OS content to live in usr in general
                     "usr" => ret.push(part),
+                    // ostree has special support for /etc
                     "etc" => {
                         ret.push("usr/etc");
+                    }
+                    // Content in /var will get copied by a systemd tmpfiles.d unit
+                    "var" => {
+                        ret.push("usr/share/factory/var");
                     }
                     o => return Ok(NormalizedPathResult::Filtered(o)),
                 }
@@ -401,6 +406,8 @@ mod tests {
             ("usr/bin/blah", "./usr/bin/blah"),
             ("usr///share/.//blah", "./usr/share/blah"),
             ("./", "."),
+            ("var/lib/blah", "./usr/share/factory/var/lib/blah"),
+            ("./var/lib/blah", "./usr/share/factory/var/lib/blah"),
         ];
         for &(k, v) in valid {
             let r = normalize_validate_path(k.into()).unwrap();
@@ -413,11 +420,7 @@ mod tests {
                 }
             }
         }
-        let filtered = &[
-            ("/boot/vmlinuz", "boot"),
-            ("var/lib/blah", "var"),
-            ("./var/lib/blah", "var"),
-        ];
+        let filtered = &[("/boot/vmlinuz", "boot")];
         for &(k, v) in filtered {
             match normalize_validate_path(k.into()).unwrap() {
                 NormalizedPathResult::Filtered(f) => {
