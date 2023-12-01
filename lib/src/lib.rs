@@ -27,6 +27,9 @@ pub(crate) mod kargs;
 mod lints;
 mod lsm;
 pub(crate) mod metadata;
+mod ostree_authfile;
+mod podman;
+mod podman_ostree;
 mod reboot;
 mod reexec;
 mod status;
@@ -46,8 +49,6 @@ mod k8sapitypes;
 mod kernel;
 #[cfg(feature = "install")]
 pub(crate) mod mount;
-#[cfg(feature = "install")]
-mod podman;
 pub mod spec;
 
 #[cfg(feature = "docgen")]

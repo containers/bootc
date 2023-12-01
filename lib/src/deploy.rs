@@ -9,17 +9,19 @@ use anyhow::{anyhow, Context, Result};
 use cap_std::fs::{Dir, MetadataExt};
 use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt;
+use chrono::DateTime;
 use fn_error_context::context;
 use ostree::{gio, glib};
 use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
 use ostree_ext::container::store::PrepareResult;
+use ostree_ext::oci_spec;
 use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
 
 use crate::spec::ImageReference;
-use crate::spec::{BootOrder, HostSpec};
+use crate::spec::{Backend, BootOrder, HostSpec};
 use crate::status::labels_of_config;
 
 // TODO use https://github.com/ostreedev/ostree-rs-ext/pull/493/commits/afc1837ff383681b947de30c0cefc70080a4f87a
@@ -31,11 +33,14 @@ const BOOTC_DERIVED_KEY: &str = "bootc.derived";
 /// Variant of HostSpec but required to be filled out
 pub(crate) struct RequiredHostSpec<'a> {
     pub(crate) image: &'a ImageReference,
+    pub(crate) backend: Backend,
 }
 
 /// State of a locally fetched image
 pub(crate) struct ImageState {
+    pub(crate) backend: Backend,
     pub(crate) manifest_digest: String,
+    pub(crate) created: Option<DateTime<chrono::Utc>>,
     pub(crate) version: Option<String>,
     pub(crate) ostree_commit: String,
 }
@@ -48,7 +53,10 @@ impl<'a> RequiredHostSpec<'a> {
             .image
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing image in specification"))?;
-        Ok(Self { image })
+        Ok(Self {
+            image,
+            backend: spec.backend,
+        })
     }
 }
 
@@ -56,8 +64,17 @@ impl From<ostree_container::store::LayeredImageState> for ImageState {
     fn from(value: ostree_container::store::LayeredImageState) -> Self {
         let version = value.version().map(|v| v.to_owned());
         let ostree_commit = value.get_commit().to_owned();
+        let labels = crate::status::labels_of_config(&value.configuration);
+        let created = labels
+            .and_then(|l| {
+                l.get(oci_spec::image::ANNOTATION_CREATED)
+                    .map(|s| s.as_str())
+            })
+            .and_then(crate::status::try_deserialize_timestamp);
         Self {
+            backend: Backend::OstreeContainer,
             manifest_digest: value.manifest_digest,
+            created,
             version,
             ostree_commit,
         }
@@ -70,8 +87,14 @@ impl ImageState {
         &self,
         repo: &ostree::Repo,
     ) -> Result<Option<ostree_ext::oci_spec::image::ImageManifest>> {
-        ostree_container::store::query_image_commit(repo, &self.ostree_commit)
-            .map(|v| Some(v.manifest))
+        match self.backend {
+            Backend::OstreeContainer => {
+                ostree_container::store::query_image_commit(repo, &self.ostree_commit)
+                    .map(|v| Some(v.manifest))
+            }
+            // TODO: Figure out if we can get the OCI manifest from podman
+            Backend::Container => Ok(None),
+        }
     }
 }
 
@@ -164,6 +187,31 @@ async fn handle_layer_progress_print(
 /// Wrapper for pulling a container image, wiring up status output.
 #[context("Pulling")]
 pub(crate) async fn pull(
+    sysroot: &SysrootLock,
+    backend: Backend,
+    imgref: &ImageReference,
+    quiet: bool,
+) -> Result<Box<ImageState>> {
+    match backend {
+        Backend::OstreeContainer => pull_via_ostree(sysroot, imgref, quiet).await,
+        Backend::Container => pull_via_podman(sysroot, imgref, quiet).await,
+    }
+}
+
+/// Wrapper for pulling a container image, wiring up status output.
+async fn pull_via_podman(
+    sysroot: &SysrootLock,
+    imgref: &ImageReference,
+    quiet: bool,
+) -> Result<Box<ImageState>> {
+    let rootfs = &Dir::reopen_dir(&crate::utils::sysroot_fd_borrowed(sysroot))?;
+    let fetched_imageid = crate::podman::podman_pull(rootfs, imgref, quiet).await?;
+    crate::podman_ostree::commit_image_to_ostree(sysroot, &fetched_imageid)
+        .await
+        .map(Box::new)
+}
+
+async fn pull_via_ostree(
     sysroot: &SysrootLock,
     imgref: &ImageReference,
     quiet: bool,
