@@ -9,6 +9,7 @@ use ostree::{gio, glib};
 use ostree_container::store::LayeredImageState;
 use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
+use ostree_ext::container::store::PrepareResult;
 use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
@@ -37,6 +38,57 @@ impl<'a> RequiredHostSpec<'a> {
             .ok_or_else(|| anyhow::anyhow!("Missing image in specification"))?;
         Ok(Self { image })
     }
+}
+
+/// Wrapper for pulling a container image, wiring up status output.
+pub(crate) async fn new_importer(
+    repo: &ostree::Repo,
+    imgref: &ostree_container::OstreeImageReference,
+) -> Result<ostree_container::store::ImageImporter> {
+    let config = Default::default();
+    let mut imp = ostree_container::store::ImageImporter::new(repo, imgref, config).await?;
+    imp.require_bootable();
+    Ok(imp)
+}
+
+/// Wrapper for pulling a container image, wiring up status output.
+#[context("Pulling")]
+pub(crate) async fn pull(
+    repo: &ostree::Repo,
+    imgref: &ImageReference,
+    quiet: bool,
+) -> Result<Box<LayeredImageState>> {
+    let imgref = &OstreeImageReference::from(imgref.clone());
+    let mut imp = new_importer(repo, imgref).await?;
+    let prep = match imp.prepare().await? {
+        PrepareResult::AlreadyPresent(c) => {
+            println!("No changes in {} => {}", imgref, c.manifest_digest);
+            return Ok(c);
+        }
+        PrepareResult::Ready(p) => p,
+    };
+    if let Some(warning) = prep.deprecated_warning() {
+        ostree_ext::cli::print_deprecated_warning(warning).await;
+    }
+    ostree_ext::cli::print_layer_status(&prep);
+    let printer = (!quiet).then(|| {
+        let layer_progress = imp.request_progress();
+        let layer_byte_progress = imp.request_layer_progress();
+        tokio::task::spawn(async move {
+            ostree_ext::cli::handle_layer_progress_print(layer_progress, layer_byte_progress).await
+        })
+    });
+    let import = imp.import(prep).await;
+    if let Some(printer) = printer {
+        let _ = printer.await;
+    }
+    let import = import?;
+    if let Some(msg) =
+        ostree_container::store::image_filtered_content_warning(repo, &imgref.imgref)?
+    {
+        eprintln!("{msg}")
+    }
+    Ok(import)
 }
 
 pub(crate) async fn cleanup(sysroot: &SysrootLock) -> Result<()> {

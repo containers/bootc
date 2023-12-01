@@ -7,9 +7,7 @@ use camino::Utf8PathBuf;
 use clap::Parser;
 use fn_error_context::context;
 use ostree::gio;
-use ostree_container::store::LayeredImageState;
 use ostree_container::store::PrepareResult;
-use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
 use ostree_ext::container::SignatureSource;
 use ostree_ext::keyfileext::KeyFileExt;
@@ -214,57 +212,6 @@ pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootL
     Ok(sysroot)
 }
 
-/// Wrapper for pulling a container image, wiring up status output.
-async fn new_importer(
-    repo: &ostree::Repo,
-    imgref: &ostree_container::OstreeImageReference,
-) -> Result<ostree_container::store::ImageImporter> {
-    let config = Default::default();
-    let mut imp = ostree_container::store::ImageImporter::new(repo, imgref, config).await?;
-    imp.require_bootable();
-    Ok(imp)
-}
-
-/// Wrapper for pulling a container image, wiring up status output.
-#[context("Pulling")]
-async fn pull(
-    repo: &ostree::Repo,
-    imgref: &ImageReference,
-    quiet: bool,
-) -> Result<Box<LayeredImageState>> {
-    let imgref = &OstreeImageReference::from(imgref.clone());
-    let mut imp = new_importer(repo, imgref).await?;
-    let prep = match imp.prepare().await? {
-        PrepareResult::AlreadyPresent(c) => {
-            println!("No changes in {} => {}", imgref, c.manifest_digest);
-            return Ok(c);
-        }
-        PrepareResult::Ready(p) => p,
-    };
-    if let Some(warning) = prep.deprecated_warning() {
-        ostree_ext::cli::print_deprecated_warning(warning).await;
-    }
-    ostree_ext::cli::print_layer_status(&prep);
-    let printer = (!quiet).then(|| {
-        let layer_progress = imp.request_progress();
-        let layer_byte_progress = imp.request_layer_progress();
-        tokio::task::spawn(async move {
-            ostree_ext::cli::handle_layer_progress_print(layer_progress, layer_byte_progress).await
-        })
-    });
-    let import = imp.import(prep).await;
-    if let Some(printer) = printer {
-        let _ = printer.await;
-    }
-    let import = import?;
-    if let Some(msg) =
-        ostree_container::store::image_filtered_content_warning(repo, &imgref.imgref)?
-    {
-        eprintln!("{msg}")
-    }
-    Ok(import)
-}
-
 #[context("Querying root privilege")]
 pub(crate) fn require_root() -> Result<()> {
     let uid = rustix::process::getuid();
@@ -327,7 +274,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     let mut changed = false;
     if opts.check {
         let imgref = imgref.clone().into();
-        let mut imp = new_importer(repo, &imgref).await?;
+        let mut imp = crate::deploy::new_importer(repo, &imgref).await?;
         match imp.prepare().await? {
             PrepareResult::AlreadyPresent(_) => {
                 println!("No changes in: {}", imgref);
@@ -347,7 +294,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             }
         }
     } else {
-        let fetched = pull(&sysroot.repo(), imgref, opts.quiet).await?;
+        let fetched = crate::deploy::pull(&sysroot.repo(), imgref, opts.quiet).await?;
         let staged_digest = staged_image.as_ref().map(|s| s.image_digest.as_str());
         let fetched_digest = fetched.manifest_digest.as_str();
         tracing::debug!("staged: {staged_digest:?}");
@@ -424,7 +371,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     }
     let new_spec = RequiredHostSpec::from_spec(&new_spec)?;
 
-    let fetched = pull(repo, &target, opts.quiet).await?;
+    let fetched = crate::deploy::pull(repo, &target, opts.quiet).await?;
 
     if !opts.retain {
         // By default, we prune the previous ostree ref so it will go away after later upgrades
@@ -467,7 +414,7 @@ async fn edit(opts: EditOpts) -> Result<()> {
         return Ok(());
     }
     let new_spec = RequiredHostSpec::from_spec(&new_host.spec)?;
-    let fetched = pull(repo, new_spec.image, opts.quiet).await?;
+    let fetched = crate::deploy::pull(repo, new_spec.image, opts.quiet).await?;
 
     // TODO gc old layers here
 
