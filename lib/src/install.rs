@@ -204,9 +204,6 @@ pub(crate) struct SourceInfo {
     pub(crate) imageref: ostree_container::ImageReference,
     /// The digest to use for pulls
     pub(crate) digest: String,
-    /// The embedded base OSTree commit checksum
-    #[allow(dead_code)]
-    pub(crate) commit: String,
     /// Whether or not SELinux appears to be enabled in the source commit
     pub(crate) selinux: bool,
 }
@@ -369,7 +366,6 @@ impl SourceInfo {
         Ok(Self {
             imageref,
             digest,
-            commit,
             selinux,
         })
     }
