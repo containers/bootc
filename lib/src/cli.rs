@@ -315,8 +315,11 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             crate::deploy::stage(sysroot, &osname, &fetched, &spec).await?;
             changed = true;
             if let Some(prev) = booted_image.as_ref() {
-                let diff = ostree_container::ManifestDiff::new(&prev.manifest, &fetched.manifest);
-                diff.print();
+                if let Some(fetched_manifest) = fetched.get_manifest(repo)? {
+                    let diff =
+                        ostree_container::ManifestDiff::new(&prev.manifest, &fetched_manifest);
+                    diff.print();
+                }
             }
         }
     }
