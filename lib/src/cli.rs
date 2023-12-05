@@ -212,6 +212,8 @@ pub(crate) enum Opt {
     #[clap(subcommand)]
     #[cfg(feature = "install")]
     Install(InstallOpts),
+    /// Validate non supported files are not present.
+    BuildCommit,
     /// Execute the given command in the host mount namespace
     #[cfg(feature = "install")]
     #[clap(hide = true)]
@@ -512,6 +514,15 @@ async fn usroverlay() -> Result<()> {
         .into());
 }
 
+/// Implementation of `bootc build commit`
+async fn commit() -> Result<()> {
+    // This is just a pass-through today.  At some point we may diverge from ostree-ext.
+    return Err(Command::new("ostree")
+        .args(["container", "commit"])
+        .exec()
+        .into());
+}
+
 /// Parse the provided arguments and execute.
 /// Calls [`structopt::clap::Error::exit`] on failure, printing the error message and aborting the program.
 pub async fn run_from_iter<I>(args: I) -> Result<()>
@@ -529,6 +540,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         Opt::Switch(opts) => switch(opts).await,
         Opt::Edit(opts) => edit(opts).await,
         Opt::UsrOverlay => usroverlay().await,
+        Opt::BuildCommit => commit().await,
         #[cfg(feature = "install")]
         Opt::Install(opts) => match opts {
             InstallOpts::ToDisk(opts) => crate::install::install_to_disk(opts).await,
