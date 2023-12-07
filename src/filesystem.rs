@@ -28,7 +28,7 @@ pub(crate) fn inspect_filesystem(root: &openat::Dir, path: &str) -> Result<Files
     // SAFETY: This is unsafe just for the pre_exec, when we port to cap-std we can use cap-std-ext
     let o = unsafe {
         Command::new("findmnt")
-            .args(["-J", "-v", "--output-all", path])
+            .args(["-J", "-v", "--output=SOURCE,FSTYPE,OPTIONS,UUID", path])
             .pre_exec(move || nix::unistd::fchdir(rootfd).map_err(Into::into))
             .output()?
     };
