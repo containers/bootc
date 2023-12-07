@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
@@ -33,6 +34,7 @@ pub(crate) fn inspect_filesystem(root: &openat::Dir, path: &str) -> Result<Files
     };
     let st = o.status;
     if !st.success() {
+        let _ = std::io::stderr().write_all(&o.stderr)?;
         anyhow::bail!("findmnt failed: {st:?}");
     }
     let o: Findmnt = serde_json::from_reader(std::io::Cursor::new(&o.stdout))
