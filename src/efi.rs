@@ -454,15 +454,17 @@ pub(crate) fn clear_efi_current() -> Result<()> {
         log::debug!("No EFI {BOOTCURRENT} found");
         return Ok(());
     };
+    log::debug!("EFI current: {current}");
     let output = Command::new(EFIBOOTMGR)
         .args(["-b", current, "-B"])
         .output()?;
-    if !output.status.success() {
+    let st = output.status;
+    if !st.success() {
         std::io::copy(
             &mut std::io::Cursor::new(output.stderr),
             &mut std::io::stderr().lock(),
         )?;
-        anyhow::bail!("Failed to invoke {EFIBOOTMGR}");
+        anyhow::bail!("Failed to invoke {EFIBOOTMGR}: {st:?}");
     }
     anyhow::Ok(())
 }
