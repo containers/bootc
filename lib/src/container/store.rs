@@ -853,6 +853,16 @@ impl ImageImporter {
         let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
         let base_commit = import.ostree_commit_layer.commit.clone().unwrap();
 
+        let root_is_transient = {
+            let rootf = self
+                .repo
+                .read_commit(&base_commit, gio::Cancellable::NONE)?
+                .0;
+            let rootf = rootf.downcast_ref::<ostree::RepoFile>().unwrap();
+            crate::ostree_prepareroot::overlayfs_root_enabled(rootf)?
+        };
+        tracing::debug!("Base rootfs is transient: {root_is_transient}");
+
         let ostree_ref = ref_for_image(&target_imgref.imgref)?;
 
         let mut layer_commits = Vec::new();
@@ -881,6 +891,7 @@ impl ImageImporter {
                 let opts = crate::tar::WriteTarOptions {
                     base: Some(base_commit.clone()),
                     selinux: true,
+                    allow_nonusr: root_is_transient,
                 };
                 let r =
                     crate::tar::write_tar(&self.repo, blob, layer.ostree_ref.as_str(), Some(opts));
@@ -890,7 +901,10 @@ impl ImageImporter {
                 layer_commits.push(r.commit);
                 if !r.filtered.is_empty() {
                     let filtered = HashMap::from_iter(r.filtered.into_iter());
+                    tracing::debug!("Found {} filtered toplevels", filtered.len());
                     layer_filtered_content.insert(layer.digest().to_string(), filtered);
+                } else {
+                    tracing::debug!("No filtered content");
                 }
                 if let Some(p) = self.layer_progress.as_ref() {
                     p.send(ImportProgress::DerivedLayerCompleted(layer.layer.clone()))

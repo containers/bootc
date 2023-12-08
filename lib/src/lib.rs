@@ -39,6 +39,7 @@ pub mod ima;
 pub mod keyfileext;
 pub(crate) mod logging;
 pub mod mountutil;
+pub mod ostree_prepareroot;
 pub mod refescape;
 #[doc(hidden)]
 pub mod repair;
@@ -54,6 +55,9 @@ pub mod objectsource;
 pub(crate) mod objgv;
 #[cfg(feature = "internal-testing-api")]
 pub mod ostree_manual;
+#[cfg(not(feature = "internal-testing-api"))]
+pub(crate) mod ostree_manual;
+
 pub(crate) mod statistics;
 
 mod utils;
