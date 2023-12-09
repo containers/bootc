@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use super::store::LayeredImageState;
+use super::store::{gc_image_layers, LayeredImageState};
 use super::{ImageReference, OstreeImageReference};
 use crate::container::store::PrepareResult;
 use crate::keyfileext::KeyFileExt;
@@ -173,4 +173,48 @@ pub fn remove_undeployed_images(sysroot: &SysrootLock) -> Result<Vec<ImageRefere
         }
     }
     Ok(removed)
+}
+
+/// The result of a prune operation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pruned {
+    /// The number of images that were pruned
+    pub n_images: u32,
+    /// The number of image layers that were pruned
+    pub n_layers: u32,
+    /// The number of OSTree objects that were pruned
+    pub n_objects_pruned: u32,
+    /// The total size of pruned objects
+    pub objsize: u64,
+}
+
+impl Pruned {
+    /// Whether this prune was a no-op (i.e. no images, layers or objects were pruned).
+    pub fn is_empty(&self) -> bool {
+        self.n_images == 0 && self.n_layers == 0 && self.n_objects_pruned == 0
+    }
+}
+
+/// This combines the functionality of [`remove_undeployed_images()`] with [`super::store::gc_image_layers()`].
+pub fn prune(sysroot: &SysrootLock) -> Result<Pruned> {
+    let repo = &sysroot.repo();
+    // Prune container images which are not deployed.
+    // SAFETY: There should never be more than u32 images
+    let n_images = remove_undeployed_images(sysroot)?.len().try_into().unwrap();
+    // Prune unreferenced layer branches.
+    let n_layers = gc_image_layers(repo)?;
+    // Prune the objects in the repo; the above just removed refs (branches).
+    let (_, n_objects_pruned, objsize) = repo.prune(
+        ostree::RepoPruneFlags::REFS_ONLY,
+        0,
+        ostree::gio::Cancellable::NONE,
+    )?;
+    // SAFETY: The number of pruned objects should never be negative
+    let n_objects_pruned = u32::try_from(n_objects_pruned).unwrap();
+    Ok(Pruned {
+        n_images,
+        n_layers,
+        n_objects_pruned,
+        objsize,
+    })
 }
