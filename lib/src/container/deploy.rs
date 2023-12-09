@@ -2,14 +2,15 @@
 
 use std::collections::HashSet;
 
+use anyhow::Result;
+use fn_error_context::context;
+use ostree::glib;
+
 use super::store::{gc_image_layers, LayeredImageState};
 use super::{ImageReference, OstreeImageReference};
 use crate::container::store::PrepareResult;
 use crate::keyfileext::KeyFileExt;
 use crate::sysroot::SysrootLock;
-use anyhow::Result;
-use fn_error_context::context;
-use ostree::glib;
 
 /// The key in the OSTree origin which holds a serialized [`super::OstreeImageReference`].
 pub const ORIGIN_CONTAINER: &str = "container-image-reference";
