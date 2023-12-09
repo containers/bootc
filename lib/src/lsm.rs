@@ -84,6 +84,10 @@ impl Drop for SetEnforceGuard {
 #[context("Ensuring selinux install_t type")]
 #[cfg(feature = "install")]
 pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforceGuard>> {
+    // If the process already has install_t, exit early
+    if self_has_install_t()? {
+        return Ok(None);
+    }
     selinux_ensure_install()?;
     let current = std::fs::read_to_string("/proc/self/attr/current")
         .context("Reading /proc/self/attr/current")?;
@@ -169,4 +173,11 @@ pub(crate) fn xattrs_have_selinux(xattrs: &ostree::glib::Variant) -> bool {
         }
     }
     false
+}
+
+fn self_has_install_t() -> Result<bool> {
+    let current = std::fs::read_to_string("/proc/self/attr/current")
+        .context("Reading /proc/self/attr/current")?;
+
+    Ok(current.contains("install_t"))
 }
