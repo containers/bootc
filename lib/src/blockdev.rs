@@ -197,7 +197,7 @@ pub(crate) fn find_parent_devices(device: &str) -> Result<Vec<String>> {
         let kind = dev
             .get("TYPE")
             .with_context(|| format!("device in hierarchy of {device} missing TYPE"))?;
-        if kind == "disk" {
+        if kind == "disk" || kind == "loop" {
             parents.push(name.clone());
         } else if kind == "mpath" {
             parents.push(name.clone());
