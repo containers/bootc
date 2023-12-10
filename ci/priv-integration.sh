@@ -58,7 +58,7 @@ for img in "${image}"; do
     test "$(($initial_refs - 1))" = "$pruned_refs"
     ostree admin --sysroot="${sysroot}" undeploy 0
     # TODO: when we fold together ostree and ostree-ext, automatically prune layers
-    n_commits=$(find ${sysroot}/ostree/repo -name '*.commit')
+    n_commits=$(find ${sysroot}/ostree/repo -name '*.commit' | wc -l)
     test "${n_commits}" -gt 0
     # But right now this still doesn't prune *content*
     ostree-ext-cli container image prune-layers --repo="${sysroot}/ostree/repo"
@@ -69,8 +69,8 @@ for img in "${image}"; do
         exit 1
     fi
     # And this one should GC the objects too
-    ostree-ext-cli container image prune-images --full --repo="${sysroot}/ostree/repo" > out.txt
-    n_commits=$(find ${sysroot}/ostree/repo -name '*.commit')
+    ostree-ext-cli container image prune-images --full --sysroot="${sysroot}" > out.txt
+    n_commits=$(find ${sysroot}/ostree/repo -name '*.commit' | wc -l)
     test "${n_commits}" -eq 0
 done
 
