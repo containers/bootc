@@ -1,7 +1,5 @@
 //! Helpers for interacting with mountpoints
 
-use std::process::Command;
-
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use fn_error_context::context;
@@ -25,16 +23,12 @@ pub(crate) struct Findmnt {
 
 #[context("Inspecting filesystem {path}")]
 pub(crate) fn inspect_filesystem(path: &Utf8Path) -> Result<Filesystem> {
-    tracing::debug!("Inspecting {path}");
-    let o = Command::new("findmnt")
+    let desc = format!("Inspecting {path}");
+    let o = Task::new(&desc, "findmnt")
         .args(["-J", "-v", "--output-all", path.as_str()])
-        .output()?;
-    let st = o.status;
-    if !st.success() {
-        anyhow::bail!("findmnt {path} failed: {st:?}");
-    }
-    let o: Findmnt = serde_json::from_reader(std::io::Cursor::new(&o.stdout))
-        .context("Parsing findmnt output")?;
+        .quiet()
+        .read()?;
+    let o: Findmnt = serde_json::from_str(&o).context("Parsing findmnt output")?;
     o.filesystems
         .into_iter()
         .next()
