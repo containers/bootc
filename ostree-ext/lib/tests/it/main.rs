@@ -377,7 +377,8 @@ async fn test_tar_write() -> Result<()> {
     let tmpvarlog = tmproot.open_dir("var/log")?;
     tmpvarlog.write("foo.log", "foolog")?;
     tmpvarlog.write("bar.log", "barlog")?;
-    tmproot.create_dir("boot")?;
+    tmproot.create_dir("run")?;
+    tmproot.write("run/somefile", "somestate")?;
     let tmptar = "testlayer.tar";
     cmd!(sh, "tar cf {tmptar} -C tmproot .").run()?;
     let src = fixture.dir.open(tmptar)?;
@@ -393,7 +394,7 @@ async fn test_tar_write() -> Result<()> {
     .run()?;
     assert_eq!(r.filtered.len(), 1);
     assert!(r.filtered.get("var").is_none());
-    assert_eq!(*r.filtered.get("boot").unwrap(), 1);
+    assert_eq!(*r.filtered.get("run").unwrap(), 2);
 
     Ok(())
 }
