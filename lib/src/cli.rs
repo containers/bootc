@@ -842,7 +842,7 @@ async fn testing(opts: &TestingOpts) -> Result<()> {
         TestingOpts::Run => crate::integrationtest::run_tests(),
         TestingOpts::RunIMA => crate::integrationtest::test_ima(),
         TestingOpts::FilterTar => {
-            crate::tar::filter_tar(std::io::stdin(), std::io::stdout()).map(|_| {})
+            crate::tar::filter_tar(std::io::stdin(), std::io::stdout(), false).map(|_| {})
         }
     }
 }
