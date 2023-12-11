@@ -38,6 +38,10 @@ pub(crate) fn install(target_root: &openat::Dir, efi: bool, write_uuid: bool) ->
         root_dev != boot_dev
     };
 
+    if !bootdir.exists(GRUB2DIR)? {
+        bootdir.create_dir(GRUB2DIR, 0o700)?;
+    }
+
     let mut config = std::fs::read_to_string(Path::new(CONFIGDIR).join("grub-static-pre.cfg"))?;
 
     let dropindir = openat::Dir::open(&Path::new(CONFIGDIR).join(DROPINDIR))?;
@@ -66,10 +70,6 @@ pub(crate) fn install(target_root: &openat::Dir, efi: bool, write_uuid: bool) ->
     {
         let post = std::fs::read_to_string(Path::new(CONFIGDIR).join("grub-static-post.cfg"))?;
         config.push_str(post.as_str());
-    }
-
-    if !bootdir.exists(GRUB2DIR)? {
-        bootdir.create_dir(GRUB2DIR, 0o700)?;
     }
 
     bootdir
