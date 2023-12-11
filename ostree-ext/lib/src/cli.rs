@@ -325,6 +325,10 @@ pub(crate) enum ContainerImageOpts {
         #[clap(long)]
         /// Also prune layers
         and_layers: bool,
+
+        #[clap(long, conflicts_with = "and_layers")]
+        /// Also prune layers and OSTree objects
+        full: bool,
     },
 
     /// Perform initial deployment for a container image
@@ -1005,25 +1009,40 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 ContainerImageOpts::PruneImages {
                     sysroot,
                     and_layers,
+                    full,
                 } => {
                     let sysroot = &ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)));
                     sysroot.load(gio::Cancellable::NONE)?;
                     let sysroot = &SysrootLock::new_from_sysroot(sysroot).await?;
-                    let removed = crate::container::deploy::remove_undeployed_images(sysroot)?;
-                    match removed.as_slice() {
-                        [] => {
-                            println!("No unreferenced images.");
-                            return Ok(());
+                    if full {
+                        let res = crate::container::deploy::prune(sysroot)?;
+                        if res.is_empty() {
+                            println!("No content was pruned.");
+                        } else {
+                            println!("Removed images: {}", res.n_images);
+                            println!("Removed layers: {}", res.n_layers);
+                            println!("Removed objects: {}", res.n_objects_pruned);
+                            let objsize = glib::format_size(res.objsize);
+                            println!("Freed: {objsize}");
                         }
-                        o => {
-                            for imgref in o {
-                                println!("Removed: {imgref}");
+                    } else {
+                        let removed = crate::container::deploy::remove_undeployed_images(sysroot)?;
+                        match removed.as_slice() {
+                            [] => {
+                                println!("No unreferenced images.");
+                                return Ok(());
+                            }
+                            o => {
+                                for imgref in o {
+                                    println!("Removed: {imgref}");
+                                }
                             }
                         }
-                    }
-                    if and_layers {
-                        let nlayers = crate::container::store::gc_image_layers(&sysroot.repo())?;
-                        println!("Removed layers: {nlayers}");
+                        if and_layers {
+                            let nlayers =
+                                crate::container::store::gc_image_layers(&sysroot.repo())?;
+                            println!("Removed layers: {nlayers}");
+                        }
                     }
                     Ok(())
                 }
