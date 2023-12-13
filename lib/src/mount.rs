@@ -10,6 +10,7 @@ use crate::task::Task;
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct Filesystem {
+    // Note if you add an entry to this list, you need to change the --output invocation below too
     pub(crate) source: String,
     pub(crate) fstype: String,
     pub(crate) options: String,
@@ -25,7 +26,13 @@ pub(crate) struct Findmnt {
 pub(crate) fn inspect_filesystem(path: &Utf8Path) -> Result<Filesystem> {
     let desc = format!("Inspecting {path}");
     let o = Task::new(&desc, "findmnt")
-        .args(["-J", "-v", "--output-all", path.as_str()])
+        .args([
+            "-J",
+            "-v",
+            // If you change this you probably also want to change the Filesystem struct above
+            "--output=SOURCE,FSTYPE,OPTIONS,UUID",
+            path.as_str(),
+        ])
         .quiet()
         .read()?;
     let o: Findmnt = serde_json::from_str(&o).context("Parsing findmnt output")?;
