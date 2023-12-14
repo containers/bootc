@@ -23,12 +23,33 @@ pub struct Host {
     pub status: HostStatus,
 }
 
+#[derive(
+    clap::ValueEnum, Serialize, Deserialize, Copy, Clone, Debug, PartialEq, Eq, JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+/// The storage backend
+pub enum Backend {
+    /// Use the ostree-container storage backend.
+    OstreeContainer,
+    /// Use containers-storage: backend
+    Container,
+}
+
+impl Default for Backend {
+    fn default() -> Self {
+        Self::OstreeContainer
+    }
+}
+
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 /// The host specification
 pub struct HostSpec {
     /// The host image
     pub image: Option<ImageReference>,
+    /// The storage backend
+    #[serde(default)]
+    pub backend: Backend,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
@@ -89,6 +110,9 @@ pub struct BootEntry {
     pub incompatible: bool,
     /// Whether this entry will be subject to garbage collection
     pub pinned: bool,
+    /// The backend for this boot entry
+    #[serde(default)]
+    pub backend: Backend,
     /// If this boot entry is ostree based, the corresponding state
     pub ostree: Option<BootEntryOstree>,
 }

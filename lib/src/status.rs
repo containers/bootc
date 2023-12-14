@@ -1,8 +1,10 @@
 use std::collections::VecDeque;
 
-use crate::spec::{BootEntry, Host, HostSpec, HostStatus, ImageStatus};
+use crate::deploy::ImageState;
+use crate::spec::{Backend, BootEntry, Host, HostSpec, HostStatus, ImageStatus};
 use crate::spec::{ImageReference, ImageSignature};
 use anyhow::{Context, Result};
+use clap::ValueEnum;
 use fn_error_context::context;
 use ostree::glib;
 use ostree_container::OstreeImageReference;
@@ -99,6 +101,16 @@ pub(crate) fn try_deserialize_timestamp(t: &str) -> Option<chrono::DateTime<chro
     }
 }
 
+pub(crate) fn get_image_backend(origin: &glib::KeyFile) -> Result<Backend> {
+    let r = origin
+        .optional_string("bootc", "backend")?
+        .map(|v| Backend::from_str(&v, true))
+        .transpose()
+        .map_err(anyhow::Error::msg)?
+        .unwrap_or_default();
+    Ok(r)
+}
+
 pub(crate) fn labels_of_config(
     config: &oci_spec::image::ImageConfiguration,
 ) -> Option<&std::collections::HashMap<String, String>> {
@@ -111,44 +123,41 @@ fn boot_entry_from_deployment(
     deployment: &ostree::Deployment,
 ) -> Result<BootEntry> {
     let repo = &sysroot.repo();
-    let (image, incompatible) = if let Some(origin) = deployment.origin().as_ref() {
+    let (image, incompatible, backend) = if let Some(origin) = deployment.origin().as_ref() {
         let incompatible = crate::utils::origin_has_rpmostree_stuff(origin);
+        let backend = get_image_backend(origin)?;
         let image = if incompatible {
             // If there are local changes, we can't represent it as a bootc compatible image.
             None
         } else if let Some(image) = get_image_origin(origin)? {
             let image = ImageReference::from(image);
             let csum = deployment.csum();
-            let imgstate = ostree_container::store::query_image_commit(repo, &csum)?;
-            let config = imgstate.configuration.as_ref();
-            let labels = config.and_then(labels_of_config);
-            let timestamp = labels
-                .and_then(|l| {
-                    l.get(oci_spec::image::ANNOTATION_CREATED)
-                        .map(|s| s.as_str())
-                })
-                .and_then(try_deserialize_timestamp);
-
-            let version = config
-                .and_then(ostree_container::version_for_config)
-                .map(ToOwned::to_owned);
+            let imgstate = match backend {
+                Backend::Container => {
+                    todo!()
+                }
+                Backend::OstreeContainer => {
+                    ImageState::from(*ostree_container::store::query_image_commit(repo, &csum)?)
+                }
+            };
             Some(ImageStatus {
                 image,
-                version,
-                timestamp,
+                version: imgstate.version,
+                timestamp: imgstate.created,
                 image_digest: imgstate.manifest_digest,
             })
         } else {
             None
         };
-        (image, incompatible)
+        (image, incompatible, get_image_backend(origin)?)
     } else {
-        (None, false)
+        (None, false, Default::default())
     };
     let r = BootEntry {
         image,
         incompatible,
         pinned: deployment.is_pinned(),
+        backend,
         ostree: Some(crate::spec::BootEntryOstree {
             checksum: deployment.csum().into(),
             // SAFETY: The deployserial is really unsigned
@@ -237,9 +246,16 @@ pub(crate) fn get_status(
     let spec = staged
         .as_ref()
         .or(booted.as_ref())
-        .and_then(|entry| entry.image.as_ref())
-        .map(|img| HostSpec {
-            image: Some(img.image.clone()),
+        .and_then(|entry| {
+            let image = entry.image.as_ref();
+            if let Some(image) = image {
+                Some(HostSpec {
+                    image: Some(image.image.clone()),
+                    backend: entry.backend.clone(),
+                })
+            } else {
+                None
+            }
         })
         .unwrap_or_default();
     let mut host = Host::new(OBJECT_NAME, spec);
@@ -259,7 +275,13 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
             is_container: true,
             ..Default::default()
         };
-        let mut r = Host::new(OBJECT_NAME, HostSpec { image: None });
+        let mut r = Host::new(
+            OBJECT_NAME,
+            HostSpec {
+                image: None,
+                backend: Default::default(),
+            },
+        );
         r.status = status;
         r
     } else {

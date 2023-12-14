@@ -15,7 +15,11 @@
 
 pub mod cli;
 pub(crate) mod deploy;
+pub(crate) mod hostexec;
 mod lsm;
+mod ostree_authfile;
+mod podman;
+mod podman_ostree;
 mod reboot;
 mod reexec;
 mod status;
@@ -35,8 +39,6 @@ mod install;
 mod k8sapitypes;
 #[cfg(feature = "install")]
 pub(crate) mod mount;
-#[cfg(feature = "install")]
-mod podman;
 pub mod spec;
 #[cfg(feature = "install")]
 mod task;

@@ -1,4 +1,4 @@
-use crate::install::run_in_host_mountns;
+use crate::hostexec::run_in_host_mountns;
 use crate::task::Task;
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;

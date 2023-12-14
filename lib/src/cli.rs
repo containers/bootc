@@ -69,6 +69,10 @@ pub(crate) struct SwitchOpts {
 
     /// Target image to use for the next boot.
     pub(crate) target: String,
+
+    /// The storage backend
+    #[clap(long, hide = true)]
+    pub(crate) backend: Option<crate::spec::Backend>,
 }
 
 /// Perform an edit operation
@@ -119,6 +123,15 @@ pub(crate) enum TestingOpts {
     },
 }
 
+/// Options for internal testing
+#[derive(Debug, clap::Parser)]
+pub(crate) struct InternalPodmanOpts {
+    #[clap(long, value_parser, default_value = "/")]
+    root: Utf8PathBuf,
+    #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<std::ffi::OsString>,
+}
+
 /// Deploy and transactionally in-place with bootable container images.
 ///
 /// The `bootc` project currently uses ostree-containers as a backend
@@ -158,6 +171,9 @@ pub(crate) enum Opt {
     #[clap(hide = true)]
     #[command(external_subcommand)]
     ExecInHostMountNamespace(Vec<OsString>),
+    /// Execute podman in our internal configuration
+    #[clap(hide = true)]
+    InternalPodman(InternalPodmanOpts),
     /// Install to the target filesystem.
     #[cfg(feature = "install")]
     InstallToFilesystem(crate::install::InstallToFilesystemOpts),
@@ -294,7 +310,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             }
         }
     } else {
-        let fetched = crate::deploy::pull(&sysroot, imgref, opts.quiet).await?;
+        let fetched = crate::deploy::pull(&sysroot, spec.backend, imgref, opts.quiet).await?;
         let staged_digest = staged_image.as_ref().map(|s| s.image_digest.as_str());
         let fetched_digest = fetched.manifest_digest.as_str();
         tracing::debug!("staged: {staged_digest:?}");
@@ -366,6 +382,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let new_spec = {
         let mut new_spec = host.spec.clone();
         new_spec.image = Some(target.clone());
+        new_spec.backend = opts.backend.unwrap_or_default();
         new_spec
     };
 
@@ -374,7 +391,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     }
     let new_spec = RequiredHostSpec::from_spec(&new_spec)?;
 
-    let fetched = crate::deploy::pull(sysroot, &target, opts.quiet).await?;
+    let fetched = crate::deploy::pull(sysroot, new_spec.backend, &target, opts.quiet).await?;
 
     if !opts.retain {
         // By default, we prune the previous ostree ref so it will go away after later upgrades
@@ -416,7 +433,8 @@ async fn edit(opts: EditOpts) -> Result<()> {
         return Ok(());
     }
     let new_spec = RequiredHostSpec::from_spec(&new_host.spec)?;
-    let fetched = crate::deploy::pull(sysroot, new_spec.image, opts.quiet).await?;
+    let fetched =
+        crate::deploy::pull(sysroot, new_spec.backend, new_spec.image, opts.quiet).await?;
 
     // TODO gc old layers here
 
@@ -459,9 +477,15 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         Opt::InstallToFilesystem(opts) => crate::install::install_to_filesystem(opts).await,
         #[cfg(feature = "install")]
         Opt::ExecInHostMountNamespace(args) => {
-            crate::install::exec_in_host_mountns(args.as_slice())
+            crate::hostexec::exec_in_host_mountns(args.as_slice())
         }
         Opt::Status(opts) => super::status::status(opts).await,
+        Opt::InternalPodman(args) => {
+            prepare_for_write().await?;
+            // This also remounts writable
+            let _sysroot = get_locked_sysroot().await?;
+            crate::podman::exec(args.root.as_path(), args.args.as_slice())
+        }
         #[cfg(feature = "internal-testing-api")]
         Opt::InternalTests(opts) => crate::privtests::run(opts).await,
         #[cfg(feature = "docgen")]

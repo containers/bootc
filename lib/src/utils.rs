@@ -1,7 +1,9 @@
+use std::os::fd::BorrowedFd;
 use std::os::unix::prelude::OsStringExt;
 use std::process::Command;
 
 use anyhow::{Context, Result};
+use cap_std_ext::{cap_std::fs::Dir, cmdext::CapStdExtCommandExt};
 use ostree::glib;
 use ostree_ext::ostree;
 
@@ -52,6 +54,46 @@ pub(crate) fn spawn_editor(tmpf: &tempfile::NamedTempFile) -> Result<()> {
     Ok(())
 }
 
+#[allow(unsafe_code)]
+pub(crate) fn sysroot_fd_borrowed(sysroot: &ostree_ext::ostree::Sysroot) -> BorrowedFd {
+    // SAFETY: Just borrowing an existing fd; there's aleady a PR to add this
+    // api to libostree
+    unsafe { BorrowedFd::borrow_raw(sysroot.fd()) }
+}
+
+#[allow(unsafe_code)]
+fn set_pdeathsig(cmd: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: This is a straightforward use of prctl; would be good
+    // to put in a crate (maybe cap-std-ext)
+    unsafe {
+        cmd.pre_exec(|| {
+            rustix::process::set_parent_process_death_signal(Some(rustix::process::Signal::Term))
+                .map_err(Into::into)
+        });
+    }
+}
+
+/// Create a Command instance that has its current working directory set
+/// to the target root, and is also lifecycle-bound to us.
+pub(crate) fn sync_cmd_in_root(rootfs: &Dir, cmd: &str) -> Result<std::process::Command> {
+    let mut cmd = std::process::Command::new(cmd);
+    cmd.cwd_dir(rootfs.try_clone()?);
+    set_pdeathsig(&mut cmd);
+    Ok(cmd)
+}
+
+/// Create a Command instance that has its current working directory set
+/// to the target root, and is also lifecycle-bound to us.
+pub(crate) fn cmd_in_root(rootfs: &Dir, cmd: &str) -> Result<tokio::process::Command> {
+    let mut cmd = std::process::Command::new(cmd);
+    cmd.cwd_dir(rootfs.try_clone()?);
+    set_pdeathsig(&mut cmd);
+    let mut cmd = tokio::process::Command::from(cmd);
+    cmd.kill_on_drop(true);
+    Ok(cmd)
+}
+
 /// Output a warning message
 pub(crate) fn warning(s: &str) {
     anstream::eprintln!(
@@ -61,6 +103,15 @@ pub(crate) fn warning(s: &str) {
     );
 }
 
+pub(crate) fn newline_trim_vec_to_string(mut v: Vec<u8>) -> Result<String> {
+    let mut i = v.len();
+    while i > 0 && v[i - 1] == b'\n' {
+        i -= 1;
+    }
+    v.truncate(i);
+    String::from_utf8(v).map_err(Into::into)
+}
+
 /// Given a possibly tagged image like quay.io/foo/bar:latest and a digest 0ab32..., return
 /// the digested form quay.io/foo/bar:latest@sha256:0ab32...
 /// If the image already has a digest, it will be replaced.
@@ -68,6 +119,21 @@ pub(crate) fn warning(s: &str) {
 pub(crate) fn digested_pullspec(image: &str, digest: &str) -> String {
     let image = image.rsplit_once('@').map(|v| v.0).unwrap_or(image);
     format!("{image}@{digest}")
+}
+
+#[allow(dead_code)]
+pub(crate) fn require_sha256_digest(blobid: &str) -> Result<&str> {
+    let r = blobid
+        .split_once("sha256:")
+        .ok_or_else(|| anyhow::anyhow!("Missing sha256: in blob ID: {blobid}"))?
+        .1;
+    if r.len() != 64 {
+        anyhow::bail!("Invalid digest in blob ID: {blobid}");
+    }
+    if !r.chars().all(|c| char::is_ascii_alphanumeric(&c)) {
+        anyhow::bail!("Invalid checksum in blob ID: {blobid}");
+    }
+    Ok(r)
 }
 
 #[test]
@@ -93,4 +159,32 @@ fn test_find_mount_option() {
     assert_eq!(find_mount_option(V1, "subvol").unwrap(), "blah");
     assert_eq!(find_mount_option(V1, "rw"), None);
     assert_eq!(find_mount_option(V1, "somethingelse"), None);
+}
+
+#[test]
+fn test_newline_trim() {
+    let ident_cases = ["", "foo"].into_iter().map(|s| s.as_bytes());
+    for case in ident_cases {
+        let r = newline_trim_vec_to_string(Vec::from(case)).unwrap();
+        assert_eq!(case, r.as_bytes());
+    }
+    let cases = [("foo\n", "foo"), ("bar\n\n", "bar")];
+    for (orig, new) in cases {
+        let r = newline_trim_vec_to_string(Vec::from(orig)).unwrap();
+        assert_eq!(new.as_bytes(), r.as_bytes());
+    }
+}
+
+#[test]
+fn test_require_sha256_digest() {
+    assert_eq!(
+        require_sha256_digest(
+            "sha256:0b145899261c8a62406f697c67040cbd811f4dfaa9d778426cf1953413be8534"
+        )
+        .unwrap(),
+        "0b145899261c8a62406f697c67040cbd811f4dfaa9d778426cf1953413be8534"
+    );
+    for e in ["", "sha256:abcde", "sha256:0b145899261c8a62406f697c67040cbd811f4dfaa9d778426cf1953413b34🦀123", "sha512:9895de267ca908c36ed0031c017ba9bf85b83c21ff2bf241766a4037be81f947c68841ee75f003eba3b4bddc524c0357d7bc9ebffe499f5b72f2da3507cb170d"] {
+        assert!(require_sha256_digest(e).is_err());
+    }
 }
