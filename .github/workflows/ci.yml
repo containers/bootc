@@ -42,7 +42,7 @@ jobs:
         run: mkdir -p target/man && cargo run --features=docgen -- man --directory target/man
       - name: Clippy (non-gating)
         run: cargo clippy
-  build:
+  build-fedora:
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
     steps:
@@ -60,6 +60,25 @@ jobs:
         with:
           name: bootc.tar.zst
           path: target/bootc.tar.zst
+  build-c9s:
+    runs-on: ubuntu-latest
+    container: quay.io/centos/centos:stream9
+    steps:
+      - run: dnf -y install git-core
+      - uses: actions/checkout@v3
+      - name: Install deps
+        run: ./ci/installdeps.sh
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: "build-c9s"
+      - name: Build
+        run: make test-bin-archive
+      - name: Upload binary
+        uses: actions/upload-artifact@v3
+        with:
+          name: bootc-c9s.tar.zst
+          path: target/bootc.tar.zst
   cargo-deny:
     runs-on: ubuntu-latest
     steps:
@@ -70,7 +89,7 @@ jobs:
         command: check bans sources licenses
   privtest:
     name: "Privileged testing"
-    needs: build
+    needs: build-fedora
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -85,7 +104,7 @@ jobs:
         run: sudo podman run --rm -ti --privileged -v /run/systemd:/run/systemd -v /:/run/host -v /usr/bin/bootc:/usr/bin/bootc --pid=host quay.io/fedora/fedora-coreos:testing-devel bootc internal-tests run-privileged-integration
   container-tests:
     name: "Container testing"
-    needs: build
+    needs: build-fedora
     runs-on: ubuntu-latest
     container: quay.io/fedora/fedora-coreos:testing-devel
     steps:
@@ -99,7 +118,7 @@ jobs:
         run: bootc internal-tests run-container-integration
   privtest-alongside:
     name: "Test install-alongside"
-    needs: build
+    needs: build-fedora
     runs-on: ubuntu-latest
     steps:
       - name: Download
