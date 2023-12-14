@@ -827,12 +827,20 @@ fn ensure_var() -> Result<()> {
 pub(crate) fn propagate_tmp_mounts_to_host() -> Result<()> {
     // Point our /tmp and /var/tmp at the host, via the /proc/1/root magic link
     for path in ["/tmp", "/var/tmp"].map(Utf8Path::new) {
+        if path.try_exists()? {
+            let st = rustix::fs::statfs(path.as_std_path()).context(path)?;
+            if st.f_type != libc::OVERLAYFS_SUPER_MAGIC {
+                tracing::trace!("Already have {path} with f_type={}", st.f_type);
+                continue;
+            }
+        }
         let target = format!("/proc/1/root/{path}");
         let tmp = format!("{path}.tmp");
         // Ensure idempotence in case we're re-executed
         if path.is_symlink() {
             continue;
         }
+        tracing::debug!("Retargeting {path} to host");
         if path.try_exists()? {
             std::os::unix::fs::symlink(&target, &tmp)
                 .with_context(|| format!("Symlinking {target} to {tmp}"))?;
