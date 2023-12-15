@@ -152,7 +152,7 @@ fn test_install_filesystem(image: &str, blockdev: &Utf8Path) -> Result<()> {
     let mountpoint: &Utf8Path = mountpoint_dir.path().try_into().unwrap();
 
     // And run the install
-    cmd!(sh, "podman run --rm --privileged --pid=host --env=RUST_LOG -v /usr/bin/bootc:/usr/bin/bootc -v {mountpoint}:/target-root {image} bootc install-to-filesystem --target-no-signature-verification /target-root").run()?;
+    cmd!(sh, "podman run --rm --privileged --pid=host --env=RUST_LOG -v /usr/bin/bootc:/usr/bin/bootc -v {mountpoint}:/target-root {image} bootc install to-filesystem --target-no-signature-verification /target-root").run()?;
 
     cmd!(sh, "umount -R {mountpoint}").run()?;
 

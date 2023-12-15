@@ -17,12 +17,14 @@ The Linux kernel (and optionally initramfs) is embedded in the container image; 
 is `/usr/lib/modules/$kver/vmlinuz`, and the initramfs should be in `initramfs.img`
 in that directory.
 
-The `bootc install` and `boot install-to-filesystem` commands bridge the two worlds
-of a standard, runnable OCI image and a bootable system by running tooling logic embedded
+The `bootc install` command bridges the two worlds of a standard, runnable OCI image
+and a bootable system by running tooling logic embedded
 in the container image to create the filesystem and bootloader setup dynamically.
 This requires running the container via `--privileged`; it uses the running Linux kernel
 on the host to write the file content from the running container image; not the kernel
 inside the container.
+
+There are two sub-commands: `bootc install to-disk` and `boot install to-filesystem`.
 
 However, nothing *else* (external) is required to perform a basic installation
 to disk.  (The one exception to host requirements today is that the host must
@@ -44,8 +46,8 @@ image comes with a basic installer.
 ## Executing `bootc install`
 
 The two installation commands allow you to install the container image
-either directly to a block device (`bootc install`) or to an existing
-filesystem (`bootc install-to-filesystem`).
+either directly to a block device (`bootc install to-disk`) or to an existing
+filesystem (`bootc install to-filesystem`).
 
 The installation commands **MUST** be run **from** the container image
 that will be installed, using `--privileged` and a few
@@ -56,7 +58,7 @@ to an existing system and install your container image. Failure to run
 Here's an example of using `bootc install` (root/elevated permission required):
 
 ```bash
-podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t <image> bootc install --target-no-signature-verification /path/to/disk
+podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t <image> bootc install to-disk --target-no-signature-verification /path/to/disk
 ```
 
 Note that while `--privileged` is used, this command will not perform any
@@ -68,7 +70,7 @@ The `--pid=host --security-opt label=type:unconfined_t` today
 make it more convenient for bootc to perform some privileged
 operations; in the future these requirement may be dropped.
 
-Jump to the section for [`install-to-filesystem`](#more-advanced-installation) later
+Jump to the section for [`install to-filesystem`](#more-advanced-installation) later
 in this document for additional information about that method.
 
 ### "day 2" updates, security and fetch configuration
@@ -181,16 +183,16 @@ the files are underneath `/usr`.  To rotate or change the set of keys,
 one would build a new container image.  Client systems using `bootc upgrade`
 will transactionally update to this new system state.
 
-## More advanced installation
+## More advanced installation with `to-filesystem`
 
-The basic `bootc install` logic is really a pretty small (but opinionated) wrapper
+The basic `bootc install to-disk` logic is really a pretty small (but opinionated) wrapper
 for a set of lower level tools that can also be invoked independently.
 
-The `bootc install` command is effectively:
+The `bootc install to-disk` command is effectively:
 
 - `mkfs.$fs /dev/disk`
 - `mount /dev/disk /mnt`
-- `bootc install-to-filesystem --karg=root=UUID=<uuid of /mnt> --imgref $self /mnt`
+- `bootc install to-filesystem --karg=root=UUID=<uuid of /mnt> --imgref $self /mnt`
 
 There may be a bit more involved here; for example configuring
 `--block-setup tpm2-luks` will configure the root filesystem
@@ -199,25 +201,22 @@ with LUKS bound to the TPM2 chip, currently via [systemd-cryptenroll](https://ww
 Some OS/distributions may not want to enable it at all; it
 can be configured off at build time via Cargo features.
 
-### Using `bootc install-to-filesystem`
-
-As noted above, there is also `bootc install-to-filesystem`, which allows
-an arbitrary process to create the root filesystem.
+### Using `bootc install to-filesystem`
 
 The usual expected way for an external storage system to work
 is to provide `root=<UUID>` type kernel arguments.  At the current
 time a separate `/boot` filesystem is also required (mainly to enable LUKS)
 so you will also need to provide e.g. `--boot-mount-spec UUID=...`.
 
-The `bootc install-to-filesystem` command allows an operating
+The `bootc install to-filesystem` command allows an operating
 system or distribution to ship a separate installer that creates more complex block
 storage or filesystem setups, but reuses the "top half" of the logic.
 For example, a goal is to change [Anaconda](https://github.com/rhinstaller/anaconda/)
 to use this.
 
-### Using `bootc install-to-filesystem --replace=alongside`
+### Using `bootc install to-filesystem --replace=alongside`
 
-This is a variant of `install-to-filesystem`, which maximizes convenience for using
+This is a variant of `install to-filesystem`, which maximizes convenience for using
 an existing Linux system, converting it into the target container image.  Note that
 the `/boot` (and `/boot/efi`) partitions *will be reinitialized* - so this is a
 somewhat destructive operation for the existing Linux installation.
@@ -231,7 +230,7 @@ The core command should look like this (root/elevated permission required):
 podman run --rm --privileged -v /:/target \
              --pid=host --security-opt label=type:unconfined_t \
              <image> \
-             bootc install-to-filesystem --replace=alongside /target
+             bootc install to-filesystem --replace=alongside /target
 ```
 
 At the current time, leftover data in `/` is **NOT** automatically cleaned up.  This can

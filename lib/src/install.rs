@@ -2,7 +2,7 @@
 //!
 //! This module supports installing a bootc-compatible image to
 //! a block device directly via the `install` verb, or to an externally
-//! set up filesystem via `install-to-filesystem`.
+//! set up filesystem via `install to-filesystem`.
 
 // This sub-module is the "basic" installer that handles creating basic block device
 // and filesystem setup.
@@ -118,7 +118,7 @@ pub(crate) struct InstallConfigOpts {
 
 /// Perform an installation to a block device.
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize)]
-pub(crate) struct InstallOpts {
+pub(crate) struct InstallToDiskOpts {
     #[clap(flatten)]
     #[serde(flatten)]
     pub(crate) block_opts: InstallBlockDeviceOpts,
@@ -1021,8 +1021,8 @@ fn installation_complete() {
     println!("Installation complete!");
 }
 
-/// Implementation of the `bootc install` CLI command.
-pub(crate) async fn install(opts: InstallOpts) -> Result<()> {
+/// Implementation of the `bootc install to-disk` CLI command.
+pub(crate) async fn install_to_disk(opts: InstallToDiskOpts) -> Result<()> {
     let block_opts = opts.block_opts;
     let state = prepare_install(opts.config_opts, opts.target_opts).await?;
 
@@ -1113,7 +1113,7 @@ fn clean_boot_directories(rootfs: &Dir) -> Result<()> {
     Ok(())
 }
 
-/// Implementation of the `bootc install-to-filsystem` CLI command.
+/// Implementation of the `bootc install to-filsystem` CLI command.
 pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Result<()> {
     // Gather global state, destructuring the provided options
     let state = prepare_install(opts.config_opts, opts.target_opts).await?;
@@ -1252,7 +1252,7 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
 
 #[test]
 fn install_opts_serializable() {
-    let c: InstallOpts = serde_json::from_value(serde_json::json!({
+    let c: InstallToDiskOpts = serde_json::from_value(serde_json::json!({
         "device": "/dev/vda"
     }))
     .unwrap();

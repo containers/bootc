@@ -95,6 +95,16 @@ pub(crate) struct StatusOpts {
     pub(crate) booted: bool,
 }
 
+/// Options for internal testing
+#[cfg(feature = "install")]
+#[derive(Debug, clap::Subcommand)]
+pub(crate) enum InstallOpts {
+    /// Install to the target block device
+    ToDisk(crate::install::InstallToDiskOpts),
+    /// Install to the target filesystem
+    ToFilesystem(crate::install::InstallToFilesystemOpts),
+}
+
 /// Options for man page generation
 #[derive(Debug, Parser)]
 pub(crate) struct ManOpts {
@@ -112,7 +122,7 @@ pub(crate) enum TestingOpts {
     RunContainerIntegration {},
     /// Block device setup for testing
     PrepTestInstallFilesystem { blockdev: Utf8PathBuf },
-    /// e2e test of install-to-filesystem
+    /// e2e test of install to-filesystem
     TestInstallFilesystem {
         image: String,
         blockdev: Utf8PathBuf,
@@ -150,17 +160,16 @@ pub(crate) enum Opt {
     /// Add a transient writable overlayfs on `/usr` that will be discarded on reboot.
     #[clap(alias = "usroverlay")]
     UsrOverlay,
-    /// Install to the target block device
+    /// Install the running container to a target
+    #[clap(subcommand)]
     #[cfg(feature = "install")]
-    Install(crate::install::InstallOpts),
+    Install(InstallOpts),
     /// Execute the given command in the host mount namespace
     #[cfg(feature = "install")]
     #[clap(hide = true)]
     #[command(external_subcommand)]
     ExecInHostMountNamespace(Vec<OsString>),
-    /// Install to the target filesystem.
-    #[cfg(feature = "install")]
-    InstallToFilesystem(crate::install::InstallToFilesystemOpts),
+
     /// Internal integration testing helpers.
     #[clap(hide(true), subcommand)]
     #[cfg(feature = "internal-testing-api")]
@@ -454,9 +463,10 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         Opt::Edit(opts) => edit(opts).await,
         Opt::UsrOverlay => usroverlay().await,
         #[cfg(feature = "install")]
-        Opt::Install(opts) => crate::install::install(opts).await,
-        #[cfg(feature = "install")]
-        Opt::InstallToFilesystem(opts) => crate::install::install_to_filesystem(opts).await,
+        Opt::Install(opts) => match opts {
+            InstallOpts::ToDisk(opts) => crate::install::install_to_disk(opts).await,
+            InstallOpts::ToFilesystem(opts) => crate::install::install_to_filesystem(opts).await,
+        },
         #[cfg(feature = "install")]
         Opt::ExecInHostMountNamespace(args) => {
             crate::install::exec_in_host_mountns(args.as_slice())
