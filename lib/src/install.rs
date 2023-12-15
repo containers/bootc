@@ -1123,13 +1123,22 @@ fn clean_boot_directories(rootfs: &Dir) -> Result<()> {
 
 /// Implementation of the `bootc install to-filsystem` CLI command.
 pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Result<()> {
-    // Gather global state, destructuring the provided options
-    let state = prepare_install(opts.config_opts, opts.target_opts).await?;
     let fsopts = opts.filesystem_opts;
-
     let root_path = &fsopts.root_path;
+
+    let st = root_path.symlink_metadata()?;
+    if !st.is_dir() {
+        anyhow::bail!("Not a directory: {root_path}");
+    }
     let rootfs_fd = Dir::open_ambient_dir(root_path, cap_std::ambient_authority())
         .with_context(|| format!("Opening target root directory {root_path}"))?;
+    if let Some(false) = ostree_ext::mountutil::is_mountpoint(&rootfs_fd, ".")? {
+        anyhow::bail!("Not a root mountpoint: {root_path}");
+    }
+
+    // Gather global state, destructuring the provided options
+    let state = prepare_install(opts.config_opts, opts.target_opts).await?;
+
     match fsopts.replace {
         Some(ReplaceMode::Wipe) => {
             let rootfs_fd = rootfs_fd.try_clone()?;
