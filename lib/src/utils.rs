@@ -3,6 +3,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 use ostree::glib;
+use ostree_ext::container::SignatureSource;
 use ostree_ext::ostree;
 
 /// Try to look for keys injected by e.g. rpm-ostree requesting machine-local
@@ -52,6 +53,20 @@ pub(crate) fn spawn_editor(tmpf: &tempfile::NamedTempFile) -> Result<()> {
     Ok(())
 }
 
+/// Convert a combination of values (likely from CLI parsing) into a signature source
+pub(crate) fn sigpolicy_from_opts(
+    disable_verification: bool,
+    ostree_remote: Option<&str>,
+) -> SignatureSource {
+    if disable_verification {
+        SignatureSource::ContainerPolicyAllowInsecure
+    } else if let Some(remote) = ostree_remote {
+        SignatureSource::OstreeRemote(remote.to_owned())
+    } else {
+        SignatureSource::ContainerPolicy
+    }
+}
+
 /// Output a warning message
 pub(crate) fn warning(s: &str) {
     anstream::eprintln!(
@@ -93,4 +108,24 @@ fn test_find_mount_option() {
     assert_eq!(find_mount_option(V1, "subvol").unwrap(), "blah");
     assert_eq!(find_mount_option(V1, "rw"), None);
     assert_eq!(find_mount_option(V1, "somethingelse"), None);
+}
+
+#[test]
+fn test_sigpolicy_from_opts() {
+    assert_eq!(
+        sigpolicy_from_opts(false, None),
+        SignatureSource::ContainerPolicy
+    );
+    assert_eq!(
+        sigpolicy_from_opts(true, None),
+        SignatureSource::ContainerPolicyAllowInsecure
+    );
+    assert_eq!(
+        sigpolicy_from_opts(false, Some("foo")),
+        SignatureSource::OstreeRemote("foo".to_owned())
+    );
+    assert_eq!(
+        sigpolicy_from_opts(true, Some("foo")),
+        SignatureSource::ContainerPolicyAllowInsecure
+    );
 }
