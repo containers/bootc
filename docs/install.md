@@ -58,7 +58,7 @@ to an existing system and install your container image. Failure to run
 Here's an example of using `bootc install` (root/elevated permission required):
 
 ```bash
-podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t <image> bootc install to-disk --target-no-signature-verification /path/to/disk
+podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t <image> bootc install to-disk /path/to/disk
 ```
 
 Note that while `--privileged` is used, this command will not perform any
@@ -85,10 +85,7 @@ This can be overridden via `--target_imgref`; this is handy in cases like perfor
 installation in a manufacturing environment from a mirrored registry.
 
 By default, the installation process will verify that the container (representing the target OS)
-can fetch its own updates.  A common cause of failure here is not changing the security settings
-in `/etc/containers/policy.json` in the target OS to verify signatures.
-
-If you are pushing an unsigned image, you **MUST** specify `bootc install --target-no-signature-verification`.
+can fetch its own updates.
 
 Additionally note that to perform an install with a target image reference set to an
 authenticated registry, you must provide a pull secret.  One path is to embed the pull secret into

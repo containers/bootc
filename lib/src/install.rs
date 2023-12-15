@@ -67,10 +67,25 @@ pub(crate) struct InstallTargetOpts {
     #[clap(long)]
     pub(crate) target_imgref: Option<String>,
 
-    /// Explicitly opt-out of requiring any form of signature verification.
-    #[clap(long)]
+    /// This command line argument does nothing; it exists for compatibility.
+    ///
+    /// As of newer versions of bootc, this value is enabled by default,
+    /// i.e. it is not enforced that a signature
+    /// verification policy is enabled.  Hence to enable it, one can specify
+    /// `--target-no-signature-verification=false`.
+    ///
+    /// It is likely that the functionality here will be replaced with a different signature
+    /// enforcement scheme in the future that integrates with `podman`.
+    #[clap(long, hide = true)]
     #[serde(default)]
     pub(crate) target_no_signature_verification: bool,
+
+    /// This is the inverse of the previous `--target-no-signature-verification` (which is now
+    /// a no-op).  Enabling this option enforces that `/etc/containers/policy.json` includes a
+    /// default policy which requires signatures.
+    #[clap(long)]
+    #[serde(default)]
+    pub(crate) enforce_container_sigpolicy: bool,
 
     /// Enable verification via an ostree remote
     #[clap(long)]
@@ -80,10 +95,8 @@ pub(crate) struct InstallTargetOpts {
     /// Specifying this option suppresses the check; use this when you know the issues it might find
     /// are addressed.
     ///
-    /// Two main reasons this might fail:
-    ///
-    ///  - Forgetting `--target-no-signature-verification` if needed
-    ///  - Using a registry which requires authentication, but not embedding the pull secret in the image.
+    /// A common reason this may fail is when one is using an image which requires registry authentication,
+    /// but not embedding the pull secret in the image so that updates can be fetched by the installed OS "day 2".
     #[clap(long)]
     #[serde(default)]
     pub(crate) skip_fetch_check: bool,
@@ -916,8 +929,14 @@ async fn prepare_install(
 
     // Parse the target CLI image reference options and create the *target* image
     // reference, which defaults to pulling from a registry.
+    if target_opts.target_no_signature_verification {
+        // Perhaps log this in the future more prominently, but no reason to annoy people.
+        tracing::debug!(
+            "Use of --target-no-signature-verification flag which is enabled by default"
+        );
+    }
     let target_sigverify = sigpolicy_from_opts(
-        target_opts.target_no_signature_verification,
+        !target_opts.enforce_container_sigpolicy,
         target_opts.target_ostree_remote.as_deref(),
     );
     let target_imgname = target_opts
