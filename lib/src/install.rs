@@ -694,6 +694,7 @@ fn skopeo_supports_containers_storage() -> Result<bool> {
     let o = run_in_host_mountns("skopeo").arg("--version").output()?;
     let st = o.status;
     if !st.success() {
+        let _ = std::io::copy(&mut std::io::Cursor::new(o.stderr), &mut std::io::stderr()); // Ignore errors copying stderr
         anyhow::bail!("Failed to run skopeo --version: {st:?}");
     }
     let stdout = String::from_utf8(o.stdout).context("Parsing skopeo version")?;
