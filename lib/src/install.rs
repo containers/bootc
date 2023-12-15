@@ -673,7 +673,7 @@ pub(crate) fn run_in_host_mountns(cmd: &str) -> Command {
 
 #[context("Re-exec in host mountns")]
 pub(crate) fn exec_in_host_mountns(args: &[std::ffi::OsString]) -> Result<()> {
-    let (cmd, args) = args[1..]
+    let (cmd, args) = args
         .split_first()
         .ok_or_else(|| anyhow::anyhow!("Missing command"))?;
     tracing::trace!("{cmd:?} {args:?}");
@@ -694,6 +694,7 @@ fn skopeo_supports_containers_storage() -> Result<bool> {
     let o = run_in_host_mountns("skopeo").arg("--version").output()?;
     let st = o.status;
     if !st.success() {
+        let _ = std::io::copy(&mut std::io::Cursor::new(o.stderr), &mut std::io::stderr()); // Ignore errors copying stderr
         anyhow::bail!("Failed to run skopeo --version: {st:?}");
     }
     let stdout = String::from_utf8(o.stdout).context("Parsing skopeo version")?;

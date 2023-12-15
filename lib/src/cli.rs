@@ -167,9 +167,10 @@ pub(crate) enum Opt {
     /// Execute the given command in the host mount namespace
     #[cfg(feature = "install")]
     #[clap(hide = true)]
-    #[command(external_subcommand)]
-    ExecInHostMountNamespace(Vec<OsString>),
-
+    ExecInHostMountNamespace {
+        #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
     /// Internal integration testing helpers.
     #[clap(hide(true), subcommand)]
     #[cfg(feature = "internal-testing-api")]
@@ -468,7 +469,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             InstallOpts::ToFilesystem(opts) => crate::install::install_to_filesystem(opts).await,
         },
         #[cfg(feature = "install")]
-        Opt::ExecInHostMountNamespace(args) => {
+        Opt::ExecInHostMountNamespace { args } => {
             crate::install::exec_in_host_mountns(args.as_slice())
         }
         Opt::Status(opts) => super::status::status(opts).await,
