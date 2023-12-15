@@ -122,9 +122,11 @@ pub(crate) async fn pull(
 }
 
 pub(crate) async fn cleanup(sysroot: &SysrootLock) -> Result<()> {
+    // We create clones (just atomic reference bumps) here to move to the thread.
     let repo = sysroot.repo();
     let sysroot = sysroot.sysroot.clone();
     ostree_ext::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| {
+        let locked_sysroot = &SysrootLock::from_assumed_locked(&sysroot);
         let cancellable = Some(cancellable);
         let repo = &repo;
         let txn = repo.auto_transaction(cancellable)?;
@@ -150,6 +152,17 @@ pub(crate) async fn cleanup(sysroot: &SysrootLock) -> Result<()> {
             if let Some(base) = get_base_commit(repo, &commit)? {
                 repo.transaction_set_refspec(&format!("{BASE_IMAGE_PREFIX}/{i}"), Some(&base));
             }
+        }
+
+        let pruned = ostree_container::deploy::prune(locked_sysroot).context("Pruning images")?;
+        if !pruned.is_empty() {
+            let size = glib::format_size(pruned.objsize);
+            println!(
+                "Pruned images: {} (layers: {}, objsize: {})",
+                pruned.n_images, pruned.n_layers, size
+            );
+        } else {
+            tracing::debug!("Nothing to prune");
         }
 
         Ok(())
@@ -219,7 +232,6 @@ pub(crate) async fn stage(
         println!("  Version: {version}");
     }
     println!("  Digest: {}", image.manifest_digest);
-    ostree_container::deploy::remove_undeployed_images(sysroot).context("Pruning images")?;
 
     Ok(())
 }
