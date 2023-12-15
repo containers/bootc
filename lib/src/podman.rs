@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use serde::Deserialize;
 
 use crate::install::run_in_host_mountns;
+use crate::task::Task;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -11,14 +12,11 @@ pub(crate) struct Inspect {
 
 /// Given an image ID, return its manifest digest
 pub(crate) fn imageid_to_digest(imgid: &str) -> Result<String> {
-    let o = run_in_host_mountns("podman")
+    let out = Task::new_cmd("podman inspect", run_in_host_mountns("podman"))
         .args(["inspect", imgid])
-        .output()?;
-    let st = o.status;
-    if !st.success() {
-        anyhow::bail!("Failed to execute podman inspect: {st:?}");
-    }
-    let o: Vec<Inspect> = serde_json::from_slice(&o.stdout)?;
+        .quiet()
+        .read()?;
+    let o: Vec<Inspect> = serde_json::from_str(&out)?;
     let i = o
         .into_iter()
         .next()

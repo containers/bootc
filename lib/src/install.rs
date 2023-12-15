@@ -691,14 +691,11 @@ pub(crate) fn exec_in_host_mountns(args: &[std::ffi::OsString]) -> Result<()> {
 
 #[context("Querying skopeo version")]
 fn skopeo_supports_containers_storage() -> Result<bool> {
-    let o = run_in_host_mountns("skopeo").arg("--version").output()?;
-    let st = o.status;
-    if !st.success() {
-        let _ = std::io::copy(&mut std::io::Cursor::new(o.stderr), &mut std::io::stderr()); // Ignore errors copying stderr
-        anyhow::bail!("Failed to run skopeo --version: {st:?}");
-    }
-    let stdout = String::from_utf8(o.stdout).context("Parsing skopeo version")?;
-    let mut v = stdout
+    let out = Task::new_cmd("skopeo --version", run_in_host_mountns("skopeo"))
+        .args(["--version"])
+        .quiet()
+        .read()?;
+    let mut v = out
         .strip_prefix("skopeo version ")
         .map(|v| v.split('.'))
         .ok_or_else(|| anyhow::anyhow!("Unexpected output from skopeo version"))?;

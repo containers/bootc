@@ -113,22 +113,6 @@ pub(crate) fn reread_partition_table(file: &mut File, retry: bool) -> Result<()>
     Ok(())
 }
 
-/// Runs the provided Command object, captures its stdout, and swallows its stderr except on
-/// failure. Returns a Result<String> describing whether the command failed, and if not, its
-/// standard output. Output is assumed to be UTF-8. Errors are adequately prefixed with the full
-/// command.
-pub(crate) fn cmd_output(cmd: &mut Command) -> Result<String> {
-    let result = cmd
-        .output()
-        .with_context(|| format!("running {:#?}", cmd))?;
-    if !result.status.success() {
-        eprint!("{}", String::from_utf8_lossy(&result.stderr));
-        anyhow::bail!("{:#?} failed with {}", cmd, result.status);
-    }
-    String::from_utf8(result.stdout)
-        .with_context(|| format!("decoding as UTF-8 output of `{:#?}`", cmd))
-}
-
 /// Parse key-value pairs from lsblk --pairs.
 /// Newer versions of lsblk support JSON but the one in CentOS 7 doesn't.
 fn split_lsblk_line(line: &str) -> HashMap<String, String> {
@@ -144,15 +128,15 @@ fn split_lsblk_line(line: &str) -> HashMap<String, String> {
 /// hierarchy of `device` capable of containing other partitions. So e.g. parent devices of type
 /// "part" doesn't match, but "disk" and "mpath" does.
 pub(crate) fn find_parent_devices(device: &str) -> Result<Vec<String>> {
-    let mut cmd = Command::new("lsblk");
-    // Older lsblk, e.g. in CentOS 7.6, doesn't support PATH, but --paths option
-    cmd.arg("--pairs")
+    let output = Task::new_quiet("lsblk")
+        // Older lsblk, e.g. in CentOS 7.6, doesn't support PATH, but --paths option
+        .arg("--pairs")
         .arg("--paths")
         .arg("--inverse")
         .arg("--output")
         .arg("NAME,TYPE")
-        .arg(device);
-    let output = cmd_output(&mut cmd)?;
+        .arg(device)
+        .read()?;
     let mut parents = Vec::new();
     // skip first line, which is the device itself
     for line in output.lines().skip(1) {
