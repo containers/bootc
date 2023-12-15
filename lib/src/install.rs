@@ -32,7 +32,6 @@ use rustix::fs::MetadataExt;
 use fn_error_context::context;
 use ostree::gio;
 use ostree_ext::container as ostree_container;
-use ostree_ext::container::SignatureSource;
 use ostree_ext::ostree;
 use ostree_ext::prelude::Cast;
 use serde::{Deserialize, Serialize};
@@ -40,6 +39,7 @@ use serde::{Deserialize, Serialize};
 use self::baseline::InstallBlockDeviceOpts;
 use crate::containerenv::ContainerExecutionInfo;
 use crate::task::Task;
+use crate::utils::sigpolicy_from_opts;
 
 /// The default "stateroot" or "osname"; see https://github.com/ostreedev/ostree/issues/2794
 const STATEROOT_DEFAULT: &str = "default";
@@ -917,13 +917,10 @@ async fn prepare_install(
 
     // Parse the target CLI image reference options and create the *target* image
     // reference, which defaults to pulling from a registry.
-    let target_sigverify = if target_opts.target_no_signature_verification {
-        SignatureSource::ContainerPolicyAllowInsecure
-    } else if let Some(remote) = target_opts.target_ostree_remote.as_deref() {
-        SignatureSource::OstreeRemote(remote.to_string())
-    } else {
-        SignatureSource::ContainerPolicy
-    };
+    let target_sigverify = sigpolicy_from_opts(
+        target_opts.target_no_signature_verification,
+        target_opts.target_ostree_remote.as_deref(),
+    );
     let target_imgname = target_opts
         .target_imgref
         .as_deref()

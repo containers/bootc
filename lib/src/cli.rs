@@ -9,7 +9,6 @@ use fn_error_context::context;
 use ostree::gio;
 use ostree_container::store::PrepareResult;
 use ostree_ext::container as ostree_container;
-use ostree_ext::container::SignatureSource;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
 use std::ffi::OsString;
@@ -20,6 +19,7 @@ use std::process::Command;
 use crate::deploy::RequiredHostSpec;
 use crate::spec::Host;
 use crate::spec::ImageReference;
+use crate::utils::sigpolicy_from_opts;
 
 /// Perform an upgrade operation
 #[derive(Debug, Parser)]
@@ -363,13 +363,10 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
         transport,
         name: opts.target.to_string(),
     };
-    let sigverify = if opts.no_signature_verification {
-        SignatureSource::ContainerPolicyAllowInsecure
-    } else if let Some(remote) = opts.ostree_remote.as_ref() {
-        SignatureSource::OstreeRemote(remote.to_string())
-    } else {
-        SignatureSource::ContainerPolicy
-    };
+    let sigverify = sigpolicy_from_opts(
+        opts.no_signature_verification,
+        opts.ostree_remote.as_deref(),
+    );
     let target = ostree_container::OstreeImageReference { sigverify, imgref };
     let target = ImageReference::from(target);
 
