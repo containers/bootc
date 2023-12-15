@@ -26,6 +26,7 @@ use cap_std_ext::prelude::CapStdExtDirExt;
 use chrono::prelude::*;
 use clap::ValueEnum;
 use ostree_ext::oci_spec;
+use rustix::fs::FileTypeExt;
 use rustix::fs::MetadataExt;
 
 use fn_error_context::context;
@@ -1024,6 +1025,13 @@ fn installation_complete() {
 /// Implementation of the `bootc install to-disk` CLI command.
 pub(crate) async fn install_to_disk(opts: InstallToDiskOpts) -> Result<()> {
     let block_opts = opts.block_opts;
+    let target_blockdev_meta = block_opts
+        .device
+        .metadata()
+        .with_context(|| format!("Querying {}", &block_opts.device))?;
+    if !target_blockdev_meta.file_type().is_block_device() {
+        anyhow::bail!("Not a block device: {}", block_opts.device);
+    }
     let state = prepare_install(opts.config_opts, opts.target_opts).await?;
 
     // This is all blocking stuff
