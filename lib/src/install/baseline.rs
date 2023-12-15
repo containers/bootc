@@ -3,7 +3,7 @@
 //! This module handles creation of simple root filesystem setups.  At the current time
 //! it's very simple - just a direct filesystem (e.g. xfs, ext4, btrfs etc.).  It is
 //! intended to add opinionated handling of TPM2-bound LUKS too.  But that's about it;
-//! other more complex flows should set things up externally and use `bootc install-to-filesystem`.
+//! other more complex flows should set things up externally and use `bootc install to-filesystem`.
 
 use std::borrow::Cow;
 use std::fmt::Display;

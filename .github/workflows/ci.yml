@@ -136,7 +136,7 @@ jobs:
         run: |
           set -xeuo pipefail
           sudo podman run --rm -ti --privileged -v /:/target -v ./usr/bin/bootc:/usr/bin/bootc --pid=host --security-opt label=disable \
-            quay.io/centos-bootc/fedora-bootc-dev:eln bootc install-to-filesystem --target-no-signature-verification \
+            quay.io/centos-bootc/fedora-bootc-dev:eln bootc install to-filesystem --target-no-signature-verification \
             --karg=foo=bar --disable-selinux --replace=alongside /target
           ls -al /boot/loader/
           sudo grep foo=bar /boot/loader/entries/*.conf

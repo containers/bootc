@@ -30,7 +30,7 @@ case "${AUTOPKGTEST_REBOOT_MARK:-}" in
 EOF
     podman build -t localhost/testimage .
     podman run --rm -ti --privileged --pid=host --env RUST_LOG=error,bootc_lib::install=debug \
-      localhost/testimage bootc install --target-no-signature-verification --skip-fetch-check --karg=foo=bar ${DEV}
+      localhost/testimage bootc install to-disk --target-no-signature-verification --skip-fetch-check --karg=foo=bar ${DEV}
     # In theory we could e.g. wipe the bootloader setup on the primary disk, then reboot;
     # but for now let's just sanity test that the install command executes.
     lsblk ${DEV}
@@ -41,7 +41,7 @@ EOF
     umount /var/mnt
     echo "ok install"
 
-    # Now test install-to-filesystem
+    # Now test install to-filesystem
     # Wipe the device
     ls ${DEV}* | tac | xargs wipefs -af
     # This prepares the device and also runs podman directliy

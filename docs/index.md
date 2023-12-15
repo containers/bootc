@@ -89,10 +89,15 @@ First, build a derived container using any container build tooling.
 
 #### Using `bootc install`
 
-The `bootc install` command will write the current container to a disk, and set it up for booting.
+The `bootc install` command has two high level sub-commands; `to-disk` and `to-filesystem`.
+
+The `bootc install to-disk` handles basically everything in taking the current container
+and writing it to a disk, and set it up for booting and future in-place upgrades.
+
 In brief, the idea is that every container image shipping `bootc` also comes with a simple
-installer that can set a system up to boot from it.  Crucially, if you create a 
-*derivative* container image from a stock OS container image, it also automatically supports `bootc install`.
+installer that can set a system up to boot from it.  Crucially, if you create a
+*derivative* container image from a stock OS container image, it also automatically
+supports `bootc install`.
 
 For more information, please see [install.md](install.md).
 
