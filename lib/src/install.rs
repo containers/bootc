@@ -673,7 +673,7 @@ pub(crate) fn run_in_host_mountns(cmd: &str) -> Command {
 
 #[context("Re-exec in host mountns")]
 pub(crate) fn exec_in_host_mountns(args: &[std::ffi::OsString]) -> Result<()> {
-    let (cmd, args) = args[1..]
+    let (cmd, args) = args
         .split_first()
         .ok_or_else(|| anyhow::anyhow!("Missing command"))?;
     tracing::trace!("{cmd:?} {args:?}");
