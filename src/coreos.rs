@@ -15,11 +15,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "kebab-case")]
 /// See https://github.com/coreos/fedora-coreos-tracker/blob/66d7d00bedd9d5eabc7287b9577f443dcefb7c04/internals/README-internals.md#aleph-version
 pub(crate) struct Aleph {
-    pub(crate) build: String,
-    #[serde(rename = "ref")]
-    pub(crate) ostree_ref: String,
-    pub(crate) ostree_commit: String,
-    pub(crate) imgid: String,
+    #[serde(alias = "build")]
+    pub(crate) version: String,
 }
 
 pub(crate) struct AlephWithTimestamp {
@@ -52,7 +49,9 @@ mod test {
     use anyhow::Result;
 
     #[test]
-    fn test_parse_aleph() -> Result<()> {
+    fn test_parse_old_aleph() -> Result<()> {
+        // What the aleph file looked like before we changed it in
+        // https://github.com/osbuild/osbuild/pull/1475
         let alephdata = r##"
 {
     "build": "32.20201002.dev.2",
@@ -61,10 +60,20 @@ mod test {
     "imgid": "fedora-coreos-32.20201002.dev.2-qemu.x86_64.qcow2"
 }"##;
         let aleph: Aleph = serde_json::from_str(alephdata)?;
-        assert_eq!(
-            aleph.imgid,
-            "fedora-coreos-32.20201002.dev.2-qemu.x86_64.qcow2"
-        );
+        assert_eq!(aleph.version, "32.20201002.dev.2");
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_aleph() -> Result<()> {
+        let alephdata = r##"
+{
+    "version": "32.20201002.dev.2",
+    "ref": "fedora/x86_64/coreos/testing-devel",
+    "ostree-commit": "b2ea6159d6274e1bbbb49aa0ef093eda5d53a75c8a793dbe184f760ed64dc862"
+}"##;
+        let aleph: Aleph = serde_json::from_str(alephdata)?;
+        assert_eq!(aleph.version, "32.20201002.dev.2");
         Ok(())
     }
 }

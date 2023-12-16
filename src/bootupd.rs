@@ -389,7 +389,7 @@ pub(crate) fn print_status(status: &Status) -> Result<()> {
     }
 
     if let Some(coreos_aleph) = coreos::get_aleph_version()? {
-        println!("CoreOS aleph image ID: {}", coreos_aleph.aleph.imgid);
+        println!("CoreOS aleph version: {}", coreos_aleph.aleph.version);
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

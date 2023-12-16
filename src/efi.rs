@@ -221,7 +221,7 @@ impl Component for Efi {
         if let Some(coreos_aleph) = crate::coreos::get_aleph_version()? {
             let meta = ContentMetadata {
                 timestamp: coreos_aleph.ts,
-                version: coreos_aleph.aleph.imgid,
+                version: coreos_aleph.aleph.version,
             };
             log::trace!("EFI adoptable: {:?}", &meta);
             return Ok(Some(Adoptable {
