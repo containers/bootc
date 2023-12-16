@@ -6,10 +6,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::prelude::*;
 use openat_ext::OpenatDirExt;
 use serde::{Deserialize, Serialize};
+use std::fs::{canonicalize, symlink_metadata};
+use std::path::Path;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, Ord, PartialOrd, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -30,7 +32,21 @@ const ALEPH_PATH: &str = "/sysroot/.coreos-aleph-version.json";
 
 pub(crate) fn get_aleph_version() -> Result<Option<AlephWithTimestamp>> {
     let sysroot = openat::Dir::open("/")?;
-    if let Some(statusf) = sysroot.open_file_optional(ALEPH_PATH)? {
+    let mut path = ALEPH_PATH;
+    if !Path::new(ALEPH_PATH).exists() {
+        return Ok(None);
+    }
+    let target;
+    let is_link = symlink_metadata(path)
+        .with_context(|| format!("reading metadata for {}", path))?
+        .file_type()
+        .is_symlink();
+    if is_link {
+        target =
+            canonicalize(path).with_context(|| format!("getting absolute path to {}", path))?;
+        path = target.to_str().unwrap()
+    }
+    if let Some(statusf) = sysroot.open_file_optional(path)? {
         let meta = statusf.metadata()?;
         let bufr = std::io::BufReader::new(statusf);
         let aleph: Aleph = serde_json::from_reader(bufr)?;
