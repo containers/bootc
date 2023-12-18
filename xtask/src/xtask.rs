@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Cursor, Write};
 use std::process::{Command, Stdio};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use xshell::{cmd, Shell};
@@ -21,6 +21,7 @@ fn main() {
 const TASKS: &[(&str, fn(&Shell) -> Result<()>)] = &[
     ("vendor", vendor),
     ("manpages", manpages),
+    ("man2markdown", man2markdown),
     ("package", package),
     ("package-srpm", package_srpm),
     ("custom-lints", custom_lints),
@@ -84,6 +85,31 @@ fn manpages(sh: &Shell) -> Result<()> {
         "cargo run --features=docgen -- man --directory target/man"
     )
     .run()?;
+    Ok(())
+}
+
+/// Generate markdown files (converted from the man pages, which are generated
+/// from the Rust sources) into docs/man.  This process is currently manual.
+#[context("man2markdown")]
+fn man2markdown(sh: &Shell) -> Result<()> {
+    manpages(sh)?;
+    for ent in std::fs::read_dir("target/man")? {
+        let ent = ent?;
+        let path = &ent.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("8") {
+            continue;
+        }
+        let filename = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow!("Expected filename in {path:?}"))?;
+        let target = format!("docs/man/{filename}.md");
+        cmd!(
+            sh,
+            "pandoc --from=man --to=markdown --output={target} {path}"
+        )
+        .run()?;
+    }
     Ok(())
 }
 
