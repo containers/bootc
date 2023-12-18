@@ -404,7 +404,7 @@ pub(crate) mod config {
             mergeopt(&mut self.root_fs_type, other.root_fs_type);
             if let Some(other_kargs) = other.kargs {
                 self.kargs
-                    .get_or_insert_with(|| Default::default())
+                    .get_or_insert_with(Default::default)
                     .extend(other_kargs)
             }
         }

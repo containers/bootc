@@ -25,7 +25,7 @@ pub(crate) struct Findmnt {
 #[context("Inspecting filesystem {path}")]
 pub(crate) fn inspect_filesystem(path: &Utf8Path) -> Result<Filesystem> {
     let desc = format!("Inspecting {path}");
-    let o = Task::new(&desc, "findmnt")
+    let o = Task::new(desc, "findmnt")
         .args([
             "-J",
             "-v",
