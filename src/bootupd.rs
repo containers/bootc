@@ -388,7 +388,7 @@ pub(crate) fn print_status(status: &Status) -> Result<()> {
         }
     }
 
-    if let Some(coreos_aleph) = coreos::get_aleph_version()? {
+    if let Some(coreos_aleph) = coreos::get_aleph_version(Path::new("/"))? {
         println!("CoreOS aleph version: {}", coreos_aleph.aleph.version);
     }
 
