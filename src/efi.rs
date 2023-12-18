@@ -218,10 +218,10 @@ impl Component for Efi {
             return Ok(None);
         };
         // This would be extended with support for other operating systems later
-        if let Some(coreos_aleph) = crate::coreos::get_aleph_version()? {
+        if let Some(coreos_aleph) = crate::coreos::get_aleph_version(Path::new("/"))? {
             let meta = ContentMetadata {
                 timestamp: coreos_aleph.ts,
-                version: coreos_aleph.aleph.imgid,
+                version: coreos_aleph.aleph.version,
             };
             log::trace!("EFI adoptable: {:?}", &meta);
             return Ok(Some(Adoptable {
