@@ -55,9 +55,17 @@ pub(crate) struct SwitchOpts {
     #[clap(long, default_value = "registry")]
     pub(crate) transport: String,
 
-    /// Explicitly opt-out of requiring any form of signature verification.
-    #[clap(long)]
+    /// This argument is deprecated and does nothing.
+    #[clap(long, hide = true)]
     pub(crate) no_signature_verification: bool,
+
+    /// This is the inverse of the previous `--target-no-signature-verification` (which is now
+    /// a no-op).
+    ///
+    /// Enabling this option enforces that `/etc/containers/policy.json` includes a
+    /// default policy which requires signatures.
+    #[clap(long)]
+    pub(crate) enforce_container_sigpolicy: bool,
 
     /// Enable verification via an ostree remote
     #[clap(long)]
@@ -364,7 +372,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
         name: opts.target.to_string(),
     };
     let sigverify = sigpolicy_from_opts(
-        opts.no_signature_verification,
+        !opts.enforce_container_sigpolicy,
         opts.ostree_remote.as_deref(),
     );
     let target = ostree_container::OstreeImageReference { sigverify, imgref };
@@ -475,4 +483,23 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
     }
+}
+
+#[test]
+fn test_parse_install_args() {
+    // Verify we still process the legacy --target-no-signature-verification
+    let o = Opt::try_parse_from([
+        "bootc",
+        "install",
+        "to-filesystem",
+        "--target-no-signature-verification",
+        "/target",
+    ])
+    .unwrap();
+    let o = match o {
+        Opt::Install(InstallOpts::ToFilesystem(fsopts)) => fsopts,
+        o => panic!("Expected filesystem opts, not {o:?}"),
+    };
+    assert!(o.target_opts.target_no_signature_verification);
+    assert_eq!(o.filesystem_opts.root_path.as_str(), "/target");
 }

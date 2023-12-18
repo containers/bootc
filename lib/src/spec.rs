@@ -51,8 +51,9 @@ pub struct ImageReference {
     pub image: String,
     /// The container image transport
     pub transport: String,
-    /// Disable signature verification
-    pub signature: ImageSignature,
+    /// Signature verification type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<ImageSignature>,
 }
 
 /// The status of the booted image
@@ -132,12 +133,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_spec() {
+    fn test_parse_spec_v0() {
         const SPEC_FIXTURE: &str = include_str!("fixtures/spec.yaml");
         let host: Host = serde_yaml::from_str(SPEC_FIXTURE).unwrap();
         assert_eq!(
             host.spec.image.as_ref().unwrap().image.as_str(),
             "quay.io/example/someimage:latest"
+        );
+    }
+
+    #[test]
+    fn test_parse_spec_v1() {
+        const SPEC_FIXTURE: &str = include_str!("fixtures/spec-v1.yaml");
+        let host: Host = serde_yaml::from_str(SPEC_FIXTURE).unwrap();
+        assert_eq!(
+            host.spec.image.as_ref().unwrap().image.as_str(),
+            "quay.io/otherexample/otherimage:latest"
+        );
+        assert_eq!(host.spec.image.as_ref().unwrap().signature, None);
+    }
+
+    #[test]
+    fn test_parse_ostreeremote() {
+        const SPEC_FIXTURE: &str = include_str!("fixtures/spec-ostree-remote.yaml");
+        let host: Host = serde_yaml::from_str(SPEC_FIXTURE).unwrap();
+        assert_eq!(
+            host.spec.image.as_ref().unwrap().signature,
+            Some(ImageSignature::OstreeRemote("fedora".into()))
         );
     }
 }

@@ -1,0 +1,26 @@
+# This one drops the now-optional signature schema
+apiVersion: org.containers.bootc/v1alpha1
+kind: BootcHost
+metadata:
+  name: host
+spec:
+  image:
+    image: quay.io/fedora/fedora-coreos:stable
+    transport: registry
+    signature: !ostreeRemote "fedora"
+status:
+  booted:
+    image:
+      image:
+        image: quay.io/otherexample/otherimage:latest
+        transport: registry
+      version: 20231230.1
+      timestamp: 2023-12-30T16:10:11Z
+      imageDigest: sha256:b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c
+    incompatible: false
+    pinned: false
+    ostree:
+      checksum: 41af286dc0b172ed2f1ca934fd2278de4a1192302ffa07087cea2682e7d372e3
+      deploySerial: 0
+  rollback: null
+  isContainer: false

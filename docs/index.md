@@ -106,7 +106,7 @@ For more information, please see [install.md](install.md).
 If you have [an operating system already using ostree](https://ostreedev.github.io/ostree/#operating-systems-and-distributions-using-ostree) then you can use `bootc switch`:
 
 ```
-$ bootc switch --no-signature-verification quay.io/examplecorp/custom:latest
+$ bootc switch quay.io/examplecorp/custom:latest
 ```
 
 This will preserve existing state in `/etc` and `/var` - for example,

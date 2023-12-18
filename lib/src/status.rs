@@ -51,8 +51,12 @@ fn transport_to_string(transport: ostree_container::Transport) -> String {
 
 impl From<OstreeImageReference> for ImageReference {
     fn from(imgref: OstreeImageReference) -> Self {
+        let signature = match imgref.sigverify {
+            ostree_container::SignatureSource::ContainerPolicyAllowInsecure => None,
+            v => Some(v.into()),
+        };
         Self {
-            signature: imgref.sigverify.into(),
+            signature,
             transport: transport_to_string(imgref.imgref.transport),
             image: imgref.imgref.name,
         }
@@ -61,8 +65,12 @@ impl From<OstreeImageReference> for ImageReference {
 
 impl From<ImageReference> for OstreeImageReference {
     fn from(img: ImageReference) -> Self {
+        let sigverify = match img.signature {
+            Some(v) => v.into(),
+            None => ostree_container::SignatureSource::ContainerPolicyAllowInsecure,
+        };
         Self {
-            sigverify: img.signature.into(),
+            sigverify,
             imgref: ostree_container::ImageReference {
                 /// SAFETY: We validated the schema in kube-rs
                 transport: img.transport.as_str().try_into().unwrap(),
@@ -283,4 +291,28 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[test]
+fn test_convert_signatures() {
+    use std::str::FromStr;
+    let ir_unverified = &OstreeImageReference::from_str(
+        "ostree-unverified-registry:quay.io/someexample/foo:latest",
+    )
+    .unwrap();
+    let ir_ostree = &OstreeImageReference::from_str(
+        "ostree-remote-registry:fedora:quay.io/fedora/fedora-coreos:stable",
+    )
+    .unwrap();
+
+    let ir = ImageReference::from(ir_unverified.clone());
+    assert_eq!(ir.image, "quay.io/someexample/foo:latest");
+    assert_eq!(ir.signature, None);
+
+    let ir = ImageReference::from(ir_ostree.clone());
+    assert_eq!(ir.image, "quay.io/fedora/fedora-coreos:stable");
+    assert_eq!(
+        ir.signature,
+        Some(ImageSignature::OstreeRemote("fedora".into()))
+    );
 }
