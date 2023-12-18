@@ -1,9 +1,10 @@
 //! Handling of system restarts/reboot
 
 use std::io::Write;
-use std::process::Command;
 
 use fn_error_context::context;
+
+use crate::task::Task;
 
 /// Initiate a system reboot.
 /// This function will only return in case of error.
@@ -12,10 +13,7 @@ pub(crate) fn reboot() -> anyhow::Result<()> {
     // Flush output streams
     let _ = std::io::stdout().flush();
     let _ = std::io::stderr().flush();
-    let st = Command::new("reboot").status()?;
-    if !st.success() {
-        anyhow::bail!("Failed to reboot: {st:?}");
-    }
+    Task::new("Rebooting system", "reboot").run()?;
     tracing::debug!("Initiated reboot, sleeping forever...");
     loop {
         std::thread::park();

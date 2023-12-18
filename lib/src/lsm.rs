@@ -12,7 +12,6 @@ use gvariant::{aligned_bytes::TryAsAligned, Marker, Structure};
 #[cfg(feature = "install")]
 use ostree_ext::ostree;
 
-#[cfg(feature = "install")]
 use crate::task::Task;
 
 /// The mount path for selinux
@@ -139,14 +138,11 @@ pub(crate) fn selinux_set_permissive(permissive: bool) -> Result<()> {
 
 fn selinux_label_for_path(target: &str) -> Result<String> {
     // TODO: detect case where SELinux isn't enabled
-    let o = Command::new("matchpathcon").args(["-n", target]).output()?;
-    let st = o.status;
-    if !st.success() {
-        anyhow::bail!("matchpathcon failed: {st:?}");
-    }
-    let label = String::from_utf8(o.stdout)?;
-    let label = label.trim();
-    Ok(label.to_string())
+    let label = Task::new_quiet("matchpathcon")
+        .args(["-n", target])
+        .read()?;
+    // TODO: trim in place instead of reallocating
+    Ok(label.trim().to_string())
 }
 
 // Write filesystem labels (currently just for SELinux)
@@ -154,15 +150,11 @@ fn selinux_label_for_path(target: &str) -> Result<String> {
 pub(crate) fn lsm_label(target: &Utf8Path, as_path: &Utf8Path, recurse: bool) -> Result<()> {
     let label = selinux_label_for_path(as_path.as_str())?;
     tracing::debug!("Label for {target} is {label}");
-    let st = Command::new("chcon")
+    Task::new_quiet("chcon")
         .arg("-h")
         .args(recurse.then_some("-R"))
         .args(["-h", label.as_str(), target.as_str()])
-        .status()?;
-    if !st.success() {
-        anyhow::bail!("Failed to invoke chcon: {st:?}");
-    }
-    Ok(())
+        .run()
 }
 
 #[cfg(feature = "install")]

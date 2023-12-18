@@ -19,6 +19,7 @@ mod lsm;
 mod reboot;
 mod reexec;
 mod status;
+mod task;
 mod utils;
 
 #[cfg(feature = "internal-testing-api")]
@@ -38,8 +39,6 @@ pub(crate) mod mount;
 #[cfg(feature = "install")]
 mod podman;
 pub mod spec;
-#[cfg(feature = "install")]
-mod task;
 
 #[cfg(feature = "docgen")]
 mod docgen;

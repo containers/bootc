@@ -21,6 +21,13 @@ impl Task {
         Self::new_cmd(description, Command::new(exe.as_ref()))
     }
 
+    /// This API can be used in place of Command::new() generally and just adds error
+    /// checking on top.
+    pub(crate) fn new_quiet(exe: impl AsRef<str>) -> Self {
+        let exe = exe.as_ref();
+        Self::new(exe, exe).quiet()
+    }
+
     /// Set the working directory for this task.
     pub(crate) fn cwd(mut self, dir: &Dir) -> Result<Self> {
         self.cmd.cwd_dir(dir.try_clone()?);
@@ -52,6 +59,11 @@ impl Task {
 
     pub(crate) fn args<S: AsRef<OsStr>>(mut self, args: impl IntoIterator<Item = S>) -> Self {
         self.cmd.args(args);
+        self
+    }
+
+    pub(crate) fn arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
+        self.cmd.args([arg]);
         self
     }
 
