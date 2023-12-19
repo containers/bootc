@@ -6,7 +6,7 @@ bootc-install-to-disk - Install to the target block device
 
 **bootc-install-to-disk** \[**\--wipe**\] \[**\--block-setup**\]
 \[**\--filesystem**\] \[**\--root-size**\] \[**\--target-transport**\]
-\[**\--target-imgref**\] \[**\--target-no-signature-verification**\]
+\[**\--target-imgref**\] \[**\--enforce-container-sigpolicy**\]
 \[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
 \[**\--disable-selinux**\] \[**\--karg**\] \[**\--generic-image**\]
 \[**-h**\|**\--help**\] \[**-V**\|**\--version**\] \<*DEVICE*\>
@@ -53,9 +53,12 @@ By default, all remaining space on the disk will be used.
 
 :   Specify the image to fetch for subsequent updates
 
-**\--target-no-signature-verification**
+**\--enforce-container-sigpolicy**
 
-:   Explicitly opt-out of requiring any form of signature verification
+:   This is the inverse of the previous
+    \`\--target-no-signature-verification\` (which is now a no-op).
+    Enabling this option enforces that \`/etc/containers/policy.json\`
+    includes a default policy which requires signatures
 
 **\--target-ostree-remote**=*TARGET_OSTREE_REMOTE*
 
@@ -68,11 +71,9 @@ By default, all remaining space on the disk will be used.
     suppresses the check; use this when you know the issues it might
     find are addressed.
 
-Two main reasons this might fail:
-
-\- Forgetting \`\--target-no-signature-verification\` if needed - Using
-a registry which requires authentication, but not embedding the pull
-secret in the image.
+A common reason this may fail is when one is using an image which
+requires registry authentication, but not embedding the pull secret in
+the image so that updates can be fetched by the installed OS \"day 2\".
 
 **\--disable-selinux**
 

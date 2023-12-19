@@ -1,6 +1,6 @@
 # NAME
 
-bootc-upgrade - Look for updates to the booted container image
+bootc-upgrade - Download and queue an updated container image to apply
 
 # SYNOPSIS
 
@@ -10,7 +10,20 @@ bootc-upgrade - Look for updates to the booted container image
 
 # DESCRIPTION
 
-Look for updates to the booted container image
+Download and queue an updated container image to apply.
+
+This does not affect the running system; updates operate in an \"A/B\"
+style by default.
+
+A queued update is visible as \`staged\` in \`bootc status\`.
+
+Currently by default, the update will be applied at shutdown time via
+\`ostree-finalize-staged.service\`. There is also an explicit \`bootc
+upgrade \--apply\` verb which will automatically take action (rebooting)
+if the system has changed.
+
+However, in the future this is likely to change such that reboots
+outside of a \`bootc upgrade \--apply\` do \*not\* upgrade.
 
 # OPTIONS
 

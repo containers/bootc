@@ -9,13 +9,17 @@ bootc-install - Install the running container to a target
 
 # DESCRIPTION
 
-Install the running container to a target
+Install the running container to a target.
+
+This has two main sub-commands \`to-disk\` (which expects an empty block
+device) and \`to-filesystem\` which supports installation to an already
+extant filesystem.
 
 # OPTIONS
 
 **-h**, **\--help**
 
-:   Print help
+:   Print help (see a summary with -h)
 
 **-V**, **\--version**
 

@@ -13,7 +13,9 @@ Display status
 
 This will output a YAML-formatted object using a schema intended to
 match a Kubernetes resource that describes the state of the booted
-container. The exact API format is not currently declared stable.
+system.
+
+The exact API format is not currently declared stable.
 
 # OPTIONS
 
