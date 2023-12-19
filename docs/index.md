@@ -99,7 +99,7 @@ installer that can set a system up to boot from it.  Crucially, if you create a
 *derivative* container image from a stock OS container image, it also automatically
 supports `bootc install`.
 
-For more information, please see [install.md](install.md).
+For more information, please see [install.md](install.md) as well as the [../manpages-md/bootc-install.md] manpage.
 
 #### Switching from an existing ostree-based system
 
