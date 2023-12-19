@@ -40,8 +40,8 @@ jobs:
         run: cargo test -- --nocapture --quiet
       - name: Manpage generation
         run: mkdir -p target/man && cargo run --features=docgen -- man --directory target/man
-      - name: Clippy (non-gating)
-        run: cargo clippy
+      - name: Clippy (gate on correctness and suspicous)
+        run: cargo clippy -- -D clippy::correctness -D clippy::suspicious
   build-fedora:
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
