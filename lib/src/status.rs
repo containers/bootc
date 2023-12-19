@@ -72,7 +72,7 @@ impl From<ImageReference> for OstreeImageReference {
         Self {
             sigverify,
             imgref: ostree_container::ImageReference {
-                /// SAFETY: We validated the schema in kube-rs
+                // SAFETY: We validated the schema in kube-rs
                 transport: img.transport.as_str().try_into().unwrap(),
                 name: img.image,
             },
