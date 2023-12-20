@@ -104,13 +104,24 @@ pub(crate) fn impl_run_container() -> Result<()> {
     let sh = Shell::new()?;
     let host: Host = serde_yaml::from_str(&cmd!(sh, "bootc status").read()?)?;
     assert!(host.status.is_container);
+    println!("ok status");
+
     for c in ["upgrade", "update"] {
         let o = Command::new("bootc").arg(c).output()?;
         let st = o.status;
         assert!(!st.success());
         let stderr = String::from_utf8(o.stderr)?;
-        assert!(stderr.contains("this command requires a booted host system"));
+        assert!(stderr.contains("This command requires full root privileges"));
     }
+    println!("ok upgrade/update are errors in container");
+
+    let o = Command::new("runuser")
+        .args(["-u", "bin", "bootc", "upgrade"])
+        .output()?;
+    assert!(!o.status.success());
+    let stderr = String::from_utf8(o.stderr)?;
+    assert!(stderr.contains("requires root privileges"));
+
     println!("ok container integration testing");
     Ok(())
 }

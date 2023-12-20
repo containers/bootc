@@ -261,6 +261,7 @@ pub(crate) fn get_status(
 }
 
 /// Implementation of the `bootc status` CLI command.
+#[context("Status")]
 pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     let host = if ostree_ext::container_utils::is_ostree_container()? {
         let status = HostStatus {
@@ -271,6 +272,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
         r.status = status;
         r
     } else {
+        crate::cli::require_root()?;
         let sysroot = super::cli::get_locked_sysroot().await?;
         let booted_deployment = sysroot.booted_deployment();
         let (_deployments, host) = get_status(&sysroot, booted_deployment.as_ref())?;

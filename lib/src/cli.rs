@@ -245,6 +245,7 @@ pub(crate) fn require_root() -> Result<()> {
 /// A few process changes that need to be made for writing.
 #[context("Preparing for write")]
 pub(crate) async fn prepare_for_write() -> Result<()> {
+    crate::cli::require_root()?;
     if ostree_ext::container_utils::is_ostree_container()? {
         anyhow::bail!(
             "Detected container (ostree base); this command requires a booted host system."
