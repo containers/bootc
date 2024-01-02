@@ -5,13 +5,16 @@ bootc-switch - Target a new container image reference to boot
 # SYNOPSIS
 
 **bootc-switch** \[**\--quiet**\] \[**\--transport**\]
-\[**\--no-signature-verification**\] \[**\--ostree-remote**\]
+\[**\--enforce-container-sigpolicy**\] \[**\--ostree-remote**\]
 \[**\--retain**\] \[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
 \<*TARGET*\>
 
 # DESCRIPTION
 
-Target a new container image reference to boot
+Target a new container image reference to boot.
+
+This operates in a very similar fashion to \`upgrade\`, but changes the
+container image reference instead.
 
 # OPTIONS
 
@@ -23,9 +26,13 @@ Target a new container image reference to boot
 
 :   The transport; e.g. oci, oci-archive. Defaults to \`registry\`
 
-**\--no-signature-verification**
+**\--enforce-container-sigpolicy**
 
-:   Explicitly opt-out of requiring any form of signature verification
+:   This is the inverse of the previous
+    \`\--target-no-signature-verification\` (which is now a no-op).
+
+Enabling this option enforces that \`/etc/containers/policy.json\`
+includes a default policy which requires signatures.
 
 **\--ostree-remote**=*OSTREE_REMOTE*
 
@@ -37,7 +44,7 @@ Target a new container image reference to boot
 
 **-h**, **\--help**
 
-:   Print help
+:   Print help (see a summary with -h)
 
 **-V**, **\--version**
 

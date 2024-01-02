@@ -29,7 +29,7 @@ Changes in \`/etc\` and \`/var\` persist.
 
 bootc-upgrade(8)
 
-:   Look for updates to the booted container image
+:   Download and queue an updated container image to apply
 
 bootc-switch(8)
 
@@ -37,7 +37,7 @@ bootc-switch(8)
 
 bootc-edit(8)
 
-:   Change host specification
+:   Apply full changes to the host specification
 
 bootc-status(8)
 

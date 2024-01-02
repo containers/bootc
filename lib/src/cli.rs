@@ -152,23 +152,49 @@ pub(crate) enum TestingOpts {
 #[clap(rename_all = "kebab-case")]
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Opt {
-    /// Look for updates to the booted container image.
+    /// Download and queue an updated container image to apply.
+    ///
+    /// This does not affect the running system; updates operate in an "A/B" style by default.
+    ///
+    /// A queued update is visible as `staged` in `bootc status`.
+    ///
+    /// Currently by default, the update will be applied at shutdown time via `ostree-finalize-staged.service`.
+    /// There is also an explicit `bootc upgrade --apply` verb which will automatically take action (rebooting)
+    /// if the system has changed.
+    ///
+    /// However, in the future this is likely to change such that reboots outside of a `bootc upgrade --apply`
+    /// do *not* upgrade.
     #[clap(alias = "update")]
     Upgrade(UpgradeOpts),
     /// Target a new container image reference to boot.
+    ///
+    /// This operates in a very similar fashion to `upgrade`, but changes the container image reference
+    /// instead.
     Switch(SwitchOpts),
-    /// Change host specification
+    /// Apply full changes to the host specification.
+    ///
+    /// This command operates very similarly to `kubectl apply`; if invoked interactively,
+    /// then the current host specification will be presented in the system default `$EDITOR`
+    /// for interactive changes.
+    ///
+    /// It is also possible to directly provide new contents via `bootc edit --filename`.
+    ///
+    /// Only changes to the `spec` section are honored.
     Edit(EditOpts),
     /// Display status
     ///
     /// This will output a YAML-formatted object using a schema intended to match a Kubernetes resource
-    /// that describes the state of the booted container.
+    /// that describes the state of the booted system.
+    ///
     /// The exact API format is not currently declared stable.
     Status(StatusOpts),
     /// Add a transient writable overlayfs on `/usr` that will be discarded on reboot.
     #[clap(alias = "usroverlay")]
     UsrOverlay,
-    /// Install the running container to a target
+    /// Install the running container to a target.
+    ///
+    /// This has two main sub-commands `to-disk` (which expects an empty block device) and `to-filesystem`
+    /// which supports installation to an already extant filesystem.
     #[clap(subcommand)]
     #[cfg(feature = "install")]
     Install(InstallOpts),
