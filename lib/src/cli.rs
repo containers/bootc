@@ -32,6 +32,9 @@ pub(crate) struct UpgradeOpts {
     pub(crate) touch_if_changed: Option<Utf8PathBuf>,
 
     /// Check if an update is available without applying it.
+    ///
+    /// This only downloads an updated manifest and image configuration (i.e. typically kilobyte-sized metadata)
+    /// as opposed to the image layers.
     #[clap(long, conflicts_with = "apply")]
     pub(crate) check: bool,
 
