@@ -1,8 +1,9 @@
 use std::collections::VecDeque;
 
-use crate::spec::{BootEntry, Host, HostSpec, HostStatus, ImageStatus};
+use crate::spec::{BootEntry, Host, HostSpec, HostStatus, HostType, ImageStatus};
 use crate::spec::{ImageReference, ImageSignature};
 use anyhow::{Context, Result};
+use camino::Utf8Path;
 use fn_error_context::context;
 use ostree::glib;
 use ostree_container::OstreeImageReference;
@@ -11,8 +12,6 @@ use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::oci_spec;
 use ostree_ext::ostree;
 use ostree_ext::sysroot::SysrootLock;
-
-const OBJECT_NAME: &str = "host";
 
 impl From<ostree_container::SignatureSource> for ImageSignature {
     fn from(sig: ostree_container::SignatureSource) -> Self {
@@ -223,8 +222,6 @@ pub(crate) fn get_status(
         other,
     };
 
-    let is_container = ostree_ext::container_utils::is_ostree_container()?;
-
     let staged = deployments
         .staged
         .as_ref()
@@ -250,12 +247,24 @@ pub(crate) fn get_status(
             image: Some(img.image.clone()),
         })
         .unwrap_or_default();
-    let mut host = Host::new(OBJECT_NAME, spec);
+
+    let ty = if booted
+        .as_ref()
+        .map(|b| b.image.is_some())
+        .unwrap_or_default()
+    {
+        // We're only of type BootcHost if we booted via container image
+        Some(HostType::BootcHost)
+    } else {
+        None
+    };
+
+    let mut host = Host::new(spec);
     host.status = HostStatus {
         staged,
         booted,
         rollback,
-        is_container,
+        ty,
     };
     Ok((deployments, host))
 }
@@ -263,14 +272,8 @@ pub(crate) fn get_status(
 /// Implementation of the `bootc status` CLI command.
 #[context("Status")]
 pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
-    let host = if ostree_ext::container_utils::is_ostree_container()? {
-        let status = HostStatus {
-            is_container: true,
-            ..Default::default()
-        };
-        let mut r = Host::new(OBJECT_NAME, HostSpec { image: None });
-        r.status = status;
-        r
+    let host = if !Utf8Path::new("/run/ostree-booted").try_exists()? {
+        Default::default()
     } else {
         crate::cli::require_root()?;
         let sysroot = super::cli::get_locked_sysroot().await?;

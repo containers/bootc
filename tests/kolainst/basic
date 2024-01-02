@@ -19,6 +19,13 @@ case "${AUTOPKGTEST_REBOOT_MARK:-}" in
     echo "booted into $image"
     echo "ok status test"
 
+    host_ty=$(jq -r '.status.type' < status.json)
+    test "${host_ty}" = "bootcHost"
+    # Now fake things out with an empty /run
+    unshare -m /bin/sh -c 'mount -t tmpfs tmpfs /run; bootc status --json > status-no-run.json'
+    host_ty_norun=$(jq -r '.status.type' < status-no-run.json)
+    test "${host_ty_norun}" = "null"
+
     test "null" = $(jq '.status.staged' < status.json)
     # Should be a no-op
     bootc update

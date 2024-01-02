@@ -6,6 +6,8 @@ use fn_error_context::context;
 use rustix::fd::AsFd;
 use xshell::{cmd, Shell};
 
+use crate::spec::HostType;
+
 use super::cli::TestingOpts;
 use super::spec::Host;
 
@@ -100,10 +102,9 @@ pub(crate) fn impl_run_host() -> Result<()> {
 
 #[context("Container tests")]
 pub(crate) fn impl_run_container() -> Result<()> {
-    assert!(ostree_ext::container_utils::is_ostree_container()?);
     let sh = Shell::new()?;
     let host: Host = serde_yaml::from_str(&cmd!(sh, "bootc status").read()?)?;
-    assert!(host.status.is_container);
+    assert!(matches!(host.status.ty, None));
     println!("ok status");
 
     for c in ["upgrade", "update"] {

@@ -7,6 +7,8 @@ use crate::k8sapitypes;
 
 const API_VERSION: &str = "org.containers.bootc/v1alpha1";
 const KIND: &str = "BootcHost";
+/// The default object name we use; there's only one.
+pub(crate) const OBJECT_NAME: &str = "host";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -94,6 +96,16 @@ pub struct BootEntry {
     pub ostree: Option<BootEntryOstree>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+/// The detected type of running system.  Note that this is not exhaustive
+/// and new variants may be added in the future.
+pub enum HostType {
+    /// The current system is deployed in a bootc compatible way.
+    BootcHost,
+}
+
 /// The status of the host system
 #[derive(Debug, Clone, Serialize, Default, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -105,15 +117,16 @@ pub struct HostStatus {
     /// The previously booted image
     pub rollback: Option<BootEntry>,
 
-    /// Whether or not the current system state is an ostree-based container
-    pub is_container: bool,
+    /// The detected type of system
+    #[serde(rename = "type")]
+    pub ty: Option<HostType>,
 }
 
 impl Host {
     /// Create a new host
-    pub fn new(name: &str, spec: HostSpec) -> Self {
+    pub fn new(spec: HostSpec) -> Self {
         let metadata = k8sapitypes::ObjectMeta {
-            name: Some(name.to_owned()),
+            name: Some(OBJECT_NAME.to_owned()),
             ..Default::default()
         };
         Self {
@@ -125,6 +138,12 @@ impl Host {
             spec,
             status: Default::default(),
         }
+    }
+}
+
+impl Default for Host {
+    fn default() -> Self {
+        Self::new(Default::default())
     }
 }
 
