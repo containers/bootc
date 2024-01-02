@@ -88,6 +88,8 @@ pub struct BootEntryOstree {
 pub struct BootEntry {
     /// The image reference
     pub image: Option<ImageStatus>,
+    /// The last fetched cached update metadata
+    pub cached_update: Option<ImageStatus>,
     /// Whether this boot entry is not compatible (has origin changes bootc does not understand)
     pub incompatible: bool,
     /// Whether this entry will be subject to garbage collection
