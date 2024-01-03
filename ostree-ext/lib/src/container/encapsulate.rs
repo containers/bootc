@@ -24,31 +24,9 @@ use tracing::instrument;
 
 /// The label which may be used in addition to the standard OCI label.
 pub const LEGACY_VERSION_LABEL: &str = "version";
-
-// semver-break: Delete this and only support v1
-/// Type of container image generated
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum ExportLayout {
-    /// Actually the second layout now, but the true first one can be parsed as either
-    V0,
-    /// The hopefully final (optionally chunked) container image layout
-    V1,
-}
-
-impl Default for ExportLayout {
-    fn default() -> Self {
-        Self::V1
-    }
-}
-
-impl ExportLayout {
-    pub(crate) fn label(&self) -> &'static str {
-        match self {
-            ExportLayout::V0 => "ostree.diffid",
-            ExportLayout::V1 => "ostree.final-diffid",
-        }
-    }
-}
+/// The label which indicates where the ostree layers stop, and the
+/// derived ones start.
+pub const DIFFID_LABEL: &str = "ostree.final-diffid";
 
 /// Annotation injected into the layer to say that this is an ostree commit.
 /// However, because this gets lost when converted to D2S2 https://docs.docker.com/registry/spec/manifest-v2-2/
@@ -172,10 +150,7 @@ fn export_chunked(
 
     // This label (mentioned above) points to the last layer that is part of
     // the ostree commit.
-    labels.insert(
-        ExportLayout::V1.label().into(),
-        format!("sha256:{}", last_digest),
-    );
+    labels.insert(DIFFID_LABEL.into(), format!("sha256:{}", last_digest));
     Ok(())
 }
 
