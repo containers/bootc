@@ -778,40 +778,36 @@ async fn container_history(repo: &ostree::Repo, imgref: &ImageReference) -> Resu
     let width = terminal_size::terminal_size()
         .map(|x| x.0)
         .unwrap_or(terminal_size::Width(80));
-    if let Some(config) = img.configuration.as_ref() {
-        {
-            let mut remaining = width;
-            for (name, width) in columns.iter() {
-                print_column(name, *width, &mut remaining);
-            }
-            println!();
+    {
+        let mut remaining = width;
+        for (name, width) in columns.iter() {
+            print_column(name, *width, &mut remaining);
         }
-
-        let mut history = config.history().iter();
-        let layers = img.manifest.layers().iter();
-        for layer in layers {
-            let histent = history.next();
-            let created_by = histent
-                .and_then(|s| s.created_by().as_deref())
-                .unwrap_or("");
-
-            let mut remaining = width;
-
-            let digest = layer.digest().as_str();
-            // Verify it's OK to slice, this should all be ASCII
-            assert!(digest.chars().all(|c| c.is_ascii()));
-            let digest_max = columns[0].1;
-            let digest = &digest[0..digest_max as usize];
-            print_column(digest, digest_max, &mut remaining);
-            let size = glib::format_size(layer.size() as u64);
-            print_column(size.as_str(), columns[1].1, &mut remaining);
-            print_column(created_by, columns[2].1, &mut remaining);
-            println!();
-        }
-        Ok(())
-    } else {
-        anyhow::bail!("v0 image does not have fetched configuration");
+        println!();
     }
+
+    let mut history = img.configuration.history().iter();
+    let layers = img.manifest.layers().iter();
+    for layer in layers {
+        let histent = history.next();
+        let created_by = histent
+            .and_then(|s| s.created_by().as_deref())
+            .unwrap_or("");
+
+        let mut remaining = width;
+
+        let digest = layer.digest().as_str();
+        // Verify it's OK to slice, this should all be ASCII
+        assert!(digest.chars().all(|c| c.is_ascii()));
+        let digest_max = columns[0].1;
+        let digest = &digest[0..digest_max as usize];
+        print_column(digest, digest_max, &mut remaining);
+        let size = glib::format_size(layer.size() as u64);
+        print_column(size.as_str(), columns[1].1, &mut remaining);
+        print_column(created_by, columns[2].1, &mut remaining);
+        println!();
+    }
+    Ok(())
 }
 
 /// Add IMA signatures to an ostree commit, generating a new commit.
@@ -974,10 +970,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     let stdout = std::io::stdout().lock();
                     let mut stdout = std::io::BufWriter::new(stdout);
                     if config {
-                        let config = image
-                            .configuration
-                            .ok_or_else(|| anyhow::anyhow!("Missing configuration"))?;
-                        serde_json::to_writer(&mut stdout, &config)?;
+                        serde_json::to_writer(&mut stdout, &image.configuration)?;
                     } else {
                         serde_json::to_writer(&mut stdout, &image.manifest)?;
                     }
