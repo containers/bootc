@@ -465,9 +465,9 @@ fn timestamp_of_manifest_or_config(
 
 impl ImageImporter {
     /// The metadata key used in ostree commit metadata to serialize
-    const CACHED_KEY_MANIFEST_DIGEST: &str = "ostree-ext.cached.manifest-digest";
-    const CACHED_KEY_MANIFEST: &str = "ostree-ext.cached.manifest";
-    const CACHED_KEY_CONFIG: &str = "ostree-ext.cached.config";
+    const CACHED_KEY_MANIFEST_DIGEST: &'static str = "ostree-ext.cached.manifest-digest";
+    const CACHED_KEY_MANIFEST: &'static str = "ostree-ext.cached.manifest";
+    const CACHED_KEY_CONFIG: &'static str = "ostree-ext.cached.config";
 
     /// Create a new importer.
     #[context("Creating importer")]
