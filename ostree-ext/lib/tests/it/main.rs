@@ -709,7 +709,7 @@ async fn test_container_chunked() -> Result<()> {
 
     let mut imp =
         store::ImageImporter::new(fixture.destrepo(), &imgref, Default::default()).await?;
-    assert!(store::query_image_ref(fixture.destrepo(), &imgref.imgref)
+    assert!(store::query_image(fixture.destrepo(), &imgref.imgref)
         .unwrap()
         .is_none());
     let prep = match imp.prepare().await.context("Init prep derived")? {
@@ -784,7 +784,7 @@ r usr/bin/bash bash-v0
     };
     // Verify we also serialized the cached update
     {
-        let cached = store::query_image_ref(fixture.destrepo(), &imgref.imgref)
+        let cached = store::query_image(fixture.destrepo(), &imgref.imgref)
             .unwrap()
             .unwrap();
         assert_eq!(cached.version(), Some("42.0"));
