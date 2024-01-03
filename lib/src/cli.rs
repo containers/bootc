@@ -1054,7 +1054,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     let src_repo = parse_repo(&src_repo)?;
                     let dest_repo = parse_repo(&dest_repo)?;
                     let imgref = &imgref.imgref;
-                    crate::container::store::copy_as(&src_repo, imgref, &dest_repo, imgref).await
+                    crate::container::store::copy(&src_repo, imgref, &dest_repo, imgref).await
                 }
                 ContainerImageOpts::ReplaceDetachedMetadata {
                     src,

@@ -1195,7 +1195,7 @@ fn manifest_for_image(repo: &ostree::Repo, imgref: &ImageReference) -> Result<Im
 /// Copy a downloaded image from one repository to another, while also
 /// optionally changing the image reference type.
 #[context("Copying image")]
-pub async fn copy_as(
+pub async fn copy(
     src_repo: &ostree::Repo,
     src_imgref: &ImageReference,
     dest_repo: &ostree::Repo,

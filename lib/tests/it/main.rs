@@ -1185,7 +1185,7 @@ async fn test_container_write_derive() -> Result<()> {
         gio::Cancellable::NONE,
     )?;
     #[allow(deprecated)]
-    store::copy_as(
+    store::copy(
         fixture.destrepo(),
         &derived_ref.imgref,
         &destrepo2,
@@ -1204,7 +1204,7 @@ async fn test_container_write_derive() -> Result<()> {
         transport: Transport::Registry,
         name: target_name.to_string(),
     };
-    store::copy_as(
+    store::copy(
         fixture.destrepo(),
         &derived_ref.imgref,
         &destrepo2,
