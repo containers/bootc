@@ -1,5 +1,5 @@
 use super::ImageReference;
-use crate::container::{ocidir, skopeo, ExportLayout};
+use crate::container::{ocidir, skopeo, DIFFID_LABEL};
 use crate::container::{store as container_store, Transport};
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
@@ -106,7 +106,7 @@ pub async fn update_detached_metadata(
         // Nothing to do except in the special case where there's somehow only one
         // chunked layer.
         if manifest.layers().len() == 1 {
-            labels.insert(ExportLayout::V1.label().into(), out_layer_diffid);
+            labels.insert(DIFFID_LABEL.into(), out_layer_diffid);
         }
         config.set_config(Some(ctrcfg));
 
