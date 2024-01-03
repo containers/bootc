@@ -249,7 +249,7 @@ fn build_oci(
         .unwrap_or_else(|| crate::chunking::Chunking::new(repo, commit))?;
 
     if let Some(version) = commit_meta.lookup::<String>("version")? {
-        if !opts.no_legacy_version_label {
+        if opts.legacy_version_label {
             labels.insert(LEGACY_VERSION_LABEL.into(), version.clone());
         }
         labels.insert(oci_image::ANNOTATION_VERSION.into(), version);
@@ -378,9 +378,8 @@ pub struct ExportOpts<'m, 'o> {
     pub max_layers: Option<NonZeroU32>,
     /// Path to Docker-formatted authentication file.
     pub authfile: Option<std::path::PathBuf>,
-    // TODO semver-break: remove this
-    /// Use only the standard OCI version label
-    pub no_legacy_version_label: bool,
+    /// Also include the legacy `version` label.
+    pub legacy_version_label: bool,
     /// Image runtime configuration that will be used as a base
     pub container_config: Option<oci_image::Config>,
     /// A reference to the metadata for a previous build; used to optimize
