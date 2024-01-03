@@ -772,7 +772,7 @@ fn print_column(s: &str, clen: u16, remaining: &mut terminal_size::Width) {
 
 /// Output the container image history
 async fn container_history(repo: &ostree::Repo, imgref: &ImageReference) -> Result<()> {
-    let img = crate::container::store::query_image_ref(repo, imgref)?
+    let img = crate::container::store::query_image(repo, imgref)?
         .ok_or_else(|| anyhow::anyhow!("No such image: {}", imgref))?;
     let columns = [("ID", 20u16), ("SIZE", 10), ("CREATED BY", 0)];
     let width = terminal_size::terminal_size()
@@ -969,7 +969,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     config,
                 } => {
                     let repo = parse_repo(&repo)?;
-                    let image = crate::container::store::query_image_ref(&repo, &imgref)?
+                    let image = crate::container::store::query_image(&repo, &imgref)?
                         .ok_or_else(|| anyhow::anyhow!("No such image"))?;
                     let stdout = std::io::stdout().lock();
                     let mut stdout = std::io::BufWriter::new(stdout);
