@@ -113,11 +113,11 @@ impl TryFrom<&str> for Transport {
 }
 
 impl Transport {
-    const OCI_STR: &str = "oci";
-    const OCI_ARCHIVE_STR: &str = "oci-archive";
-    const CONTAINERS_STORAGE_STR: &str = "containers-storage";
-    const LOCAL_DIRECTORY_STR: &str = "dir";
-    const REGISTRY_STR: &str = "registry";
+    const OCI_STR: &'static str = "oci";
+    const OCI_ARCHIVE_STR: &'static str = "oci-archive";
+    const CONTAINERS_STORAGE_STR: &'static str = "containers-storage";
+    const LOCAL_DIRECTORY_STR: &'static str = "dir";
+    const REGISTRY_STR: &'static str = "registry";
 
     /// Retrieve an identifier that can then be re-parsed from [`Transport::try_from::<&str>`].
     pub fn serializable_name(&self) -> &'static str {
