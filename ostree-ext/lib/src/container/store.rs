@@ -1192,21 +1192,6 @@ fn manifest_for_image(repo: &ostree::Repo, imgref: &ImageReference) -> Result<Im
     Ok(manifest_data_from_commitmeta(commit_meta)?.0)
 }
 
-/// Copy a downloaded image from one repository to another.
-#[context("Copying image")]
-#[deprecated = "Use copy_as instead"]
-// semver-break: Delete this and rename copy_as -> copy
-pub async fn copy(
-    src_repo: &ostree::Repo,
-    dest_repo: &ostree::Repo,
-    imgref: &OstreeImageReference,
-) -> Result<()> {
-    // For historical reasons, this function takes an ostree refernece
-    // as input, but the storage only operaties on image references.
-    let imgref = &imgref.imgref;
-    copy_as(src_repo, imgref, dest_repo, imgref).await
-}
-
 /// Copy a downloaded image from one repository to another, while also
 /// optionally changing the image reference type.
 #[context("Copying image")]
