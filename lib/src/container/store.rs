@@ -114,8 +114,6 @@ pub struct LayeredImageState {
     pub base_commit: String,
     /// The merge commit unions all layers
     pub merge_commit: String,
-    /// Whether or not the image has multiple layers.
-    pub is_layered: bool,
     /// The digest of the original manifest
     pub manifest_digest: String,
     /// The image manfiest
@@ -127,18 +125,11 @@ pub struct LayeredImageState {
 }
 
 impl LayeredImageState {
-    /// Return the default ostree commit digest for this image.
+    /// Return the merged ostree commit for this image.
     ///
-    /// If this is a non-layered image, the merge commit will be
-    /// ignored, and the base commit returned.
-    ///
-    /// Otherwise, this returns the merge commit.
+    /// This is not the same as the underlying base ostree commit.
     pub fn get_commit(&self) -> &str {
-        if self.is_layered {
-            self.merge_commit.as_str()
-        } else {
-            self.base_commit.as_str()
-        }
+        self.merge_commit.as_str()
     }
 
     /// Retrieve the container image version.
@@ -1146,8 +1137,6 @@ pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<Layer
     let base_commit = base_layer
         .commit
         .ok_or_else(|| anyhow!("Missing base image ref {ostree_ref}"))?;
-    // If there are more layers after the base, then we're layered.
-    let is_layered = layers.count() > 0;
 
     let detached_commitmeta =
         repo.read_commit_detached_metadata(&merge_commit, gio::Cancellable::NONE)?;
@@ -1162,7 +1151,6 @@ pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<Layer
     let state = Box::new(LayeredImageState {
         base_commit,
         merge_commit,
-        is_layered,
         manifest_digest,
         manifest,
         configuration,
