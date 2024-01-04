@@ -191,7 +191,7 @@ pub fn analyze_for_repair(sysroot: &SysrootLock, verbose: bool) -> Result<Repair
     let mut booted_is_likely_corrupted = false;
     let mut staged_is_likely_corrupted = false;
     for imgref in all_images {
-        if let Some(state) = container_store::query_image_ref(repo, &imgref)? {
+        if let Some(state) = container_store::query_image(repo, &imgref)? {
             if !container_store::verify_container_image(
                 sysroot,
                 &imgref,
