@@ -118,8 +118,8 @@ pub struct LayeredImageState {
     pub manifest_digest: String,
     /// The image manfiest
     pub manifest: ImageManifest,
-    /// The image configuration; for v0 images, may not be available.
-    pub configuration: Option<ImageConfiguration>,
+    /// The image configuration
+    pub configuration: ImageConfiguration,
     /// Metadata for (cached, previously fetched) updates to the image, if any.
     pub cached_update: Option<CachedImageUpdate>,
 }
@@ -134,9 +134,7 @@ impl LayeredImageState {
 
     /// Retrieve the container image version.
     pub fn version(&self) -> Option<&str> {
-        self.configuration
-            .as_ref()
-            .and_then(super::version_for_config)
+        super::version_for_config(&self.configuration)
     }
 }
 
@@ -319,14 +317,19 @@ fn manifest_data_from_commitmeta(
     Ok((r, digest))
 }
 
-fn image_config_from_commitmeta(
-    commit_meta: &glib::VariantDict,
-) -> Result<Option<ImageConfiguration>> {
-    commit_meta
+fn image_config_from_commitmeta(commit_meta: &glib::VariantDict) -> Result<ImageConfiguration> {
+    let config = if let Some(config) = commit_meta
         .lookup::<String>(META_CONFIG)?
         .filter(|v| v != "null") // Format v0 apparently old versions injected `null` here sadly...
         .map(|v| serde_json::from_str(&v).map_err(anyhow::Error::msg))
-        .transpose()
+        .transpose()?
+    {
+        config
+    } else {
+        tracing::debug!("No image configuration found");
+        Default::default()
+    };
+    Ok(config)
 }
 
 /// Return the original digest of the manifest stored in the commit metadata.
@@ -1519,13 +1522,8 @@ pub(crate) fn verify_container_image(
         .expect("downcast");
     merge_commit_root.ensure_resolved()?;
 
-    // This shouldn't happen anymore
-    let config = state
-        .configuration
-        .as_ref()
-        .ok_or_else(|| anyhow!("Missing configuration for image"))?;
     let (commit_layer, _component_layers, remaining_layers) =
-        parse_manifest_layout(&state.manifest, config)?;
+        parse_manifest_layout(&state.manifest, &state.configuration)?;
 
     let mut comparison_state = CompareState::default();
 
