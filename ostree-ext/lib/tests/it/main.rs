@@ -1185,9 +1185,14 @@ async fn test_container_write_derive() -> Result<()> {
         gio::Cancellable::NONE,
     )?;
     #[allow(deprecated)]
-    store::copy(fixture.destrepo(), &destrepo2, &derived_ref)
-        .await
-        .context("Copying")?;
+    store::copy(
+        fixture.destrepo(),
+        &derived_ref.imgref,
+        &destrepo2,
+        &derived_ref.imgref,
+    )
+    .await
+    .context("Copying")?;
 
     let images = store::list_images(&destrepo2)?;
     assert_eq!(images.len(), 1);
@@ -1199,7 +1204,7 @@ async fn test_container_write_derive() -> Result<()> {
         transport: Transport::Registry,
         name: target_name.to_string(),
     };
-    store::copy_as(
+    store::copy(
         fixture.destrepo(),
         &derived_ref.imgref,
         &destrepo2,
