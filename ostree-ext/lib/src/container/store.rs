@@ -643,7 +643,7 @@ impl ImageImporter {
         // Query for previous stored state
 
         let (previous_state, previous_imageid) =
-            if let Some(previous_state) = try_query_image_ref(&self.repo, &self.imgref.imgref)? {
+            if let Some(previous_state) = try_query_image(&self.repo, &self.imgref.imgref)? {
                 // If the manifest digests match, we're done.
                 if previous_state.manifest_digest == manifest_digest {
                     return Ok(PrepareResult::AlreadyPresent(previous_state));
@@ -1045,7 +1045,7 @@ pub fn list_images(repo: &ostree::Repo) -> Result<Vec<String>> {
 
 /// Attempt to query metadata for a pulled image; if it is corrupted,
 /// the error is printed to stderr and None is returned.
-fn try_query_image_ref(
+fn try_query_image(
     repo: &ostree::Repo,
     imgref: &ImageReference,
 ) -> Result<Option<Box<LayeredImageState>>> {
@@ -1065,7 +1065,7 @@ fn try_query_image_ref(
 
 /// Query metadata for a pulled image.
 #[context("Querying image {imgref}")]
-pub fn query_image_ref(
+pub fn query_image(
     repo: &ostree::Repo,
     imgref: &ImageReference,
 ) -> Result<Option<Box<LayeredImageState>>> {
@@ -1158,18 +1158,6 @@ pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<Layer
     });
     tracing::debug!("Wrote merge commit {}", state.merge_commit);
     Ok(state)
-}
-
-/// Query metadata for a pulled image.
-///
-/// This is a thin wrapper for [`query_image_ref`] and should
-/// be considered deprecated.
-// semver-break: Delete this and rename query_image_ref -> query_image
-pub fn query_image(
-    repo: &ostree::Repo,
-    imgref: &OstreeImageReference,
-) -> Result<Option<Box<LayeredImageState>>> {
-    query_image_ref(repo, &imgref.imgref)
 }
 
 fn manifest_for_image(repo: &ostree::Repo, imgref: &ImageReference) -> Result<ImageManifest> {
