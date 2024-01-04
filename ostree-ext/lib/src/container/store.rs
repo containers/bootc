@@ -344,7 +344,6 @@ pub fn manifest_digest_from_commit(commit: &glib::Variant) -> Result<String> {
 /// we require a 1-to-1 mapping between the two up until the ostree level.
 /// For a bit more information on this, see https://github.com/opencontainers/image-spec/blob/main/config.md
 fn layer_from_diffid<'a>(
-    layout: ExportLayout,
     manifest: &'a ImageManifest,
     config: &ImageConfiguration,
     diffid: &str,
@@ -354,7 +353,7 @@ fn layer_from_diffid<'a>(
         .diff_ids()
         .iter()
         .position(|x| x.as_str() == diffid)
-        .ok_or_else(|| anyhow!("Missing {} {}", layout.label(), diffid))?;
+        .ok_or_else(|| anyhow!("Missing {} {}", DIFFID_LABEL, diffid))?;
     manifest.layers().get(idx).ok_or_else(|| {
         anyhow!(
             "diffid position {} exceeds layer count {}",
@@ -375,56 +374,36 @@ pub(crate) fn parse_manifest_layout<'a>(
         .layers()
         .get(0)
         .ok_or_else(|| anyhow!("No layers in manifest"))?;
-    let info = config_labels.and_then(|labels| {
-        labels
-            .get(ExportLayout::V1.label())
-            .map(|v| (ExportLayout::V1, v))
-            .or_else(|| {
-                labels
-                    .get(ExportLayout::V0.label())
-                    .map(|v| (ExportLayout::V0, v))
-            })
-    });
+    let target_diffid = config_labels
+        .and_then(|labels| labels.get(DIFFID_LABEL))
+        .ok_or_else(|| {
+            anyhow!(
+                "No {} label found, not an ostree encapsulated container",
+                DIFFID_LABEL
+            )
+        })?;
 
-    let (layout, target_diffid) = info.ok_or_else(|| {
-        anyhow!(
-            "No {} label found, not an ostree encapsulated container",
-            ExportLayout::V1.label()
-        )
-    })?;
-    let target_layer = layer_from_diffid(layout, manifest, config, target_diffid.as_str())?;
+    let target_layer = layer_from_diffid(manifest, config, target_diffid.as_str())?;
     let mut chunk_layers = Vec::new();
     let mut derived_layers = Vec::new();
     let mut after_target = false;
     // Gather the ostree layer
-    let ostree_layer = match layout {
-        ExportLayout::V0 => target_layer,
-        ExportLayout::V1 => first_layer,
-    };
-    // Now, we need to handle the split differently in chunked v1 vs v0
-    match layout {
-        ExportLayout::V0 => {
-            let label = layout.label();
-            anyhow::bail!("This legacy format using the {label} label is no longer supported");
-        }
-        ExportLayout::V1 => {
-            for layer in manifest.layers() {
-                if layer == target_layer {
-                    if after_target {
-                        anyhow::bail!("Multiple entries for {}", layer.digest());
-                    }
-                    after_target = true;
-                    if layer != ostree_layer {
-                        chunk_layers.push(layer);
-                    }
-                } else if !after_target {
-                    if layer != ostree_layer {
-                        chunk_layers.push(layer);
-                    }
-                } else {
-                    derived_layers.push(layer);
-                }
+    let ostree_layer = first_layer;
+    for layer in manifest.layers() {
+        if layer == target_layer {
+            if after_target {
+                anyhow::bail!("Multiple entries for {}", layer.digest());
             }
+            after_target = true;
+            if layer != ostree_layer {
+                chunk_layers.push(layer);
+            }
+        } else if !after_target {
+            if layer != ostree_layer {
+                chunk_layers.push(layer);
+            }
+        } else {
+            derived_layers.push(layer);
         }
     }
 
