@@ -38,16 +38,25 @@ Perhaps in the future we may actually support some kind of `Pod` analogue for re
 
 ## Relationship with rpm-ostree
 
-Today rpm-ostree directly links to `ostree-rs-ext`, and hence
-gains all the same container functionality.  This will likely
-continue.  For example, with rpm-ostree (or, perhaps re-framed as
-"dnf image"), it will continue to work to e.g. `dnf install`
-(i.e. `rpm-ostree install`) on the *client side* system.  However, `bootc upgrade` would
-(should) then error out as it will not understand how to upgrade
-the system.
+Today both bootc and rpm-ostree use the [ostree project](https://github.com/ostreedev/ostree-rs-ext)
+as a backing model.  Hence, when using a container source,
+`rpm-ostree upgrade` and `bootc upgrade` are effectively equivalent;
+you can use either command.
 
-rpm-ostree also has significant other features such as
-`rpm-ostree kargs` etc.
+However with rpm-ostree (or, perhaps re-framed as
+"dnf image"), it will continue to work to e.g. `dnf install`
+(i.e. `rpm-ostree install`) on the *client side* system.
+In addition there are other client-side mutation commands such as
+`rpm-ostree initramfs --enable`.
+
+However, as soon as you mutate the system in this way, `bootc upgrade`
+will error out as it will not understand how to upgrade
+the system.  The bootc project currently takes a relatively
+hard stance that system state should come from a container image.
+
+The way kernel argument work also uses ostree on the backend
+in both cases, so using e.g. `rpm-ostree kargs` will also work
+on a system updating via bootc.
 
 Overall, rpm-ostree is used in several important projects
 and will continue to be maintained for many years to come.
@@ -64,6 +73,14 @@ Further, bootc does aim to [include some of the functionality of zincati](https:
 
 But all this said: *It will be supported to use both bootc and rpm-ostree together*; they are not exclusive.
 For example, `bootc status` at least will still function even if packages are layered.
+
+### Future bootc <-> podman binding
+
+All the above said, it is likely that at some point bootc will switch to [hard binding with podman](https://github.com/containers/bootc/pull/215).
+This will reduce the role of ostree, and hence break compatibilty with rpm-ostree.
+When such work lands, we will still support at least a "one way" transition from an
+ostree backend.  But once this happens there are no plans to teach rpm-ostree
+to use podman too.
 
 ## Relationship with Fedora CoreOS (and Silverblue, etc.)
 
