@@ -1,8 +1,10 @@
 documentation:
 - changed-files:
-  - any-glob-to-any-file: 'docs/*'
-  - any-glob-to-any-file: 'manpages-md'
-  - README.md
+  - any-glob-to-any-file:
+    - 'docs/*'
+    - 'manpages-md/*'
+    - README.md
+
 area/install:
 - changed-files:
   - any-glob-to-any-file: 'lib/src/install*'
