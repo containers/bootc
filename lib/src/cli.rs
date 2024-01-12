@@ -28,9 +28,6 @@ pub(crate) struct UpgradeOpts {
     #[clap(long)]
     pub(crate) quiet: bool,
 
-    #[clap(long)]
-    pub(crate) touch_if_changed: Option<Utf8PathBuf>,
-
     /// Check if an update is available without applying it.
     ///
     /// This only downloads an updated manifest and image configuration (i.e. typically kilobyte-sized metadata)
@@ -376,9 +373,6 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         }
     }
     if changed {
-        if let Some(path) = opts.touch_if_changed {
-            std::fs::write(&path, "").with_context(|| format!("Writing {path}"))?;
-        }
         if opts.apply {
             crate::reboot::reboot()?;
         }

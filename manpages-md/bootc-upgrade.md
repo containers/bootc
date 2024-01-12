@@ -4,9 +4,8 @@ bootc-upgrade - Download and queue an updated container image to apply
 
 # SYNOPSIS
 
-**bootc-upgrade** \[**\--quiet**\] \[**\--touch-if-changed**\]
-\[**\--check**\] \[**\--apply**\] \[**-h**\|**\--help**\]
-\[**-V**\|**\--version**\]
+**bootc-upgrade** \[**\--quiet**\] \[**\--check**\] \[**\--apply**\]
+\[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
 
 # DESCRIPTION
 
@@ -31,13 +30,12 @@ outside of a \`bootc upgrade \--apply\` do \*not\* upgrade.
 
 :   Dont display progress
 
-**\--touch-if-changed**=*TOUCH_IF_CHANGED*
-
-:   
-
 **\--check**
 
-:   Check if an update is available without applying it
+:   Check if an update is available without applying it.
+
+This only downloads an updated manifest and image configuration (i.e.
+typically kilobyte-sized metadata) as opposed to the image layers.
 
 **\--apply**
 
