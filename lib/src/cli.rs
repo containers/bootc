@@ -356,6 +356,10 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             .unwrap_or_default();
         if staged_unchanged {
             println!("Staged update present, not changed.");
+
+            if opts.apply {
+                crate::reboot::reboot()?;
+            }
         } else if booted_unchanged {
             println!("No update available.")
         } else {
