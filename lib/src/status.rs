@@ -10,6 +10,7 @@ use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::oci_spec;
+use ostree_ext::oci_spec::image::ImageConfiguration;
 use ostree_ext::ostree;
 use ostree_ext::sysroot::SysrootLock;
 
@@ -112,48 +113,69 @@ pub(crate) fn labels_of_config(
     config.config().as_ref().and_then(|c| c.labels().as_ref())
 }
 
+/// Convert between a subset of ostree-ext metadata and the exposed spec API.
+pub(crate) fn create_imagestatus(
+    image: ImageReference,
+    manifest_digest: &str,
+    config: Option<&ImageConfiguration>,
+) -> ImageStatus {
+    let labels = config.and_then(labels_of_config);
+    let timestamp = labels
+        .and_then(|l| {
+            l.get(oci_spec::image::ANNOTATION_CREATED)
+                .map(|s| s.as_str())
+        })
+        .and_then(try_deserialize_timestamp);
+
+    let version = config
+        .and_then(ostree_container::version_for_config)
+        .map(ToOwned::to_owned);
+    ImageStatus {
+        image,
+        version,
+        timestamp,
+        image_digest: manifest_digest.to_owned(),
+    }
+}
+
+/// Given an OSTree deployment, parse out metadata into our spec.
 #[context("Reading deployment metadata")]
 fn boot_entry_from_deployment(
     sysroot: &SysrootLock,
     deployment: &ostree::Deployment,
 ) -> Result<BootEntry> {
     let repo = &sysroot.repo();
-    let (image, incompatible) = if let Some(origin) = deployment.origin().as_ref() {
+    let (image, cached_update, incompatible) = if let Some(origin) = deployment.origin().as_ref() {
         let incompatible = crate::utils::origin_has_rpmostree_stuff(origin);
-        let image = if incompatible {
+        let (image, cached) = if incompatible {
             // If there are local changes, we can't represent it as a bootc compatible image.
-            None
+            (None, None)
         } else if let Some(image) = get_image_origin(origin)? {
             let image = ImageReference::from(image);
             let csum = deployment.csum();
             let imgstate = ostree_container::store::query_image_commit(repo, &csum)?;
-            let config = imgstate.configuration.as_ref();
-            let labels = config.and_then(labels_of_config);
-            let timestamp = labels
-                .and_then(|l| {
-                    l.get(oci_spec::image::ANNOTATION_CREATED)
-                        .map(|s| s.as_str())
-                })
-                .and_then(try_deserialize_timestamp);
-
-            let version = config
-                .and_then(ostree_container::version_for_config)
-                .map(ToOwned::to_owned);
-            Some(ImageStatus {
+            let cached = imgstate.cached_update.map(|cached| {
+                create_imagestatus(image.clone(), &cached.manifest_digest, Some(&cached.config))
+            });
+            let imagestatus = create_imagestatus(
                 image,
-                version,
-                timestamp,
-                image_digest: imgstate.manifest_digest,
-            })
+                &imgstate.manifest_digest,
+                imgstate.configuration.as_ref(),
+            );
+            // We found a container-image based deployment
+            (Some(imagestatus), cached)
         } else {
-            None
+            // The deployment isn't using a container image
+            (None, None)
         };
-        (image, incompatible)
+        (image, cached, incompatible)
     } else {
-        (None, false)
+        // The deployment has no origin at all (this generally shouldn't happen)
+        (None, None, false)
     };
     let r = BootEntry {
         image,
+        cached_update,
         incompatible,
         pinned: deployment.is_pinned(),
         ostree: Some(crate::spec::BootEntryOstree {
