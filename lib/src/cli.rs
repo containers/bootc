@@ -386,14 +386,6 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
 /// Implementation of the `bootc switch` CLI command.
 #[context("Switching")]
 async fn switch(opts: SwitchOpts) -> Result<()> {
-    prepare_for_write().await?;
-    let cancellable = gio::Cancellable::NONE;
-
-    let sysroot = &get_locked_sysroot().await?;
-    let repo = &sysroot.repo();
-    let (booted_deployment, _deployments, host) =
-        crate::status::get_status_require_booted(sysroot)?;
-
     let transport = ostree_container::Transport::try_from(opts.transport.as_str())?;
     let imgref = ostree_container::ImageReference {
         transport,
@@ -405,6 +397,14 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     );
     let target = ostree_container::OstreeImageReference { sigverify, imgref };
     let target = ImageReference::from(target);
+
+    prepare_for_write().await?;
+    let cancellable = gio::Cancellable::NONE;
+
+    let sysroot = &get_locked_sysroot().await?;
+    let repo = &sysroot.repo();
+    let (booted_deployment, _deployments, host) =
+        crate::status::get_status_require_booted(sysroot)?;
 
     let new_spec = {
         let mut new_spec = host.spec.clone();
