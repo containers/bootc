@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
+use cap_std_ext::cap_std;
 use clap::Parser;
 use fn_error_context::context;
 use ostree::gio;
@@ -70,6 +71,12 @@ pub(crate) struct SwitchOpts {
     /// Enable verification via an ostree remote
     #[clap(long)]
     pub(crate) ostree_remote: Option<String>,
+
+    /// Don't create a new deployment, but directly mutate the booted state.
+    /// This is hidden because it's not something we generally expect to be done,
+    /// but this can be used in e.g. Anaconda %post to fixup
+    #[clap(long, hide = true)]
+    pub(crate) mutate_in_place: bool,
 
     /// Retain reference to currently booted image
     #[clap(long)]
@@ -397,6 +404,21 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     );
     let target = ostree_container::OstreeImageReference { sigverify, imgref };
     let target = ImageReference::from(target);
+
+    // If we're doing an in-place mutation, we shortcut most of the rest of the work here
+    if opts.mutate_in_place {
+        let deployid = {
+            // Clone to pass into helper thread
+            let target = target.clone();
+            let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+            tokio::task::spawn_blocking(move || {
+                crate::deploy::switch_origin_inplace(&root, &target)
+            })
+            .await??
+        };
+        println!("Updated {deployid} to pull from {target}");
+        return Ok(());
+    }
 
     prepare_for_write().await?;
     let cancellable = gio::Cancellable::NONE;

@@ -2,8 +2,12 @@
 //!
 //! Create a merged filesystem tree with the image and mounted configmaps.
 
+use anyhow::Ok;
 use anyhow::{Context, Result};
 
+use cap_std::fs::Dir;
+use cap_std_ext::cap_std;
+use cap_std_ext::dirext::CapStdExtDirExt;
 use fn_error_context::context;
 use ostree::{gio, glib};
 use ostree_container::OstreeImageReference;
@@ -12,6 +16,7 @@ use ostree_ext::container::store::PrepareResult;
 use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
+use rustix::fs::MetadataExt;
 
 use crate::spec::HostSpec;
 use crate::spec::ImageReference;
@@ -202,6 +207,18 @@ async fn deploy(
     Ok(())
 }
 
+#[context("Generating origin")]
+fn origin_from_imageref(imgref: &ImageReference) -> Result<glib::KeyFile> {
+    let origin = glib::KeyFile::new();
+    let imgref = OstreeImageReference::from(imgref.clone());
+    origin.set_string(
+        "origin",
+        ostree_container::deploy::ORIGIN_CONTAINER,
+        imgref.to_string().as_str(),
+    );
+    Ok(origin)
+}
+
 /// Stage (queue deployment of) a fetched container image.
 #[context("Staging")]
 pub(crate) async fn stage(
@@ -211,13 +228,7 @@ pub(crate) async fn stage(
     spec: &RequiredHostSpec<'_>,
 ) -> Result<()> {
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
-    let origin = glib::KeyFile::new();
-    let imgref = OstreeImageReference::from(spec.image.clone());
-    origin.set_string(
-        "origin",
-        ostree_container::deploy::ORIGIN_CONTAINER,
-        imgref.to_string().as_str(),
-    );
+    let origin = origin_from_imageref(spec.image)?;
     crate::deploy::deploy(
         sysroot,
         merge_deployment.as_ref(),
@@ -227,11 +238,115 @@ pub(crate) async fn stage(
     )
     .await?;
     crate::deploy::cleanup(sysroot).await?;
-    println!("Queued for next boot: {imgref}");
+    println!("Queued for next boot: {}", spec.image);
     if let Some(version) = image.version.as_deref() {
         println!("  Version: {version}");
     }
     println!("  Digest: {}", image.manifest_digest);
 
+    Ok(())
+}
+
+fn find_newest_deployment_name(deploysdir: &Dir) -> Result<String> {
+    let mut dirs = Vec::new();
+    for ent in deploysdir.entries()? {
+        let ent = ent?;
+        if !ent.file_type()?.is_dir() {
+            continue;
+        }
+        let name = ent.file_name();
+        let name = if let Some(name) = name.to_str() {
+            name
+        } else {
+            continue;
+        };
+        dirs.push((name.to_owned(), ent.metadata()?.mtime()));
+    }
+    dirs.sort_unstable_by(|a, b| a.1.cmp(&b.1));
+    if let Some((name, _ts)) = dirs.pop() {
+        Ok(name)
+    } else {
+        anyhow::bail!("No deployment directory found")
+    }
+}
+
+// Implementation of `bootc switch --in-place`
+pub(crate) fn switch_origin_inplace(root: &Dir, imgref: &ImageReference) -> Result<String> {
+    // First, just create the new origin file
+    let origin = origin_from_imageref(imgref)?;
+    let serialized_origin = origin.to_data();
+
+    // Now, we can't rely on being officially booted (e.g. with the `ostree=` karg)
+    // in a scenario like running in the anaconda %post.
+    // Eventually, we should support a setup here where ostree-prepare-root
+    // can officially be run to "enter" an ostree root in a supportable way.
+    // Anyways for now, the brutal hack is to just scrape through the deployments
+    // and find the newest one, which we will mutate.  If there's more than one,
+    // ultimately the calling tooling should be fixed to set things up correctly.
+
+    let mut ostree_deploys = root.open_dir("sysroot/ostree/deploy")?.entries()?;
+    let deploydir = loop {
+        if let Some(ent) = ostree_deploys.next() {
+            let ent = ent?;
+            if !ent.file_type()?.is_dir() {
+                continue;
+            }
+            tracing::debug!("Checking {:?}", ent.file_name());
+            let child_dir = ent
+                .open_dir()
+                .with_context(|| format!("Opening dir {:?}", ent.file_name()))?;
+            if let Some(d) = child_dir.open_dir_optional("deploy")? {
+                break d;
+            }
+        } else {
+            anyhow::bail!("Failed to find a deployment");
+        }
+    };
+    let newest_deployment = find_newest_deployment_name(&deploydir)?;
+    let origin_path = format!("{newest_deployment}.origin");
+    if !deploydir.try_exists(&origin_path)? {
+        tracing::warn!("No extant origin for {newest_deployment}");
+    }
+    deploydir
+        .atomic_write(&origin_path, serialized_origin.as_bytes())
+        .context("Writing origin")?;
+    return Ok(newest_deployment);
+}
+
+#[test]
+fn test_switch_inplace() -> Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+
+    let td = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+    let mut builder = cap_std::fs::DirBuilder::new();
+    let builder = builder.recursive(true).mode(0o755);
+    let deploydir = "sysroot/ostree/deploy/default/deploy";
+    let target_deployment = "af36eb0086bb55ac601600478c6168f834288013d60f8870b7851f44bf86c3c5.0";
+    td.ensure_dir_with(
+        format!("sysroot/ostree/deploy/default/deploy/{target_deployment}"),
+        builder,
+    )?;
+    let deploydir = &td.open_dir(deploydir)?;
+    let orig_imgref = ImageReference {
+        image: "quay.io/exampleos/original:sometag".into(),
+        transport: "registry".into(),
+        signature: None,
+    };
+    {
+        let origin = origin_from_imageref(&orig_imgref)?;
+        deploydir.atomic_write(
+            format!("{target_deployment}.origin"),
+            origin.to_data().as_bytes(),
+        )?;
+    }
+
+    let target_imgref = ImageReference {
+        image: "quay.io/someother/otherimage:latest".into(),
+        transport: "registry".into(),
+        signature: None,
+    };
+
+    let replaced = switch_origin_inplace(&td, &target_imgref).unwrap();
+    assert_eq!(replaced, target_deployment);
     Ok(())
 }
