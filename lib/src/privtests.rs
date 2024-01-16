@@ -1,44 +1,17 @@
 use std::process::Command;
 
 use anyhow::Result;
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
 use fn_error_context::context;
 use rustix::fd::AsFd;
 use xshell::{cmd, Shell};
 
-use crate::spec::HostType;
+use crate::blockdev::LoopbackDevice;
 
 use super::cli::TestingOpts;
 use super::spec::Host;
 
 const IMGSIZE: u64 = 20 * 1024 * 1024 * 1024;
-
-struct LoopbackDevice {
-    #[allow(dead_code)]
-    tmpf: tempfile::NamedTempFile,
-    dev: Utf8PathBuf,
-}
-
-impl LoopbackDevice {
-    fn new_temp(sh: &xshell::Shell) -> Result<Self> {
-        let mut tmpd = tempfile::NamedTempFile::new_in("/var/tmp")?;
-        rustix::fs::ftruncate(tmpd.as_file_mut().as_fd(), IMGSIZE)?;
-        let diskpath = tmpd.path();
-        let path = cmd!(sh, "losetup --find --show {diskpath}").read()?;
-        Ok(Self {
-            tmpf: tmpd,
-            dev: path.into(),
-        })
-    }
-}
-
-impl Drop for LoopbackDevice {
-    fn drop(&mut self) {
-        let _ = Command::new("losetup")
-            .args(["-d", self.dev.as_str()])
-            .status();
-    }
-}
 
 fn init_ostree(sh: &Shell, rootfs: &Utf8Path) -> Result<()> {
     cmd!(sh, "ostree admin init-fs --modern {rootfs}").run()?;
@@ -49,8 +22,10 @@ fn init_ostree(sh: &Shell, rootfs: &Utf8Path) -> Result<()> {
 fn run_bootc_status() -> Result<()> {
     let sh = Shell::new()?;
 
-    let loopdev = LoopbackDevice::new_temp(&sh)?;
-    let devpath = &loopdev.dev;
+    let mut tmpdisk = tempfile::NamedTempFile::new_in("/var/tmp")?;
+    rustix::fs::ftruncate(tmpdisk.as_file_mut().as_fd(), IMGSIZE)?;
+    let loopdev = LoopbackDevice::new(tmpdisk.path())?;
+    let devpath = loopdev.path();
     println!("Using {devpath:?}");
 
     let td = tempfile::tempdir()?;

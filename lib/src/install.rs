@@ -144,6 +144,11 @@ pub(crate) struct InstallToDiskOpts {
     #[clap(flatten)]
     #[serde(flatten)]
     pub(crate) config_opts: InstallConfigOpts,
+
+    /// Instead of targeting a block device, write to a file via loopback.
+    #[clap(long)]
+    #[serde(default)]
+    pub(crate) via_loopback: bool,
 }
 
 #[derive(ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1039,13 +1044,26 @@ fn installation_complete() {
 
 /// Implementation of the `bootc install to-disk` CLI command.
 pub(crate) async fn install_to_disk(opts: InstallToDiskOpts) -> Result<()> {
-    let block_opts = opts.block_opts;
+    let mut block_opts = opts.block_opts;
     let target_blockdev_meta = block_opts
         .device
         .metadata()
         .with_context(|| format!("Querying {}", &block_opts.device))?;
-    if !target_blockdev_meta.file_type().is_block_device() {
-        anyhow::bail!("Not a block device: {}", block_opts.device);
+    let mut loopback = None;
+    if opts.via_loopback {
+        if !target_blockdev_meta.file_type().is_file() {
+            anyhow::bail!(
+                "Not a regular file (to be used via loopback): {}",
+                block_opts.device
+            );
+        }
+        let loopback_dev = crate::blockdev::LoopbackDevice::new(block_opts.device.as_std_path())?;
+        block_opts.device = loopback_dev.path().into();
+        loopback = Some(loopback_dev);
+    } else {
+        if !target_blockdev_meta.file_type().is_block_device() {
+            anyhow::bail!("Not a block device: {}", block_opts.device);
+        }
     }
     let state = prepare_install(opts.config_opts, opts.target_opts).await?;
 
@@ -1067,6 +1085,10 @@ pub(crate) async fn install_to_disk(opts: InstallToDiskOpts) -> Result<()> {
     )?;
     if let Some(luksdev) = luksdev.as_deref() {
         Task::new_and_run("Closing root LUKS device", "cryptsetup", ["close", luksdev])?;
+    }
+
+    if let Some(loopback_dev) = loopback {
+        loopback_dev.close()?;
     }
 
     installation_complete();

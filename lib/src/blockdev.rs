@@ -1,7 +1,7 @@
 use crate::install::run_in_host_mountns;
 use crate::task::Task;
 use anyhow::{anyhow, Context, Result};
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use nix::errno::Errno;
 use once_cell::sync::Lazy;
@@ -10,6 +10,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::File;
 use std::os::unix::io::AsRawFd;
+use std::path::Path;
 use std::process::Command;
 
 #[derive(Debug, Deserialize)]
@@ -73,6 +74,55 @@ pub(crate) fn list_dev(dev: &Utf8Path) -> Result<Device> {
 #[allow(dead_code)]
 pub(crate) fn list() -> Result<Vec<Device>> {
     list_impl(None)
+}
+
+pub(crate) struct LoopbackDevice {
+    pub(crate) dev: Option<Utf8PathBuf>,
+}
+
+impl LoopbackDevice {
+    // Create a new loopback block device targeting the provided file path.
+    pub(crate) fn new(path: &Path) -> Result<Self> {
+        let dev = Task::new("losetup", "losetup")
+            .args(["--show", "-P", "--find"])
+            .arg(path)
+            .quiet()
+            .read()?;
+        let dev = Utf8PathBuf::from(dev.trim());
+        Ok(Self { dev: Some(dev) })
+    }
+
+    // Access the path to the loopback block device.
+    pub(crate) fn path(&self) -> &Utf8Path {
+        // SAFETY: The option cannot be destructured until we are dropped
+        self.dev.as_deref().unwrap()
+    }
+
+    // Shared backend for our `close` and `drop` implementations.
+    fn impl_close(&mut self) -> Result<()> {
+        // SAFETY: This is the only place we take the option
+        let dev = if let Some(dev) = self.dev.take() {
+            dev
+        } else {
+            return Ok(());
+        };
+        Task::new("losetup", "losetup")
+            .args(["-d", dev.as_str()])
+            .quiet()
+            .run()
+    }
+
+    /// Consume this device, unmounting it.
+    pub(crate) fn close(mut self) -> Result<()> {
+        self.impl_close()
+    }
+}
+
+impl Drop for LoopbackDevice {
+    fn drop(&mut self) {
+        // Best effort to unmount if we're dropped without invoking `close`
+        let _ = self.impl_close();
+    }
 }
 
 pub(crate) fn udev_settle() -> Result<()> {
