@@ -13,10 +13,6 @@ install:
 	# a dependency on pandoc downstream
 	if test -d man; then install -D -m 0644 -t $(DESTDIR)$(prefix)/share/man/man5 man/*.5; fi
 	if test -d man; then install -D -m 0644 -t $(DESTDIR)$(prefix)/share/man/man8 man/*.8; fi
-
-# These are not installed by default; one recommendation is to put them in a separate
-# sub-package or sub-component.
-install-systemd-auto:
 	install -D -m 0644 -t $(DESTDIR)/$(prefix)/lib/systemd/system systemd/*.service systemd/*.timer
 
 bin-archive: all
