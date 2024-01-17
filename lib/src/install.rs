@@ -245,14 +245,7 @@ pub(crate) struct SourceInfo {
     /// Whether or not SELinux appears to be enabled in the source commit
     pub(crate) selinux: bool,
     /// Whether the source is available in the host mount namespace
-    pub(crate) in_host_mountns: Option<HostMountnsInfo>,
-}
-
-/// Information about the host mount namespace
-#[derive(Debug, Clone)]
-pub(crate) struct HostMountnsInfo {
-    /// True if the skoepo on host supports containers-storage:
-    pub(crate) skopeo_supports_containers_storage: bool,
+    pub(crate) in_host_mountns: bool,
 }
 
 // Shared read-only global state
@@ -395,27 +388,23 @@ impl SourceInfo {
         };
         let digest = crate::podman::imageid_to_digest(&container_info.imageid)?;
 
-        let skopeo_supports_containers_storage = skopeo_supports_containers_storage()
-            .context("Failed to run skopeo (it currently must be installed in the host root)")?;
-        Self::from(
-            imageref,
-            Some(digest),
-            Some(HostMountnsInfo {
-                skopeo_supports_containers_storage,
-            }),
-        )
+        // Verify up front we can do the fetch
+        require_skopeo_with_containers_storage()?;
+
+        Self::new(imageref, Some(digest), true)
     }
 
     #[context("Creating source info from a given imageref")]
     pub(crate) fn from_imageref(imageref: &str) -> Result<Self> {
         let imageref = ostree_container::ImageReference::try_from(imageref)?;
-        Self::from(imageref, None, None)
+        Self::new(imageref, None, false)
     }
 
-    fn from(
+    /// Construct a new source information structure
+    fn new(
         imageref: ostree_container::ImageReference,
         digest: Option<String>,
-        in_host_mountns: Option<HostMountnsInfo>,
+        in_host_mountns: bool,
     ) -> Result<Self> {
         let cancellable = ostree::gio::Cancellable::NONE;
         let commit = Task::new("Reading ostree commit", "ostree")
@@ -612,39 +601,31 @@ async fn initialize_ostree_root_from_self(
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
 
-    let mut temporary_dir = None;
-    let (src_imageref, proxy_cfg) = match &state.source.in_host_mountns {
-        None => (state.source.imageref.clone(), None),
-        Some(host_mountns_info) => {
-            let src_imageref = if host_mountns_info.skopeo_supports_containers_storage {
-                // We always use exactly the digest of the running image to ensure predictability.
-                let digest = state
-                    .source
-                    .digest
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("Missing container image digest"))?;
-                let spec = crate::utils::digested_pullspec(&state.source.imageref.name, digest);
-                ostree_container::ImageReference {
-                    transport: ostree_container::Transport::ContainerStorage,
-                    name: spec,
-                }
-            } else {
-                let td = tempfile::tempdir_in("/var/tmp")?;
-                let path: &Utf8Path = td.path().try_into().unwrap();
-                let r = copy_to_oci(&state.source.imageref, path)?;
-                temporary_dir = Some(td);
-                r
-            };
+    let (src_imageref, proxy_cfg) = if !state.source.in_host_mountns {
+        (state.source.imageref.clone(), None)
+    } else {
+        let src_imageref = {
+            // We always use exactly the digest of the running image to ensure predictability.
+            let digest = state
+                .source
+                .digest
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Missing container image digest"))?;
+            let spec = crate::utils::digested_pullspec(&state.source.imageref.name, digest);
+            ostree_container::ImageReference {
+                transport: ostree_container::Transport::ContainerStorage,
+                name: spec,
+            }
+        };
 
-            // We need to fetch the container image from the root mount namespace
-            let skopeo_cmd = run_in_host_mountns("skopeo");
-            let proxy_cfg = ostree_container::store::ImageProxyConfig {
-                skopeo_cmd: Some(skopeo_cmd),
-                ..Default::default()
-            };
+        // We need to fetch the container image from the root mount namespace
+        let skopeo_cmd = run_in_host_mountns("skopeo");
+        let proxy_cfg = ostree_container::store::ImageProxyConfig {
+            skopeo_cmd: Some(skopeo_cmd),
+            ..Default::default()
+        };
 
-            (src_imageref, Some(proxy_cfg))
-        }
+        (src_imageref, Some(proxy_cfg))
     };
     let src_imageref = ostree_container::OstreeImageReference {
         // There are no signatures to verify since we're fetching the already
@@ -670,8 +651,6 @@ async fn initialize_ostree_root_from_self(
     let digest = state.manifest_digest.as_str();
     println!("Installed: {target_image}");
     println!("   Digest: {digest}");
-
-    drop(temporary_dir);
 
     // Write the entry for /boot to /etc/fstab.  TODO: Encourage OSes to use the karg?
     // Or better bind this with the grub data.
@@ -717,32 +696,6 @@ async fn initialize_ostree_root_from_self(
     Ok(aleph)
 }
 
-#[context("Copying to oci")]
-fn copy_to_oci(
-    src_imageref: &ostree_container::ImageReference,
-    dir: &Utf8Path,
-) -> Result<ostree_container::ImageReference> {
-    tracing::debug!("Copying {src_imageref}");
-    let src_imageref = src_imageref.to_string();
-    let dest_imageref = ostree_container::ImageReference {
-        transport: ostree_container::Transport::OciDir,
-        name: dir.to_string(),
-    };
-    let dest_imageref_str = dest_imageref.to_string();
-    Task::new_cmd(
-        "Copying to temporary OCI (skopeo is too old)",
-        run_in_host_mountns("skopeo"),
-    )
-    .args([
-        "copy",
-        // TODO: enable this once ostree is fixed "--dest-oci-accept-uncompressed-layers",
-        src_imageref.as_str(),
-        dest_imageref_str.as_str(),
-    ])
-    .run()?;
-    Ok(dest_imageref)
-}
-
 /// Run a command in the host mount namespace
 pub(crate) fn run_in_host_mountns(cmd: &str) -> Command {
     let mut c = Command::new("/proc/self/exe");
@@ -769,11 +722,12 @@ pub(crate) fn exec_in_host_mountns(args: &[std::ffi::OsString]) -> Result<()> {
 }
 
 #[context("Querying skopeo version")]
-fn skopeo_supports_containers_storage() -> Result<bool> {
+fn require_skopeo_with_containers_storage() -> Result<()> {
     let out = Task::new_cmd("skopeo --version", run_in_host_mountns("skopeo"))
         .args(["--version"])
         .quiet()
-        .read()?;
+        .read()
+        .context("Failed to run skopeo (it currently must be installed in the host root)")?;
     let mut v = out
         .strip_prefix("skopeo version ")
         .map(|v| v.split('.'))
@@ -785,7 +739,12 @@ fn skopeo_supports_containers_storage() -> Result<bool> {
         .next()
         .ok_or_else(|| anyhow::anyhow!("Missing minor version"))?;
     let (major, minor) = (major.parse::<u64>()?, minor.parse::<u64>()?);
-    Ok(major > 1 || minor > 10)
+    let supported = major > 1 || minor > 10;
+    if supported {
+        Ok(())
+    } else {
+        anyhow::bail!("skopeo >= 1.11 is required on host")
+    }
 }
 
 pub(crate) struct RootSetup {
