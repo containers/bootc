@@ -1,5 +1,8 @@
 //! The definition for host system state.
 
+use std::fmt::Display;
+
+use ostree_ext::container::OstreeImageReference;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -149,8 +152,17 @@ impl Default for Host {
     }
 }
 
+impl Display for ImageReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ostree_imgref = OstreeImageReference::from(self.clone());
+        ostree_imgref.fmt(f)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     #[test]
@@ -182,5 +194,14 @@ mod tests {
             host.spec.image.as_ref().unwrap().signature,
             Some(ImageSignature::OstreeRemote("fedora".into()))
         );
+    }
+
+    #[test]
+    fn test_display_imgref() {
+        let src = "ostree-unverified-registry:quay.io/example/foo:sometag";
+        let s = OstreeImageReference::from_str(src).unwrap();
+        let s = ImageReference::from(s);
+        let displayed = format!("{s}");
+        assert_eq!(displayed.as_str(), src);
     }
 }
