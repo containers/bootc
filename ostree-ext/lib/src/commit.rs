@@ -6,71 +6,16 @@ use crate::container_utils::require_ostree_container;
 use crate::mountutil::is_mountpoint;
 use anyhow::Context;
 use anyhow::Result;
-use camino::Utf8Path;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt;
 use rustix::fs::MetadataExt;
-use std::borrow::Cow;
-use std::convert::TryInto;
 use std::path::Path;
 use std::path::PathBuf;
 use tokio::task;
 
 /// Directories for which we will always remove all content.
 const FORCE_CLEAN_PATHS: &[&str] = &["run", "tmp", "var/tmp", "var/cache"];
-
-/// Gather count of non-empty directories.  Empty directories are removed,
-/// except for var/tmp.
-fn process_vardir_recurse(
-    root: &Dir,
-    rootdev: u64,
-    path: &Utf8Path,
-    error_count: &mut i32,
-) -> Result<bool> {
-    let prefix = "var";
-    let tmp_name = "tmp";
-    let empty_path = path.as_str().is_empty();
-    let context = || format!("Validating: {prefix}/{path}");
-    let mut validated = true;
-    let entries = if empty_path {
-        root.entries()
-    } else {
-        root.read_dir(path)
-    };
-
-    for entry in entries.with_context(context)? {
-        let entry = entry?;
-        let metadata = entry.metadata()?;
-        if metadata.dev() != rootdev {
-            continue;
-        }
-        let name = entry.file_name();
-        let name = Path::new(&name);
-        let name: &Utf8Path = name.try_into()?;
-        let path = &*if empty_path {
-            Cow::Borrowed(name)
-        } else {
-            Cow::Owned(path.join(name))
-        };
-
-        if metadata.is_dir() {
-            if !process_vardir_recurse(root, rootdev, path, error_count)? {
-                validated = false;
-            }
-        } else {
-            validated = false;
-            *error_count += 1;
-            if *error_count < 20 {
-                eprintln!("Found file: {prefix}/{path}")
-            }
-        }
-    }
-    if validated && !empty_path && path != tmp_name {
-        root.remove_dir(path).with_context(context)?;
-    }
-    Ok(validated)
-}
 
 /// Recursively remove the target directory, but avoid traversing across mount points.
 fn remove_all_on_mount_recurse(root: &Dir, rootdev: u64, path: &Path) -> Result<bool> {
@@ -141,32 +86,18 @@ fn clean_paths_in(root: &Dir, rootdev: u64) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::collapsible_if)]
-fn process_var(root: &Dir, rootdev: u64, strict: bool) -> Result<()> {
-    let var = Utf8Path::new("var");
-    let mut error_count = 0;
-    if let Some(vardir) = root.open_dir_optional(var)? {
-        if !process_vardir_recurse(&vardir, rootdev, "".into(), &mut error_count)? && strict {
-            anyhow::bail!("Found content in {var}");
-        }
-    }
-    Ok(())
-}
-
 /// Given a root filesystem, clean out empty directories and warn about
 /// files in /var.  /run, /tmp, and /var/tmp have their contents recursively cleaned.
 pub fn prepare_ostree_commit_in(root: &Dir) -> Result<()> {
     let rootdev = root.dir_metadata()?.dev();
-    clean_paths_in(root, rootdev)?;
-    process_var(root, rootdev, true)
+    clean_paths_in(root, rootdev)
 }
 
 /// Like [`prepare_ostree_commit_in`] but only emits warnings about unsupported
 /// files in `/var` and will not error.
 pub fn prepare_ostree_commit_in_nonstrict(root: &Dir) -> Result<()> {
     let rootdev = root.dir_metadata()?.dev();
-    clean_paths_in(root, rootdev)?;
-    process_var(root, rootdev, false)
+    clean_paths_in(root, rootdev)
 }
 
 /// Entrypoint to the commit procedures, initially we just
@@ -183,6 +114,8 @@ pub(crate) async fn container_commit() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use camino::Utf8Path;
+
     use cap_std_ext::cap_tempfile;
 
     #[test]
@@ -225,7 +158,7 @@ mod tests {
         td.remove_dir_all(var)?;
         td.create_dir(var)?;
         td.write(var.join("foo"), "somefile")?;
-        assert!(prepare_ostree_commit_in(td).is_err());
+        prepare_ostree_commit_in(td).unwrap();
         // Right now we don't auto-create var/tmp if it didn't exist, but maybe
         // we will in the future.
         assert!(!td.try_exists(var.join("tmp"))?);
@@ -239,8 +172,9 @@ mod tests {
         td.create_dir_all(nested)?;
         td.write(nested.join("foo"), "test1")?;
         td.write(nested.join("foo2"), "test2")?;
-        assert!(prepare_ostree_commit_in(td).is_err());
+        prepare_ostree_commit_in(td).unwrap();
         assert!(td.try_exists(var)?);
+        assert!(td.try_exists(nested)?);
 
         Ok(())
     }
