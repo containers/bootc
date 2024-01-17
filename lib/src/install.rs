@@ -103,6 +103,18 @@ pub(crate) struct InstallTargetOpts {
 }
 
 #[derive(clap::Args, Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct InstallSourceOpts {
+    /// Install the system from an explicitly given source.
+    ///
+    /// By default, bootc install and install-to-filesystem assumes that it runs in a podman container, and
+    /// it takes the container image to install from the podman's container registry.
+    /// If --source-imgref is given, bootc uses it as the installation source, instead of the behaviour explained
+    /// in the previous paragraph. See skopeo(1) for accepted formats.
+    #[clap(long)]
+    pub(crate) source_imgref: Option<String>,
+}
+
+#[derive(clap::Args, Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct InstallConfigOpts {
     /// Disable SELinux in the target (installed) system.
     ///
@@ -136,6 +148,10 @@ pub(crate) struct InstallToDiskOpts {
     #[clap(flatten)]
     #[serde(flatten)]
     pub(crate) block_opts: InstallBlockDeviceOpts,
+
+    #[clap(flatten)]
+    #[serde(flatten)]
+    pub(crate) source_opts: InstallSourceOpts,
 
     #[clap(flatten)]
     #[serde(flatten)]
@@ -210,6 +226,9 @@ pub(crate) struct InstallToFilesystemOpts {
     pub(crate) filesystem_opts: InstallTargetFilesystemOpts,
 
     #[clap(flatten)]
+    pub(crate) source_opts: InstallSourceOpts,
+
+    #[clap(flatten)]
     pub(crate) target_opts: InstallTargetOpts,
 
     #[clap(flatten)]
@@ -222,9 +241,18 @@ pub(crate) struct SourceInfo {
     /// Image reference we'll pull from (today always containers-storage: type)
     pub(crate) imageref: ostree_container::ImageReference,
     /// The digest to use for pulls
-    pub(crate) digest: String,
+    pub(crate) digest: Option<String>,
     /// Whether or not SELinux appears to be enabled in the source commit
     pub(crate) selinux: bool,
+    /// Whether the source is available in the host mount namespace
+    pub(crate) in_host_mountns: Option<HostMountnsInfo>,
+}
+
+/// Information about the host mount namespace
+#[derive(Debug, Clone)]
+pub(crate) struct HostMountnsInfo {
+    /// True if the skoepo on host supports containers-storage:
+    pub(crate) skopeo_supports_containers_storage: bool,
 }
 
 // Shared read-only global state
@@ -232,8 +260,6 @@ pub(crate) struct State {
     pub(crate) source: SourceInfo,
     /// Force SELinux off in target system
     pub(crate) override_disable_selinux: bool,
-    /// True if the skoepo on host supports containers-storage:
-    pub(crate) skopeo_supports_containers_storage: bool,
     #[allow(dead_code)]
     pub(crate) setenforce_guard: Option<crate::lsm::SetEnforceGuard>,
     #[allow(dead_code)]
@@ -368,6 +394,29 @@ impl SourceInfo {
             name: container_info.image.clone(),
         };
         let digest = crate::podman::imageid_to_digest(&container_info.imageid)?;
+
+        let skopeo_supports_containers_storage = skopeo_supports_containers_storage()
+            .context("Failed to run skopeo (it currently must be installed in the host root)")?;
+        Self::from(
+            imageref,
+            Some(digest),
+            Some(HostMountnsInfo {
+                skopeo_supports_containers_storage,
+            }),
+        )
+    }
+
+    #[context("Creating source info from a given imageref")]
+    pub(crate) fn from_imageref(imageref: &str) -> Result<Self> {
+        let imageref = ostree_container::ImageReference::try_from(imageref)?;
+        Self::from(imageref, None, None)
+    }
+
+    fn from(
+        imageref: ostree_container::ImageReference,
+        digest: Option<String>,
+        in_host_mountns: Option<HostMountnsInfo>,
+    ) -> Result<Self> {
         let cancellable = ostree::gio::Cancellable::NONE;
         let commit = Task::new("Reading ostree commit", "ostree")
             .args(["--repo=/ostree/repo", "rev-parse", "--single"])
@@ -386,6 +435,7 @@ impl SourceInfo {
             imageref,
             digest,
             selinux,
+            in_host_mountns,
         })
     }
 }
@@ -562,28 +612,39 @@ async fn initialize_ostree_root_from_self(
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
 
-    // We need to fetch the container image from the root mount namespace
-    let skopeo_cmd = run_in_host_mountns("skopeo");
-    let proxy_cfg = ostree_container::store::ImageProxyConfig {
-        skopeo_cmd: Some(skopeo_cmd),
-        ..Default::default()
-    };
-
     let mut temporary_dir = None;
-    let src_imageref = if state.skopeo_supports_containers_storage {
-        // We always use exactly the digest of the running image to ensure predictability.
-        let spec =
-            crate::utils::digested_pullspec(&state.source.imageref.name, &state.source.digest);
-        ostree_container::ImageReference {
-            transport: ostree_container::Transport::ContainerStorage,
-            name: spec,
+    let (src_imageref, proxy_cfg) = match &state.source.in_host_mountns {
+        None => (state.source.imageref.clone(), None),
+        Some(host_mountns_info) => {
+            let src_imageref = if host_mountns_info.skopeo_supports_containers_storage {
+                // We always use exactly the digest of the running image to ensure predictability.
+                let digest = state
+                    .source
+                    .digest
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Missing container image digest"))?;
+                let spec = crate::utils::digested_pullspec(&state.source.imageref.name, digest);
+                ostree_container::ImageReference {
+                    transport: ostree_container::Transport::ContainerStorage,
+                    name: spec,
+                }
+            } else {
+                let td = tempfile::tempdir_in("/var/tmp")?;
+                let path: &Utf8Path = td.path().try_into().unwrap();
+                let r = copy_to_oci(&state.source.imageref, path)?;
+                temporary_dir = Some(td);
+                r
+            };
+
+            // We need to fetch the container image from the root mount namespace
+            let skopeo_cmd = run_in_host_mountns("skopeo");
+            let proxy_cfg = ostree_container::store::ImageProxyConfig {
+                skopeo_cmd: Some(skopeo_cmd),
+                ..Default::default()
+            };
+
+            (src_imageref, Some(proxy_cfg))
         }
-    } else {
-        let td = tempfile::tempdir_in("/var/tmp")?;
-        let path: &Utf8Path = td.path().try_into().unwrap();
-        let r = copy_to_oci(&state.source.imageref, path)?;
-        temporary_dir = Some(td);
-        r
     };
     let src_imageref = ostree_container::OstreeImageReference {
         // There are no signatures to verify since we're fetching the already
@@ -601,7 +662,7 @@ async fn initialize_ostree_root_from_self(
     let mut options = ostree_container::deploy::DeployOpts::default();
     options.kargs = Some(kargs.as_slice());
     options.target_imgref = Some(&state.target_imgref);
-    options.proxy_cfg = Some(proxy_cfg);
+    options.proxy_cfg = proxy_cfg;
     println!("Creating initial deployment");
     let target_image = state.target_imgref.to_string();
     let state =
@@ -906,6 +967,7 @@ async fn verify_target_fetch(imgref: &ostree_container::OstreeImageReference) ->
 /// Preparation for an install; validates and prepares some (thereafter immutable) global state.
 async fn prepare_install(
     config_opts: InstallConfigOpts,
+    source_opts: InstallSourceOpts,
     target_opts: InstallTargetOpts,
 ) -> Result<Arc<State>> {
     // We need full root privileges, i.e. --privileged in podman
@@ -919,16 +981,20 @@ async fn prepare_install(
     let rootfs = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())
         .context("Opening /")?;
 
-    // This command currently *must* be run inside a privileged container.
-    let container_info = crate::containerenv::get_container_execution_info(&rootfs)?;
-    if let Some("1") = container_info.rootless.as_deref() {
-        anyhow::bail!("Cannot install from rootless podman; this command must be run as root");
-    }
+    let source = match source_opts.source_imgref {
+        None => {
+            let container_info = crate::containerenv::get_container_execution_info(&rootfs)?;
+            // This command currently *must* be run inside a privileged container.
+            if let Some("1") = container_info.rootless.as_deref() {
+                anyhow::bail!(
+                    "Cannot install from rootless podman; this command must be run as root"
+                );
+            }
 
-    let skopeo_supports_containers_storage = skopeo_supports_containers_storage()
-        .context("Failed to run skopeo (it currently must be installed in the host root)")?;
-
-    let source = SourceInfo::from_container(&container_info)?;
+            SourceInfo::from_container(&container_info)?
+        }
+        Some(source) => SourceInfo::from_imageref(&source)?,
+    };
 
     // Parse the target CLI image reference options and create the *target* image
     // reference, which defaults to pulling from a registry.
@@ -982,7 +1048,6 @@ async fn prepare_install(
     // combines our command line options along with some bind mounts from the host.
     let state = Arc::new(State {
         override_disable_selinux,
-        skopeo_supports_containers_storage,
         setenforce_guard,
         source,
         config_opts,
@@ -1065,7 +1130,7 @@ pub(crate) async fn install_to_disk(opts: InstallToDiskOpts) -> Result<()> {
             anyhow::bail!("Not a block device: {}", block_opts.device);
         }
     }
-    let state = prepare_install(opts.config_opts, opts.target_opts).await?;
+    let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
 
     // This is all blocking stuff
     let mut rootfs = {
@@ -1174,7 +1239,7 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     }
 
     // Gather global state, destructuring the provided options
-    let state = prepare_install(opts.config_opts, opts.target_opts).await?;
+    let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
 
     match fsopts.replace {
         Some(ReplaceMode::Wipe) => {

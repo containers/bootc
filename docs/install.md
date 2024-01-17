@@ -234,3 +234,18 @@ At the current time, leftover data in `/` is **NOT** automatically cleaned up.  
 be useful, because it allows the new image to automatically import data from the previous
 host system!  For example, things like SSH keys or container images can be copied
 and then deleted from the original.
+
+### Using `bootc install to-filesystem --source-imgref <imgref>`
+
+By default, `bootc install` has to be run inside a podman container. With this assumption,
+it can escape the container, find the source container image (including its layers) in
+the podman's container storage and use it to create the image.
+
+When `--source-imgref <imgref>` is given, `bootc` no longer assumes that it runs inside podman.
+Instead, the given container image reference (see [containers-transports(5)](https://github.com/containers/image/blob/main/docs/containers-transports.5.md)
+for accepted formats) is used to fetch the image. Note that `bootc install` still has to be
+run inside a chroot created from the container image. However, this allows users to use
+a different sandboxing tool (e.g. [bubblewrap](https://github.com/containers/bubblewrap)).
+
+This argument is mainly useful for 3rd-party tooling for building disk images from bootable
+containers (e.g. based on [osbuild](https://github.com/osbuild/osbuild)).   
