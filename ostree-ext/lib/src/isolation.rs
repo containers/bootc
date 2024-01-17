@@ -28,10 +28,14 @@ pub(crate) fn unprivileged_subprocess(binary: &str, user: &str) -> Command {
         return Command::new(binary);
     }
     let mut cmd = Command::new("setpriv");
+    // Clear some strategic environment variables that may cause the containers/image stack
+    // to look in the wrong places for things.
+    cmd.env_remove("HOME");
+    cmd.env_remove("XDG_DATA_DIR");
+    cmd.env_remove("USER");
     cmd.args([
         "--no-new-privs",
         "--init-groups",
-        "--reset-env",
         "--reuid",
         user,
         "--bounding-set",
