@@ -20,7 +20,7 @@ cd $(mktemp -d)
 case "${AUTOPKGTEST_REBOOT_MARK:-}" in
   "")
     mkdir -p ~/.config/containers
-    cp -a /etc/ostree/auth.json ~/.config/containers
+    if test -f /etc/ostree/auth.json; then cp -a /etc/ostree/auth.json ~/.config/containers; fi
     mkdir -p usr/{lib,bin}
     cp -a /usr/lib/bootc usr/lib
     cp -a /usr/bin/bootc usr/bin
@@ -29,8 +29,13 @@ case "${AUTOPKGTEST_REBOOT_MARK:-}" in
     COPY usr usr
 EOF
     podman build -t localhost/testimage .
-    podman run --rm --privileged --pid=host --env RUST_LOG=error,bootc_lib::install=debug \
-      localhost/testimage bootc install to-disk --skip-fetch-check --karg=foo=bar ${DEV}
+    mkdir -p injected-config/systemd/system/
+    cat > injected-config/systemd/system/injected.service << 'EOF'
+[Service]
+ExecStart=echo injected
+EOF
+    podman run --rm --privileged --pid=host -v ./injected-config:/config --env RUST_LOG=error,bootc_lib::install=debug \
+      localhost/testimage bootc install to-disk --copy-etc /config --skip-fetch-check --karg=foo=bar ${DEV}
     # In theory we could e.g. wipe the bootloader setup on the primary disk, then reboot;
     # but for now let's just sanity test that the install command executes.
     lsblk ${DEV}
@@ -38,6 +43,10 @@ EOF
     grep foo=bar /var/mnt/loader/entries/*.conf
     grep localtestkarg=somevalue /var/mnt/loader/entries/*.conf
     grep -Ee '^linux /boot/ostree' /var/mnt/loader/entries/*.conf
+    umount /var/mnt
+    mount /dev/vda4 /var/mnt
+    deploydir=$(echo /var/mnt/ostree/deploy/default/deploy/*.0)
+    diff $deploydir/etc/systemd/system/injected.service injected-config/systemd/system/injected.service
     umount /var/mnt
     echo "ok install"
     mount /dev/vda4 /var/mnt
