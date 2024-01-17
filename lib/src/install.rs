@@ -222,7 +222,7 @@ pub(crate) struct SourceInfo {
     /// Image reference we'll pull from (today always containers-storage: type)
     pub(crate) imageref: ostree_container::ImageReference,
     /// The digest to use for pulls
-    pub(crate) digest: String,
+    pub(crate) digest: Option<String>,
     /// Whether or not SELinux appears to be enabled in the source commit
     pub(crate) selinux: bool,
 }
@@ -384,7 +384,7 @@ impl SourceInfo {
         let selinux = crate::lsm::xattrs_have_selinux(&xattrs);
         Ok(Self {
             imageref,
-            digest,
+            digest: Some(digest),
             selinux,
         })
     }
@@ -572,8 +572,12 @@ async fn initialize_ostree_root_from_self(
     let mut temporary_dir = None;
     let src_imageref = if state.skopeo_supports_containers_storage {
         // We always use exactly the digest of the running image to ensure predictability.
-        let spec =
-            crate::utils::digested_pullspec(&state.source.imageref.name, &state.source.digest);
+        let digest = state
+            .source
+            .digest
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Missing container image digest"))?;
+        let spec = crate::utils::digested_pullspec(&state.source.imageref.name, digest);
         ostree_container::ImageReference {
             transport: ostree_container::Transport::ContainerStorage,
             name: spec,
