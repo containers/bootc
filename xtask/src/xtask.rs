@@ -106,7 +106,7 @@ fn manpages(sh: &Shell) -> Result<()> {
             .ok_or_else(|| anyhow!("Expected filename in {srcpath:?}"))?;
         cmd!(
             sh,
-            "pandoc --from=markdown --to=man --output=target/man/{base_filename}.5 {srcpath}"
+            "pandoc -s --from=markdown --to=man --output=target/man/{base_filename}.5 {srcpath}"
         )
         .run()?;
     }
