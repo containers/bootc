@@ -152,12 +152,15 @@ pub fn new_empty_manifest() -> oci_image::ImageManifestBuilder {
 }
 
 impl OciDir {
-    /// Create a new, empty OCI directory at the target path, which should be empty.
-    pub fn create(dir: &Dir) -> Result<Self> {
+    /// Open the OCI directory at the target path; if it does not already
+    /// have the standard OCI metadata, it is created.
+    pub fn ensure(dir: &Dir) -> Result<Self> {
         let mut db = cap_std::fs::DirBuilder::new();
         db.recursive(true).mode(0o755);
         dir.ensure_dir_with(BLOBDIR, &db)?;
-        dir.atomic_write("oci-layout", r#"{"imageLayoutVersion":"1.0.0"}"#)?;
+        if !dir.try_exists("oci-layout")? {
+            dir.atomic_write("oci-layout", r#"{"imageLayoutVersion":"1.0.0"}"#)?;
+        }
         Self::open(dir)
     }
 
@@ -165,7 +168,7 @@ impl OciDir {
     pub fn clone_to(&self, destdir: &Dir, p: impl AsRef<Path>) -> Result<Self> {
         let p = p.as_ref();
         destdir.create_dir(p)?;
-        let cloned = Self::create(&destdir.open_dir(p)?)?;
+        let cloned = Self::ensure(&destdir.open_dir(p)?)?;
         for blob in self.dir.read_dir(BLOBDIR)? {
             let blob = blob?;
             let path = Path::new(BLOBDIR).join(blob.file_name());
@@ -519,7 +522,7 @@ mod tests {
     #[test]
     fn test_build() -> Result<()> {
         let td = cap_tempfile::tempdir(cap_std::ambient_authority())?;
-        let w = OciDir::create(&td)?;
+        let w = OciDir::ensure(&td)?;
         let mut layerw = w.create_raw_layer(None)?;
         layerw.write_all(b"pretend this is a tarball")?;
         let root_layer = layerw.complete()?;
