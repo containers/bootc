@@ -2,6 +2,9 @@
 
 use super::ImageReference;
 use anyhow::{Context, Result};
+use cap_std_ext::cap_std::fs::Dir;
+use cap_std_ext::cmdext::CapStdExtCommandExt;
+use fn_error_context::context;
 use serde::Deserialize;
 use std::io::Read;
 use std::path::Path;
@@ -45,10 +48,9 @@ pub(crate) fn container_policy_is_default_insecure() -> Result<bool> {
 }
 
 /// Create a Command builder for skopeo.
-pub(crate) fn new_cmd() -> tokio::process::Command {
-    let mut cmd = Command::new("skopeo");
+pub(crate) fn new_cmd() -> std::process::Command {
+    let mut cmd = std::process::Command::new("skopeo");
     cmd.stdin(Stdio::null());
-    cmd.kill_on_drop(true);
     cmd
 }
 
@@ -59,21 +61,28 @@ pub(crate) fn spawn(mut cmd: Command) -> Result<tokio::process::Child> {
 }
 
 /// Use skopeo to copy a container image.
+#[context("Skopeo copy")]
 pub(crate) async fn copy(
     src: &ImageReference,
     dest: &ImageReference,
     authfile: Option<&Path>,
+    cwd: Option<Dir>,
 ) -> Result<String> {
     let digestfile = tempfile::NamedTempFile::new()?;
     let mut cmd = new_cmd();
     cmd.stdout(std::process::Stdio::null()).arg("copy");
     cmd.arg("--digestfile");
     cmd.arg(digestfile.path());
+    if let Some(cwd) = cwd {
+        cmd.cwd_dir(cwd);
+    }
     if let Some(authfile) = authfile {
         cmd.arg("--authfile");
         cmd.arg(authfile);
     }
     cmd.args(&[src.to_string(), dest.to_string()]);
+    let mut cmd = tokio::process::Command::from(cmd);
+    cmd.kill_on_drop(true);
     let proc = super::skopeo::spawn(cmd)?;
     let output = proc.wait_with_output().await?;
     if !output.status.success() {

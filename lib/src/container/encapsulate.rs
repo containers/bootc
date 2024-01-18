@@ -7,6 +7,7 @@ use crate::chunking::{Chunk, Chunking, ObjectMetaSized};
 use crate::container::skopeo;
 use crate::tar as ostree_tar;
 use anyhow::{anyhow, Context, Result};
+use camino::Utf8Path;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use chrono::NaiveDateTime;
@@ -19,7 +20,6 @@ use ostree::gio;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
-use std::path::Path;
 use tracing::instrument;
 
 /// The label which may be used in addition to the standard OCI label.
@@ -160,17 +160,11 @@ fn export_chunked(
 fn build_oci(
     repo: &ostree::Repo,
     rev: &str,
-    ocidir_path: &Path,
+    writer: &mut OciDir,
     tag: Option<&str>,
     config: &Config,
     opts: ExportOpts,
-) -> Result<ImageReference> {
-    if !ocidir_path.exists() {
-        std::fs::create_dir(ocidir_path).context("Creating OCI dir")?;
-    }
-    let ocidir = Dir::open_ambient_dir(ocidir_path, cap_std::ambient_authority())?;
-    let mut writer = ocidir::OciDir::ensure(&ocidir)?;
-
+) -> Result<()> {
     let commit = repo.require_rev(rev)?;
     let commit = commit.as_str();
     let (commit_v, _) = repo.load_commit(commit)?;
@@ -246,7 +240,7 @@ fn build_oci(
     export_chunked(
         repo,
         commit,
-        &mut writer,
+        writer,
         &mut manifest,
         &mut imgcfg,
         labels,
@@ -276,10 +270,7 @@ fn build_oci(
         writer.replace_with_single_manifest(manifest, platform)?;
     }
 
-    Ok(ImageReference {
-        transport: Transport::OciDir,
-        name: ocidir_path.to_str().unwrap().to_string(),
-    })
+    Ok(())
 }
 
 /// Interpret a filesystem path as optionally including a tag.  Paths
@@ -308,19 +299,37 @@ async fn build_impl(
     let digest = if dest.transport == Transport::OciDir {
         let (path, tag) = parse_oci_path_and_tag(dest.name.as_str());
         tracing::debug!("using OCI path={path} tag={tag:?}");
-        let _copied: ImageReference =
-            build_oci(repo, ostree_ref, Path::new(path), tag, config, opts)?;
+        if !Utf8Path::new(path).exists() {
+            std::fs::create_dir(path)?;
+        }
+        let ocidir = Dir::open_ambient_dir(path, cap_std::ambient_authority())?;
+        let mut ocidir = OciDir::ensure(&ocidir)?;
+        build_oci(repo, ostree_ref, &mut ocidir, tag, config, opts)?;
         None
     } else {
-        let tempdir = tempfile::tempdir_in("/var/tmp")?;
-        let tempdest = tempdir.path().join("d");
-        let tempdest = tempdest.to_str().unwrap();
+        let tempdir = {
+            let vartmp = Dir::open_ambient_dir("/var/tmp", cap_std::ambient_authority())?;
+            cap_std_ext::cap_tempfile::tempdir_in(&vartmp)?
+        };
+        let mut ocidir = OciDir::ensure(&tempdir)?;
 
         // Minor TODO: refactor to avoid clone
         let authfile = opts.authfile.clone();
-        let tempoci = build_oci(repo, ostree_ref, Path::new(tempdest), None, config, opts)?;
+        build_oci(repo, ostree_ref, &mut ocidir, None, config, opts)?;
+        drop(ocidir);
 
-        let digest = skopeo::copy(&tempoci, dest, authfile.as_deref()).await?;
+        // Pass the temporary oci directory as the current working directory for the skopeo process
+        let tempoci = ImageReference {
+            transport: Transport::OciDir,
+            name: ".".into(),
+        };
+        let digest = skopeo::copy(
+            &tempoci,
+            dest,
+            authfile.as_deref(),
+            Some(tempdir.try_clone()?),
+        )
+        .await?;
         Some(digest)
     };
     if let Some(digest) = digest {
