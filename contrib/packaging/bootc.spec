@@ -2,7 +2,7 @@
 
 Name:           bootc
 Version:        0.1
-Release:        1%{?dist}
+Release:        %autorelease
 Summary:        Boot containers
 
 License:        ASL 2.0
@@ -29,7 +29,8 @@ BuildRequires: systemd-devel
 %doc README.md
 %{_bindir}/bootc
 %{_prefix}/lib/bootc
-%{_mandir}/man8/bootc*
+%{_unitdir}/*
+%{_mandir}/man*/bootc*
 
 %prep
 %autosetup -p1 -Sgit
@@ -50,6 +51,4 @@ make
 %make_install INSTALL="install -p -c"
 
 %changelog
-* Tue Oct 18 2022 Colin Walters <walters@verbum.org>
-- Dummy changelog
-
+%autochangelog
