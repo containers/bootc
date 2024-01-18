@@ -104,11 +104,12 @@ fn manpages(sh: &Shell) -> Result<()> {
             .file_stem()
             .and_then(|name| name.to_str())
             .ok_or_else(|| anyhow!("Expected filename in {srcpath:?}"))?;
-        cmd!(
-            sh,
-            "pandoc -s --from=markdown --to=man --output=target/man/{base_filename}.5 {srcpath}"
-        )
-        .run()?;
+        let src =
+            std::fs::read_to_string(&srcpath).with_context(|| format!("Reading {srcpath:?}"))?;
+        let section = 5;
+        let buf = mandown::convert(&src, base_filename, section);
+        let target = format!("target/man/{base_filename}.{section}");
+        std::fs::write(&target, buf).with_context(|| format!("Writing {target}"))?;
     }
     Ok(())
 }
