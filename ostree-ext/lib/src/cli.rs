@@ -24,7 +24,7 @@ use std::process::Command;
 use tokio::sync::mpsc::Receiver;
 
 use crate::commit::container_commit;
-use crate::container::store::{ImportProgress, LayerProgress, PreparedImport};
+use crate::container::store::{ExportToOCIOpts, ImportProgress, LayerProgress, PreparedImport};
 use crate::container::{self as ostree_container, ManifestDiff};
 use crate::container::{Config, ImageReference, OstreeImageReference};
 use crate::sysroot::SysrootLock;
@@ -117,7 +117,13 @@ pub(crate) enum ContainerOpts {
         imgref: OstreeImageReference,
     },
 
-    ///  Wrap an ostree commit into a container
+    /// Wrap an ostree commit into a container image.
+    ///
+    /// The resulting container image will have a single layer, which is
+    /// very often not what's desired. To handle things more intelligently,
+    /// you will need to use (or create) a higher level tool that splits
+    /// content into distinct "chunks"; functionality for this is
+    /// exposed by the API but not CLI currently.
     #[clap(alias = "export")]
     Encapsulate {
         /// Path to the repository
@@ -275,6 +281,32 @@ pub(crate) enum ContainerImageOpts {
         /// Image reference, e.g. ostree-remote-image:someremote:registry:quay.io/exampleos/exampleos:latest
         #[clap(value_parser = parse_imgref)]
         imgref: OstreeImageReference,
+    },
+
+    /// Re-export a fetched image.
+    ///
+    /// Unlike `encapsulate`, this verb handles layered images, and will
+    /// also automatically preserve chunked structure from the fetched image.
+    Reexport {
+        /// Path to the repository
+        #[clap(long, value_parser)]
+        repo: Utf8PathBuf,
+
+        /// Source image reference, e.g. registry:quay.io/exampleos/exampleos:latest
+        #[clap(value_parser = parse_base_imgref)]
+        src_imgref: ImageReference,
+
+        /// Destination image reference, e.g. registry:quay.io/exampleos/exampleos:latest
+        #[clap(value_parser = parse_base_imgref)]
+        dest_imgref: ImageReference,
+
+        #[clap(long)]
+        /// Path to Docker-formatted authentication file.
+        authfile: Option<PathBuf>,
+
+        /// Compress at the fastest level (e.g. gzip level 1)
+        #[clap(long)]
+        compression_fast: bool,
     },
 
     /// Replace the detached metadata (e.g. to add a signature)
@@ -968,6 +1000,29 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 } => {
                     let repo = parse_repo(&repo)?;
                     container_store(&repo, &imgref, proxyopts, quiet, check).await
+                }
+                ContainerImageOpts::Reexport {
+                    repo,
+                    src_imgref,
+                    dest_imgref,
+                    authfile,
+                    compression_fast,
+                } => {
+                    let repo = &parse_repo(&repo)?;
+                    let opts = ExportToOCIOpts {
+                        authfile,
+                        skip_compression: compression_fast,
+                        ..Default::default()
+                    };
+                    let digest = ostree_container::store::export(
+                        repo,
+                        &src_imgref,
+                        &dest_imgref,
+                        Some(opts),
+                    )
+                    .await?;
+                    println!("Exported: {digest}");
+                    Ok(())
                 }
                 ContainerImageOpts::History { repo, imgref } => {
                     let repo = parse_repo(&repo)?;

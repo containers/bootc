@@ -3,8 +3,10 @@
 #![allow(missing_docs)]
 
 use crate::chunking::ObjectMetaSized;
+use crate::container::store::{self, LayeredImageState};
 use crate::container::{Config, ExportOpts, ImageReference, Transport};
 use crate::objectsource::{ObjectMeta, ObjectSourceMeta};
+use crate::objgv::gv_dirtree;
 use crate::prelude::*;
 use crate::{gio, glib};
 use anyhow::{anyhow, Context, Result};
@@ -14,13 +16,16 @@ use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtCommandExt;
 use chrono::TimeZone;
 use fn_error_context::context;
+use gvariant::aligned_bytes::TryAsAligned;
+use gvariant::{Marker, Structure};
 use io_lifetimes::AsFd;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::borrow::Cow;
+use std::fmt::Write as _;
 use std::io::Write;
 use std::ops::Add;
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -360,6 +365,108 @@ fn build_mapping_recurse(
     Ok(())
 }
 
+/// Thin wrapper for `ostree ls -RXC` to show the full file contents
+pub fn recursive_ostree_ls_text(repo: &ostree::Repo, refspec: &str) -> Result<String> {
+    let o = Command::new("ostree")
+        .cwd_dir(Dir::reopen_dir(&repo.dfd_borrow())?)
+        .args(["--repo=.", "ls", "-RXC", refspec])
+        .output()?;
+    let st = o.status;
+    if !st.success() {
+        anyhow::bail!("ostree ls failed: {st:?}");
+    }
+    let r = String::from_utf8(o.stdout)?;
+    Ok(r)
+}
+
+pub fn assert_commits_content_equal(
+    a_repo: &ostree::Repo,
+    a: &str,
+    b_repo: &ostree::Repo,
+    b: &str,
+) {
+    let a = a_repo.require_rev(a).unwrap();
+    let b = a_repo.require_rev(b).unwrap();
+    let a_commit = a_repo.load_commit(&a).unwrap().0;
+    let b_commit = b_repo.load_commit(&b).unwrap().0;
+    let a_contentid = ostree::commit_get_content_checksum(&a_commit).unwrap();
+    let b_contentid = ostree::commit_get_content_checksum(&b_commit).unwrap();
+    if a_contentid == b_contentid {
+        return;
+    }
+    let a_contents = recursive_ostree_ls_text(a_repo, &a).unwrap();
+    let b_contents = recursive_ostree_ls_text(b_repo, &b).unwrap();
+    similar_asserts::assert_eq!(a_contents, b_contents);
+    panic!("Should not be reached; had different content hashes but same recursive ls")
+}
+
+fn ls_recurse(
+    repo: &ostree::Repo,
+    path: &mut Utf8PathBuf,
+    buf: &mut String,
+    dt: &glib::Variant,
+) -> Result<()> {
+    let dt = dt.data_as_bytes();
+    let dt = dt.try_as_aligned()?;
+    let dt = gv_dirtree!().cast(dt);
+    let (files, dirs) = dt.to_tuple();
+    // A reusable buffer to avoid heap allocating these
+    let mut hexbuf = [0u8; 64];
+    for file in files {
+        let (name, csum) = file.to_tuple();
+        path.push(name.to_str());
+        hex::encode_to_slice(csum, &mut hexbuf)?;
+        let checksum = std::str::from_utf8(&hexbuf)?;
+        let meta = repo.query_file(checksum, gio::Cancellable::NONE)?.0;
+        let size = meta.size() as u64;
+        writeln!(buf, "r {path} {size}").unwrap();
+        assert!(path.pop());
+    }
+    for item in dirs {
+        let (name, contents_csum, _) = item.to_tuple();
+        let name = name.to_str();
+        // Extend our current path
+        path.push(name);
+        hex::encode_to_slice(contents_csum, &mut hexbuf)?;
+        let checksum_s = std::str::from_utf8(&hexbuf)?;
+        let child_v = repo.load_variant(ostree::ObjectType::DirTree, checksum_s)?;
+        ls_recurse(repo, path, buf, &child_v)?;
+        // We did a push above, so pop must succeed.
+        assert!(path.pop());
+    }
+    Ok(())
+}
+
+pub fn ostree_ls(repo: &ostree::Repo, r: &str) -> Result<String> {
+    let root = repo.read_commit(r, gio::Cancellable::NONE).unwrap().0;
+    // SAFETY: Must be a repofile
+    let root = root.downcast_ref::<ostree::RepoFile>().unwrap();
+    // SAFETY: must be a tree root
+    let root_contents = root.tree_get_contents_checksum().unwrap();
+    let root_contents = repo
+        .load_variant(ostree::ObjectType::DirTree, &root_contents)
+        .unwrap();
+
+    let mut contents_buf = String::new();
+    let mut pathbuf = Utf8PathBuf::from("/");
+    ls_recurse(repo, &mut pathbuf, &mut contents_buf, &root_contents)?;
+    Ok(contents_buf)
+}
+
+/// Verify the filenames (but not metadata) are the same between two commits.
+/// We unfortunately need to do this because the current commit merge path
+/// sets ownership of directories to the current user, which breaks in unit tests.
+pub fn assert_commits_filenames_equal(
+    a_repo: &ostree::Repo,
+    a: &str,
+    b_repo: &ostree::Repo,
+    b: &str,
+) {
+    let a_contents_buf = ostree_ls(a_repo, a).unwrap();
+    let b_contents_buf = ostree_ls(b_repo, b).unwrap();
+    similar_asserts::assert_eq!(a_contents_buf, b_contents_buf);
+}
+
 #[derive(Debug)]
 pub struct Fixture {
     // Just holds a reference
@@ -441,6 +548,27 @@ impl Fixture {
         let sh = xshell::Shell::new()?;
         sh.change_dir(&self.path);
         Ok(sh)
+    }
+
+    /// Given the input image reference, import it into destrepo using the default
+    /// import config. The image must not exist already in the store.
+    pub async fn must_import(&self, imgref: &ImageReference) -> Result<Box<LayeredImageState>> {
+        let ostree_imgref = crate::container::OstreeImageReference {
+            sigverify: crate::container::SignatureSource::ContainerPolicyAllowInsecure,
+            imgref: imgref.clone(),
+        };
+        let mut imp =
+            store::ImageImporter::new(self.destrepo(), &ostree_imgref, Default::default())
+                .await
+                .unwrap();
+        assert!(store::query_image(self.destrepo(), &imgref)
+            .unwrap()
+            .is_none());
+        let prep = match imp.prepare().await.context("Init prep derived")? {
+            store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+            store::PrepareResult::Ready(r) => r,
+        };
+        imp.import(prep).await
     }
 
     // Delete all objects in the destrepo
