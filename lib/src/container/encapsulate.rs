@@ -169,7 +169,7 @@ fn build_oci(
         std::fs::create_dir(ocidir_path).context("Creating OCI dir")?;
     }
     let ocidir = Dir::open_ambient_dir(ocidir_path, cap_std::ambient_authority())?;
-    let mut writer = ocidir::OciDir::create(&ocidir)?;
+    let mut writer = ocidir::OciDir::ensure(&ocidir)?;
 
     let commit = repo.require_rev(rev)?;
     let commit = commit.as_str();
