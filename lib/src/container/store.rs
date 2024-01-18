@@ -6,14 +6,18 @@
 //! base.  See [`encapsulate`][`super::encapsulate()`] for more information on encaspulation of images.
 
 use super::*;
+use crate::chunking::{self, Chunk};
 use crate::logging::system_repo_journal_print;
 use crate::refescape;
 use crate::sysroot::SysrootLock;
 use crate::utils::ResultExt;
 use anyhow::{anyhow, Context};
 use camino::{Utf8Path, Utf8PathBuf};
+use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::{Dir, MetadataExt};
+use cap_std_ext::cmdext::CapStdExtCommandExt;
 use containers_image_proxy::{ImageProxy, OpenedImage};
+use flate2::Compression;
 use fn_error_context::context;
 use futures_util::TryFutureExt;
 use oci_spec::image::{self as oci_image, Descriptor, History, ImageConfiguration, ImageManifest};
@@ -1207,6 +1211,187 @@ pub async fn copy(
     )?;
 
     Ok(())
+}
+
+/// Options controlling commit export into OCI
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
+pub struct ExportToOCIOpts {
+    /// If true, do not perform gzip compression of the tar layers.
+    pub skip_compression: bool,
+    /// Path to Docker-formatted authentication file.
+    pub authfile: Option<std::path::PathBuf>,
+}
+
+/// The way we store "chunk" layers in ostree is by writing a commit
+/// whose filenames are their own object identifier. This function parses
+/// what is written by the `ImporterMode::ObjectSet` logic, turning
+/// it back into a "chunked" structure that is used by the export code.
+fn chunking_from_layer_committed(
+    repo: &ostree::Repo,
+    l: &Descriptor,
+    chunking: &mut chunking::Chunking,
+) -> Result<()> {
+    let mut chunk = Chunk::default();
+    let layer_ref = &ref_for_layer(l)?;
+    let root = repo.read_commit(&layer_ref, gio::Cancellable::NONE)?.0;
+    let e = root.enumerate_children(
+        "standard::name,standard::size",
+        gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+        gio::Cancellable::NONE,
+    )?;
+    for child in e.clone() {
+        let child = &child?;
+        // The name here should be a valid checksum
+        let name = child.name();
+        // SAFETY: ostree doesn't give us non-UTF8 filenames
+        let name = Utf8Path::from_path(&name).unwrap();
+        ostree::validate_checksum_string(name.as_str())?;
+        chunking.remainder.move_obj(&mut chunk, name.as_str());
+    }
+    chunking.chunks.push(chunk);
+    Ok(())
+}
+
+/// Export an imported container image to a target OCI directory.
+#[context("Copying image")]
+pub(crate) fn export_to_oci(
+    repo: &ostree::Repo,
+    imgref: &ImageReference,
+    dest_oci: &Dir,
+    tag: Option<&str>,
+    opts: ExportToOCIOpts,
+) -> Result<Descriptor> {
+    let srcinfo = query_image(repo, imgref)?.ok_or_else(|| anyhow!("No such image"))?;
+    let (commit_layer, component_layers, remaining_layers) =
+        parse_manifest_layout(&srcinfo.manifest, &srcinfo.configuration)?;
+    let commit_chunk_ref = ref_for_layer(commit_layer)?;
+    let commit_chunk_rev = repo.require_rev(&commit_chunk_ref)?;
+    let mut chunking = chunking::Chunking::new(repo, &commit_chunk_rev)?;
+    for layer in component_layers {
+        chunking_from_layer_committed(repo, layer, &mut chunking)?;
+    }
+    // Unfortunately today we can't guarantee we reserialize the same tar stream
+    // or compression, so we'll need to generate a new copy of the manifest and config
+    // with the layers reset.
+    let mut new_manifest = srcinfo.manifest.clone();
+    new_manifest.layers_mut().clear();
+    let mut new_config = srcinfo.configuration.clone();
+    new_config.history_mut().clear();
+
+    let mut dest_oci = ocidir::OciDir::ensure(&dest_oci)?;
+
+    let opts = ExportOpts {
+        skip_compression: opts.skip_compression,
+        authfile: opts.authfile,
+        ..Default::default()
+    };
+
+    let mut labels = HashMap::new();
+
+    // Given the object chunking information we recomputed from what
+    // we found on disk, re-serialize to layers (tarballs).
+    export_chunked(
+        repo,
+        &srcinfo.base_commit,
+        &mut dest_oci,
+        &mut new_manifest,
+        &mut new_config,
+        &mut labels,
+        chunking,
+        &opts,
+        "",
+    )?;
+
+    // Now, handle the non-ostree layers; this is a simple conversion of
+    //
+    let compression = opts.skip_compression.then_some(Compression::none());
+    for (i, layer) in remaining_layers.iter().enumerate() {
+        let layer_ref = &ref_for_layer(layer)?;
+        let mut target_blob = dest_oci.create_raw_layer(compression)?;
+        // Sadly the libarchive stuff isn't exposed via Rust due to type unsafety,
+        // so we'll just fork off the CLI.
+        let repo_dfd = repo.dfd_borrow();
+        let repo_dir = cap_std_ext::cap_std::fs::Dir::reopen_dir(&repo_dfd)?;
+        let mut subproc = std::process::Command::new("ostree")
+            .args(["--repo=.", "export", layer_ref.as_str()])
+            .stdout(std::process::Stdio::piped())
+            .cwd_dir(repo_dir)
+            .spawn()?;
+        // SAFETY: we piped just above
+        let mut stdout = subproc.stdout.take().unwrap();
+        std::io::copy(&mut stdout, &mut target_blob).context("Creating blob")?;
+        let layer = target_blob.complete()?;
+        let previous_annotations = srcinfo
+            .manifest
+            .layers()
+            .get(i)
+            .and_then(|l| l.annotations().as_ref())
+            .cloned();
+        let previous_description = srcinfo
+            .configuration
+            .history()
+            .get(i)
+            .and_then(|h| h.comment().as_deref())
+            .unwrap_or_default();
+        dest_oci.push_layer(
+            &mut new_manifest,
+            &mut new_config,
+            layer,
+            previous_description,
+            previous_annotations,
+        )
+    }
+
+    let new_config = dest_oci.write_config(new_config)?;
+    new_manifest.set_config(new_config);
+
+    dest_oci.insert_manifest(new_manifest, tag, oci_image::Platform::default())
+}
+
+/// Given a container image reference which is stored in `repo`, export it to the
+/// target image location.
+#[context("Export")]
+pub async fn export(
+    repo: &ostree::Repo,
+    src_imgref: &ImageReference,
+    dest_imgref: &ImageReference,
+    opts: Option<ExportToOCIOpts>,
+) -> Result<String> {
+    let target_oci = dest_imgref.transport == Transport::OciDir;
+    let tempdir = if !target_oci {
+        let vartmp = cap_std::fs::Dir::open_ambient_dir("/var/tmp", cap_std::ambient_authority())?;
+        let td = cap_std_ext::cap_tempfile::TempDir::new_in(&vartmp)?;
+        // Always skip compression when making a temporary copy
+        let opts = ExportToOCIOpts {
+            skip_compression: true,
+            ..Default::default()
+        };
+        export_to_oci(repo, src_imgref, &td, None, opts)?;
+        td
+    } else {
+        let opts = opts.unwrap_or_default();
+        let (path, tag) = parse_oci_path_and_tag(dest_imgref.name.as_str());
+        tracing::debug!("using OCI path={path} tag={tag:?}");
+        let path = Dir::open_ambient_dir(path, cap_std::ambient_authority())
+            .with_context(|| format!("Opening {path}"))?;
+        let descriptor = export_to_oci(repo, src_imgref, &path, tag, opts)?;
+        return Ok(descriptor.digest().clone());
+    };
+    // Pass the temporary oci directory as the current working directory for the skopeo process
+    let target_fd = 3i32;
+    let tempoci = ImageReference {
+        transport: Transport::OciDir,
+        name: format!("/proc/self/fd/{target_fd}"),
+    };
+    let authfile = opts.as_ref().and_then(|o| o.authfile.as_deref());
+    skopeo::copy(
+        &tempoci,
+        dest_imgref,
+        authfile,
+        Some((std::sync::Arc::new(tempdir.try_clone()?.into()), target_fd)),
+    )
+    .await
 }
 
 /// Iterate over deployment commits, returning the manifests from
