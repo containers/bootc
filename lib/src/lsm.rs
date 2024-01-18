@@ -20,6 +20,7 @@ const SELINUXFS: &str = "/sys/fs/selinux";
 /// The SELinux xattr
 #[cfg(feature = "install")]
 const SELINUX_XATTR: &[u8] = b"security.selinux\0";
+const SELF_CURRENT: &str = "/proc/self/attr/current";
 
 #[context("Querying selinux availability")]
 pub(crate) fn selinux_enabled() -> Result<bool> {
@@ -27,11 +28,23 @@ pub(crate) fn selinux_enabled() -> Result<bool> {
     Ok(filesystems.contains("selinuxfs\n"))
 }
 
+/// Get the current process SELinux security context
+fn get_current_security_context() -> Result<String> {
+    std::fs::read_to_string(SELF_CURRENT).with_context(|| format!("Reading {SELF_CURRENT}"))
+}
+
+/// Determine if a security context is the "install_t" type which can
+/// write arbitrary labels.
+fn context_is_install_t(context: &str) -> bool {
+    // TODO: we shouldn't actually hardcode this...it's just ugly though
+    // to figure out whether we really can gain CAP_MAC_ADMIN.
+    context.contains(":install_t:")
+}
+
 #[context("Ensuring selinux install_t type")]
 pub(crate) fn selinux_ensure_install() -> Result<()> {
     let guardenv = "_bootc_selinuxfs_mounted";
-    let current = std::fs::read_to_string("/proc/self/attr/current")
-        .context("Reading /proc/self/attr/current")?;
+    let current = get_current_security_context()?;
     tracing::debug!("Current security context is {current}");
     if let Some(p) = std::env::var_os(guardenv) {
         let p = Path::new(&p);
@@ -85,13 +98,13 @@ impl Drop for SetEnforceGuard {
 #[cfg(feature = "install")]
 pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforceGuard>> {
     // If the process already has install_t, exit early
-    if self_has_install_t()? {
+    let current = get_current_security_context()?;
+    if context_is_install_t(&current) {
         return Ok(None);
     }
+    // Note that this will re-exec the entire process
     selinux_ensure_install()?;
-    let current = std::fs::read_to_string("/proc/self/attr/current")
-        .context("Reading /proc/self/attr/current")?;
-    let g = if !current.contains("install_t") {
+    let g = if !context_is_install_t(&current) {
         tracing::warn!("Failed to enter install_t; temporarily setting permissive mode");
         selinux_set_permissive(true)?;
         Some(SetEnforceGuard)
@@ -173,11 +186,4 @@ pub(crate) fn xattrs_have_selinux(xattrs: &ostree::glib::Variant) -> bool {
         }
     }
     false
-}
-
-fn self_has_install_t() -> Result<bool> {
-    let current = std::fs::read_to_string("/proc/self/attr/current")
-        .context("Reading /proc/self/attr/current")?;
-
-    Ok(current.contains("install_t"))
 }
