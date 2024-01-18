@@ -10,13 +10,14 @@ install:
 	install -D -m 0755 -t $(DESTDIR)$(prefix)/bin target/release/bootc
 	install -d $(DESTDIR)$(prefix)/lib/bootc/install
 	# Support installing pre-generated man pages shipped in source tarball, to avoid
-	# a dependency on pandoc downstream
-	if test -d man; then install -D -m 0644 -t $(DESTDIR)$(prefix)/share/man/man5 man/*.5; fi
-	if test -d man; then install -D -m 0644 -t $(DESTDIR)$(prefix)/share/man/man8 man/*.8; fi
-
-# These are not installed by default; one recommendation is to put them in a separate
-# sub-package or sub-component.
-install-systemd-auto:
+	# a dependency on pandoc downstream.  But in local builds these end up in target/man,
+	# so we honor that too.
+	for d in man target/man; do \
+	  if test -d $$d; then \
+	    install -D -m 0644 -t $(DESTDIR)$(prefix)/share/man/man5 $$d/*.5; \
+	    install -D -m 0644 -t $(DESTDIR)$(prefix)/share/man/man8 $$d/*.8; \
+	  fi; \
+	  done
 	install -D -m 0644 -t $(DESTDIR)/$(prefix)/lib/systemd/system systemd/*.service systemd/*.timer
 
 bin-archive: all

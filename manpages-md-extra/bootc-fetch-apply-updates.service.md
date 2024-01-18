@@ -1,3 +1,5 @@
+% bootc-fetch-apply-updates(5)
+
 # NAME
 
 bootc-fetch-apply-updates.service
@@ -17,7 +19,7 @@ project is enabled for daily updates.
 However, it is fully expected that different operating systems
 and distributions choose different defaults.
 
-## Customizing updates
+# CUSTOMIZING UPDATES
 
 Note that all three of these steps can be decoupled; they
 are:
@@ -25,3 +27,7 @@ are:
 - `bootc upgrade --check`
 - `bootc upgrade`
 - `bootc upgrade --apply`
+
+# SEE ALSO
+
+**bootc(1)**
