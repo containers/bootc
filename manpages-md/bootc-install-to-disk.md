@@ -5,11 +5,12 @@ bootc-install-to-disk - Install to the target block device
 # SYNOPSIS
 
 **bootc-install-to-disk** \[**\--wipe**\] \[**\--block-setup**\]
-\[**\--filesystem**\] \[**\--root-size**\] \[**\--target-transport**\]
-\[**\--target-imgref**\] \[**\--enforce-container-sigpolicy**\]
-\[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
-\[**\--disable-selinux**\] \[**\--karg**\] \[**\--generic-image**\]
-\[**-h**\|**\--help**\] \[**-V**\|**\--version**\] \<*DEVICE*\>
+\[**\--filesystem**\] \[**\--root-size**\] \[**\--source-imgref**\]
+\[**\--target-transport**\] \[**\--target-imgref**\]
+\[**\--enforce-container-sigpolicy**\] \[**\--target-ostree-remote**\]
+\[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
+\[**\--generic-image**\] \[**\--via-loopback**\] \[**-h**\|**\--help**\]
+\[**-V**\|**\--version**\] \<*DEVICE*\>
 
 # DESCRIPTION
 
@@ -44,6 +45,16 @@ unlock of filesystem to presence of the default tpm2 device.\
     specifiers: M (mebibytes), G (gibibytes), T (tebibytes).
 
 By default, all remaining space on the disk will be used.
+
+**\--source-imgref**=*SOURCE_IMGREF*
+
+:   Install the system from an explicitly given source.
+
+By default, bootc install and install-to-filesystem assumes that it runs
+in a podman container, and it takes the container image to install from
+the podmans container registry. If \--source-imgref is given, bootc uses
+it as the installation source, instead of the behaviour explained in the
+previous paragraph. See skopeo(1) for accepted formats.
 
 **\--target-transport**=*TARGET_TRANSPORT* \[default: registry\]
 
@@ -93,6 +104,10 @@ disabled but where the target does have SELinux enabled.
 
 \- All bootloader types will be installed - Changes to the system
 firmware will be skipped
+
+**\--via-loopback**
+
+:   Instead of targeting a block device, write to a file via loopback
 
 **-h**, **\--help**
 

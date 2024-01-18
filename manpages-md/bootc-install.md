@@ -35,6 +35,12 @@ bootc-install-to-filesystem(8)
 
 :   Install to the target filesystem
 
+bootc-install-print-configuration(8)
+
+:   Output JSON to stdout that contains the merged installation
+    configuration as it may be relevant to calling processes using
+    \`install to-filesystem\` that want to honor e.g. \`root-fs-type\`
+
 bootc-install-help(8)
 
 :   Print this message or the help of the given subcommand(s)
