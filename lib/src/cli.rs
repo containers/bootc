@@ -118,6 +118,13 @@ pub(crate) enum InstallOpts {
     ToDisk(crate::install::InstallToDiskOpts),
     /// Install to the target filesystem
     ToFilesystem(crate::install::InstallToFilesystemOpts),
+    /// Output JSON to stdout that contains the merged installation configuration
+    /// as it may be relevant to calling processes using `install to-filesystem`
+    /// that want to honor e.g. `root-fs-type`.
+    ///
+    /// At the current time, the only output key is `root-fs-type` which is a string-valued
+    /// filesystem name suitable for passing to `mkfs.$type`.
+    PrintConfiguration,
 }
 
 /// Options for man page generation
@@ -522,6 +529,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         Opt::Install(opts) => match opts {
             InstallOpts::ToDisk(opts) => crate::install::install_to_disk(opts).await,
             InstallOpts::ToFilesystem(opts) => crate::install::install_to_filesystem(opts).await,
+            InstallOpts::PrintConfiguration => crate::install::print_configuration(),
         },
         #[cfg(feature = "install")]
         Opt::ExecInHostMountNamespace { args } => {

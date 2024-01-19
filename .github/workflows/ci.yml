@@ -106,7 +106,7 @@ jobs:
     name: "Container testing"
     needs: build-fedora
     runs-on: ubuntu-latest
-    container: quay.io/fedora/fedora-coreos:testing-devel
+    container: quay.io/centos-bootc/fedora-bootc:eln
     steps:
       - name: Download
         uses: actions/download-artifact@v3

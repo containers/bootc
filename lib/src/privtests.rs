@@ -1,12 +1,13 @@
 use std::process::Command;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use camino::Utf8Path;
 use fn_error_context::context;
 use rustix::fd::AsFd;
 use xshell::{cmd, Shell};
 
 use crate::blockdev::LoopbackDevice;
+use crate::install::config::InstallConfiguration;
 
 use super::cli::TestingOpts;
 use super::spec::Host;
@@ -97,6 +98,14 @@ pub(crate) fn impl_run_container() -> Result<()> {
     assert!(!o.status.success());
     let stderr = String::from_utf8(o.stderr)?;
     assert!(stderr.contains("requires root privileges"));
+
+    let config = cmd!(sh, "bootc install print-configuration").read()?;
+    let config: InstallConfiguration =
+        serde_json::from_str(&config).context("Parsing install config")?;
+    assert_eq!(
+        config.root_fs_type.unwrap(),
+        crate::install::baseline::Filesystem::Xfs
+    );
 
     println!("ok container integration testing");
     Ok(())

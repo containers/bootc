@@ -6,11 +6,11 @@ bootc-install-to-filesystem - Install to the target filesystem
 
 **bootc-install-to-filesystem** \[**\--root-mount-spec**\]
 \[**\--root-options**\] \[**\--boot-mount-spec**\] \[**\--replace**\]
-\[**\--target-transport**\] \[**\--target-imgref**\]
-\[**\--enforce-container-sigpolicy**\] \[**\--target-ostree-remote**\]
-\[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
-\[**\--generic-image**\] \[**-h**\|**\--help**\]
-\[**-V**\|**\--version**\] \<*ROOT_PATH*\>
+\[**\--source-imgref**\] \[**\--target-transport**\]
+\[**\--target-imgref**\] \[**\--enforce-container-sigpolicy**\]
+\[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
+\[**\--disable-selinux**\] \[**\--karg**\] \[**\--generic-image**\]
+\[**-h**\|**\--help**\] \[**-V**\|**\--version**\] \<*ROOT_PATH*\>
 
 # DESCRIPTION
 
@@ -53,6 +53,16 @@ be used.
 >     bootloader state will have its contents wiped and replaced.
 >     However, the running system (and all files) will remain in place
 >     until reboot
+
+**\--source-imgref**=*SOURCE_IMGREF*
+
+:   Install the system from an explicitly given source.
+
+By default, bootc install and install-to-filesystem assumes that it runs
+in a podman container, and it takes the container image to install from
+the podmans container registry. If \--source-imgref is given, bootc uses
+it as the installation source, instead of the behaviour explained in the
+previous paragraph. See skopeo(1) for accepted formats.
 
 **\--target-transport**=*TARGET_TRANSPORT* \[default: registry\]
 

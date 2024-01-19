@@ -6,7 +6,7 @@
 
 // This sub-module is the "basic" installer that handles creating basic block device
 // and filesystem setup.
-mod baseline;
+pub(crate) mod baseline;
 
 use std::io::BufWriter;
 use std::io::Write;
@@ -429,6 +429,13 @@ impl SourceInfo {
     }
 }
 
+pub(crate) fn print_configuration() -> Result<()> {
+    let mut install_config = config::load_config()?;
+    install_config.filter_to_external();
+    let stdout = std::io::stdout().lock();
+    serde_json::to_writer(stdout, &install_config).map_err(Into::into)
+}
+
 pub(crate) mod config {
     use super::*;
 
@@ -447,6 +454,7 @@ pub(crate) mod config {
         /// Root filesystem type
         pub(crate) root_fs_type: Option<super::baseline::Filesystem>,
         /// Kernel arguments, applied at installation time
+        #[serde(skip_serializing_if = "Option::is_none")]
         pub(crate) kargs: Option<Vec<String>>,
     }
 
@@ -464,6 +472,11 @@ pub(crate) mod config {
                     .get_or_insert_with(Default::default)
                     .extend(other_kargs)
             }
+        }
+
+        // Remove all configuration which is handled by `install to-filesystem`.
+        pub(crate) fn filter_to_external(&mut self) {
+            self.kargs.take();
         }
     }
 
