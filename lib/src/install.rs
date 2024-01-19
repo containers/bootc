@@ -1080,6 +1080,7 @@ fn installation_complete() {
 }
 
 /// Implementation of the `bootc install to-disk` CLI command.
+#[context("Installing to disk")]
 pub(crate) async fn install_to_disk(opts: InstallToDiskOpts) -> Result<()> {
     let mut block_opts = opts.block_opts;
     let target_blockdev_meta = block_opts
@@ -1196,11 +1197,14 @@ fn clean_boot_directories(rootfs: &Dir) -> Result<()> {
 }
 
 /// Implementation of the `bootc install to-filsystem` CLI command.
+#[context("Installing to filesystem")]
 pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Result<()> {
     let fsopts = opts.filesystem_opts;
     let root_path = &fsopts.root_path;
 
-    let st = root_path.symlink_metadata()?;
+    let st = root_path
+        .symlink_metadata()
+        .with_context(|| format!("Querying target filesystem {root_path}"))?;
     if !st.is_dir() {
         anyhow::bail!("Not a directory: {root_path}");
     }
