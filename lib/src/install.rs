@@ -953,6 +953,7 @@ async fn prepare_install(
     let rootfs = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())
         .context("Opening /")?;
 
+    let external_source = source_opts.source_imgref.is_some();
     let source = match source_opts.source_imgref {
         None => {
             let container_info = crate::containerenv::get_container_execution_info(&rootfs)?;
@@ -1004,7 +1005,7 @@ async fn prepare_install(
 
     // Even though we require running in a container, the mounts we create should be specific
     // to this process, so let's enter a private mountns to avoid leaking them.
-    if std::env::var_os("BOOTC_SKIP_UNSHARE").is_none() {
+    if !external_source && std::env::var_os("BOOTC_SKIP_UNSHARE").is_none() {
         super::cli::ensure_self_unshared_mount_namespace().await?;
     }
 
