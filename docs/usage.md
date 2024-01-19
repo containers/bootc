@@ -22,8 +22,8 @@ on the target, use
 bootc switch --transport oci /var/mnt/usb/myos.oci
 ```
 
-The above command can only be invoked once currently; thereafter, use `bootc upgrade`
-as normal to fetch updates from the USB device.
+The above command is only necessary once, and thereafter will be idempotent.
+Then, use `bootc upgrade --apply` to fetch and apply the update from the USB device.
 
 This process can all be automated by creating systemd
 units that look for a USB device with a specific label, mount (optionally with LUKS

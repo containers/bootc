@@ -442,7 +442,8 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     };
 
     if new_spec == host.spec {
-        anyhow::bail!("No changes in current host spec");
+        println!("Image specification is unchanged.");
+        return Ok(());
     }
     let new_spec = RequiredHostSpec::from_spec(&new_spec)?;
 
