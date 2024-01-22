@@ -15,9 +15,16 @@ case "${AUTOPKGTEST_REBOOT_MARK:-}" in
     bootc status > status.txt
     grep 'Version:' status.txt
     bootc status --json > status.json
-    image=$(jq -r '.status.booted.image.image' < status.json)
+    image=$(jq '.status.booted.image.image' < status.json)
     echo "booted into $image"
     echo "ok status test"
+
+    # Switch should be idempotent
+    # (also TODO, get rid of the crazy .image.image.image nesting)
+    name=$(echo "${image}" | jq -r '.image')
+    bootc switch $name
+    staged=$(bootc status --json | jq .status.staged)
+    test "$staged" = "null"
 
     host_ty=$(jq -r '.status.type' < status.json)
     test "${host_ty}" = "bootcHost"
