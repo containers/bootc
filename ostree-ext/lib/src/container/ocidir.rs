@@ -154,6 +154,7 @@ pub fn new_empty_manifest() -> oci_image::ImageManifestBuilder {
 impl OciDir {
     /// Open the OCI directory at the target path; if it does not already
     /// have the standard OCI metadata, it is created.
+    #[context("Opening OCI dir")]
     pub fn ensure(dir: &Dir) -> Result<Self> {
         let mut db = cap_std::fs::DirBuilder::new();
         db.recursive(true).mode(0o755);
