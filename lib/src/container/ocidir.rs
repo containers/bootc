@@ -6,7 +6,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
-use cap_std::fs::Dir;
+use cap_std::fs::{Dir, DirBuilderExt};
 use cap_std_ext::dirext::CapStdExtDirExt;
 use cap_std_ext::{cap_std, cap_tempfile};
 use containers_image_proxy::oci_spec;
@@ -21,7 +21,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::{prelude::*, BufReader};
-use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
 /// Path inside an OCI directory to the blobs
