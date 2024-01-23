@@ -310,7 +310,7 @@ pub(crate) fn switch_origin_inplace(root: &Dir, imgref: &ImageReference) -> Resu
     deploydir
         .atomic_write(&origin_path, serialized_origin.as_bytes())
         .context("Writing origin")?;
-    return Ok(newest_deployment);
+    Ok(newest_deployment)
 }
 
 #[test]
