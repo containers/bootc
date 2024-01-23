@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use camino::Utf8Path;
-use cap_std::fs::{Dir, DirBuilder};
+use cap_std::fs::{Dir, DirBuilder, DirBuilderExt};
 use cap_std_ext::cap_std;
 use containers_image_proxy::oci_spec;
 use containers_image_proxy::oci_spec::image::ImageManifest;
@@ -17,7 +17,6 @@ use ostree_ext::{gio, glib};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter};
-use std::os::unix::fs::DirBuilderExt;
 use std::process::Command;
 use std::time::SystemTime;
 use xshell::cmd;
