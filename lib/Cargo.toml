@@ -18,7 +18,7 @@ chrono = "0.4.19"
 olpc-cjson = "0.1.1"
 clap = { version= "4.2", features = ["derive"] }
 clap_mangen = { version = "0.2", optional = true }
-cap-std-ext = "3.0"
+cap-std-ext = "4.0"
 flate2 = { features = ["zlib"], default_features = false, version = "1.0.20" }
 fn-error-context = "0.2.0"
 futures-util = "0.3.13"
