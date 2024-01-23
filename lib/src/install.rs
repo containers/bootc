@@ -1099,10 +1099,8 @@ pub(crate) async fn install_to_disk(opts: InstallToDiskOpts) -> Result<()> {
         let loopback_dev = crate::blockdev::LoopbackDevice::new(block_opts.device.as_std_path())?;
         block_opts.device = loopback_dev.path().into();
         loopback = Some(loopback_dev);
-    } else {
-        if !target_blockdev_meta.file_type().is_block_device() {
-            anyhow::bail!("Not a block device: {}", block_opts.device);
-        }
+    } else if !target_blockdev_meta.file_type().is_block_device() {
+        anyhow::bail!("Not a block device: {}", block_opts.device);
     }
     let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
 
