@@ -105,9 +105,13 @@ pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforce
     // Note that this will re-exec the entire process
     selinux_ensure_install()?;
     let g = if !context_is_install_t(&current) {
-        tracing::warn!("Failed to enter install_t; temporarily setting permissive mode");
-        selinux_set_permissive(true)?;
-        Some(SetEnforceGuard)
+        if std::env::var_os("BOOTC_SETENFORCE0_FALLBACK").is_some() {
+            tracing::warn!("Failed to enter install_t; temporarily setting permissive mode");
+            selinux_set_permissive(true)?;
+            Some(SetEnforceGuard)
+        } else {
+            anyhow::bail!("Failed to enter install_t (running as {current}) - use BOOTC_SETENFORCE0_FALLBACK=1 to override");
+        }
     } else {
         None
     };
