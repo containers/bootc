@@ -1088,7 +1088,6 @@ pub(crate) async fn install_to_disk(opts: InstallToDiskOpts) -> Result<()> {
         .device
         .metadata()
         .with_context(|| format!("Querying {}", &block_opts.device))?;
-    let mut loopback = None;
     if opts.via_loopback {
         if !target_blockdev_meta.file_type().is_file() {
             anyhow::bail!(
@@ -1096,19 +1095,28 @@ pub(crate) async fn install_to_disk(opts: InstallToDiskOpts) -> Result<()> {
                 block_opts.device
             );
         }
-        let loopback_dev = crate::blockdev::LoopbackDevice::new(block_opts.device.as_std_path())?;
-        block_opts.device = loopback_dev.path().into();
-        loopback = Some(loopback_dev);
     } else if !target_blockdev_meta.file_type().is_block_device() {
         anyhow::bail!("Not a block device: {}", block_opts.device);
     }
     let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
 
     // This is all blocking stuff
-    let mut rootfs = {
+    let (mut rootfs, loopback) = {
+        let loopback_dev = if opts.via_loopback {
+            let loopback_dev =
+                crate::blockdev::LoopbackDevice::new(block_opts.device.as_std_path())?;
+            block_opts.device = loopback_dev.path().into();
+            Some(loopback_dev)
+        } else {
+            None
+        };
+
         let state = state.clone();
-        tokio::task::spawn_blocking(move || baseline::install_create_rootfs(&state, block_opts))
-            .await??
+        let rootfs = tokio::task::spawn_blocking(move || {
+            baseline::install_create_rootfs(&state, block_opts)
+        })
+        .await??;
+        (rootfs, loopback_dev)
     };
 
     install_to_filesystem_impl(&state, &mut rootfs).await?;

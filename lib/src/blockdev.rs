@@ -89,6 +89,7 @@ impl LoopbackDevice {
             .quiet()
             .read()?;
         let dev = Utf8PathBuf::from(dev.trim());
+        tracing::debug!("Allocated loopback {dev}");
         Ok(Self { dev: Some(dev) })
     }
 
@@ -104,6 +105,7 @@ impl LoopbackDevice {
         let dev = if let Some(dev) = self.dev.take() {
             dev
         } else {
+            tracing::trace!("loopback device already deallocated");
             return Ok(());
         };
         Task::new("losetup", "losetup")
