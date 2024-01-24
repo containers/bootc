@@ -41,8 +41,18 @@ fn context_is_install_t(context: &str) -> bool {
     context.contains(":install_t:")
 }
 
+#[context("Testing install_t")]
+fn test_install_t() -> Result<bool> {
+    let tmpf = tempfile::NamedTempFile::new()?;
+    let st = Command::new("chcon")
+        .args(["-t", "invalid_bootcinstall_testlabel_t"])
+        .arg(tmpf.path())
+        .status()?;
+    Ok(st.success())
+}
+
 #[context("Ensuring selinux install_t type")]
-pub(crate) fn selinux_ensure_install() -> Result<()> {
+pub(crate) fn selinux_ensure_install() -> Result<bool> {
     let guardenv = "_bootc_selinuxfs_mounted";
     let current = get_current_security_context()?;
     tracing::debug!("Current security context is {current}");
@@ -54,9 +64,13 @@ pub(crate) fn selinux_ensure_install() -> Result<()> {
         } else {
             tracing::debug!("Assuming we now have a privileged (e.g. install_t) label");
         }
-        return Ok(());
+        return test_install_t();
     }
-    tracing::debug!("Copying self to temporary file for re-exec");
+    if test_install_t()? {
+        tracing::debug!("We have install_t");
+        return Ok(true);
+    }
+    tracing::debug!("Lacking install_t capabilities; copying self to temporary file for re-exec");
     // OK now, we always copy our binary to a tempfile, set its security context
     // to match that of /usr/bin/ostree, and then re-exec.  This is really a gross
     // hack; we can't always rely on https://github.com/fedora-selinux/selinux-policy/pull/1500/commits/67eb283c46d35a722636d749e5b339615fe5e7f5
@@ -102,18 +116,16 @@ pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforce
     if context_is_install_t(&current) {
         return Ok(None);
     }
-    // Note that this will re-exec the entire process
-    selinux_ensure_install()?;
-    let g = if !context_is_install_t(&current) {
-        if std::env::var_os("BOOTC_SETENFORCE0_FALLBACK").is_some() {
-            tracing::warn!("Failed to enter install_t; temporarily setting permissive mode");
-            selinux_set_permissive(true)?;
-            Some(SetEnforceGuard)
-        } else {
-            anyhow::bail!("Failed to enter install_t (running as {current}) - use BOOTC_SETENFORCE0_FALLBACK=1 to override");
-        }
+    // Note that this may re-exec the entire process
+    if selinux_ensure_install()? {
+        return Ok(None);
+    }
+    let g = if std::env::var_os("BOOTC_SETENFORCE0_FALLBACK").is_some() {
+        tracing::warn!("Failed to enter install_t; temporarily setting permissive mode");
+        selinux_set_permissive(true)?;
+        Some(SetEnforceGuard)
     } else {
-        None
+        anyhow::bail!("Failed to enter install_t (running as {current}) - use BOOTC_SETENFORCE0_FALLBACK=1 to override");
     };
     Ok(g)
 }

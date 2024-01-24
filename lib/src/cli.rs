@@ -293,7 +293,9 @@ pub(crate) async fn prepare_for_write() -> Result<()> {
     }
     ensure_self_unshared_mount_namespace().await?;
     if crate::lsm::selinux_enabled()? {
-        crate::lsm::selinux_ensure_install()?;
+        if !crate::lsm::selinux_ensure_install()? {
+            tracing::warn!("Do not have install_t capabilities");
+        }
     }
     Ok(())
 }
