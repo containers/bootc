@@ -211,6 +211,19 @@ storage or filesystem setups, but reuses the "top half" of the logic.
 For example, a goal is to change [Anaconda](https://github.com/rhinstaller/anaconda/)
 to use this.
 
+### Using `bootc install to-disk --via-loopback`
+
+Because every `bootc` system comes with an opinionated default installation
+process, you can create a raw disk image (that can e.g. be booted via virtualization)
+via e.g.:
+
+```bash
+truncate -s 10G exampleos.raw
+podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t -v .:/output <yourimage> bootc install to-disk --generic-image --via-loopback /output/myimage.raw
+```
+
+Notice that we use `--generic-image` for this use case.
+
 ### Using `bootc install to-filesystem --replace=alongside`
 
 This is a variant of `install to-filesystem`, which maximizes convenience for using
