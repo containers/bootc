@@ -5,7 +5,7 @@
 use anyhow::Ok;
 use anyhow::{Context, Result};
 
-use cap_std::fs::Dir;
+use cap_std::fs::{Dir, MetadataExt};
 use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt;
 use fn_error_context::context;
@@ -16,7 +16,6 @@ use ostree_ext::container::store::PrepareResult;
 use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
-use rustix::fs::MetadataExt;
 
 use crate::spec::HostSpec;
 use crate::spec::ImageReference;
@@ -315,7 +314,7 @@ pub(crate) fn switch_origin_inplace(root: &Dir, imgref: &ImageReference) -> Resu
 
 #[test]
 fn test_switch_inplace() -> Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
+    use cap_std::fs::DirBuilderExt;
 
     let td = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
     let mut builder = cap_std::fs::DirBuilder::new();

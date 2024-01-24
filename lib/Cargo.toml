@@ -15,11 +15,11 @@ anstream = "0.6.4"
 anstyle = "1.0.4"
 anyhow = "1.0"
 camino = { version = "1.0.4", features = ["serde1"] }
-ostree-ext = { version = "0.12.8" }
+ostree-ext = { version = "0.13" }
 chrono = { version = "0.4.23", features = ["serde"] }
 clap = { version= "4.2", features = ["derive"] }
 clap_mangen = { version = "0.2", optional = true }
-cap-std-ext = "3"
+cap-std-ext = "4"
 hex = "^0.4"
 fn-error-context = "0.2.0"
 gvariant = "0.4.0"
