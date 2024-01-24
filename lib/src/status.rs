@@ -117,9 +117,9 @@ pub(crate) fn labels_of_config(
 pub(crate) fn create_imagestatus(
     image: ImageReference,
     manifest_digest: &str,
-    config: Option<&ImageConfiguration>,
+    config: &ImageConfiguration,
 ) -> ImageStatus {
-    let labels = config.and_then(labels_of_config);
+    let labels = labels_of_config(config);
     let timestamp = labels
         .and_then(|l| {
             l.get(oci_spec::image::ANNOTATION_CREATED)
@@ -127,9 +127,7 @@ pub(crate) fn create_imagestatus(
         })
         .and_then(try_deserialize_timestamp);
 
-    let version = config
-        .and_then(ostree_container::version_for_config)
-        .map(ToOwned::to_owned);
+    let version = ostree_container::version_for_config(config).map(ToOwned::to_owned);
     ImageStatus {
         image,
         version,
@@ -155,13 +153,10 @@ fn boot_entry_from_deployment(
             let csum = deployment.csum();
             let imgstate = ostree_container::store::query_image_commit(repo, &csum)?;
             let cached = imgstate.cached_update.map(|cached| {
-                create_imagestatus(image.clone(), &cached.manifest_digest, Some(&cached.config))
+                create_imagestatus(image.clone(), &cached.manifest_digest, &cached.config)
             });
-            let imagestatus = create_imagestatus(
-                image,
-                &imgstate.manifest_digest,
-                imgstate.configuration.as_ref(),
-            );
+            let imagestatus =
+                create_imagestatus(image, &imgstate.manifest_digest, &imgstate.configuration);
             // We found a container-image based deployment
             (Some(imagestatus), cached)
         } else {

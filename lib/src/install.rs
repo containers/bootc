@@ -20,14 +20,13 @@ use anyhow::Ok;
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
-use cap_std::fs::Dir;
+use cap_std::fs::{Dir, MetadataExt};
 use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtDirExt;
 use chrono::prelude::*;
 use clap::ValueEnum;
 use ostree_ext::oci_spec;
 use rustix::fs::FileTypeExt;
-use rustix::fs::MetadataExt;
 
 use fn_error_context::context;
 use ostree::gio;
@@ -691,8 +690,7 @@ async fn initialize_ostree_root_from_self(
 
     let uname = rustix::system::uname();
 
-    let config = state.configuration.as_ref();
-    let labels = config.and_then(crate::status::labels_of_config);
+    let labels = crate::status::labels_of_config(&state.configuration);
     let timestamp = labels
         .and_then(|l| {
             l.get(oci_spec::image::ANNOTATION_CREATED)
