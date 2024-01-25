@@ -33,14 +33,6 @@ fn get_current_security_context() -> Result<String> {
     std::fs::read_to_string(SELF_CURRENT).with_context(|| format!("Reading {SELF_CURRENT}"))
 }
 
-/// Determine if a security context is the "install_t" type which can
-/// write arbitrary labels.
-fn context_is_install_t(context: &str) -> bool {
-    // TODO: we shouldn't actually hardcode this...it's just ugly though
-    // to figure out whether we really can gain CAP_MAC_ADMIN.
-    context.contains(":install_t:")
-}
-
 #[context("Testing install_t")]
 fn test_install_t() -> Result<bool> {
     let tmpf = tempfile::NamedTempFile::new()?;
@@ -112,10 +104,6 @@ impl Drop for SetEnforceGuard {
 #[cfg(feature = "install")]
 pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforceGuard>> {
     // If the process already has install_t, exit early
-    let current = get_current_security_context()?;
-    if context_is_install_t(&current) {
-        return Ok(None);
-    }
     // Note that this may re-exec the entire process
     if selinux_ensure_install()? {
         return Ok(None);
@@ -125,6 +113,7 @@ pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforce
         selinux_set_permissive(true)?;
         Some(SetEnforceGuard)
     } else {
+        let current = get_current_security_context()?;
         anyhow::bail!("Failed to enter install_t (running as {current}) - use BOOTC_SETENFORCE0_FALLBACK=1 to override");
     };
     Ok(g)
