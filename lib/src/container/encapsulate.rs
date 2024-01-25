@@ -319,15 +319,16 @@ async fn build_impl(
         drop(ocidir);
 
         // Pass the temporary oci directory as the current working directory for the skopeo process
+        let target_fd = 3i32;
         let tempoci = ImageReference {
             transport: Transport::OciDir,
-            name: ".".into(),
+            name: format!("/proc/self/fd/{target_fd}"),
         };
         let digest = skopeo::copy(
             &tempoci,
             dest,
             authfile.as_deref(),
-            Some(tempdir.try_clone()?),
+            Some((std::sync::Arc::new(tempdir.try_clone()?.into()), target_fd)),
         )
         .await?;
         Some(digest)
