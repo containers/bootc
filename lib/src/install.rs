@@ -873,9 +873,22 @@ fn ensure_var() -> Result<()> {
 /// We can't bind mount though - we need to symlink it so that each calling process
 /// will traverse the link.
 #[context("Linking tmp mounts to host")]
-pub(crate) fn propagate_tmp_mounts_to_host() -> Result<()> {
-    // Point our /tmp and /var/tmp at the host, via the /proc/1/root magic link
-    for path in ["/tmp", "/var/tmp"].map(Utf8Path::new) {
+pub(crate) fn setup_tmp_mounts() -> Result<()> {
+    let st = rustix::fs::statfs("/tmp")?;
+    if st.f_type == libc::TMPFS_MAGIC {
+        tracing::trace!("Already have tmpfs /tmp")
+    } else {
+        // Note we explicitly also don't want a "nosuid" tmp, because that
+        // suppresses our install_t transition
+        Task::new_and_run(
+            "Mounting tmpfs /tmp",
+            "mount",
+            ["tmpfs", "-t", "tmpfs", "/tmp"],
+        )?;
+    }
+
+    // Point our /var/tmp at the host, via the /proc/1/root magic link
+    for path in ["/var/tmp"].map(Utf8Path::new) {
         if path.try_exists()? {
             let st = rustix::fs::statfs(path.as_std_path()).context(path)?;
             if st.f_type != libc::OVERLAYFS_SUPER_MAGIC {
@@ -999,7 +1012,7 @@ async fn prepare_install(
     }
 
     ensure_var()?;
-    propagate_tmp_mounts_to_host()?;
+    setup_tmp_mounts()?;
 
     // Even though we require running in a container, the mounts we create should be specific
     // to this process, so let's enter a private mountns to avoid leaking them.
