@@ -4,6 +4,10 @@ use serde::Deserialize;
 use crate::install::run_in_host_mountns;
 use crate::task::Task;
 
+/// Where we look inside our container to find our own image
+/// for use with `bootc install`.
+pub(crate) const CONTAINER_STORAGE: &str = "/var/lib/containers";
+
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct Inspect {

@@ -245,6 +245,8 @@ pub(crate) struct SourceInfo {
     pub(crate) selinux: bool,
     /// Whether the source is available in the host mount namespace
     pub(crate) in_host_mountns: bool,
+    /// Whether we were invoked with -v /var/lib/containers:/var/lib/containers
+    pub(crate) have_host_container_storage: bool,
 }
 
 // Shared read-only global state
@@ -387,16 +389,33 @@ impl SourceInfo {
         };
         let digest = crate::podman::imageid_to_digest(&container_info.imageid)?;
 
-        // Verify up front we can do the fetch
-        require_skopeo_with_containers_storage()?;
+        let root = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+        let have_host_container_storage = Utf8Path::new(crate::podman::CONTAINER_STORAGE)
+            .try_exists()?
+            && ostree_ext::mountutil::is_mountpoint(
+                &root,
+                crate::podman::CONTAINER_STORAGE.trim_start_matches('/'),
+            )?
+            .unwrap_or_default();
 
-        Self::new(imageref, Some(digest), true)
+        // Verify up front we can do the fetch
+        if have_host_container_storage {
+            tracing::debug!("Host container storage found");
+        } else {
+            tracing::debug!(
+                "No {} mount available, checking skopeo",
+                crate::podman::CONTAINER_STORAGE
+            );
+            require_skopeo_with_containers_storage()?;
+        }
+
+        Self::new(imageref, Some(digest), true, have_host_container_storage)
     }
 
     #[context("Creating source info from a given imageref")]
     pub(crate) fn from_imageref(imageref: &str) -> Result<Self> {
         let imageref = ostree_container::ImageReference::try_from(imageref)?;
-        Self::new(imageref, None, false)
+        Self::new(imageref, None, false, false)
     }
 
     /// Construct a new source information structure
@@ -404,6 +423,7 @@ impl SourceInfo {
         imageref: ostree_container::ImageReference,
         digest: Option<String>,
         in_host_mountns: bool,
+        have_host_container_storage: bool,
     ) -> Result<Self> {
         let cancellable = ostree::gio::Cancellable::NONE;
         let commit = Task::new("Reading ostree commit", "ostree")
@@ -424,6 +444,7 @@ impl SourceInfo {
             digest,
             selinux,
             in_host_mountns,
+            have_host_container_storage,
         })
     }
 }
@@ -630,10 +651,16 @@ async fn initialize_ostree_root_from_self(
             }
         };
 
-        // We need to fetch the container image from the root mount namespace
-        let skopeo_cmd = run_in_host_mountns("skopeo");
+        // We need to fetch the container image from the root mount namespace.  If
+        // we don't have /var/lib/containers mounted in this image, fork off skopeo
+        // in the host mountnfs.
+        let skopeo_cmd = if !state.source.have_host_container_storage {
+            Some(run_in_host_mountns("skopeo"))
+        } else {
+            None
+        };
         let proxy_cfg = ostree_container::store::ImageProxyConfig {
-            skopeo_cmd: Some(skopeo_cmd),
+            skopeo_cmd,
             ..Default::default()
         };
 

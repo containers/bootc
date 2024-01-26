@@ -27,9 +27,8 @@ inside the container.
 There are two sub-commands: `bootc install to-disk` and `boot install to-filesystem`.
 
 However, nothing *else* (external) is required to perform a basic installation
-to disk.  (The one exception to host requirements today is that the host must
-have `skopeo` installed.  This is a bug; more information in
-[this issue](https://github.com/containers/bootc/issues/81).)
+to disk - the container image itself comes with a baseline self-sufficient installer
+that sets things up ready to boot.
 
 This is motivated by experience gained from the Fedora CoreOS
 project where today the expectation is that one boots from a pre-existing disk
@@ -58,7 +57,7 @@ to an existing system and install your container image. Failure to run
 Here's an example of using `bootc install` (root/elevated permission required):
 
 ```bash
-podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t <image> bootc install to-disk /path/to/disk
+podman run --rm --privileged --pid=host -v /var/lib/containers:/var/lib/containers --security-opt label=type:unconfined_t <image> bootc install to-disk /path/to/disk
 ```
 
 Note that while `--privileged` is used, this command will not perform any
@@ -69,6 +68,10 @@ the host's block device where `<image>` will be installed on.
 The `--pid=host --security-opt label=type:unconfined_t` today
 make it more convenient for bootc to perform some privileged
 operations; in the future these requirement may be dropped.
+
+The `-v /var/lib/containers:/var/lib/containers` option is required in order
+for the container to access its own underlying image, which is used by
+the installation process.
 
 Jump to the section for [`install to-filesystem`](#more-advanced-installation) later
 in this document for additional information about that method.
@@ -219,7 +222,7 @@ via e.g.:
 
 ```bash
 truncate -s 10G exampleos.raw
-podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t -v .:/output <yourimage> bootc install to-disk --generic-image --via-loopback /output/myimage.raw
+podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t  -v /var/lib/containers:/var/lib/containers -v .:/output <yourimage> bootc install to-disk --generic-image --via-loopback /output/myimage.raw
 ```
 
 Notice that we use `--generic-image` for this use case.
@@ -237,7 +240,7 @@ support the root storage setup already initialized.
 The core command should look like this (root/elevated permission required):
 
 ```bash
-podman run --rm --privileged -v /:/target \
+podman run --rm --privileged -v /var/lib/containers:/var/lib/containers -v /:/target \
              --pid=host --security-opt label=type:unconfined_t \
              <image> \
              bootc install to-filesystem --replace=alongside /target
