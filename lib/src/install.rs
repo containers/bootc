@@ -1093,13 +1093,18 @@ fn installation_complete() {
 
 /// Implementation of the `bootc install to-disk` CLI command.
 #[context("Installing to disk")]
-pub(crate) async fn install_to_disk(opts: InstallToDiskOpts) -> Result<()> {
+pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
     let mut block_opts = opts.block_opts;
     let target_blockdev_meta = block_opts
         .device
         .metadata()
         .with_context(|| format!("Querying {}", &block_opts.device))?;
     if opts.via_loopback {
+        if !opts.config_opts.generic_image {
+            eprintln!("Automatically enabling --generic-image when installing via loopback");
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            opts.config_opts.generic_image = true;
+        }
         if !target_blockdev_meta.file_type().is_file() {
             anyhow::bail!(
                 "Not a regular file (to be used via loopback): {}",
