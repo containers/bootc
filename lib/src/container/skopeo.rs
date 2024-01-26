@@ -2,9 +2,9 @@
 
 use super::ImageReference;
 use anyhow::{Context, Result};
-use cap_std_ext::cap_std::fs::Dir;
 use cap_std_ext::cmdext::CapStdExtCommandExt;
 use fn_error_context::context;
+use io_lifetimes::OwnedFd;
 use serde::Deserialize;
 use std::io::Read;
 use std::path::Path;
@@ -66,15 +66,15 @@ pub(crate) async fn copy(
     src: &ImageReference,
     dest: &ImageReference,
     authfile: Option<&Path>,
-    cwd: Option<Dir>,
+    add_fd: Option<(std::sync::Arc<OwnedFd>, i32)>,
 ) -> Result<String> {
     let digestfile = tempfile::NamedTempFile::new()?;
     let mut cmd = new_cmd();
     cmd.stdout(std::process::Stdio::null()).arg("copy");
     cmd.arg("--digestfile");
     cmd.arg(digestfile.path());
-    if let Some(cwd) = cwd {
-        cmd.cwd_dir(cwd);
+    if let Some((add_fd, n)) = add_fd {
+        cmd.take_fd_n(add_fd, n);
     }
     if let Some(authfile) = authfile {
         cmd.arg("--authfile");
