@@ -339,7 +339,10 @@ pub(crate) fn install_create_rootfs(
     // Initialize rootfs
     let root_filesystem = opts
         .filesystem
-        .or(state.install_config.root_fs_type)
+        .or(state
+            .install_config
+            .filesystem_root()
+            .and_then(|r| r.fstype))
         .ok_or_else(|| anyhow::anyhow!("No root filesystem specified"))?;
     let root_uuid = mkfs(&rootdev, root_filesystem, Some("root"), [])?;
     let rootarg = format!("root=UUID={root_uuid}");

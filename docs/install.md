@@ -103,15 +103,15 @@ To enable `bootc install` as part of your OS/distribution base image,
 create a file named `/usr/lib/bootc/install/00-<osname>.toml` with the contents of the form:
 
 ```toml
-[install]
-root-fs-type = "xfs"
+[install.filesystem.root]
+type = "xfs"
 ```
 
-The `root-fs-type` value **MUST** be set.
+The `install.filesystem.root` value **MUST** be set.
 
 Configuration files found in this directory will be merged, with higher alphanumeric values
 taking precedence.  If for example you are building a derived container image from the above OS,
-you could create a `50-myos.toml`  that sets `root-fs-type = "btrfs"` which will override the
+you could create a `50-myos.toml`  that sets `type = "btrfs"` which will override the
 prior setting.
 
 Other available options, also under the `[install]` section:
@@ -120,6 +120,8 @@ Other available options, also under the `[install]` section:
 This option is particularly useful when creating derived/layered images; for example, a cloud
 image may want to have its default `console=` set, in contrast with a default base image.
 The values in this field are space separated.
+
+`root-fs-type`: This value is the same as `install.filesystem.root.type`.
 
 ## Installing an "unconfigured" image
 
