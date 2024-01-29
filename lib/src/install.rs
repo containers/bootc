@@ -445,6 +445,10 @@ async fn initialize_ostree_root_from_self(
     let rootfs = root_setup.rootfs.as_path();
     let cancellable = gio::Cancellable::NONE;
 
+    // Ensure that the physical root is labeled.
+    // Another implementation: https://github.com/coreos/coreos-assembler/blob/3cd3307904593b3a131b81567b13a4d0b6fe7c90/src/create_disk.sh#L295
+    state.lsm_label(rootfs, "/".into(), false)?;
+
     // TODO: make configurable?
     let stateroot = STATEROOT_DEFAULT;
     Task::new_and_run(
@@ -452,6 +456,12 @@ async fn initialize_ostree_root_from_self(
         "ostree",
         ["admin", "init-fs", "--modern", rootfs.as_str()],
     )?;
+
+    // And also label /boot AKA xbootldr, if it exists
+    let bootdir = rootfs.join("boot");
+    if bootdir.try_exists()? {
+        state.lsm_label(&bootdir, "/boot".into(), false)?;
+    }
 
     // Default to avoiding grub2-mkconfig etc., but we need to use zipl on s390x.
     // TODO: Lower this logic into ostree proper.
