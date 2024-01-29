@@ -40,6 +40,9 @@ EOF
     grep -Ee '^linux /boot/ostree' /var/mnt/loader/entries/*.conf
     umount /var/mnt
     echo "ok install"
+    mount /dev/vda4 /var/mnt
+    ls -dZ /var/mnt |grep ':root_t:'
+    umount /var/mnt
 
     # Now test install to-filesystem
     # Wipe the device
