@@ -100,8 +100,9 @@ pub(crate) fn impl_run_container() -> Result<()> {
     assert!(stderr.contains("requires root privileges"));
 
     let config = cmd!(sh, "bootc install print-configuration").read()?;
-    let config: InstallConfiguration =
+    let mut config: InstallConfiguration =
         serde_json::from_str(&config).context("Parsing install config")?;
+    config.canonicalize();
     assert_eq!(
         config.root_fs_type.unwrap(),
         crate::install::baseline::Filesystem::Xfs
