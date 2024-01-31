@@ -46,3 +46,5 @@ jobs:
             -v /var/lib/containers:/var/lib/containers \
             localhost/bootupd:latest bootc install to-filesystem --skip-fetch-check \
             --disable-selinux --replace=alongside /target
+          # Verify we injected static configs
+          jq -re '.["static-configs"].version' /boot/bootupd-state.json
