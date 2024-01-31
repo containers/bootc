@@ -48,3 +48,8 @@ install: install-units
 install-grub-static:
 	install -m 644 -D -t ${DESTDIR}$(PREFIX)/lib/bootupd/grub2-static src/grub2/*.cfg
 	install -m 755 -d ${DESTDIR}$(PREFIX)/lib/bootupd/grub2-static/configs.d
+
+bin-archive:
+	rm target/inst -rf
+	$(MAKE) install install-grub-static DESTDIR=$$(pwd)/target/inst
+	tar -C target/inst -c --zstd -f target/bootupd.tar.zst .
