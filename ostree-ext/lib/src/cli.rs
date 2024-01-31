@@ -358,9 +358,16 @@ pub(crate) enum ContainerImageOpts {
         #[clap(long)]
         transport: Option<String>,
 
-        /// Explicitly opt-out of requiring any form of signature verification.
-        #[clap(long)]
+        /// This option does nothing and is now deprecated.  Signature verification enforcement
+        /// proved to not be viable.
+        ///
+        /// If you want to still enforce it, use `--enforce-container-sigpolicy`.
+        #[clap(long, conflicts_with = "enforce_container_sigpolicy")]
         no_signature_verification: bool,
+
+        /// Require that the containers-storage stack
+        #[clap(long)]
+        enforce_container_sigpolicy: bool,
 
         /// Enable verification via an ostree remote
         #[clap(long)]
@@ -1070,7 +1077,8 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     imgref,
                     image,
                     transport,
-                    no_signature_verification,
+                    mut no_signature_verification,
+                    enforce_container_sigpolicy,
                     ostree_remote,
                     target_imgref,
                     no_imgref,
@@ -1078,6 +1086,9 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     proxyopts,
                     write_commitid_to,
                 } => {
+                    // As of recent releases, signature verification enforcement is
+                    // off by default, and must be explicitly enabled.
+                    no_signature_verification = !enforce_container_sigpolicy;
                     let sysroot = &if let Some(sysroot) = sysroot {
                         ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)))
                     } else {
