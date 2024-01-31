@@ -39,6 +39,7 @@ fn test_install_t() -> Result<bool> {
     let st = Command::new("chcon")
         .args(["-t", "invalid_bootcinstall_testlabel_t"])
         .arg(tmpf.path())
+        .stderr(std::process::Stdio::null())
         .status()?;
     Ok(st.success())
 }
