@@ -39,9 +39,18 @@ ostree-ext-cli container image remove --repo "${sysroot}/ostree/repo" registry:"
 ostree admin --sysroot="${sysroot}" undeploy 0
 # Now test the new syntax which has a nicer --image that defaults to registry.
 ostree-ext-cli container image deploy --transport registry --sysroot "${sysroot}" \
-    --stateroot "${stateroot}" --image "${image}" --no-signature-verification
+    --stateroot "${stateroot}" --image "${image}"
 ostree admin --sysroot="${sysroot}" status
 ostree admin --sysroot="${sysroot}" undeploy 0
+if ostree-ext-cli container image deploy --transport registry --sysroot "${sysroot}" \
+    --stateroot "${stateroot}" --image "${image}" --enforce-container-sigpolicy 2>err.txt; then
+    echo "Deployment with enforced verification succeeded unexpectedly" 1>&2
+    exit 1
+fi
+if ! grep -Ee 'insecureAcceptAnything.*refusing usage' err.txt; then
+    echo "unexpected error" 1>&2
+    cat err.txt
+fi
 # Now we should prune it
 ostree-ext-cli container image prune-images --sysroot "${sysroot}"
 ostree-ext-cli container image list --repo "${sysroot}/ostree/repo" > out.txt
