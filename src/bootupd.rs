@@ -108,6 +108,8 @@ pub(crate) fn install(
 
     match configs.enabled_with_uuid() {
         Some(uuid) => {
+            let self_meta = crate::packagesystem::query_files("/", ["/usr/bin/bootupctl"])?;
+            state.static_configs = Some(self_meta);
             #[cfg(any(
                 target_arch = "x86_64",
                 target_arch = "aarch64",

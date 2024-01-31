@@ -50,6 +50,8 @@ pub(crate) struct SavedState {
     pub(crate) installed: BTreeMap<String, InstalledContent>,
     /// Maps a component name to an in progress update
     pub(crate) pending: Option<BTreeMap<String, ContentMetadata>>,
+    /// If static bootloader configs are enabled, this contains the version
+    pub(crate) static_configs: Option<ContentMetadata>,
 }
 
 /// The status of an individual component.
