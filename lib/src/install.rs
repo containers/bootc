@@ -38,6 +38,7 @@ use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
 use crate::containerenv::ContainerExecutionInfo;
+use crate::lsm::selinux_label_recurse;
 use crate::task::Task;
 use crate::utils::sigpolicy_from_opts;
 
@@ -263,21 +264,6 @@ pub(crate) struct State {
     pub(crate) install_config: config::InstallConfiguration,
 }
 
-impl State {
-    // Wraps core lsm labeling functionality, conditionalizing based on source state
-    pub(crate) fn lsm_label(
-        &self,
-        target: &Utf8Path,
-        as_path: &Utf8Path,
-        recurse: bool,
-    ) -> Result<()> {
-        if !self.source.selinux {
-            return Ok(());
-        }
-        crate::lsm::lsm_label(target, as_path, recurse)
-    }
-}
-
 /// Path to initially deployed version information
 const BOOTC_ALEPH_PATH: &str = ".bootc-aleph.json";
 
@@ -466,9 +452,15 @@ async fn initialize_ostree_root_from_self(
     let rootfs = root_setup.rootfs.as_path();
     let cancellable = gio::Cancellable::NONE;
 
-    // Ensure that the physical root is labeled.
-    // Another implementation: https://github.com/coreos/coreos-assembler/blob/3cd3307904593b3a131b81567b13a4d0b6fe7c90/src/create_disk.sh#L295
-    state.lsm_label(rootfs, "/".into(), false)?;
+    let sepolicy = if state.override_disable_selinux {
+        None
+    } else {
+        let root = ostree::gio::File::for_path("/");
+        Some(ostree::SePolicy::new(
+            &root,
+            ostree::gio::Cancellable::NONE,
+        )?)
+    };
 
     // TODO: make configurable?
     let stateroot = STATEROOT_DEFAULT;
@@ -477,12 +469,6 @@ async fn initialize_ostree_root_from_self(
         "ostree",
         ["admin", "init-fs", "--modern", rootfs.as_str()],
     )?;
-
-    // And also label /boot AKA xbootldr, if it exists
-    let bootdir = rootfs.join("boot");
-    if bootdir.try_exists()? {
-        state.lsm_label(&bootdir, "/boot".into(), false)?;
-    }
 
     // Default to avoiding grub2-mkconfig etc., but we need to use zipl on s390x.
     // TODO: Lower this logic into ostree proper.
@@ -509,8 +495,10 @@ async fn initialize_ostree_root_from_self(
         .cwd(rootfs_dir)?
         .run()?;
 
-    // Ensure everything in the ostree repo is labeled
-    state.lsm_label(&rootfs.join("ostree"), "/usr".into(), true)?;
+    if let Some(policy) = sepolicy.as_ref() {
+        selinux_label_recurse(policy, &root_setup.rootfs_fd, "./".into())
+            .context("Labeling physical root")?;
+    }
 
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;

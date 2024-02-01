@@ -6,11 +6,13 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
+use cap_std_ext::cap_std::fs::{Dir, MetadataExt};
 use fn_error_context::context;
 #[cfg(feature = "install")]
 use gvariant::{aligned_bytes::TryAsAligned, Marker, Structure};
 #[cfg(feature = "install")]
 use ostree_ext::ostree;
+use rustix::fd::AsRawFd;
 
 use crate::task::Task;
 
@@ -166,6 +168,48 @@ fn selinux_label_for_path(target: &str) -> Result<String> {
         .read()?;
     // TODO: trim in place instead of reallocating
     Ok(label.trim().to_string())
+}
+
+fn selinux_set_one_label(
+    policy: &ostree::SePolicy,
+    root: &Dir,
+    path: &Utf8Path,
+    mode: u32,
+) -> Result<()> {
+    let label = policy.label(path.as_str(), mode, ostree::gio::Cancellable::NONE)?;
+    if let Some(label) = label {
+        let selfpath = format!("/proc/self/fd/{}", root.as_raw_fd());
+        rustix::fs::lsetxattr(
+            &selfpath,
+            SELINUX_XATTR,
+            label.as_bytes(),
+            rustix::fs::XattrFlags::empty(),
+        )?;
+    }
+    Ok(())
+}
+
+pub(crate) fn selinux_label_recurse(
+    policy: &ostree::SePolicy,
+    root: &Dir,
+    path: &Utf8Path,
+) -> Result<()> {
+    let meta = root.symlink_metadata(path)?;
+    selinux_set_one_label(policy, root, path, meta.mode())?;
+    if meta.is_dir() {
+        for ent in root.read_dir(path)? {
+            let ent = ent?;
+            let name = ent.file_name();
+            let name = if let Some(name) = name.to_str() {
+                name
+            } else {
+                anyhow::bail!("Invalid filename: {name:?}");
+            };
+            let path = path.join(name);
+            selinux_label_recurse(policy, root, &path)?;
+        }
+    }
+    Ok(())
 }
 
 // Write filesystem labels (currently just for SELinux)
