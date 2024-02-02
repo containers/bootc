@@ -1018,8 +1018,9 @@ pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
         .with_context(|| format!("Querying {}", &block_opts.device))?;
     if opts.via_loopback {
         if !opts.config_opts.generic_image {
-            eprintln!("Automatically enabling --generic-image when installing via loopback");
-            std::thread::sleep(std::time::Duration::from_secs(2));
+            crate::utils::medium_visibility_warning(
+                "Automatically enabling --generic-image when installing via loopback",
+            );
             opts.config_opts.generic_image = true;
         }
         if !target_blockdev_meta.file_type().is_file() {
