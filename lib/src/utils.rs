@@ -67,13 +67,16 @@ pub(crate) fn sigpolicy_from_opts(
     }
 }
 
-/// Output a warning message
-pub(crate) fn warning(s: &str) {
+/// Output a warning message that we want to be quite visible.
+/// The process (thread) execution will be delayed for a short time.
+pub(crate) fn medium_visibility_warning(s: &str) {
     anstream::eprintln!(
         "{}{s}{}",
         anstyle::AnsiColor::Red.render_fg(),
         anstyle::Reset.render()
     );
+    // When warning, add a sleep to ensure it's seen
+    std::thread::sleep(std::time::Duration::from_secs(1));
 }
 
 /// Given a possibly tagged image like quay.io/foo/bar:latest and a digest 0ab32..., return
