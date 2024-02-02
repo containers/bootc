@@ -566,9 +566,9 @@ async fn initialize_ostree_root_from_self(
     options.proxy_cfg = proxy_cfg;
     println!("Creating initial deployment");
     let target_image = state.target_imgref.to_string();
-    let state =
+    let imgstate =
         ostree_container::deploy::deploy(&sysroot, stateroot, &src_imageref, Some(options)).await?;
-    let digest = state.manifest_digest.as_str();
+    let digest = imgstate.manifest_digest.as_str();
     println!("Installed: {target_image}");
     println!("   Digest: {digest}");
 
@@ -598,7 +598,7 @@ async fn initialize_ostree_root_from_self(
 
     let uname = rustix::system::uname();
 
-    let labels = crate::status::labels_of_config(&state.configuration);
+    let labels = crate::status::labels_of_config(&imgstate.configuration);
     let timestamp = labels
         .and_then(|l| {
             l.get(oci_spec::image::ANNOTATION_CREATED)
@@ -607,7 +607,7 @@ async fn initialize_ostree_root_from_self(
         .and_then(crate::status::try_deserialize_timestamp);
     let aleph = InstallAleph {
         image: src_imageref.imgref.name.clone(),
-        version: state.version().as_ref().map(|s| s.to_string()),
+        version: imgstate.version().as_ref().map(|s| s.to_string()),
         timestamp,
         kernel: uname.release().to_str()?.to_string(),
     };
