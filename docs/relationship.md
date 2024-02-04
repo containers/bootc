@@ -77,7 +77,7 @@ For example, `bootc status` at least will still function even if packages are la
 ### Future bootc <-> podman binding
 
 All the above said, it is likely that at some point bootc will switch to [hard binding with podman](https://github.com/containers/bootc/pull/215).
-This will reduce the role of ostree, and hence break compatibilty with rpm-ostree.
+This will reduce the role of ostree, and hence break compatibility with rpm-ostree.
 When such work lands, we will still support at least a "one way" transition from an
 ostree backend.  But once this happens there are no plans to teach rpm-ostree
 to use podman too.

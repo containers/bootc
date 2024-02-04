@@ -15,7 +15,7 @@ The "bootc vision" aligns with parts of this, but differs in emphasis and also s
 The "particle" proposal mentions that the desktop case is most
 interesting; the bootc belief is that servers are equally
 important and interesting.  In practice, this is not a real point
-of differentation, because the systemd project has done an excellent
+of differentiation, because the systemd project has done an excellent
 job in catering to all use cases (desktop, embedded, server) etc.
 
 An important aspect related to this is that the bootc project exists and must
@@ -52,7 +52,7 @@ bootc aims to support the same.  And in practice, nothing in "particles" strictl
 requires Secure Boot etc.
 
 However, bootc has a stronger emphasis on continuing to support "unlocked"
-systems into the forseeable future in which key (even root level) operating system
+systems into the foreseeable future in which key (even root level) operating system
 changes can be that are outside of an explicit signed state and feel
 *equally* first class, not just "developer system extensions".
 
@@ -266,7 +266,7 @@ The bootc project will align with podman in general, and make it easy to impleme
 a mechanism that chains keys stored alongside the operating system into composefs-signed
 application containers.
 
-Configuration (effectively starting from `/etc` and the kernel commandline) in a "sealed" system is a complex topic.  Many operting system builds will want to disable the default "etc merge" and make `/etc` always lifecycle bound with the OS: commonly writable but ephemeral.
+Configuration (effectively starting from `/etc` and the kernel commandline) in a "sealed" system is a complex topic.  Many operating system builds will want to disable the default "etc merge" and make `/etc` always lifecycle bound with the OS: commonly writable but ephemeral.
 
 This topic is covered more in the next section.
 

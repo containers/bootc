@@ -60,7 +60,7 @@ be used.
 
 By default, bootc install and install-to-filesystem assumes that it runs
 in a podman container, and it takes the container image to install from
-the podmans container registry. If \--source-imgref is given, bootc uses
+the podman's container registry. If \--source-imgref is given, bootc uses
 it as the installation source, instead of the behaviour explained in the
 previous paragraph. See skopeo(1) for accepted formats.
 
@@ -85,7 +85,7 @@ previous paragraph. See skopeo(1) for accepted formats.
 
 **\--skip-fetch-check**
 
-:   By default, the accessiblity of the target image will be verified
+:   By default, the accessibility of the target image will be verified
     (just the manifest will be fetched). Specifying this option
     suppresses the check; use this when you know the issues it might
     find are addressed.
