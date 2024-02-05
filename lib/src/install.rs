@@ -8,6 +8,7 @@
 // and filesystem setup.
 pub(crate) mod baseline;
 pub(crate) mod config;
+pub(crate) mod osconfig;
 
 use std::io::BufWriter;
 use std::io::Write;
@@ -131,6 +132,16 @@ pub(crate) struct InstallConfigOpts {
     #[clap(long)]
     /// Add a kernel argument
     karg: Option<Vec<String>>,
+
+    /// The path to an `authorized_keys` that will be injected into the `root` account.
+    ///
+    /// The implementation of this uses systemd `tmpfiles.d`, writing to a file named
+    /// `/etc/tmpfiles.d/bootc-root-ssh.conf`.  This will have the effect that by default,
+    /// the SSH credentials will be set if not present.  The intention behind this
+    /// is to allow mounting the whole `/root` home directory as a `tmpfs`, while still
+    /// getting the SSH key replaced on boot.
+    #[clap(long)]
+    root_ssh_authorized_keys: Option<Utf8PathBuf>,
 
     /// Perform configuration changes suitable for a "generic" disk image.
     /// At the moment:
@@ -261,6 +272,8 @@ pub(crate) struct State {
     pub(crate) config_opts: InstallConfigOpts,
     pub(crate) target_imgref: ostree_container::OstreeImageReference,
     pub(crate) install_config: config::InstallConfiguration,
+    /// The parsed contents of the authorized_keys (not the file path)
+    pub(crate) root_ssh_authorized_keys: Option<String>,
 }
 
 impl State {
@@ -566,9 +579,9 @@ async fn initialize_ostree_root_from_self(
     options.proxy_cfg = proxy_cfg;
     println!("Creating initial deployment");
     let target_image = state.target_imgref.to_string();
-    let state =
+    let imgstate =
         ostree_container::deploy::deploy(&sysroot, stateroot, &src_imageref, Some(options)).await?;
-    let digest = state.manifest_digest.as_str();
+    let digest = imgstate.manifest_digest.as_str();
     println!("Installed: {target_image}");
     println!("   Digest: {digest}");
 
@@ -596,9 +609,13 @@ async fn initialize_ostree_root_from_self(
     }
     f.flush()?;
 
+    if let Some(contents) = state.root_ssh_authorized_keys.as_deref() {
+        osconfig::inject_root_ssh_authorized_keys(&root, contents)?;
+    }
+
     let uname = rustix::system::uname();
 
-    let labels = crate::status::labels_of_config(&state.configuration);
+    let labels = crate::status::labels_of_config(&imgstate.configuration);
     let timestamp = labels
         .and_then(|l| {
             l.get(oci_spec::image::ANNOTATION_CREATED)
@@ -607,7 +624,7 @@ async fn initialize_ostree_root_from_self(
         .and_then(crate::status::try_deserialize_timestamp);
     let aleph = InstallAleph {
         image: src_imageref.imgref.name.clone(),
-        version: state.version().as_ref().map(|s| s.to_string()),
+        version: imgstate.version().as_ref().map(|s| s.to_string()),
         timestamp,
         kernel: uname.release().to_str()?.to_string(),
     };
@@ -944,6 +961,14 @@ async fn prepare_install(
     let install_config = config::load_config()?;
     tracing::debug!("Loaded install configuration");
 
+    // Eagerly read the file now to ensure we error out early if e.g. it doesn't exist,
+    // instead of much later after we're 80% of the way through an install.
+    let root_ssh_authorized_keys = config_opts
+        .root_ssh_authorized_keys
+        .as_ref()
+        .map(|p| std::fs::read_to_string(p).with_context(|| format!("Reading {p}")))
+        .transpose()?;
+
     // Create our global (read-only) state which gets wrapped in an Arc
     // so we can pass it to worker threads too. Right now this just
     // combines our command line options along with some bind mounts from the host.
@@ -954,6 +979,7 @@ async fn prepare_install(
         config_opts,
         target_imgref,
         install_config,
+        root_ssh_authorized_keys,
     });
 
     Ok(state)
