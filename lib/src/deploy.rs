@@ -19,6 +19,7 @@ use ostree_ext::sysroot::SysrootLock;
 
 use crate::spec::HostSpec;
 use crate::spec::ImageReference;
+use crate::status::labels_of_config;
 
 // TODO use https://github.com/ostreedev/ostree-rs-ext/pull/493/commits/afc1837ff383681b947de30c0cefc70080a4f87a
 const BASE_IMAGE_PREFIX: &str = "ostree/container/baseimage/bootc";
@@ -84,6 +85,32 @@ pub(crate) async fn new_importer(
     Ok(imp)
 }
 
+pub(crate) fn check_bootc_label(config: &ostree_ext::oci_spec::image::ImageConfiguration) {
+    if let Some(label) =
+        labels_of_config(config).and_then(|labels| labels.get(crate::metadata::BOOTC_COMPAT_LABEL))
+    {
+        match label.as_str() {
+            crate::metadata::COMPAT_LABEL_V1 => {}
+            o => crate::journal::journal_print(
+                libsystemd::logging::Priority::Warning,
+                &format!(
+                    "notice: Unknown {} value {}",
+                    crate::metadata::BOOTC_COMPAT_LABEL,
+                    o
+                ),
+            ),
+        }
+    } else {
+        crate::journal::journal_print(
+            libsystemd::logging::Priority::Warning,
+            &format!(
+                "notice: Image is missing label: {}",
+                crate::metadata::BOOTC_COMPAT_LABEL
+            ),
+        )
+    }
+}
+
 /// Wrapper for pulling a container image, wiring up status output.
 #[context("Pulling")]
 pub(crate) async fn pull(
@@ -101,6 +128,7 @@ pub(crate) async fn pull(
         }
         PrepareResult::Ready(p) => p,
     };
+    check_bootc_label(&prep.config);
     if let Some(warning) = prep.deprecated_warning() {
         ostree_ext::cli::print_deprecated_warning(warning).await;
     }

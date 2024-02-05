@@ -19,7 +19,9 @@
 
 pub mod cli;
 pub(crate) mod deploy;
+pub(crate) mod journal;
 mod lsm;
+pub(crate) mod metadata;
 mod reboot;
 mod reexec;
 mod status;

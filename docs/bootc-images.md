@@ -50,6 +50,16 @@ The requirement for both methods is that your initial treefile/manifest
 However, the ostree usage is an implementation detail
 and the requirement on this will be lifted in the future.
 
+## Standard metadata for bootc compatible images
+
+It is strongly recommended to do:
+
+```dockerfile
+LABEL containers.bootc 1
+```
+
+This will signal that this image is intended to be usable with `bootc`.
+
 # Deriving from existing base images
 
 It's important to emphasize that from one

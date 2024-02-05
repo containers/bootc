@@ -341,6 +341,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
                 println!("No changes in: {}", imgref);
             }
             PrepareResult::Ready(r) => {
+                crate::deploy::check_bootc_label(&r.config);
                 println!("Update available for: {}", imgref);
                 if let Some(version) = r.version() {
                     println!("  Version: {version}");
