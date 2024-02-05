@@ -68,6 +68,7 @@ fn commit_meta_to_labels<'a>(
     #[allow(clippy::explicit_auto_deref)]
     if let Some(v) = meta.lookup::<bool>(*ostree::METADATA_KEY_BOOTABLE)? {
         labels.insert(ostree::METADATA_KEY_BOOTABLE.to_string(), v.to_string());
+        labels.insert("containers.bootc".into(), "1".into());
     }
     // Handle any other string-typed values here.
     for k in &[&ostree::METADATA_KEY_LINUX] {
