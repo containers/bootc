@@ -148,7 +148,7 @@ pub(crate) async fn pull(
     if let Some(msg) =
         ostree_container::store::image_filtered_content_warning(repo, &imgref.imgref)?
     {
-        eprintln!("{msg}")
+        crate::journal::journal_print(libsystemd::logging::Priority::Notice, &msg);
     }
     Ok(Box::new((*import).into()))
 }
