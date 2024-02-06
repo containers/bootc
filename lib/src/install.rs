@@ -14,6 +14,7 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::os::fd::AsFd;
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -859,6 +860,44 @@ pub(crate) fn setup_tmp_mounts() -> Result<()> {
     Ok(())
 }
 
+/// By default, podman/docker etc. when passed `--privileged` mount `/sys` as read-only,
+/// but non-recursively.  We selectively grab sub-filesystems that we need.
+#[context("Ensuring sys mounts")]
+pub(crate) fn setup_sys_mounts() -> Result<()> {
+    tracing::debug!("Setting up sys mounts");
+
+    let root_efivars = "/sys/firmware/efi/efivars";
+    let efivars = format!("/proc/1/root/{root_efivars}");
+    // Does efivars even exist in the host? If not, we are
+    // not dealing with an EFI system
+    if !Path::new(efivars.as_str()).try_exists()? {
+        return Ok(());
+    }
+
+    // Now, let's find out if it's populated
+    if std::fs::read_dir(efivars)?.next().is_none() {
+        return Ok(());
+    }
+
+    // First of all, does the container already have the mount?
+    let path = Utf8Path::new(root_efivars);
+    if path.try_exists()? {
+        tracing::debug!("Check if efivarfs already mount");
+        let inspect = crate::mount::inspect_filesystem(path);
+        if inspect.is_ok() {
+            tracing::trace!("Already have efivarfs {root_efivars}");
+            return Ok(());
+        }
+    }
+
+    // This means the host has this mounted, so we should mount it too
+    Task::new_and_run(
+        "Mounting efivarfs /sys/firmware/efi/efivars",
+        "mount",
+        ["-t", "efivarfs", "efivars", "/sys/firmware/efi/efivars"],
+    )
+}
+
 /// Verify that we can load the manifest of the target image
 #[context("Verifying fetch")]
 async fn verify_target_fetch(imgref: &ostree_container::OstreeImageReference) -> Result<()> {
@@ -953,6 +992,8 @@ async fn prepare_install(
     if !external_source && std::env::var_os("BOOTC_SKIP_UNSHARE").is_none() {
         super::cli::ensure_self_unshared_mount_namespace().await?;
     }
+
+    setup_sys_mounts()?;
 
     // Now, deal with SELinux state.
     let (override_disable_selinux, setenforce_guard) =
