@@ -12,7 +12,7 @@ include = ["/src", "LICENSE-APACHE", "LICENSE-MIT"]
 
 [dependencies]
 anstream = "0.6.11"
-anstyle = "1.0.4"
+anstyle = "1.0.6"
 anyhow = "1.0"
 camino = { version = "1.0.4", features = ["serde1"] }
 ostree-ext = { version = "0.13" }
