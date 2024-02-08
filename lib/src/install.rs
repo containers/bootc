@@ -504,13 +504,19 @@ async fn initialize_ostree_root_from_self(
     } else {
         "none"
     };
-    for (k, v) in [
+    let composefs_enabled = !state.install_config.disable_composefs.unwrap_or_default();
+    tracing::debug!("composefs: {composefs_enabled}");
+    let repo_opts = [
         ("sysroot.bootloader", bootloader),
         // Always flip this one on because we need to support alongside installs
         // to systems without a separate boot partition.
         ("sysroot.bootprefix", "true"),
         ("sysroot.readonly", "true"),
-    ] {
+    ]
+    .into_iter()
+    .chain(composefs_enabled.then_some(("ex-integrity.composefs", "true")));
+
+    for (k, v) in repo_opts {
         Task::new("Configuring ostree repo", "ostree")
             .args(["config", "--repo", "ostree/repo", "set", k, v])
             .cwd(rootfs_dir)?

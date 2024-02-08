@@ -18,9 +18,10 @@ that can be overridden in a derived container image.
 
 This is the only defined toplevel table.
 
-The `install`` section supports two subfields:
+The `install`` section supports the following subfields:
 
 - `filesystem`: See below.
+- `disable_composefs`: A boolean, which will use the legacy ostree mode.
 - `kargs`: An array of strings; this will be appended to the set of kernel arguments.
 
 # filesystem

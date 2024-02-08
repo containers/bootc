@@ -39,6 +39,8 @@ pub(crate) struct BasicFilesystems {
 pub(crate) struct InstallConfiguration {
     /// Root filesystem type
     pub(crate) root_fs_type: Option<super::baseline::Filesystem>,
+    /// Allow disabling composefs
+    pub(crate) disable_composefs: Option<bool>,
     pub(crate) filesystem: Option<BasicFilesystems>,
     /// Kernel arguments, applied at installation time
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -93,6 +95,7 @@ impl Mergeable for InstallConfiguration {
     /// Apply any values in other, overriding any existing values in `self`.
     fn merge(&mut self, other: Self) {
         merge_basic(&mut self.root_fs_type, other.root_fs_type);
+        merge_basic(&mut self.disable_composefs, other.disable_composefs);
         self.filesystem.merge(other.filesystem);
         if let Some(other_kargs) = other.kargs {
             self.kargs
@@ -179,6 +182,7 @@ root-fs-type = "xfs"
             root_fs_type: Some(Filesystem::Ext4),
             filesystem: None,
             kargs: None,
+            ..Default::default()
         }),
     };
     install.merge(other.install.unwrap());
@@ -206,18 +210,23 @@ kargs = ["console=ttyS0", "foo=bar"]
     assert_eq!(install.root_fs_type.unwrap(), Filesystem::Ext4);
     let other = InstallConfigurationToplevel {
         install: Some(InstallConfiguration {
-            root_fs_type: None,
-            filesystem: None,
             kargs: Some(
                 ["console=tty0", "nosmt"]
                     .into_iter()
                     .map(ToOwned::to_owned)
                     .collect(),
             ),
+            ..Default::default()
         }),
     };
+    assert!(install.disable_composefs.is_none());
     install.merge(other.install.unwrap());
+    install.merge(InstallConfiguration {
+        disable_composefs: Some(true),
+        ..Default::default()
+    });
     assert_eq!(install.root_fs_type.unwrap(), Filesystem::Ext4);
+    assert!(install.disable_composefs.unwrap());
     assert_eq!(
         install.kargs,
         Some(
@@ -226,7 +235,12 @@ kargs = ["console=ttyS0", "foo=bar"]
                 .map(ToOwned::to_owned)
                 .collect()
         )
-    )
+    );
+    install.merge(InstallConfiguration {
+        disable_composefs: Some(false),
+        ..Default::default()
+    });
+    assert!(!install.disable_composefs.unwrap());
 }
 
 #[test]
@@ -245,13 +259,12 @@ type = "xfs"
     );
     let other = InstallConfigurationToplevel {
         install: Some(InstallConfiguration {
-            root_fs_type: None,
             filesystem: Some(BasicFilesystems {
                 root: Some(RootFS {
                     fstype: Some(Filesystem::Ext4),
                 }),
             }),
-            kargs: None,
+            ..Default::default()
         }),
     };
     install.merge(other.install.unwrap());
