@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install deps
         run: ./ci/installdeps.sh
       # xref containers/containers-image-proxy-rs
@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install deps
         run: ./ci/installdeps.sh
       - name: Cache Dependencies
@@ -65,7 +65,7 @@ jobs:
     container: quay.io/centos/centos:stream9
     steps:
       - run: dnf -y install git-core
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install deps
         run: ./ci/installdeps.sh
       - name: Cache Dependencies
@@ -82,7 +82,7 @@ jobs:
   cargo-deny:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: EmbarkStudios/cargo-deny-action@v1
       with:
         log-level: warn
@@ -93,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Download
         uses: actions/download-artifact@v3
         with:
