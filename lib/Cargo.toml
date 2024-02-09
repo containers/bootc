@@ -14,38 +14,38 @@ include = ["/src", "LICENSE-APACHE", "LICENSE-MIT"]
 anstream = "0.6.11"
 anstyle = "1.0.6"
 anyhow = "1.0"
-camino = { version = "1.0.4", features = ["serde1"] }
+camino = { version = "1.1.6", features = ["serde1"] }
 ostree-ext = { version = "0.13" }
-chrono = { version = "0.4.23", features = ["serde"] }
-clap = { version= "4.2", features = ["derive"] }
+chrono = { version = "0.4.33", features = ["serde"] }
+clap = { version= "4.5", features = ["derive"] }
 clap_mangen = { version = "0.2", optional = true }
 cap-std-ext = "4"
-hex = "^0.4"
-fn-error-context = "0.2.0"
-gvariant = "0.4.0"
-indicatif = "0.17.0"
-libc = "^0.2"
+hex = "^0.4.3"
+fn-error-context = "0.2.1"
+gvariant = "0.5.0"
+indicatif = "0.17.7"
+libc = "^0.2.153"
 liboverdrop = "0.1.0"
 libsystemd = "0.7"
-once_cell = "1.9"
-openssl = "^0.10"
+once_cell = "1.19"
+openssl = "^0.10.63"
 # TODO drop this in favor of rustix
 nix = { version = "0.27", features = ["ioctl", "sched"] }
-regex = "1.7.1"
+regex = "1.10.3"
 rustix = { "version" = "0.38", features = ["thread", "fs", "system", "process"] }
-schemars = { version = "0.8.6", features = ["chrono"] }
-serde = { features = ["derive"], version = "1.0.125" }
-serde_ignored = "0.1.9"
-serde_json = "1.0.64"
-serde_yaml = "0.9.17"
-serde_with = ">= 1.9.4, < 2"
-tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1.13.0" }
+schemars = { version = "0.8.16", features = ["chrono"] }
+serde = { features = ["derive"], version = "1.0.196" }
+serde_ignored = "0.1.10"
+serde_json = "1.0.113"
+serde_yaml = "0.9.31"
+serde_with = ">= 1.14.0, < 2"
+tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1.36.0" }
 tokio-util = { features = ["io-util"], version = "0.7" }
 tracing = "0.1"
-tempfile = "3.3.0"
-toml = "0.7.2"
+tempfile = "3.10.0"
+toml = "0.8.10"
 xshell = { version = "0.2", optional = true }
-uuid = { version = "1.2.2", features = ["v4"] }
+uuid = { version = "1.7.0", features = ["v4"] }
 
 [features]
 default = ["install"]
