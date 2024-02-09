@@ -20,7 +20,7 @@ chrono = { version = "0.4.23", features = ["serde"] }
 clap = { version= "4.2", features = ["derive"] }
 clap_mangen = { version = "0.2", optional = true }
 cap-std-ext = "4"
-hex = "^0.4"
+hex = "^0.4.3"
 fn-error-context = "0.2.0"
 gvariant = "0.4.0"
 indicatif = "0.17.0"
