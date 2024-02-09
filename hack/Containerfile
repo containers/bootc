@@ -4,10 +4,12 @@ FROM quay.io/centos-bootc/fedora-bootc:eln as build
 RUN dnf config-manager --set-enabled eln-crb && dnf -y install cargo ostree-devel openssl-devel && dnf clean all
 COPY . /build
 WORKDIR /build
+RUN mkdir -p /build/target/dev-rootfs  # This can hold arbitrary extra content
 # See https://www.reddit.com/r/rust/comments/126xeyx/exploring_the_problem_of_faster_cargo_docker/
 # We aren't using the full recommendations there, just the simple bits.
 RUN --mount=type=cache,target=/build/target --mount=type=cache,target=/var/roothome make bin-archive && mkdir -p /out && cp target/bootc.tar.zst /out
 
 FROM quay.io/centos-bootc/fedora-bootc:eln
 COPY --from=build /out/bootc.tar.zst /tmp
+COPY --from=build /build/target/dev-rootfs/ /
 RUN tar -C / --zstd -xvf /tmp/bootc.tar.zst && rm -vf /tmp/*
