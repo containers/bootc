@@ -10,10 +10,10 @@ use ostree_ext::container::{store, ManifestDiff};
 use ostree_ext::container::{
     Config, ExportOpts, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
-use ostree_ext::ocidir;
 use ostree_ext::prelude::{Cast, FileExt};
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
+use ostree_ext::{ocidir, ostree_manual};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter};
@@ -912,6 +912,7 @@ async fn test_container_var_content() -> Result<()> {
     let srcpath = imgref.imgref.name.as_str();
     oci_clone(srcpath, derived_path).await.unwrap();
     let temproot = &fixture.path.join("temproot");
+    let junk_var_data = "junk var data";
     || -> Result<_> {
         std::fs::create_dir(temproot)?;
         let temprootd = Dir::open_ambient_dir(temproot, cap_std::ambient_authority())?;
@@ -919,7 +920,7 @@ async fn test_container_var_content() -> Result<()> {
         db.mode(0o755);
         db.recursive(true);
         temprootd.create_dir_with("var/lib", &db)?;
-        temprootd.write("var/lib/foo", "junk var data")?;
+        temprootd.write("var/lib/foo", junk_var_data)?;
         Ok(())
     }()
     .context("generating temp content")?;
@@ -938,7 +939,23 @@ async fn test_container_var_content() -> Result<()> {
         store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         store::PrepareResult::Ready(r) => r,
     };
-    let _import = imp.import(prep).await.unwrap();
+    let import = imp.import(prep).await.unwrap();
+
+    let ostree_root = fixture
+        .destrepo()
+        .read_commit(&import.merge_commit, gio::Cancellable::NONE)?
+        .0;
+    let varfile = ostree_root
+        .child("usr/share/factory/var/lib/foo")
+        .downcast::<ostree::RepoFile>()
+        .unwrap();
+    assert_eq!(
+        ostree_manual::repo_file_read_to_string(&varfile)?,
+        junk_var_data
+    );
+    assert!(!ostree_root
+        .child("var/lib/foo")
+        .query_exists(gio::Cancellable::NONE));
 
     assert!(
         store::image_filtered_content_warning(fixture.destrepo(), &derived_imgref.imgref)
