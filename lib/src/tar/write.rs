@@ -68,6 +68,9 @@ pub struct WriteTarOptions {
     pub selinux: bool,
     /// Allow content not in /usr; this should be paired with ostree rootfs.transient = true
     pub allow_nonusr: bool,
+    /// If true, do not move content in /var to /usr/share/factory/var.  This should be used
+    /// with ostree v2024.3 or newer.
+    pub retain_var: bool,
 }
 
 /// The result of writing a tar stream.
@@ -112,6 +115,7 @@ enum NormalizedPathResult<'a> {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct TarImportConfig {
     allow_nonusr: bool,
+    remap_factory_var: bool,
 }
 
 fn normalize_validate_path<'a>(
@@ -150,9 +154,13 @@ fn normalize_validate_path<'a>(
                     "etc" => {
                         ret.push("usr/etc");
                     }
-                    // Content in /var will get copied by a systemd tmpfiles.d unit
                     "var" => {
-                        ret.push("usr/share/factory/var");
+                        // Content in /var will get copied by a systemd tmpfiles.d unit
+                        if config.remap_factory_var {
+                            ret.push("usr/share/factory/var");
+                        } else {
+                            ret.push(part)
+                        }
                     }
                     o if EXCLUDED_TOPLEVEL_PATHS.contains(&o) => {
                         return Ok(NormalizedPathResult::Filtered(part));
@@ -373,6 +381,7 @@ pub async fn write_tar(
     // Copy the filtered tar stream to child stdin
     let mut import_config = TarImportConfig::default();
     import_config.allow_nonusr = options.allow_nonusr;
+    import_config.remap_factory_var = !options.retain_var;
     let filtered_result = filter_tar_async(src, child_stdin, &import_config);
     let output_copier = async move {
         // Gather stdout/stderr to buffers
@@ -429,8 +438,18 @@ mod tests {
 
     #[test]
     fn test_normalize_path() {
-        let imp_default = &TarImportConfig::default();
-        let allow_nonusr = &TarImportConfig { allow_nonusr: true };
+        let imp_default = &TarImportConfig {
+            allow_nonusr: false,
+            remap_factory_var: true,
+        };
+        let allow_nonusr = &TarImportConfig {
+            allow_nonusr: true,
+            remap_factory_var: true,
+        };
+        let composefs_and_new_ostree = &TarImportConfig {
+            allow_nonusr: true,
+            remap_factory_var: false,
+        };
         let valid_all = &[
             ("/usr/bin/blah", "./usr/bin/blah"),
             ("usr/bin/blah", "./usr/bin/blah"),
@@ -475,6 +494,10 @@ mod tests {
             assert!(normalize_validate_path(k.into(), allow_nonusr).is_err());
             assert!(normalize_validate_path(k.into(), imp_default).is_err());
         }
+        assert!(matches!(
+            normalize_validate_path("var/lib/foo".into(), composefs_and_new_ostree).unwrap(),
+            NormalizedPathResult::Normal(_)
+        ));
     }
 
     #[tokio::test]

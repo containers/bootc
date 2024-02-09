@@ -935,6 +935,7 @@ async fn test_container_var_content() -> Result<()> {
     };
     let mut imp =
         store::ImageImporter::new(fixture.destrepo(), &derived_imgref, Default::default()).await?;
+    imp.set_ostree_version(2023, 11);
     let prep = match imp.prepare().await.unwrap() {
         store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         store::PrepareResult::Ready(r) => r,
@@ -963,6 +964,29 @@ async fn test_container_var_content() -> Result<()> {
             .is_none()
     );
 
+    // Reset things
+    fixture.clear_destrepo()?;
+
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &derived_imgref, Default::default()).await?;
+    imp.set_ostree_version(2024, 3);
+    let prep = match imp.prepare().await.unwrap() {
+        store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        store::PrepareResult::Ready(r) => r,
+    };
+    let import = imp.import(prep).await.unwrap();
+    let ostree_root = fixture
+        .destrepo()
+        .read_commit(&import.merge_commit, gio::Cancellable::NONE)?
+        .0;
+    let varfile = ostree_root
+        .child("usr/share/factory/var/lib/foo")
+        .downcast::<ostree::RepoFile>()
+        .unwrap();
+    assert!(!varfile.query_exists(gio::Cancellable::NONE));
+    assert!(ostree_root
+        .child("var/lib/foo")
+        .query_exists(gio::Cancellable::NONE));
     Ok(())
 }
 
