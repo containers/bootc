@@ -16,7 +16,7 @@ anstyle = "1.0.6"
 anyhow = "1.0"
 camino = { version = "1.0.4", features = ["serde1"] }
 ostree-ext = { version = "0.13" }
-chrono = { version = "0.4.23", features = ["serde"] }
+chrono = { version = "0.4.33", features = ["serde"] }
 clap = { version= "4.2", features = ["derive"] }
 clap_mangen = { version = "0.2", optional = true }
 cap-std-ext = "4"
