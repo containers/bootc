@@ -109,10 +109,15 @@ enum NormalizedPathResult<'a> {
     Normal(Utf8PathBuf),
 }
 
-fn normalize_validate_path(
-    path: &Utf8Path,
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct TarImportConfig {
     allow_nonusr: bool,
-) -> Result<NormalizedPathResult<'_>> {
+}
+
+fn normalize_validate_path<'a>(
+    path: &'a Utf8Path,
+    config: &'_ TarImportConfig,
+) -> Result<NormalizedPathResult<'a>> {
     // This converts e.g. `foo//bar/./baz` into `foo/bar/baz`.
     let mut components = path
         .components()
@@ -152,7 +157,7 @@ fn normalize_validate_path(
                     o if EXCLUDED_TOPLEVEL_PATHS.contains(&o) => {
                         return Ok(NormalizedPathResult::Filtered(part));
                     }
-                    _ if allow_nonusr => ret.push(part),
+                    _ if config.allow_nonusr => ret.push(part),
                     _ => {
                         return Ok(NormalizedPathResult::Filtered(part));
                     }
@@ -180,7 +185,7 @@ fn normalize_validate_path(
 pub(crate) fn filter_tar(
     src: impl std::io::Read,
     dest: impl std::io::Write,
-    allow_nonusr: bool,
+    config: &TarImportConfig,
 ) -> Result<BTreeMap<String, u32>> {
     let src = std::io::BufReader::new(src);
     let mut src = tar::Archive::new(src);
@@ -190,7 +195,7 @@ pub(crate) fn filter_tar(
 
     let ents = src.entries()?;
 
-    tracing::debug!("Filtering tar; allow_nonusr={allow_nonusr}");
+    tracing::debug!("Filtering tar; config={config:?}");
 
     // Lookaside data for dealing with hardlinked files into /sysroot; see below.
     let mut changed_sysroot_objects = HashMap::new();
@@ -259,7 +264,7 @@ pub(crate) fn filter_tar(
             }
         }
 
-        let normalized = match normalize_validate_path(path, allow_nonusr)? {
+        let normalized = match normalize_validate_path(path, config)? {
             NormalizedPathResult::Filtered(path) => {
                 tracing::trace!("Filtered: {path}");
                 if let Some(v) = filtered.get_mut(path) {
@@ -282,15 +287,16 @@ pub(crate) fn filter_tar(
 async fn filter_tar_async(
     src: impl AsyncRead + Send + 'static,
     mut dest: impl AsyncWrite + Send + Unpin,
-    allow_nonusr: bool,
+    config: &TarImportConfig,
 ) -> Result<BTreeMap<String, u32>> {
     let (tx_buf, mut rx_buf) = tokio::io::duplex(8192);
     // The source must be moved to the heap so we know it is stable for passing to the worker thread
     let src = Box::pin(src);
+    let config = config.clone();
     let tar_transformer = tokio::task::spawn_blocking(move || {
         let mut src = tokio_util::io::SyncIoBridge::new(src);
         let dest = tokio_util::io::SyncIoBridge::new(tx_buf);
-        let r = filter_tar(&mut src, dest, allow_nonusr);
+        let r = filter_tar(&mut src, dest, &config);
         // Pass ownership of the input stream back to the caller - see below.
         (r, src)
     });
@@ -365,7 +371,9 @@ pub async fn write_tar(
     let mut child_stdout = r.stdout.take().unwrap();
     let mut child_stderr = r.stderr.take().unwrap();
     // Copy the filtered tar stream to child stdin
-    let filtered_result = filter_tar_async(src, child_stdin, options.allow_nonusr);
+    let mut import_config = TarImportConfig::default();
+    import_config.allow_nonusr = options.allow_nonusr;
+    let filtered_result = filter_tar_async(src, child_stdin, &import_config);
     let output_copier = async move {
         // Gather stdout/stderr to buffers
         let mut child_stdout_buf = String::new();
@@ -421,6 +429,8 @@ mod tests {
 
     #[test]
     fn test_normalize_path() {
+        let imp_default = &TarImportConfig::default();
+        let allow_nonusr = &TarImportConfig { allow_nonusr: true };
         let valid_all = &[
             ("/usr/bin/blah", "./usr/bin/blah"),
             ("usr/bin/blah", "./usr/bin/blah"),
@@ -431,8 +441,8 @@ mod tests {
         ];
         let valid_nonusr = &[("boot", "./boot"), ("opt/puppet/blah", "./opt/puppet/blah")];
         for &(k, v) in valid_all {
-            let r = normalize_validate_path(k.into(), false).unwrap();
-            let r2 = normalize_validate_path(k.into(), true).unwrap();
+            let r = normalize_validate_path(k.into(), imp_default).unwrap();
+            let r2 = normalize_validate_path(k.into(), allow_nonusr).unwrap();
             assert_eq!(r, r2);
             match r {
                 NormalizedPathResult::Normal(r) => assert_eq!(r, v),
@@ -440,12 +450,12 @@ mod tests {
             }
         }
         for &(k, v) in valid_nonusr {
-            let strict = normalize_validate_path(k.into(), false).unwrap();
+            let strict = normalize_validate_path(k.into(), imp_default).unwrap();
             assert!(
                 matches!(strict, NormalizedPathResult::Filtered(_)),
                 "Incorrect filter for {k}"
             );
-            let nonusr = normalize_validate_path(k.into(), true).unwrap();
+            let nonusr = normalize_validate_path(k.into(), allow_nonusr).unwrap();
             match nonusr {
                 NormalizedPathResult::Normal(r) => assert_eq!(r, v),
                 NormalizedPathResult::Filtered(o) => panic!("Should not have filtered {o}"),
@@ -453,7 +463,7 @@ mod tests {
         }
         let filtered = &["/run/blah", "/sys/foo", "/dev/somedev"];
         for &k in filtered {
-            match normalize_validate_path(k.into(), true).unwrap() {
+            match normalize_validate_path(k.into(), imp_default).unwrap() {
                 NormalizedPathResult::Filtered(_) => {}
                 NormalizedPathResult::Normal(_) => {
                     panic!("{} should be filtered", k)
@@ -462,8 +472,8 @@ mod tests {
         }
         let errs = &["usr/foo/../../bar"];
         for &k in errs {
-            assert!(normalize_validate_path(k.into(), true).is_err());
-            assert!(normalize_validate_path(k.into(), false).is_err());
+            assert!(normalize_validate_path(k.into(), allow_nonusr).is_err());
+            assert!(normalize_validate_path(k.into(), imp_default).is_err());
         }
     }
 
@@ -481,7 +491,7 @@ mod tests {
         let _ = rootfs_tar.into_inner()?;
         let mut dest = Vec::new();
         let src = tokio::io::BufReader::new(tokio::fs::File::open(rootfs_tar_path).await?);
-        filter_tar_async(src, &mut dest, false).await?;
+        filter_tar_async(src, &mut dest, &Default::default()).await?;
         let dest = dest.as_slice();
         let mut final_tar = tar::Archive::new(Cursor::new(dest));
         let destdir = &tempd.path().join("destdir");
