@@ -15,7 +15,7 @@ anstream = "0.6.11"
 anstyle = "1.0.6"
 anyhow = "1.0"
 camino = { version = "1.0.4", features = ["serde1"] }
-ostree-ext = { version = "0.13" }
+ostree-ext = { version = "0.13", git = "https://github.com/ostreedev/ostree-rs-ext", rev = "cb9eab9b7d1061bcdc2b797c7370aa8d21375b2f" }
 chrono = { version = "0.4.23", features = ["serde"] }
 clap = { version= "4.2", features = ["derive"] }
 clap_mangen = { version = "0.2", optional = true }
