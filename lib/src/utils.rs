@@ -1,4 +1,3 @@
-use std::os::unix::prelude::OsStringExt;
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -34,21 +33,30 @@ pub(crate) fn find_mount_option<'a>(
 }
 
 pub(crate) fn spawn_editor(tmpf: &tempfile::NamedTempFile) -> Result<()> {
-    let v = "EDITOR";
-    let editor = std::env::var_os(v)
-        .ok_or_else(|| anyhow::anyhow!("{v} is unset"))?
-        .into_vec();
-    let editor = String::from_utf8(editor).with_context(|| format!("{v} is invalid UTF-8"))?;
+    let editor_variables = ["EDITOR"];
+    // These roughly match https://github.com/systemd/systemd/blob/769ca9ab557b19ee9fb5c5106995506cace4c68f/src/shared/edit-util.c#L275
+    let backup_editors = ["nano", "vim", "vi"];
+    let editor = editor_variables.into_iter().find_map(std::env::var_os);
+    let editor = if let Some(e) = editor.as_ref() {
+        e.to_str()
+    } else {
+        backup_editors
+            .into_iter()
+            .find(|v| std::path::Path::new("/usr/bin").join(v).exists())
+    };
+    let editor =
+        editor.ok_or_else(|| anyhow::anyhow!("$EDITOR is unset, and no backup editor found"))?;
     let mut editor_args = editor.split_ascii_whitespace();
     let argv0 = editor_args
         .next()
-        .ok_or_else(|| anyhow::anyhow!("Invalid {v}: {editor}"))?;
+        .ok_or_else(|| anyhow::anyhow!("Invalid editor: {editor}"))?;
     let status = Command::new(argv0)
         .args(editor_args)
         .arg(tmpf.path())
-        .status()?;
+        .status()
+        .context("Spawning editor")?;
     if !status.success() {
-        anyhow::bail!("Invoking {v}: {editor} failed: {status:?}");
+        anyhow::bail!("Invoking editor: {editor} failed: {status:?}");
     }
     Ok(())
 }
