@@ -166,6 +166,8 @@ pub struct ImageImporter {
     disable_gc: bool, // If true, don't prune unused image layers
     /// If true, require the image has the bootable flag
     require_bootable: bool,
+    /// If true, we have ostree v2024.3 or newer.
+    ostree_v2024_3: bool,
     pub(crate) proxy_img: OpenedImage,
 
     layer_progress: Option<Sender<ImportProgress>>,
@@ -471,6 +473,7 @@ impl ImageImporter {
             proxy_img,
             target_imgref: None,
             no_imgref: false,
+            ostree_v2024_3: ostree::check_version(2024, 3),
             disable_gc: false,
             require_bootable: false,
             imgref: imgref.clone(),
@@ -494,6 +497,11 @@ impl ImageImporter {
     /// Require that the image has the bootable metadata field
     pub fn require_bootable(&mut self) {
         self.require_bootable = true;
+    }
+
+    /// Override the ostree version being targeted
+    pub fn set_ostree_version(&mut self, year: u32, v: u32) {
+        self.ostree_v2024_3 = (year > 2024) || (year == 2024 && v >= 3)
     }
 
     /// Do not prune image layers.
@@ -864,6 +872,7 @@ impl ImageImporter {
                     base: Some(base_commit.clone()),
                     selinux: true,
                     allow_nonusr: root_is_transient,
+                    retain_var: self.ostree_v2024_3,
                 };
                 let r =
                     crate::tar::write_tar(&self.repo, blob, layer.ostree_ref.as_str(), Some(opts));

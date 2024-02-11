@@ -439,6 +439,10 @@ impl Fixture {
     pub fn clear_destrepo(&self) -> Result<()> {
         self.destrepo()
             .set_ref_immediate(None, self.testref(), None, gio::Cancellable::NONE)?;
+        for (r, _) in self.destrepo().list_refs(None, gio::Cancellable::NONE)? {
+            self.destrepo()
+                .set_ref_immediate(None, &r, None, gio::Cancellable::NONE)?;
+        }
         self.destrepo()
             .prune(ostree::RepoPruneFlags::REFS_ONLY, 0, gio::Cancellable::NONE)?;
         Ok(())
