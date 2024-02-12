@@ -12,10 +12,10 @@ name = "xtask"
 path = "src/xtask.rs"
 
 [dependencies]
-anyhow = "1.0.68"
-camino = "1.0"
-chrono = { version = "0.4.23", default_features = false, features = ["std"] }
-fn-error-context = "0.2.0"
-tempfile = "3.3"
+anyhow = "1.0.79"
+camino = "1.1"
+chrono = { version = "0.4.34", default_features = false, features = ["std"] }
+fn-error-context = "0.2.1"
+tempfile = "3.10"
 mandown = "0.1"
 xshell = { version = "0.2" }
