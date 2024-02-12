@@ -40,11 +40,6 @@ cat >>.cargo/config.toml << EOF
 [source.crates-io]
 replace-with = "vendored-sources"
 
-[source."git+https://github.com/ostreedev/ostree-rs-ext?rev=cb9eab9b7d1061bcdc2b797c7370aa8d21375b2f"]
-git = "https://github.com/ostreedev/ostree-rs-ext"
-rev = "cb9eab9b7d1061bcdc2b797c7370aa8d21375b2f"
-replace-with = "vendored-sources"
-
 [source.vendored-sources]
 directory = "vendor"
 EOF
