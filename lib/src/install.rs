@@ -1012,13 +1012,6 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
     crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, &state.config_opts)?;
     tracing::debug!("Installed bootloader");
 
-    // ostree likes to have the immutable bit on the physical sysroot to ensure
-    // that it doesn't accumulate junk; all system state should be in deployments.
-    Task::new("Setting root immutable bit", "chattr")
-        .cwd(&rootfs.rootfs_fd)?
-        .args(["+i", "."])
-        .run()?;
-
     // Finalize mounted filesystems
     if !rootfs.is_alongside {
         let bootfs = rootfs.rootfs.join("boot");
