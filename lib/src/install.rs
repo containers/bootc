@@ -51,6 +51,12 @@ const BOOT: &str = "boot";
 const RUN_BOOTC: &str = "/run/bootc";
 /// This is an ext4 special directory we need to ignore.
 const LOST_AND_FOUND: &str = "lost+found";
+/// The mount path for selinux
+#[cfg(feature = "install")]
+const SELINUXFS: &str = "/sys/fs/selinux";
+/// The mount path for uefi
+#[cfg(feature = "install")]
+const EFIVARFS: &str = "/sys/firmware/efi/efivars";
 pub(crate) const ARCH_USES_EFI: bool = cfg!(any(target_arch = "x86_64", target_arch = "aarch64"));
 
 /// Kernel argument used to specify we want the rootfs mounted read-write by default
@@ -750,7 +756,7 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
             // already queried by something else (e.g. glib's constructor), we would also need
             // to re-exec.  But, selinux_ensure_install does that unconditionally right now too,
             // so let's just fall through to that.
-            crate::lsm::container_setup_selinux()?;
+            setup_sys_mount("selinuxfs", SELINUXFS)?;
             // This will re-execute the current process (once).
             g = crate::lsm::selinux_ensure_install_or_setenforce()?;
         } else if std::env::var_os(skip_check_envvar).is_some() {
@@ -871,39 +877,32 @@ pub(crate) fn setup_tmp_mounts() -> Result<()> {
 
 /// By default, podman/docker etc. when passed `--privileged` mount `/sys` as read-only,
 /// but non-recursively.  We selectively grab sub-filesystems that we need.
-#[context("Ensuring sys mounts")]
-pub(crate) fn setup_sys_mounts() -> Result<()> {
+#[context("Ensuring sys mount {fspath} {fstype}")]
+pub(crate) fn setup_sys_mount(fstype: &str, fspath: &str) -> Result<()> {
     tracing::debug!("Setting up sys mounts");
-
-    let root_efivars = "/sys/firmware/efi/efivars";
-    let efivars = format!("/proc/1/root/{root_efivars}");
-    // Does efivars even exist in the host? If not, we are
-    // not dealing with an EFI system
-    if !Path::new(efivars.as_str()).try_exists()? {
+    let rootfs = format!("/proc/1/root/{fspath}");
+    // Does mount point even exist in the host?
+    if !Path::new(rootfs.as_str()).try_exists()? {
         return Ok(());
     }
 
     // Now, let's find out if it's populated
-    if std::fs::read_dir(efivars)?.next().is_none() {
+    if std::fs::read_dir(rootfs)?.next().is_none() {
         return Ok(());
     }
 
-    // First of all, does the container already have the mount?
-    let path = Utf8Path::new(root_efivars);
-    if path.try_exists()? {
-        tracing::debug!("Check if efivarfs already mount");
-        let inspect = crate::mount::inspect_filesystem(path);
-        if inspect.is_ok() {
-            tracing::trace!("Already have efivarfs {root_efivars}");
-            return Ok(());
-        }
+    // Check that the path that should be mounted is even populated.
+    // Since we are dealing with /sys mounts here, if it's populated,
+    // we can be at least a little certain that it's mounted.
+    if Path::new(fspath).try_exists()? && std::fs::read_dir(fspath)?.next().is_some() {
+        return Ok(());
     }
 
     // This means the host has this mounted, so we should mount it too
     Task::new_and_run(
-        "Mounting efivarfs /sys/firmware/efi/efivars",
+        format!("Mounting {fstype} {fspath}"),
         "mount",
-        ["-t", "efivarfs", "efivars", "/sys/firmware/efi/efivars"],
+        ["-t", fstype, fstype, fspath],
     )
 }
 
@@ -1002,7 +1001,7 @@ async fn prepare_install(
         super::cli::ensure_self_unshared_mount_namespace().await?;
     }
 
-    setup_sys_mounts()?;
+    setup_sys_mount("efivarfs", EFIVARFS)?;
 
     // Now, deal with SELinux state.
     let (override_disable_selinux, setenforce_guard) =
