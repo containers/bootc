@@ -154,8 +154,13 @@ impl Default for Host {
 
 impl Display for ImageReference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let ostree_imgref = OstreeImageReference::from(self.clone());
-        ostree_imgref.fmt(f)
+        // For the default of fetching from a remote registry, just output the image name
+        if f.alternate() && self.signature.is_none() && self.transport == "registry" {
+            self.image.fmt(f)
+        } else {
+            let ostree_imgref = OstreeImageReference::from(self.clone());
+            ostree_imgref.fmt(f)
+        }
     }
 }
 
@@ -203,5 +208,14 @@ mod tests {
         let s = ImageReference::from(s);
         let displayed = format!("{s}");
         assert_eq!(displayed.as_str(), src);
+        // Alternative display should be short form
+        assert_eq!(format!("{s:#}"), "quay.io/example/foo:sometag");
+
+        let src = "ostree-remote-image:fedora:docker://quay.io/example/foo:sometag";
+        let s = OstreeImageReference::from_str(src).unwrap();
+        let s = ImageReference::from(s);
+        let displayed = format!("{s}");
+        assert_eq!(displayed.as_str(), src);
+        assert_eq!(format!("{s:#}"), src);
     }
 }

@@ -338,11 +338,11 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         let mut imp = crate::deploy::new_importer(repo, &imgref).await?;
         match imp.prepare().await? {
             PrepareResult::AlreadyPresent(_) => {
-                println!("No changes in: {}", imgref);
+                println!("No changes in: {imgref:#}");
             }
             PrepareResult::Ready(r) => {
                 crate::deploy::check_bootc_label(&r.config);
-                println!("Update available for: {}", imgref);
+                println!("Update available for: {imgref:#}");
                 if let Some(version) = r.version() {
                     println!("  Version: {version}");
                 }
