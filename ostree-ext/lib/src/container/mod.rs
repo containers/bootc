@@ -31,6 +31,7 @@ use ostree::glib;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::ops::Deref;
 use std::str::FromStr;
 
@@ -277,7 +278,14 @@ impl std::fmt::Display for OstreeImageReference {
             (SignatureSource::ContainerPolicyAllowInsecure, imgref)
                 if imgref.transport == Transport::Registry =>
             {
-                write!(f, "ostree-unverified-registry:{}", self.imgref.name)
+                // Because allow-insecure is the effective default, allow formatting
+                // without it.  Note this formatting is asymmetric and cannot be
+                // re-parsed.
+                if f.alternate() {
+                    write!(f, "{}", self.imgref)
+                } else {
+                    write!(f, "ostree-unverified-registry:{}", self.imgref.name)
+                }
             }
             (sigverify, imgref) => {
                 write!(f, "{}:{}", sigverify, imgref)
@@ -584,10 +592,8 @@ mod tests {
         assert_eq!(ir.sigverify, SignatureSource::ContainerPolicy);
         assert_eq!(ir.imgref.transport, Transport::Registry);
         assert_eq!(ir.imgref.name, "quay.io/exampleos/blah");
-        assert_eq!(
-            ir.to_string(),
-            "ostree-image-signed:docker://quay.io/exampleos/blah"
-        );
+        assert_eq!(ir.to_string(), ir_s);
+        assert_eq!(format!("{:#}", &ir), ir_s);
 
         let ir_s = "ostree-unverified-image:docker://quay.io/exampleos/blah";
         let ir: OstreeImageReference = ir_s.try_into().unwrap();
@@ -602,6 +608,7 @@ mod tests {
             OstreeImageReference::try_from("ostree-unverified-registry:quay.io/exampleos/blah")
                 .unwrap();
         assert_eq!(&ir_shorthand, &ir);
+        assert_eq!(format!("{:#}", &ir), "docker://quay.io/exampleos/blah");
     }
 
     #[test]
