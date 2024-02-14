@@ -348,7 +348,12 @@ pub(crate) fn install_create_rootfs(
     let rootarg = format!("root=UUID={root_uuid}");
     let bootsrc = format!("UUID={boot_uuid}");
     let bootarg = format!("boot={bootsrc}");
-    let boot = MountSpec::new(bootsrc.as_str(), "/boot");
+    let boot = MountSpec {
+        source: bootsrc.into(),
+        target: "/boot".into(),
+        fstype: MountSpec::AUTO.into(),
+        options: Some("ro".into()),
+    };
     let kargs = root_blockdev_kargs
         .into_iter()
         .flatten()
