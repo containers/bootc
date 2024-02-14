@@ -24,8 +24,9 @@ const SELF_CURRENT: &str = "/proc/self/attr/current";
 
 #[context("Querying selinux availability")]
 pub(crate) fn selinux_enabled() -> Result<bool> {
-    let filesystems = std::fs::read_to_string("/proc/filesystems")?;
-    Ok(filesystems.contains("selinuxfs\n"))
+    Path::new("/proc/1/root/sys/fs/selinux/enforce")
+        .try_exists()
+        .map_err(Into::into)
 }
 
 /// Get the current process SELinux security context

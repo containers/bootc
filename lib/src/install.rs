@@ -732,7 +732,10 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
     if srcdata.selinux {
         let host_selinux = crate::lsm::selinux_enabled()?;
         tracing::debug!("Target has SELinux, host={host_selinux}");
-        if host_selinux {
+        if override_disable_selinux {
+            ret_did_override = true;
+            println!("notice: Target has SELinux enabled, overriding to disable")
+        } else if host_selinux {
             // /sys/fs/selinuxfs is not normally mounted, so we do that now.
             // Because SELinux enablement status is cached process-wide and was very likely
             // already queried by something else (e.g. glib's constructor), we would also need
@@ -741,9 +744,6 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
             crate::lsm::container_setup_selinux()?;
             // This will re-execute the current process (once).
             g = crate::lsm::selinux_ensure_install_or_setenforce()?;
-        } else if override_disable_selinux {
-            ret_did_override = true;
-            println!("notice: Target has SELinux enabled, overriding to disable")
         } else if std::env::var_os(skip_check_envvar).is_some() {
             eprintln!(
                 "Host kernel does not have SELinux support, but target enables it by default; {} is set, continuing anyways",
