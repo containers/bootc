@@ -362,6 +362,15 @@ impl MountSpec {
             self.source, self.target, self.fstype, options
         )
     }
+
+    /// Append a mount option
+    pub(crate) fn push_option(&mut self, opt: &str) {
+        let options = self.options.get_or_insert_with(Default::default);
+        if !options.is_empty() {
+            options.push(',');
+        }
+        options.push_str(opt);
+    }
 }
 
 impl FromStr for MountSpec {
@@ -1308,13 +1317,18 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     tracing::debug!("Backing device: {backing_device}");
 
     let rootarg = format!("root={root_mount_spec}");
-    let boot = if let Some(spec) = fsopts.boot_mount_spec {
+    let mut boot = if let Some(spec) = fsopts.boot_mount_spec {
         Some(MountSpec::new(&spec, "/boot"))
     } else {
         boot_uuid
             .as_deref()
             .map(|boot_uuid| MountSpec::new_uuid_src(boot_uuid, "/boot"))
     };
+    // Ensure that we mount /boot readonly because it's really owned by bootc/ostree
+    // and we don't want e.g. apt/dnf trying to mutate it.
+    if let Some(boot) = boot.as_mut() {
+        boot.push_option("ro");
+    }
     // By default, we inject a boot= karg because things like FIPS compliance currently
     // require checking in the initramfs.
     let bootarg = boot.as_ref().map(|boot| format!("boot={}", &boot.source));
@@ -1353,4 +1367,14 @@ fn install_opts_serializable() {
     }))
     .unwrap();
     assert_eq!(c.block_opts.device, "/dev/vda");
+}
+
+#[test]
+fn test_mountspec() {
+    let mut ms = MountSpec::new("/dev/vda4", "/boot");
+    assert_eq!(ms.to_fstab(), "/dev/vda4 /boot auto defaults 0 0");
+    ms.push_option("ro");
+    assert_eq!(ms.to_fstab(), "/dev/vda4 /boot auto ro 0 0");
+    ms.push_option("relatime");
+    assert_eq!(ms.to_fstab(), "/dev/vda4 /boot auto ro,relatime 0 0");
 }
