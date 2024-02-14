@@ -119,11 +119,11 @@ pub(crate) async fn pull(
     quiet: bool,
 ) -> Result<Box<ImageState>> {
     let repo = &sysroot.repo();
-    let imgref = &OstreeImageReference::from(imgref.clone());
-    let mut imp = new_importer(repo, imgref).await?;
+    let ostree_imgref = &OstreeImageReference::from(imgref.clone());
+    let mut imp = new_importer(repo, ostree_imgref).await?;
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
-            println!("No changes in {} => {}", imgref, c.manifest_digest);
+            println!("No changes in {imgref:#} => {}", c.manifest_digest);
             return Ok(Box::new((*c).into()));
         }
         PrepareResult::Ready(p) => p,
@@ -146,7 +146,7 @@ pub(crate) async fn pull(
     }
     let import = import?;
     if let Some(msg) =
-        ostree_container::store::image_filtered_content_warning(repo, &imgref.imgref)?
+        ostree_container::store::image_filtered_content_warning(repo, &ostree_imgref.imgref)?
     {
         crate::journal::journal_print(libsystemd::logging::Priority::Notice, &msg);
     }
