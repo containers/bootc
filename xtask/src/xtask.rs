@@ -8,7 +8,6 @@ use fn_error_context::context;
 use xshell::{cmd, Shell};
 
 const NAME: &str = "bootc";
-const VENDORPATH: &str = "target/vendor.tar.zstd";
 
 fn main() {
     if let Err(e) = try_main() {
@@ -19,7 +18,6 @@ fn main() {
 
 #[allow(clippy::type_complexity)]
 const TASKS: &[(&str, fn(&Shell) -> Result<()>)] = &[
-    ("vendor", vendor),
     ("manpages", manpages),
     ("man2markdown", man2markdown),
     ("package", package),
@@ -39,16 +37,6 @@ fn try_main() -> Result<()> {
     } else {
         print_help(&sh)?;
     }
-    Ok(())
-}
-
-fn vendor(sh: &Shell) -> Result<()> {
-    let target = VENDORPATH;
-    cmd!(
-        sh,
-        "cargo vendor-filterer --prefix=vendor --format=tar.zstd {target}"
-    )
-    .run()?;
     Ok(())
 }
 
@@ -153,6 +141,7 @@ fn git_timestamp(sh: &Shell) -> Result<String> {
 struct Package {
     version: String,
     srcpath: Utf8PathBuf,
+    vendorpath: Utf8PathBuf,
 }
 
 /// Return the timestamp of the latest git commit in seconds since the Unix epoch.
@@ -211,10 +200,18 @@ fn impl_package(sh: &Shell) -> Result<Package> {
     if !st.success() {
         anyhow::bail!("Failed to run {st:?}");
     }
-    cmd!(sh, "zstd -f {p}").run()?;
+    let srcpath: Utf8PathBuf = format!("{p}.zstd").into();
+    cmd!(sh, "zstd --rm -f {p} -o {srcpath}").run()?;
+    let vendorpath = Utf8Path::new("target").join(format!("{namev}-vendor.tar.zstd"));
+    cmd!(
+        sh,
+        "cargo vendor-filterer --prefix=vendor --format=tar.zstd {vendorpath}"
+    )
+    .run()?;
     Ok(Package {
         version: v,
-        srcpath: format!("{p}.zst").into(),
+        srcpath,
+        vendorpath,
     })
 }
 
@@ -236,15 +233,14 @@ fn impl_srpm(sh: &Shell) -> Result<Utf8PathBuf> {
         }
     }
     let pkg = impl_package(sh)?;
-    vendor(sh)?;
     let td = tempfile::tempdir_in("target").context("Allocating tmpdir")?;
     let td = td.into_path();
     let td: &Utf8Path = td.as_path().try_into().unwrap();
-    let srcpath = td.join(pkg.srcpath.file_name().unwrap());
-    std::fs::rename(pkg.srcpath, srcpath)?;
+    let srcpath = &pkg.srcpath;
+    cmd!(sh, "mv {srcpath} {td}").run()?;
     let v = pkg.version;
-    let vendorpath = td.join(format!("{NAME}-{v}-vendor.tar.zst"));
-    std::fs::rename(VENDORPATH, vendorpath)?;
+    let src_vendorpath = &pkg.vendorpath;
+    cmd!(sh, "mv {src_vendorpath} {td}").run()?;
     {
         let specin = File::open(format!("contrib/packaging/{NAME}.spec"))
             .map(BufReader::new)

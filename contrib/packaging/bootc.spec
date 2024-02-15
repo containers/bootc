@@ -7,8 +7,8 @@ Summary:        Boot containers
 
 License:        ASL 2.0
 URL:            https://github.com/containers/bootc
-Source0:        https://github.com/containers/bootc/releases/download/v%{version}/bootc-%{version}.tar.zst
-Source1:        https://github.com/containers/bootc/releases/download/v%{version}/bootc-%{version}-vendor.tar.zst
+Source0:        https://github.com/containers/bootc/releases/download/v%{version}/bootc-%{version}.tar.zstd
+Source1:        https://github.com/containers/bootc/releases/download/v%{version}/bootc-%{version}-vendor.tar.zstd
 
 BuildRequires: make
 BuildRequires: openssl-devel
