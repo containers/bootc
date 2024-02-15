@@ -121,24 +121,6 @@ pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforce
     Ok(g)
 }
 
-/// Ensure that /sys/fs/selinux is mounted, and ensure we're running
-/// as install_t.
-#[context("Ensuring selinux mount")]
-#[cfg(feature = "install")]
-pub(crate) fn container_setup_selinux() -> Result<()> {
-    let path = Utf8Path::new(SELINUXFS);
-    if !path.join("enforce").exists() {
-        if !path.exists() {
-            tracing::debug!("Creating {path}");
-            std::fs::create_dir(path)?;
-        }
-        Task::new("Mounting selinuxfs", "mount")
-            .args(["selinuxfs", "-t", "selinuxfs", path.as_str()])
-            .run()?;
-    }
-    Ok(())
-}
-
 #[context("Setting SELinux permissive mode")]
 #[allow(dead_code)]
 #[cfg(feature = "install")]
