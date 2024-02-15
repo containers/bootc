@@ -56,7 +56,7 @@ jobs:
       - name: Build
         run: make test-bin-archive
       - name: Upload binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: bootc.tar.zst
           path: target/bootc.tar.zst
@@ -75,7 +75,7 @@ jobs:
       - name: Build
         run: make test-bin-archive
       - name: Upload binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: bootc-c9s.tar.zst
           path: target/bootc.tar.zst
