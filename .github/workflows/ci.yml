@@ -56,7 +56,7 @@ jobs:
       - name: Build
         run: make test-bin-archive
       - name: Upload binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: bootc.tar.zst
           path: target/bootc.tar.zst
@@ -75,7 +75,7 @@ jobs:
       - name: Build
         run: make test-bin-archive
       - name: Upload binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: bootc-c9s.tar.zst
           path: target/bootc.tar.zst
@@ -95,7 +95,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Download
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bootc.tar.zst
       - name: Install
@@ -109,7 +109,7 @@ jobs:
     container: quay.io/centos-bootc/fedora-bootc:eln
     steps:
       - name: Download
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bootc.tar.zst
       - name: Install
@@ -124,7 +124,7 @@ jobs:
       - name: Ensure host skopeo is disabled
         run: sudo rm -f /bin/skopeo /usr/bin/skopeo
       - name: Download
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bootc-c9s.tar.zst
       - name: Install
