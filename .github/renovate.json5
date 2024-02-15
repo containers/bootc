@@ -48,6 +48,13 @@
 
   "packageRules": [
     {
+      "groupName": "all github action dependencies",
+      "groupSlug": "all-github-action",
+      "matchPaths": [
+        ".github/workflows/**"
+      ],
+    },
+    {
       "groupName": "all patch dependencies",
       "groupSlug": "all-patch",
       "matchPackagePatterns": [
