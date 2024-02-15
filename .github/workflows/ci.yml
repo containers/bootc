@@ -118,7 +118,7 @@ jobs:
         run: bootc internal-tests run-container-integration
   privtest-alongside:
     name: "Test install-alongside"
-    needs: [build-fedora]
+    needs: [build-c9s]
     runs-on: ubuntu-latest
     steps:
       - name: Ensure host skopeo is disabled
@@ -126,7 +126,7 @@ jobs:
       - name: Download
         uses: actions/download-artifact@v3
         with:
-          name: bootc.tar.zst
+          name: bootc-c9s.tar.zst
       - name: Install
         run: tar -xvf bootc.tar.zst
       - name: Integration tests
@@ -134,7 +134,7 @@ jobs:
           set -xeuo pipefail
           echo 'ssh-ed25519 ABC0123 testcase@example.com' > test_authorized_keys
           sudo podman run --rm -ti --privileged -v ./test_authorized_keys:/test_authorized_keys --env RUST_LOG=debug -v /:/target -v /var/lib/containers:/var/lib/containers -v ./usr/bin/bootc:/usr/bin/bootc --pid=host --security-opt label=disable \
-            quay.io/centos-bootc/fedora-bootc-dev:eln bootc install to-filesystem \
+            quay.io/centos-bootc/centos-bootc-dev:stream9 bootc install to-filesystem \
             --karg=foo=bar --disable-selinux --replace=alongside --root-ssh-authorized-keys=/test_authorized_keys /target
           ls -al /boot/loader/
           sudo grep foo=bar /boot/loader/entries/*.conf
@@ -143,6 +143,6 @@ jobs:
           sudo chattr -i /ostree/deploy/default/deploy/*
           sudo rm /ostree/deploy/default -rf
           sudo podman run --rm -ti --privileged --env BOOTC_SKIP_SELINUX_HOST_CHECK=1 --env RUST_LOG=debug -v /:/target -v /var/lib/containers:/var/lib/containers -v ./usr/bin/bootc:/usr/bin/bootc --pid=host --security-opt label=disable \
-            quay.io/centos-bootc/fedora-bootc-dev:eln bootc install to-filesystem \
+            quay.io/centos-bootc/centos-bootc-dev:stream9 bootc install to-filesystem \
             --replace=alongside /target
           sudo ls -ldZ / /ostree/deploy/default/deploy/* /ostree/deploy/default/deploy/*/etc
