@@ -214,10 +214,6 @@ pub(crate) struct InstallTargetFilesystemOpts {
     #[clap(long)]
     pub(crate) root_mount_spec: Option<String>,
 
-    /// Comma-separated mount options for the root filesystem.  For example: rw,prjquota
-    #[clap(long)]
-    pub(crate) root_options: Option<String>,
-
     /// Mount specification for the /boot filesystem.
     ///
     /// At the current time, a separate /boot is required.  This restriction will be lifted in

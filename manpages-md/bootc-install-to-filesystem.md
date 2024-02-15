@@ -5,11 +5,11 @@ bootc-install-to-filesystem - Install to the target filesystem
 # SYNOPSIS
 
 **bootc-install-to-filesystem** \[**\--root-mount-spec**\]
-\[**\--root-options**\] \[**\--boot-mount-spec**\] \[**\--replace**\]
-\[**\--source-imgref**\] \[**\--target-transport**\]
-\[**\--target-imgref**\] \[**\--enforce-container-sigpolicy**\]
-\[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
-\[**\--disable-selinux**\] \[**\--karg**\] \[**\--generic-image**\]
+\[**\--boot-mount-spec**\] \[**\--replace**\] \[**\--source-imgref**\]
+\[**\--target-transport**\] \[**\--target-imgref**\]
+\[**\--enforce-container-sigpolicy**\] \[**\--target-ostree-remote**\]
+\[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
+\[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
 \[**-h**\|**\--help**\] \[**-V**\|**\--version**\] \<*ROOT_PATH*\>
 
 # DESCRIPTION
@@ -22,11 +22,6 @@ Install to the target filesystem
 
 :   Source device specification for the root filesystem. For example,
     UUID=2e9f4241-229b-4202-8429-62d2302382e1
-
-**\--root-options**=*ROOT_OPTIONS*
-
-:   Comma-separated mount options for the root filesystem. For example:
-    rw,prjquota
 
 **\--boot-mount-spec**=*BOOT_MOUNT_SPEC*
 
@@ -60,7 +55,7 @@ be used.
 
 By default, bootc install and install-to-filesystem assumes that it runs
 in a podman container, and it takes the container image to install from
-the podman's container registry. If \--source-imgref is given, bootc uses
+the podmans container registry. If \--source-imgref is given, bootc uses
 it as the installation source, instead of the behaviour explained in the
 previous paragraph. See skopeo(1) for accepted formats.
 
@@ -85,7 +80,7 @@ previous paragraph. See skopeo(1) for accepted formats.
 
 **\--skip-fetch-check**
 
-:   By default, the accessibility of the target image will be verified
+:   By default, the accessiblity of the target image will be verified
     (just the manifest will be fetched). Specifying this option
     suppresses the check; use this when you know the issues it might
     find are addressed.
@@ -104,6 +99,18 @@ disabled but where the target does have SELinux enabled.
 **\--karg**=*KARG*
 
 :   Add a kernel argument
+
+**\--root-ssh-authorized-keys**=*ROOT_SSH_AUTHORIZED_KEYS*
+
+:   The path to an \`authorized_keys\` that will be injected into the
+    \`root\` account.
+
+The implementation of this uses systemd \`tmpfiles.d\`, writing to a
+file named \`/etc/tmpfiles.d/bootc-root-ssh.conf\`. This will have the
+effect that by default, the SSH credentials will be set if not present.
+The intention behind this is to allow mounting the whole \`/root\` home
+directory as a \`tmpfs\`, while still getting the SSH key replaced on
+boot.
 
 **\--generic-image**
 

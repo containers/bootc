@@ -9,7 +9,8 @@ bootc-install-to-disk - Install to the target block device
 \[**\--target-transport**\] \[**\--target-imgref**\]
 \[**\--enforce-container-sigpolicy**\] \[**\--target-ostree-remote**\]
 \[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
-\[**\--generic-image**\] \[**\--via-loopback**\] \[**-h**\|**\--help**\]
+\[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
+\[**\--via-loopback**\] \[**-h**\|**\--help**\]
 \[**-V**\|**\--version**\] \<*DEVICE*\>
 
 # DESCRIPTION
@@ -52,7 +53,7 @@ By default, all remaining space on the disk will be used.
 
 By default, bootc install and install-to-filesystem assumes that it runs
 in a podman container, and it takes the container image to install from
-the podman's container registry. If \--source-imgref is given, bootc uses
+the podmans container registry. If \--source-imgref is given, bootc uses
 it as the installation source, instead of the behaviour explained in the
 previous paragraph. See skopeo(1) for accepted formats.
 
@@ -77,7 +78,7 @@ previous paragraph. See skopeo(1) for accepted formats.
 
 **\--skip-fetch-check**
 
-:   By default, the accessibility of the target image will be verified
+:   By default, the accessiblity of the target image will be verified
     (just the manifest will be fetched). Specifying this option
     suppresses the check; use this when you know the issues it might
     find are addressed.
@@ -96,6 +97,18 @@ disabled but where the target does have SELinux enabled.
 **\--karg**=*KARG*
 
 :   Add a kernel argument
+
+**\--root-ssh-authorized-keys**=*ROOT_SSH_AUTHORIZED_KEYS*
+
+:   The path to an \`authorized_keys\` that will be injected into the
+    \`root\` account.
+
+The implementation of this uses systemd \`tmpfiles.d\`, writing to a
+file named \`/etc/tmpfiles.d/bootc-root-ssh.conf\`. This will have the
+effect that by default, the SSH credentials will be set if not present.
+The intention behind this is to allow mounting the whole \`/root\` home
+directory as a \`tmpfs\`, while still getting the SSH key replaced on
+boot.
 
 **\--generic-image**
 
