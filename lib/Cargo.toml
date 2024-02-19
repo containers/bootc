@@ -11,7 +11,7 @@ rust-version = "1.64.0"
 include = ["/src", "LICENSE-APACHE", "LICENSE-MIT"]
 
 [dependencies]
-anstream = "0.6.11"
+anstream = "0.6.12"
 anstyle = "1.0.6"
 anyhow = "1.0"
 camino = { version = "1.1.6", features = ["serde1"] }
@@ -37,7 +37,7 @@ schemars = { version = "0.8.16", features = ["chrono"] }
 serde = { features = ["derive"], version = "1.0.196" }
 serde_ignored = "0.1.10"
 serde_json = "1.0.113"
-serde_yaml = "0.9.31"
+serde_yaml = "0.9.32"
 serde_with = ">= 3.6.1, < 4"
 tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1.36.0" }
 tokio-util = { features = ["io-util"], version = "0.7" }
