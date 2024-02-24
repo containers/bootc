@@ -1,0 +1,366 @@
+---
+- hosts: guest
+  become: false
+  vars:
+    bootc_image: ""
+    upgrade: ""
+    total_counter: "0"
+    failed_counter: "0"
+
+  tasks:
+    # current target host's IP address
+    - debug: var=ansible_all_ipv4_addresses
+    - debug: var=ansible_facts['distribution_version']
+    - debug: var=ansible_facts['distribution']
+    - debug: var=ansible_facts['architecture']
+
+    - name: check bios or uefi
+      stat:
+        path: /sys/firmware/efi
+
+    - name: check secure boot status
+      command: mokutil --sb-state
+      ignore_errors: true
+
+    - name: check tpm device
+      stat:
+        path: /dev/tpm0
+      ignore_errors: true
+
+    - name: check partition size
+      command: df -Th
+      ignore_errors: true
+      become: true
+
+    - name: check disk partition table
+      command: fdisk -l
+      ignore_errors: true
+      become: true
+
+    - name: check mount table
+      command: findmnt
+      ignore_errors: true
+
+    - name: check rpm-ostree status
+      command: rpm-ostree status
+      ignore_errors: true
+
+    - name: check bootc status
+      command: bootc status
+      ignore_errors: true
+      become: true
+
+    - name: check ostree finalize staged log
+      command: journalctl -b -1 -u ostree-finalize-staged.service
+      ignore_errors: true
+      become: true
+
+    # case: check installed container image
+    - name: get installed container image
+      shell: bootc status --json | jq -r '.status.booted.image.image.image'
+      register: result_bootc_status
+      become: true
+
+    - set_fact:
+        installed_image: "{{ result_bootc_status.stdout }}"
+
+    - name: check commit deployed and built
+      block:
+        - assert:
+            that:
+              - installed_image == bootc_image
+            fail_msg: "{{ bootc_image }} IS NOT installed"
+            success_msg: "{{ bootc_image }} installed"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check ostree-remount service status
+    - name: check ostree-remount service status
+      command: systemctl is-active ostree-remount.service
+      register: result_remount
+
+    - name: ostree-remount should be started
+      block:
+        - assert:
+            that:
+              - result_remount.stdout == "active"
+            fail_msg: "ostree-remount is not started by default"
+            success_msg: "starting ostree-remount successful"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    - name: set mount point device name
+      command: findmnt -r -o SOURCE -n /sysroot
+      register: result_sysroot_source
+
+    - set_fact:
+        device_name: "{{ result_sysroot_source.stdout }}"
+
+    - name: get ostree osname
+      shell: rpm-ostree status --json | jq -r '.deployments[0].osname'
+      register: result_osname
+
+    - set_fact:
+        osname: "{{ result_osname.stdout }}"
+
+    - name: get ostree checksum
+      shell: bootc status --json | jq -r '.status.booted.ostree.checksum'
+      register: result_ostree_checksum
+      become: true
+
+    - set_fact:
+        ostree_checksum: "{{ result_ostree_checksum.stdout }}"
+
+    # case: check /sysroot mount status
+    - name: check /sysroot mount status
+      shell: findmnt -r -o OPTIONS -n /sysroot | awk -F "," '{print $1}'
+      register: result_sysroot_mount_status
+
+    - name: /sysroot should be mount with rw permission
+      block:
+        - assert:
+            that:
+              - result_sysroot_mount_status.stdout == "rw"
+            fail_msg: "/sysroot is not mounted with rw permission"
+            success_msg: "/sysroot is mounted with rw permission"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check /var mount point
+    - name: check /var mount point
+      command: findmnt -r -o SOURCE -n /var
+      register: result_var_mount_point
+
+    - name: /var mount point checking
+      block:
+        - assert:
+            that:
+              - result_var_mount_point.stdout == var_mount_path
+            fail_msg: "/var does not mount on {{ var_mount_path }}"
+            success_msg: "/var mounts on {{ var_mount_path }}"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      vars:
+        var_mount_path: "{{ device_name }}[/ostree/deploy/{{ osname }}/var]"
+
+    # case: check /var mount status
+    - name: check /var mount status
+      shell: findmnt -r -o OPTIONS -n /var | awk -F "," '{print $1}'
+      register: result_var_mount_status
+
+    - name: /var should be mount with rw permission
+      block:
+        - assert:
+            that:
+              - result_var_mount_status.stdout == "rw"
+            fail_msg: "/var is not mounted with rw permission"
+            success_msg: "/var is mounted with rw permission"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check / mount point
+    - name: check / mount point
+      command: findmnt -r -o SOURCE -n /
+      register: result_root_mount_point
+
+    - name: / mount point checking
+      block:
+        - assert:
+            that:
+              - result_root_mount_point.stdout == "overlay"
+            fail_msg: "/ does not mount with overlay"
+            success_msg: "/ mounts with overlay"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    - name: check installed package
+      shell: rpm -qa | sort
+      register: result_packages
+
+    - name: upgrade checking
+      block:
+        # case: check booted ostree chacksum != rollback ostree checksum
+        - name: get rollback ostree checksum
+          shell: bootc status --json | jq -r '.status.rollback.ostree.checksum'
+          register: result_rollback_ostree_checksum
+          become: true
+
+        - name: check booted and rollback ostree chacksum
+          block:
+            - assert:
+                that:
+                  - ostree_checksum != result_rollback_ostree_checksum.stdout
+                fail_msg: "upgrade failed"
+                success_msg: "upgrade passed"
+          always:
+            - set_fact:
+                total_counter: "{{ total_counter | int + 1 }}"
+          rescue:
+            - name: failed count + 1
+              set_fact:
+                failed_counter: "{{ failed_counter | int + 1 }}"
+        - set_fact:
+            ostree_checksum: "{{ result_ostree_checksum.stdout }}"
+
+        # case: check wget installed after upgrade
+        - name: check wget installed
+          block:
+            - assert:
+                that:
+                  - "'wget' in result_packages.stdout"
+                fail_msg: "wget not installed, ostree upgrade might be failed"
+                success_msg: "wget installed in ostree upgrade"
+          always:
+            - set_fact:
+                total_counter: "{{ total_counter | int + 1 }}"
+          rescue:
+            - name: failed count + 1
+              set_fact:
+                failed_counter: "{{ failed_counter | int + 1 }}"
+      when: upgrade == "true"
+
+    # case: check dmesg error and failed log
+    - name: check dmesg output
+      command: dmesg
+      become: true
+
+    - name: check dmesg error and fail log
+      shell: dmesg --notime | grep -i "error\|fail" | grep -v "skipped" | grep -v "failover" | grep -v "ignition" | grep -v "Driver 'pcspkr'" || true
+      register: result_dmesg_error
+      become: true
+
+    # case: check running container with podman in root
+    - name: run CentOS Stream 9 image with podman in root
+      command: podman run --rm quay.io/centos/centos:stream9 cat /etc/redhat-release
+      register: podman_result
+      become: true
+      retries: 30
+      delay: 2
+      until: podman_result is success
+      ignore_errors: true
+
+    - name: run container test
+      block:
+        - assert:
+            that:
+              - podman_result is succeeded
+              - "'CentOS Stream release 9' in podman_result.stdout"
+            fail_msg: "failed run container with podman (root)"
+            success_msg: "running container with podman (root) succeeded"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check running container with podman in rootless
+    - name: run CentOS Stream 9 image with in rootless
+      command: podman run --rm quay.io/centos/centos:stream9 cat /etc/redhat-release
+      register: podman_result
+      retries: 30
+      delay: 2
+      until: podman_result is success
+      ignore_errors: true
+
+    - name: run container test
+      block:
+        - assert:
+            that:
+              - podman_result is succeeded
+              - "'CentOS Stream release 9' in podman_result.stdout"
+            fail_msg: "failed run container with podman (non-root)"
+            success_msg: "running container with podman (non-root) succeeded"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check system reboot
+    - name: check system reboot
+      block:
+        - name: check system reboot
+          reboot:
+            post_reboot_delay: 60
+            pre_reboot_delay: 60
+            reboot_timeout: 180
+          become: true
+          ignore_errors: true
+
+        - name: wait for connection to become reachable/usable
+          wait_for_connection:
+            delay: 30
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check persistent log in system
+    - name: check journald persistent logging
+      block:
+        - name: list boots
+          shell: journalctl --list-boots -q
+          register: result_list_boots
+          become: true
+
+        - assert:
+            that:
+              - result_list_boots.stdout_lines | length > 1
+            fail_msg: "NO journald persistent logging configured"
+            success_msg: "journald persistent logging configured"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check reboot times
+    - name: check reboot times
+      command: last reboot
+      ignore_errors: true
+      become: true
+
+    - assert:
+        that:
+          - failed_counter == "0"
+        fail_msg: "Run {{ total_counter }} tests, but {{ failed_counter }} of them failed"
+        success_msg: "Totally {{ total_counter }} test passed"

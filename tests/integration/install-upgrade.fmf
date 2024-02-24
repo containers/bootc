@@ -1,0 +1,9 @@
+/rpm-build:
+  summary: bootc rpm build test
+  test: podman run --rm --privileged -v ../../:/workdir:z -e TEST_OS=$TEST_OS -e ARCH=$ARCH -e RHEL_REGISTRY_URL=$RHEL_REGISTRY_URL -e DOWNLOAD_NODE=$DOWNLOAD_NODE --workdir /workdir quay.io/fedora/fedora:40 ./tests/integration/mockbuild.sh
+  duration: 40m
+
+/bootc-install-upgrade:
+  summary: bootc install and upgrade test
+  test: ./install-upgrade.sh
+  duration: 40m

@@ -1,0 +1,19 @@
+---
+- hosts: guest
+  become: false
+
+  tasks:
+    - name: bootc upgrade
+      command: bootc upgrade
+      become: true
+
+    - name: Reboot to deploy new system
+      reboot:
+        post_reboot_delay: 60
+        reboot_timeout: 180
+      become: true
+      ignore_errors: true
+
+    - name: Wait for connection to become reachable/usable
+      wait_for_connection:
+        delay: 30

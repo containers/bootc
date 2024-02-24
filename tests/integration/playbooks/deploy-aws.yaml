@@ -1,0 +1,184 @@
+---
+- hosts: cloud
+  gather_facts: false
+  become: false
+  vars:
+    test_os: "{{ lookup('env', 'TEST_OS') | default('centos-stream-9', true) }}"
+    arch: "{{ lookup('env', 'ARCH') | default('x86_64', true) }}"
+    ssh_key_pub: ""
+    inventory_file: ""
+    download_node: "{{ lookup('env', 'DOWNLOAD_NODE') | default('', true) }}"
+    ami_id: ""
+    ami:
+      x86_64:
+        rhel-9-4: ami-047cbb4b91f923934
+        centos-stream-9: ami-087dde0e824141404
+      aarch64:
+        rhel-9-4: ami-0bf2a1a5d9ee15e42
+        centos-stream-9: ami-025af1eccc54ec6e6
+    instance_type:
+      x86_64:
+        "0": t2.medium
+        "1": t3.medium
+        "2": m6a.large
+      aarch64:
+        "0": t4g.medium
+        "1": c7g.medium
+        "2": m6g.medium
+
+  tasks:
+    - set_fact:
+        random_num: "{{ 9999 | random(start=1001) }}"
+    - set_fact:
+        instance_name: "bootc-aws-{{ test_os }}-{{ random_num }}"
+
+    - name: random number for instance type
+      set_fact:
+        instance_type_index: "{{ 3 | random(start=0) }}"
+
+    - name: set random instance type
+      set_fact:
+        random_instance_type: "{{ lookup('env', 'instance_type') | default(instance_type[arch][instance_type_index], true) }}"
+
+    - name: "get available zone for instance {{ random_instance_type }}"
+      shell: aws ec2 describe-instance-type-offerings --location-type availability-zone --filters="Name=instance-type,Values={{ random_instance_type }}" --query InstanceTypeOfferings | jq -r '.[0].Location'
+      register: ec2_zone
+      when: "'rhel' not in test_os"
+
+    - name: get subnet
+      amazon.aws.ec2_vpc_subnet_info:
+        filters:
+          "tag:Name": "kite-ci"
+          "availabilityZone": "{{ ec2_zone.stdout }}"
+      register: ec2_vpc_subnet
+      when: "'rhel' not in test_os"
+
+    - set_fact:
+        subnet_id: "{{ ec2_vpc_subnet.subnets[0].subnet_id }}"
+      when: "'rhel' not in test_os"
+
+    - name: get virtqe subnet
+      amazon.aws.ec2_vpc_subnet_info:
+        filters:
+          "tag:Name": "InternalA-virtqe"
+      register: ec2_vpc_subnet
+      when: '"rhel" in test_os'
+
+    - set_fact:
+        subnet_id: "{{ ec2_vpc_subnet.subnets[0].subnet_id }}"
+      when: "'rhel' in test_os"
+
+    - name: get security group
+      amazon.aws.ec2_security_group_info:
+        filters:
+          "tag:Name": "kite-ci"
+      register: ec2_security_group
+      when: "'rhel' not in test_os"
+
+    - set_fact:
+        group_id: "{{ ec2_security_group.security_groups[0].group_id }}"
+      when: "'rhel' not in test_os"
+
+    - name: get virtqe security group
+      amazon.aws.ec2_security_group_info:
+        filters:
+          "tag:Name": "bootc-test"
+      register: ec2_security_group
+      when: "'rhel' in test_os"
+
+    - set_fact:
+        group_id: "{{ ec2_security_group.security_groups[0].group_id }}"
+      when: "'rhel' in test_os"
+
+    - name: config ssh keypair used by test
+      amazon.aws.ec2_key:
+        name: "kp-bootc-{{ random_num }}"
+        key_material: "{{ lookup('file', ssh_key_pub) }}"
+        tags:
+          name: "bootc-test"
+
+    - name: generate ec2_run_instance script
+      template:
+        src: ec2_run_instance.j2
+        dest: "{{ playbook_dir }}/ec2_run_instance.sh"
+        mode: 0755
+
+    - name: run ec2 instance with script
+      command: "{{ playbook_dir }}/ec2_run_instance.sh"
+      register: result_instance
+
+    - name: convert run_instance output to json
+      set_fact:
+        instance_json: "{{ result_instance.stdout | from_json }}"
+
+    - name: wait for instance running
+      shell: aws ec2 describe-instances --instance-ids {{ instance_json.Instances[0].InstanceId }} --query 'Reservations[0].Instances[0].State.Name' --output text
+      register: describe_result
+      retries: 60
+      delay: 5
+      until: describe_result.stdout == "running"
+
+    - name: get instance public ip
+      shell: aws ec2 describe-instances --instance-ids {{ instance_json.Instances[0].InstanceId }} --query 'Reservations[*].Instances[*].PublicIpAddress' --output text
+      register: ip_result
+      when: "'rhel' not in test_os"
+
+    - set_fact:
+        instance_ip: "{{ ip_result.stdout }}"
+      when: "'rhel' not in test_os"
+
+    - name: get instance private ip
+      shell: aws ec2 describe-instances --instance-ids {{ instance_json.Instances[0].InstanceId }} --query 'Reservations[*].Instances[*].PrivateIpAddress' --output text
+      register: ip_result
+      when: "'rhel' in test_os"
+
+    - set_fact:
+        instance_ip: "{{ ip_result.stdout }}"
+      when: "'rhel' in test_os"
+
+    - name: waits until instance is reachable
+      wait_for:
+        host: "{{ instance_ip }}"
+        port: 22
+        search_regex: OpenSSH
+        delay: 10
+      retries: 30
+      register: result_ssh_check
+      until: result_ssh_check is success
+
+    - name: add instance ip into host group guest
+      add_host:
+        name: "{{ instance_ip }}"
+        groups: guest
+
+    - name: Write instance ip to inventory file
+      community.general.ini_file:
+        path: "{{ inventory_file }}"
+        section: guest
+        option: guest ansible_host
+        value: "{{ instance_ip }}"
+        no_extra_spaces: true
+
+    - name: Write random number to inventory file
+      community.general.ini_file:
+        path: "{{ inventory_file }}"
+        section: cloud:vars
+        option: random_num
+        value: "{{ random_num }}"
+        no_extra_spaces: true
+
+    - name: write AWS EC2 instance id to inventory file
+      community.general.ini_file:
+        path: "{{ inventory_file }}"
+        section: cloud:vars
+        option: instance_id
+        value: "{{ instance_json.Instances[0].InstanceId }}"
+        no_extra_spaces: true
+
+    - name: write AWS ami id to inventory file
+      community.general.ini_file:
+        path: "{{ inventory_file }}"
+        section: cloud:vars
+        option: ami_id
+        value: "{{ ami_id }}"
+        no_extra_spaces: true

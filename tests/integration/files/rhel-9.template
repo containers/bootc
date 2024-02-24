@@ -1,0 +1,10 @@
+[rhel-9x-baseos]
+baseurl=http://REPLACE_ME/rhel-9/nightly/RHEL-9/REPLACE_COMPOSE_ID/compose/BaseOS/$basearch/os/
+enabled=1
+gpgcheck=0
+
+[rhel-9x-appstream]
+baseurl=http://REPLACE_ME/rhel-9/nightly/RHEL-9/REPLACE_COMPOSE_ID/compose/AppStream/$basearch/os/
+enabled=1
+gpgcheck=0
+
