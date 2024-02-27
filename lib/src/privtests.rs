@@ -88,7 +88,10 @@ pub(crate) fn impl_run_container() -> Result<()> {
         let st = o.status;
         assert!(!st.success());
         let stderr = String::from_utf8(o.stderr)?;
-        assert!(stderr.contains("This command requires full root privileges"));
+        assert!(
+            stderr.contains("This command requires full root privileges"),
+            "stderr: {stderr}",
+        );
     }
     println!("ok upgrade/update are errors in container");
 
