@@ -22,8 +22,7 @@ pub(crate) struct Findmnt {
     pub(crate) filesystems: Vec<Filesystem>,
 }
 
-#[context("Inspecting filesystem {path}")]
-pub(crate) fn inspect_filesystem(path: &Utf8Path) -> Result<Filesystem> {
+fn run_findmnt(args: &[&str], path: &str) -> Result<Filesystem> {
     let desc = format!("Inspecting {path}");
     let o = Task::new(desc, "findmnt")
         .args([
@@ -31,8 +30,9 @@ pub(crate) fn inspect_filesystem(path: &Utf8Path) -> Result<Filesystem> {
             "-v",
             // If you change this you probably also want to change the Filesystem struct above
             "--output=SOURCE,FSTYPE,OPTIONS,UUID",
-            path.as_str(),
         ])
+        .args(args)
+        .arg(path)
         .quiet()
         .read()?;
     let o: Findmnt = serde_json::from_str(&o).context("Parsing findmnt output")?;
@@ -40,6 +40,13 @@ pub(crate) fn inspect_filesystem(path: &Utf8Path) -> Result<Filesystem> {
         .into_iter()
         .next()
         .ok_or_else(|| anyhow!("findmnt returned no data for {path}"))
+}
+
+#[context("Inspecting filesystem {path}")]
+/// Inspect a target which must be a mountpoint root - it is an error
+/// if the target is not the mount root.
+pub(crate) fn inspect_filesystem(path: &Utf8Path) -> Result<Filesystem> {
+    run_findmnt(&["--mountpoint"], path.as_str())
 }
 
 /// Mount a device to the target path.
