@@ -100,7 +100,10 @@ pub(crate) fn impl_run_container() -> Result<()> {
         .output()?;
     assert!(!o.status.success());
     let stderr = String::from_utf8(o.stderr)?;
-    assert!(stderr.contains("requires root privileges"));
+    assert!(
+        stderr.contains("requires root privileges"),
+        "stderr: {stderr}"
+    );
 
     let config = cmd!(sh, "bootc install print-configuration").read()?;
     let mut config: InstallConfiguration =
