@@ -1,8 +1,13 @@
----
-nav_order: 3
----
+# Mirrored/disconnected upgrades
 
-# Managing bootc systems
+It is common (a best practice even) to maintain systems which default
+to being disconnected from the public Internet.
+
+## Pulling updates from a local mirror
+
+The bootc project reuses the same container libraries that are in use by `podman`;
+this means that configuring [containers-registries.conf](https://github.com/containers/image/blob/main/docs/containers-registries.conf.5.md)
+allows `bootc upgrade` to fetch from local mirror registries.
 
 ## Performing offline updates via USB
 

@@ -1,7 +1,3 @@
----
-nav_order: 5
----
-
 # Relationship with other projects
 
 ## Relationship with podman
@@ -27,6 +23,10 @@ things like [containers-registries.conf](https://github.com/containers/image/blo
 In other words, if you configure `podman` to pull images from your local mirror registry, then `bootc` will automatically honor that as well.
 
 The simple way to say it is: A goal of `bootc` is to be the bootable-container analogue for `podman`, which runs application containers.  Everywhere one might run `podman`, one could also consider using `bootc`. 
+
+## Relationship with Image Builder (osbuild)
+
+There is a new [bootc-image-builder](https://github.com/osbuild/bootc-image-builder) project that is dedicated to the intersection of these two!
 
 ## Relationship with Kubernetes
 

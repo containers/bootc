@@ -2,7 +2,6 @@ documentation:
 - changed-files:
   - any-glob-to-any-file:
     - 'docs/*'
-    - 'manpages-md/*'
     - README.md
 
 area/install:

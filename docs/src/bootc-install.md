@@ -1,7 +1,3 @@
----
-nav_order: 2
----
-
 # Installing "bootc compatible" images
 
 A key goal of the bootc project is to think of bootable operating systems

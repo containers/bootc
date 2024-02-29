@@ -1,7 +1,3 @@
----
-nav_order: 6
----
-
 # Relationship with systemd "particles"
 
 There is an excellent [vision blog entry](https://0pointer.net/blog/fitting-everything-together.html)
