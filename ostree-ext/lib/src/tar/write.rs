@@ -14,6 +14,7 @@ use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use cap_std::io_lifetimes;
 use cap_std_ext::cmdext::CapStdExtCommandExt;
 use cap_std_ext::{cap_std, cap_tempfile};
+use fn_error_context::context;
 use once_cell::unsync::OnceCell;
 use ostree::gio;
 use ostree::prelude::FileExt;
@@ -31,6 +32,7 @@ use tracing::instrument;
 const EXCLUDED_TOPLEVEL_PATHS: &[&str] = &["run", "tmp", "proc", "sys", "dev"];
 
 /// Copy a tar entry to a new tar archive, optionally using a different filesystem path.
+#[context("Copying entry")]
 pub(crate) fn copy_entry(
     entry: tar::Entry<impl std::io::Read>,
     dest: &mut tar::Builder<impl std::io::Write>,
@@ -227,18 +229,23 @@ pub(crate) fn filter_tar(
             if is_modified && is_regular {
                 tracing::debug!("Processing modified sysroot file {path}");
                 // Lazily allocate a temporary directory
-                let tmpdir = tmpdir.get_or_try_init(|| {
+                let tmpdir = tmpdir.get_or_try_init(|| -> anyhow::Result<_> {
                     let vartmp = &cap_std::fs::Dir::open_ambient_dir(
                         "/var/tmp",
                         cap_std::ambient_authority(),
-                    )?;
-                    cap_tempfile::tempdir_in(vartmp)
+                    )
+                    .context("Allocating tmpdir")?;
+                    cap_tempfile::tempdir_in(vartmp).map_err(anyhow::Error::msg)
                 })?;
                 // Create an O_TMPFILE (anonymous file) to use as a temporary store for the file data
-                let mut tmpf = cap_tempfile::TempFile::new_anonymous(tmpdir).map(BufWriter::new)?;
+                let mut tmpf = cap_tempfile::TempFile::new_anonymous(tmpdir)
+                    .map(BufWriter::new)
+                    .context("Creating tmpfile")?;
                 let path = path.to_owned();
                 let header = header.clone();
-                std::io::copy(&mut entry, &mut tmpf)?;
+                std::io::copy(&mut entry, &mut tmpf)
+                    .map_err(anyhow::Error::msg)
+                    .context("Copying")?;
                 let mut tmpf = tmpf.into_inner()?;
                 tmpf.seek(std::io::SeekFrom::Start(0))?;
                 // Cache this data, indexed by the file path
@@ -292,6 +299,7 @@ pub(crate) fn filter_tar(
 }
 
 /// Asynchronous wrapper for filter_tar()
+#[context("Filtering tar stream")]
 async fn filter_tar_async(
     src: impl AsyncRead + Send + 'static,
     mut dest: impl AsyncWrite + Send + Unpin,
@@ -405,7 +413,7 @@ pub async fn write_tar(
     };
     tracing::debug!("Waiting on child process");
     let (filtered_result, child_stdout) =
-        match tokio::try_join!(status, filtered_result).context("Processing tar via ostree") {
+        match tokio::try_join!(status, filtered_result).context("Processing tar") {
             Ok(((), filtered_result)) => {
                 let (child_stdout, _) = output_copier.await.context("Copying child output")?;
                 (filtered_result, child_stdout)
