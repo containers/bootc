@@ -12,17 +12,16 @@ use anyhow::{anyhow, Context};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 
 use cap_std::io_lifetimes;
+use cap_std_ext::cap_std::fs::Dir;
 use cap_std_ext::cmdext::CapStdExtCommandExt;
 use cap_std_ext::{cap_std, cap_tempfile};
 use fn_error_context::context;
-use once_cell::unsync::OnceCell;
 use ostree::gio;
 use ostree::prelude::FileExt;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufWriter, Seek, Write};
 use std::path::Path;
 use std::process::Stdio;
-
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tracing::instrument;
@@ -196,6 +195,7 @@ pub(crate) fn filter_tar(
     src: impl std::io::Read,
     dest: impl std::io::Write,
     config: &TarImportConfig,
+    tmpdir: &Dir,
 ) -> Result<BTreeMap<String, u32>> {
     let src = std::io::BufReader::new(src);
     let mut src = tar::Archive::new(src);
@@ -210,8 +210,6 @@ pub(crate) fn filter_tar(
     // Lookaside data for dealing with hardlinked files into /sysroot; see below.
     let mut changed_sysroot_objects = HashMap::new();
     let mut new_sysroot_link_targets = HashMap::<Utf8PathBuf, Utf8PathBuf>::new();
-    // A temporary directory if needed
-    let tmpdir = OnceCell::new();
 
     for entry in ents {
         let mut entry = entry?;
@@ -228,15 +226,6 @@ pub(crate) fn filter_tar(
             // file instead.
             if is_modified && is_regular {
                 tracing::debug!("Processing modified sysroot file {path}");
-                // Lazily allocate a temporary directory
-                let tmpdir = tmpdir.get_or_try_init(|| -> anyhow::Result<_> {
-                    let vartmp = &cap_std::fs::Dir::open_ambient_dir(
-                        "/var/tmp",
-                        cap_std::ambient_authority(),
-                    )
-                    .context("Allocating tmpdir")?;
-                    cap_tempfile::tempdir_in(vartmp).map_err(anyhow::Error::msg)
-                })?;
                 // Create an O_TMPFILE (anonymous file) to use as a temporary store for the file data
                 let mut tmpf = cap_tempfile::TempFile::new_anonymous(tmpdir)
                     .map(BufWriter::new)
@@ -304,6 +293,7 @@ async fn filter_tar_async(
     src: impl AsyncRead + Send + 'static,
     mut dest: impl AsyncWrite + Send + Unpin,
     config: &TarImportConfig,
+    repo_tmpdir: Dir,
 ) -> Result<BTreeMap<String, u32>> {
     let (tx_buf, mut rx_buf) = tokio::io::duplex(8192);
     // The source must be moved to the heap so we know it is stable for passing to the worker thread
@@ -312,7 +302,7 @@ async fn filter_tar_async(
     let tar_transformer = tokio::task::spawn_blocking(move || {
         let mut src = tokio_util::io::SyncIoBridge::new(src);
         let dest = tokio_util::io::SyncIoBridge::new(tx_buf);
-        let r = filter_tar(&mut src, dest, &config);
+        let r = filter_tar(&mut src, dest, &config, &repo_tmpdir);
         // Pass ownership of the input stream back to the caller - see below.
         (r, src)
     });
@@ -390,7 +380,10 @@ pub async fn write_tar(
     let mut import_config = TarImportConfig::default();
     import_config.allow_nonusr = options.allow_nonusr;
     import_config.remap_factory_var = !options.retain_var;
-    let filtered_result = filter_tar_async(src, child_stdin, &import_config);
+    let repo_tmpdir = Dir::reopen_dir(&repo.dfd_borrow())?
+        .open_dir("tmp")
+        .context("Getting repo tmpdir")?;
+    let filtered_result = filter_tar_async(src, child_stdin, &import_config, repo_tmpdir);
     let output_copier = async move {
         // Gather stdout/stderr to buffers
         let mut child_stdout_buf = String::new();
@@ -512,6 +505,7 @@ mod tests {
     async fn tar_filter() -> Result<()> {
         let tempd = tempfile::tempdir()?;
         let rootfs = &tempd.path().join("rootfs");
+
         std::fs::create_dir_all(rootfs.join("etc/systemd/system"))?;
         std::fs::write(rootfs.join("etc/systemd/system/foo.service"), "fooservice")?;
         std::fs::write(rootfs.join("blah"), "blah")?;
@@ -522,7 +516,8 @@ mod tests {
         let _ = rootfs_tar.into_inner()?;
         let mut dest = Vec::new();
         let src = tokio::io::BufReader::new(tokio::fs::File::open(rootfs_tar_path).await?);
-        filter_tar_async(src, &mut dest, &Default::default()).await?;
+        let cap_tmpdir = Dir::open_ambient_dir(&tempd, cap_std::ambient_authority())?;
+        filter_tar_async(src, &mut dest, &Default::default(), cap_tmpdir).await?;
         let dest = dest.as_slice();
         let mut final_tar = tar::Archive::new(Cursor::new(dest));
         let destdir = &tempd.path().join("destdir");
