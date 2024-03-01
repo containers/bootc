@@ -1,7 +1,3 @@
----
-nav_order: 2
----
-
 # "bootc compatible" images
 
 At the current time, it does not work to just do:
@@ -15,7 +11,7 @@ or
 
 ```Dockerfile
 FROM debian
-RUN apt install kernel
+RUN apt install linux
 ```
 
 And get an image compatible with bootc.  Supporting any base image
@@ -76,9 +72,8 @@ You can then use `podman build`, `buildah`, `docker build`, or any other contain
 build tool to produce your customized image. The only requirement is that the
 container build tool supports producing OCI container images.
 
-## Using the `ostree container commit` command
+## The `ostree container commit` command
 
-As an opt-in optimization today, you can also add `ostree container commit`
-as part of your `RUN` invocations. This will perform early detection
-of some incompatibilities but is not a strict requirement today and will not be
-in the future.
+You may find some references to this; it is no longer very useful
+and is not recommended.
+

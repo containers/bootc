@@ -76,7 +76,7 @@ fn manpages(sh: &Shell) -> Result<()> {
     .run()?;
     // We also have some man pages for the systemd units which are canonically
     // maintained as markdown; convert them to man pages.
-    let extradir = sh.current_dir().join("manpages-md-extra");
+    let extradir = sh.current_dir().join("docs/src/man-md");
     for ent in std::fs::read_dir(extradir)? {
         let ent = ent?;
         let srcpath = ent.path();
@@ -103,7 +103,8 @@ fn manpages(sh: &Shell) -> Result<()> {
 }
 
 /// Generate markdown files (converted from the man pages, which are generated
-/// from the Rust sources) into docs/man.  This process is currently manual.
+/// from the Rust sources) into docs/src, which ends up in the rendered
+/// documentation.  This process is currently manual.
 #[context("man2markdown")]
 fn man2markdown(sh: &Shell) -> Result<()> {
     manpages(sh)?;
@@ -117,7 +118,7 @@ fn man2markdown(sh: &Shell) -> Result<()> {
             .file_stem()
             .and_then(|name| name.to_str())
             .ok_or_else(|| anyhow!("Expected filename in {path:?}"))?;
-        let target = format!("manpages-md/{filename}.md");
+        let target = format!("docs/src/{filename}.md");
         cmd!(
             sh,
             "pandoc --from=man --to=markdown --output={target} {path}"

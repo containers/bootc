@@ -1,0 +1,1 @@
+# man bootc-install-config
