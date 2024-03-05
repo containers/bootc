@@ -2,7 +2,7 @@
 
 Name:           bootc
 Version:        0.1
-Release:        %autorelease
+Release:        1%{?dist}
 Summary:        Boot containers
 
 License:        ASL 2.0
