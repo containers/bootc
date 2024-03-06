@@ -84,7 +84,7 @@ impl LoopbackDevice {
     // Create a new loopback block device targeting the provided file path.
     pub(crate) fn new(path: &Path) -> Result<Self> {
         let dev = Task::new("losetup", "losetup")
-            .args(["--show", "-P", "--find"])
+            .args(["--show", "--direct-io=on", "-P", "--find"])
             .arg(path)
             .quiet()
             .read()?;
