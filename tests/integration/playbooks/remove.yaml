@@ -1,0 +1,36 @@
+---
+- hosts: cloud
+  gather_facts: false
+  become: false
+
+  tasks:
+    - name: Remove AWS resources
+      block:
+        - name: terminate instance
+          amazon.aws.ec2_instance:
+            instance_ids: "{{ instance_id }}"
+            state: absent
+            wait: true
+          ignore_errors: true
+
+        - name: wait until instance terminated
+          amazon.aws.ec2_instance_info:
+            instance_ids:
+              - "{{ instance_id }}"
+          register: result_instance_status
+          retries: 30
+          delay: 10
+          until: result_instance_status.instances[0].state.name == "terminated"
+
+        - name: remove ec2 key
+          amazon.aws.ec2_key:
+            name: "kp-bootc-{{ random_num }}"
+            state: absent
+
+        - name: Deregister AMI (delete associated snapshots too)
+          amazon.aws.ec2_ami:
+            image_id: "{{ ami_id }}"
+            delete_snapshot: true
+            state: absent
+          when: ami_id != ""
+      when: platform == "aws"

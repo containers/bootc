@@ -1,0 +1,79 @@
+---
+- hosts: guest
+  become: false
+  vars:
+    test_os: "{{ lookup('env', 'TEST_OS') | default('centos-stream-9', true) }}"
+    platform: "{{ lookup('env', 'PLATFORM') | default('aws', true) }}"
+    test_image_url: ""
+
+  tasks:
+    - name: check bios or uefi
+      stat:
+        path: /sys/firmware/efi
+
+    - name: check partition size
+      command: df -Th
+      ignore_errors: true
+      become: true
+
+    - name: check disk partition table
+      command: fdisk -l
+      ignore_errors: true
+      become: true
+
+    - name: check mount table
+      command: findmnt
+      ignore_errors: true
+
+    - name: Install podman
+      dnf:
+        name:
+          - podman
+        state: present
+      become: true
+      when: ('rhel' not in test_os) or (platform != 'aws')
+
+    - name: Install podman from internal
+      dnf:
+        disablerepo: "*"
+        enablerepo: "rhel-9x-*"
+        name:
+          - podman
+        state: present
+      become: true
+      when:
+        - "'rhel' in test_os"
+        - platform == "aws"
+
+    - name: Auth for RHEL private image
+      command:
+        podman login \
+        -u "{{ lookup('env', 'QUAY_USERNAME') }}" \
+        -p "{{ lookup('env', 'QUAY_PASSWORD') }}" \
+        quay.io
+      no_log: true
+      become: true
+
+    - name: Install image
+      command:
+        "podman run \
+         --rm \
+         --privileged \
+         --pid=host \
+         -v /:/target \
+         -v /var/lib/containers:/var/lib/containers \
+         --security-opt label=type:unconfined_t \
+         {{ test_image_url }} \
+         bootc install to-filesystem --replace=alongside /target"
+      become: true
+
+    - name: Reboot to deploy new system
+      reboot:
+        post_reboot_delay: 60
+        reboot_timeout: 180
+      become: true
+      ignore_errors: true
+
+    - name: Wait for connection to become reachable/usable
+      wait_for_connection:
+        delay: 30

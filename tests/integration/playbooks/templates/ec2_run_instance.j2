@@ -1,0 +1,30 @@
+#!/bin/bash
+
+/usr/local/bin/aws ec2 run-instances \
+    --associate-public-ip-address \
+    --block-device-mappings DeviceName=/dev/xvda,Ebs=\{DeleteOnTermination=true,VolumeSize=12,VolumeType=gp2,Encrypted=false\} \
+{% if random_instance_type.startswith('t3') or random_instance_type.startswith('t4g') %}
+    --credit-specification CpuCredits=standard \
+{% endif %}
+{% if test_os.startswith('rhel') %}
+    --user-data file://user-data \
+{% endif %}
+{% if ami_id == "" %}
+    --image-id {{ ami[arch][test_os] }} \
+{% else %}
+    --image-id {{ ami_id }} \
+{% endif %}
+    --instance-market-options MarketType=spot,SpotOptions=\{MaxPrice=0.1,SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate\} \
+    --instance-type {{ random_instance_type }} \
+    --key-name kp-bootc-{{ random_num }} \
+    --security-group-ids {{ group_id }} \
+    --subnet-id {{ subnet_id }} \
+    --tag-specifications ResourceType=instance,Tags=[\{Key=bootc-test,Value='bootc-test.{{ test_os }}.{{ arch }}.{{ random_num }}'\},\{Key=Name,Value='bootc-test.{{ test_os }}.{{ arch }}.{{ random_num }}'\}] \
+
+return_code=$?
+if [[ $return_code == 0 ]]; then
+  exit 0
+fi
+
+# If we had no successful boots, we should exit with a failure.
+exit 1
