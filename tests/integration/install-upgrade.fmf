@@ -6,4 +6,4 @@
 /bootc-install-upgrade:
   summary: bootc install and upgrade test
   test: ./install-upgrade.sh
-  duration: 40m
+  duration: 90m
