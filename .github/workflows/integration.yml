@@ -79,8 +79,6 @@ jobs:
           git_ref: ${{ needs.pr-info.outputs.ref }}
           arch: ${{ matrix.arch }}
           tmt_context: "arch=${{ matrix.arch }}"
-          update_pull_request_status: true
-          pull_request_status_name: "Integration-rhel94-${{ matrix.arch }}-${{ matrix.platform }}"
           tmt_plan_regex: "${{ matrix.platform }}"
           tf_scope: private
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};QUAY_SECRET=${{ secrets.QUAY_SECRET }};RHEL_REGISTRY_URL=${{ secrets.RHEL_REGISTRY_URL }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }};AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }};AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
@@ -112,8 +110,6 @@ jobs:
           git_ref: ${{ needs.pr-info.outputs.ref }}
           arch: ${{ matrix.arch }}
           tmt_context: "arch=${{ matrix.arch }}"
-          update_pull_request_status: true
-          pull_request_status_name: "Integration-cs9-dev-${{ matrix.arch }}-${{ matrix.platform }}"
           tmt_plan_regex: "${{ matrix.platform }}"
           tf_scope: private
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};QUAY_SECRET=${{ secrets.QUAY_SECRET }};AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }};AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}"

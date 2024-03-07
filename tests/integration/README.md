@@ -30,7 +30,6 @@ Run `testing-farm` CLI from `quay.io/testing-farm/cli` container. Don't forget e
         --environment AWS_REGION=us-east-1 \
         --secret DOWNLOAD_NODE=$DOWNLOAD_NODE \
         --secret RHEL_REGISTRY_URL=$RHEL_REGISTRY_URL \
-        --secret CERT_URL=$CERT_URL \
         --secret QUAY_USERNAME=$QUAY_USERNAME \
         --secret QUAY_PASSWORD=$QUAY_PASSWORD \
         --secret QUAY_SECRET=$QUAY_SECRET \
@@ -62,7 +61,6 @@ Run `testing-farm` CLI from `quay.io/testing-farm/cli` container. Don't forget e
     QUAY_SECRET        Save into /etc/ostree/auth.json for authenticated registry
     DOWNLOAD_NODE      RHEL nightly compose download URL
     RHEL_REGISTRY_URL  RHEL bootc image URL
-    CERT_URL           CA certificate download URL
     AWS_ACCESS_KEY_ID           AWS access key id
     AWS_SECRET_ACCESS_KEY       AWS secrety key
     AWS_REGION                  AWS region

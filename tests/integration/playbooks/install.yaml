@@ -54,6 +54,14 @@
       no_log: true
       become: true
 
+    - name: Pull image
+      command: "podman pull {{ test_image_url }}"
+      become: true
+      retries: 3
+      delay: 10
+      register: result
+      until: result is successful
+
     - name: Install image
       command:
         "podman run \
