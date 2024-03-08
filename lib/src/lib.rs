@@ -41,6 +41,8 @@ mod containerenv;
 mod install;
 mod k8sapitypes;
 #[cfg(feature = "install")]
+mod kernel;
+#[cfg(feature = "install")]
 pub(crate) mod mount;
 #[cfg(feature = "install")]
 mod podman;
