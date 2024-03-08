@@ -118,6 +118,7 @@ pub(crate) enum InstallOpts {
     ToDisk(crate::install::InstallToDiskOpts),
     /// Install to the target filesystem
     ToFilesystem(crate::install::InstallToFilesystemOpts),
+    ToExistingRoot(crate::install::InstallToExistingRootOpts),
     /// Output JSON to stdout that contains the merged installation configuration
     /// as it may be relevant to calling processes using `install to-filesystem`
     /// that want to honor e.g. `root-fs-type`.
@@ -533,6 +534,9 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         Opt::Install(opts) => match opts {
             InstallOpts::ToDisk(opts) => crate::install::install_to_disk(opts).await,
             InstallOpts::ToFilesystem(opts) => crate::install::install_to_filesystem(opts).await,
+            InstallOpts::ToExistingRoot(opts) => {
+                crate::install::install_to_existing_root(opts).await
+            }
             InstallOpts::PrintConfiguration => crate::install::print_configuration(),
         },
         #[cfg(feature = "install")]

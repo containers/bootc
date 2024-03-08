@@ -225,7 +225,7 @@ podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t  
 
 Notice that we use `--generic-image` for this use case.
 
-### Using `bootc install to-filesystem --replace=alongside`
+### Using `bootc install to-existing-root`
 
 This is a variant of `install to-filesystem`, which maximizes convenience for using
 an existing Linux system, converting it into the target container image.  Note that
@@ -241,13 +241,23 @@ The core command should look like this (root/elevated permission required):
 podman run --rm --privileged -v /var/lib/containers:/var/lib/containers -v /:/target \
              --pid=host --security-opt label=type:unconfined_t \
              <image> \
-             bootc install to-filesystem --replace=alongside /target
+             bootc install to-existing-root
 ```
 
-At the current time, leftover data in `/` is **NOT** automatically cleaned up.  This can
+It is assumed in this command that the target rootfs is pased via `-v /:/target` at this time.
+
+As noted above, the data in `/boot` will be wiped, but everything else in the existing
+operating `/` is **NOT** automatically cleaned up.  This can
 be useful, because it allows the new image to automatically import data from the previous
-host system!  For example, things like SSH keys or container images can be copied
-and then deleted from the original.
+host system!  For example, container images, database, user home directory data, config
+files in `/etc` are all available after the subsequent reboot in `/sysroot` (which
+is the "physical root").
+
+A special case of this trick is using the `--root-ssh-authorized-keys` flag to inherit
+root's SSH keys (which may have been injected from e.g. cloud instance userdata
+via a tool like `cloud-init`).  To do this, just add
+`--root-ssh-authorized-keys /target/root/.ssh/authorized_keys`
+to the above.
 
 ### Using `bootc install to-filesystem --source-imgref <imgref>`
 
