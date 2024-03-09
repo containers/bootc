@@ -89,6 +89,10 @@ pub(crate) struct SwitchOpts {
     pub(crate) target: String,
 }
 
+/// Options controlling rollback
+#[derive(Debug, Parser, PartialEq, Eq)]
+pub(crate) struct RollbackOpts {}
+
 /// Perform an edit operation
 #[derive(Debug, Parser, PartialEq, Eq)]
 pub(crate) struct EditOpts {
@@ -214,6 +218,18 @@ pub(crate) enum Opt {
     /// This operates in a very similar fashion to `upgrade`, but changes the container image reference
     /// instead.
     Switch(SwitchOpts),
+    /// Change the bootloader entry ordering; the deployment under `rollback` will be queued for the next boot,
+    /// and the current will become rollback.  If there is a `staged` entry (an unapplied, queued upgrade)
+    /// then it will be discarded.
+    ///
+    /// Note that absent any additional control logic, if there is an active agent doing automated upgrades
+    /// (such as the default `bootc-fetch-apply-updates.timer` and associated `.service`) the
+    /// change here may be reverted.  It's recommended to only use this in concert with an agent that
+    /// is in active control.
+    ///
+    /// A systemd journal message will be logged with `MESSAGE_ID=26f3b1eb24464d12aa5e7b544a6b5468` in
+    /// order to detect a rollback invocation.
+    Rollback(RollbackOpts),
     /// Apply full changes to the host specification.
     ///
     /// This command operates very similarly to `kubectl apply`; if invoked interactively,
@@ -500,6 +516,14 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     Ok(())
 }
 
+/// Implementation of the `bootc rollback` CLI command.
+#[context("Rollback")]
+async fn rollback(_opts: RollbackOpts) -> Result<()> {
+    prepare_for_write().await?;
+    let sysroot = &get_locked_sysroot().await?;
+    crate::deploy::rollback(sysroot).await
+}
+
 /// Implementation of the `bootc edit` CLI command.
 #[context("Editing spec")]
 async fn edit(opts: EditOpts) -> Result<()> {
@@ -522,7 +546,15 @@ async fn edit(opts: EditOpts) -> Result<()> {
         println!("Edit cancelled, no changes made.");
         return Ok(());
     }
+    host.spec.verify_transition(&new_host.spec)?;
     let new_spec = RequiredHostSpec::from_spec(&new_host.spec)?;
+
+    // We only support two state transitions right now; switching the image,
+    // or flipping the bootloader ordering.
+    if host.spec.boot_order != new_host.spec.boot_order {
+        return crate::deploy::rollback(sysroot).await;
+    }
+
     let fetched = crate::deploy::pull(sysroot, new_spec.image, opts.quiet).await?;
 
     // TODO gc old layers here
@@ -586,6 +618,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
     match opt {
         Opt::Upgrade(opts) => upgrade(opts).await,
         Opt::Switch(opts) => switch(opts).await,
+        Opt::Rollback(opts) => rollback(opts).await,
         Opt::Edit(opts) => edit(opts).await,
         Opt::UsrOverlay => usroverlay().await,
         #[cfg(feature = "install")]

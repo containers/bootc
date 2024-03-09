@@ -28,12 +28,27 @@ pub struct Host {
     pub status: HostStatus,
 }
 
+/// Configuration for system boot ordering.
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum BootOrder {
+    /// The staged or booted deployment will be booted next
+    #[default]
+    Default,
+    /// The rollback deployment will be booted next
+    Rollback,
+}
+
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 /// The host specification
 pub struct HostSpec {
     /// The host image
     pub image: Option<ImageReference>,
+    /// If set, and there is a rollback deployment, it will be set for the next boot.
+    #[serde(default)]
+    pub boot_order: BootOrder,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
@@ -121,6 +136,9 @@ pub struct HostStatus {
     pub booted: Option<BootEntry>,
     /// The previously booted image
     pub rollback: Option<BootEntry>,
+    /// Set to true if the rollback entry is queued for the next boot.
+    #[serde(default)]
+    pub rollback_queued: bool,
 
     /// The detected type of system
     #[serde(rename = "type")]
@@ -149,6 +167,28 @@ impl Host {
 impl Default for Host {
     fn default() -> Self {
         Self::new(Default::default())
+    }
+}
+
+impl HostSpec {
+    /// Validate a spec state transition; some changes cannot be made simultaneously,
+    /// such as fetching a new image and doing a rollback.
+    pub(crate) fn verify_transition(&self, new: &Self) -> anyhow::Result<()> {
+        let rollback = self.boot_order != new.boot_order;
+        let image_change = self.image != new.image;
+        if rollback && image_change {
+            anyhow::bail!("Invalid state transition: rollback and image change");
+        }
+        Ok(())
+    }
+}
+
+impl BootOrder {
+    pub(crate) fn swap(&self) -> Self {
+        match self {
+            BootOrder::Default => BootOrder::Rollback,
+            BootOrder::Rollback => BootOrder::Default,
+        }
     }
 }
 

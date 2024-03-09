@@ -5,7 +5,7 @@
 use std::io::{BufRead, Write};
 
 use anyhow::Ok;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use cap_std::fs::{Dir, MetadataExt};
 use cap_std_ext::cap_std;
@@ -19,8 +19,8 @@ use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
 
-use crate::spec::HostSpec;
 use crate::spec::ImageReference;
+use crate::spec::{BootOrder, HostSpec};
 use crate::status::labels_of_config;
 
 // TODO use https://github.com/ostreedev/ostree-rs-ext/pull/493/commits/afc1837ff383681b947de30c0cefc70080a4f87a
@@ -273,6 +273,63 @@ pub(crate) async fn stage(
     }
     println!("  Digest: {}", image.manifest_digest);
 
+    Ok(())
+}
+
+/// Implementation of rollback functionality
+pub(crate) async fn rollback(sysroot: &SysrootLock) -> Result<()> {
+    const ROLLBACK_JOURNAL_ID: &str = "26f3b1eb24464d12aa5e7b544a6b5468";
+    let repo = &sysroot.repo();
+    let (booted_deployment, deployments, host) = crate::status::get_status_require_booted(sysroot)?;
+
+    let new_spec = {
+        let mut new_spec = host.spec.clone();
+        new_spec.boot_order = new_spec.boot_order.swap();
+        new_spec
+    };
+
+    // Just to be sure
+    host.spec.verify_transition(&new_spec)?;
+
+    let reverting = new_spec.boot_order == BootOrder::Default;
+    if reverting {
+        println!("notice: Reverting queued rollback state");
+    }
+    let rollback_status = host
+        .status
+        .rollback
+        .ok_or_else(|| anyhow!("No rollback available"))?;
+    let rollback_image = rollback_status
+        .query_image(repo)?
+        .ok_or_else(|| anyhow!("Rollback is not container image based"))?;
+    let msg = format!("Rolling back to image: {}", rollback_image.manifest_digest);
+    libsystemd::logging::journal_send(
+        libsystemd::logging::Priority::Info,
+        &msg,
+        [
+            ("MESSAGE_ID", ROLLBACK_JOURNAL_ID),
+            ("BOOTC_MANIFEST_DIGEST", &rollback_image.manifest_digest),
+        ]
+        .into_iter(),
+    )?;
+    // SAFETY: If there's a rollback status, then there's a deployment
+    let rollback_deployment = deployments.rollback.expect("rollback deployment");
+    let new_deployments = if reverting {
+        [booted_deployment, rollback_deployment]
+    } else {
+        [rollback_deployment, booted_deployment]
+    };
+    let new_deployments = new_deployments
+        .into_iter()
+        .chain(deployments.other)
+        .collect::<Vec<_>>();
+    tracing::debug!("Writing new deployments: {new_deployments:?}");
+    sysroot.write_deployments(&new_deployments, gio::Cancellable::NONE)?;
+    if reverting {
+        println!("Next boot: current deployment");
+    } else {
+        println!("Next boot: rollback deployment");
+    }
     Ok(())
 }
 

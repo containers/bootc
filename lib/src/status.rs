@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::spec::{BootEntry, Host, HostSpec, HostStatus, HostType, ImageStatus};
+use crate::spec::{BootEntry, BootOrder, Host, HostSpec, HostStatus, HostType, ImageStatus};
 use crate::spec::{ImageReference, ImageSignature};
 use anyhow::{Context, Result};
 use camino::Utf8Path;
@@ -224,11 +224,22 @@ pub(crate) fn get_status(
         .iter()
         .position(|d| d.is_staged())
         .map(|i| related_deployments.remove(i).unwrap());
+    tracing::debug!("Staged: {staged:?}");
     // Filter out the booted, the caller already found that
     if let Some(booted) = booted_deployment.as_ref() {
         related_deployments.retain(|f| !f.equal(booted));
     }
     let rollback = related_deployments.pop_front();
+    let rollback_queued = match (booted_deployment.as_ref(), rollback.as_ref()) {
+        (Some(booted), Some(rollback)) => rollback.index() < booted.index(),
+        _ => false,
+    };
+    let boot_order = if rollback_queued {
+        BootOrder::Rollback
+    } else {
+        BootOrder::Default
+    };
+    tracing::debug!("Rollback queued={rollback_queued:?}");
     let other = {
         related_deployments.extend(other_deployments);
         related_deployments
@@ -262,6 +273,7 @@ pub(crate) fn get_status(
         .and_then(|entry| entry.image.as_ref())
         .map(|img| HostSpec {
             image: Some(img.image.clone()),
+            boot_order,
         })
         .unwrap_or_default();
 
@@ -281,6 +293,7 @@ pub(crate) fn get_status(
         staged,
         booted,
         rollback,
+        rollback_queued,
         ty,
     };
     Ok((deployments, host))
