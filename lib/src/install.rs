@@ -249,6 +249,28 @@ pub(crate) struct InstallToFilesystemOpts {
     pub(crate) config_opts: InstallConfigOpts,
 }
 
+/// Perform an installation to the host root filesystem.
+#[derive(Debug, Clone, clap::Parser)]
+pub(crate) struct InstallToExistingRootOpts {
+    /// Configure how existing data is treated.
+    #[clap(long, default_value = "alongside")]
+    pub(crate) replace: Option<ReplaceMode>,
+
+    #[clap(flatten)]
+    pub(crate) source_opts: InstallSourceOpts,
+
+    #[clap(flatten)]
+    pub(crate) target_opts: InstallTargetOpts,
+
+    #[clap(flatten)]
+    pub(crate) config_opts: InstallConfigOpts,
+
+    /// Path to the mounted root; it's expected to invoke podman with
+    /// `-v /:/target`, then supplying this argument is unnecessary.
+    #[clap(default_value = "/target")]
+    pub(crate) root_path: Utf8PathBuf,
+}
+
 /// Global state captured from the container.
 #[derive(Debug, Clone)]
 pub(crate) struct SourceInfo {
@@ -1353,6 +1375,22 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     installation_complete();
 
     Ok(())
+}
+
+pub(crate) async fn install_to_existing_root(opts: InstallToExistingRootOpts) -> Result<()> {
+    let opts = InstallToFilesystemOpts {
+        filesystem_opts: InstallTargetFilesystemOpts {
+            root_path: opts.root_path,
+            root_mount_spec: None,
+            boot_mount_spec: None,
+            replace: opts.replace,
+        },
+        source_opts: opts.source_opts,
+        target_opts: opts.target_opts,
+        config_opts: opts.config_opts,
+    };
+
+    install_to_filesystem(opts).await
 }
 
 #[test]
