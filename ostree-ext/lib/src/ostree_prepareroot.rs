@@ -3,6 +3,8 @@
 
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use std::str::FromStr;
+
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use glib::Cast;
@@ -11,6 +13,7 @@ use ostree::{gio, glib};
 
 use crate::keyfileext::KeyFileExt;
 use crate::ostree_manual;
+use crate::utils::ResultExt;
 
 pub(crate) const CONF_PATH: &str = "ostree/prepare-root.conf";
 
@@ -44,14 +47,98 @@ pub(crate) fn overlayfs_root_enabled(root: &ostree::RepoFile) -> Result<bool> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum Tristate {
+    Enabled,
+    Disabled,
+    Maybe,
+}
+
+impl FromStr for Tristate {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let r = match s {
+            // Keep this in sync with ot_keyfile_get_tristate_with_default from ostree
+            "yes" | "true" | "1" => Tristate::Enabled,
+            "no" | "false" | "0" => Tristate::Disabled,
+            "maybe" => Tristate::Maybe,
+            o => anyhow::bail!("Invalid tristate value: {o}"),
+        };
+        Ok(r)
+    }
+}
+
+impl Default for Tristate {
+    fn default() -> Self {
+        Self::Disabled
+    }
+}
+
+impl Tristate {
+    pub(crate) fn maybe_enabled(&self) -> bool {
+        match self {
+            Self::Enabled | Self::Maybe => true,
+            Self::Disabled => false,
+        }
+    }
+}
+
 /// Query whether the config uses an overlayfs model (composefs or plain overlayfs).
 pub fn overlayfs_enabled_in_config(config: &glib::KeyFile) -> Result<bool> {
     let root_transient = config
         .optional_bool("root", "transient")?
         .unwrap_or_default();
-    let required_composefs = config
+    let composefs = config
         .optional_string("composefs", "enabled")?
-        .map(|s| s.as_str() == "yes")
+        .map(|s| Tristate::from_str(s.as_str()))
+        .transpose()
+        .log_err_default()
         .unwrap_or_default();
-    Ok(root_transient || required_composefs)
+    Ok(root_transient || composefs.maybe_enabled())
+}
+
+#[test]
+fn test_tristate() {
+    for v in ["yes", "true", "1"] {
+        assert_eq!(Tristate::from_str(v).unwrap(), Tristate::Enabled);
+    }
+    assert_eq!(Tristate::from_str("maybe").unwrap(), Tristate::Maybe);
+    for v in ["no", "false", "0"] {
+        assert_eq!(Tristate::from_str(v).unwrap(), Tristate::Disabled);
+    }
+    for v in ["", "junk", "fal", "tr1"] {
+        assert!(Tristate::from_str(v).is_err());
+    }
+}
+
+#[test]
+fn test_overlayfs_enabled() {
+    let d0 = indoc::indoc! { r#"
+[foo]
+bar = baz
+[root]
+"# };
+    let d1 = indoc::indoc! { r#"
+[root]
+transient = false
+    "# };
+    let d2 = indoc::indoc! { r#"
+[composefs]
+enabled = false
+    "# };
+    for v in ["", d0, d1, d2] {
+        let kf = glib::KeyFile::new();
+        kf.load_from_data(v, glib::KeyFileFlags::empty()).unwrap();
+        assert_eq!(overlayfs_enabled_in_config(&kf).unwrap(), false);
+    }
+
+    let e0 = format!("{d0}\n[root]\ntransient = true");
+    let e1 = format!("{d1}\n[composefs]\nenabled = true\n[other]\nsomekey = someval");
+    let e2 = format!("{d1}\n[composefs]\nenabled = yes");
+    for v in [e0, e1, e2] {
+        let kf = glib::KeyFile::new();
+        kf.load_from_data(&v, glib::KeyFileFlags::empty()).unwrap();
+        assert_eq!(overlayfs_enabled_in_config(&kf).unwrap(), true);
+    }
 }
