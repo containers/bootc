@@ -133,6 +133,7 @@ static OWNERS: Lazy<Vec<(Regex, &str)>> = Lazy::new(|| {
         ("usr/bin/hardlink.*", "testlink"),
         ("usr/etc/someconfig.conf", "someconfig"),
         ("usr/etc/polkit.conf", "a-polkit-config"),
+        ("opt", "filesystem"),
         ("usr/lib/pkgdb", "pkgdb"),
         ("usr/lib/sysimage/pkgdb", "pkgdb"),
     ]
@@ -164,11 +165,12 @@ r usr/lib/pkgdb/pkgdb some-package-database
 m
 d boot
 d run
+l opt var/opt
 m 0 0 1755
 d tmp
 "## };
 pub const CONTENTS_CHECKSUM_V0: &str =
-    "5e41de82f9f861fa51e53ce6dd640a260e4fb29b7657f5a3f14157e93d2c0659";
+    "f8c5c1ad93339fd6e928aec7819de79ecec4ec8a4d0cb3565bb1d127fd7f56db";
 // 1 for ostree commit, 2 for max frequency packages, 3 as empty layer
 pub const LAYERS_V0_LEN: usize = 3usize;
 pub const PKGS_V0_LEN: usize = 7usize;
