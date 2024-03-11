@@ -175,11 +175,10 @@ pub(crate) fn install_create_rootfs(
     }
     let devdir = mntdir.join("dev");
     std::fs::create_dir_all(&devdir)?;
-    Task::new_and_run(
-        "Mounting devtmpfs",
-        "mount",
-        ["devtmpfs", "-t", "devtmpfs", devdir.as_str()],
-    )?;
+    Task::new("Mounting devtmpfs", "mount")
+        .args(["devtmpfs", "-t", "devtmpfs", devdir.as_str()])
+        .quiet()
+        .run()?;
 
     // Now at this point, our /dev is a stale snapshot because we don't have udev running.
     // So from hereon after, we prefix devices with our temporary devtmpfs mount.

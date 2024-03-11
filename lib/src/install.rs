@@ -849,11 +849,10 @@ pub(crate) fn setup_tmp_mounts() -> Result<()> {
     } else {
         // Note we explicitly also don't want a "nosuid" tmp, because that
         // suppresses our install_t transition
-        Task::new_and_run(
-            "Mounting tmpfs /tmp",
-            "mount",
-            ["tmpfs", "-t", "tmpfs", "/tmp"],
-        )?;
+        Task::new("Mounting tmpfs /tmp", "mount")
+            .args(["tmpfs", "-t", "tmpfs", "/tmp"])
+            .quiet()
+            .run()?;
     }
 
     // Point our /var/tmp at the host, via the /proc/1/root magic link
@@ -918,11 +917,10 @@ pub(crate) fn setup_sys_mount(fstype: &str, fspath: &str) -> Result<()> {
     }
 
     // This means the host has this mounted, so we should mount it too
-    Task::new_and_run(
-        format!("Mounting {fstype} {fspath}"),
-        "mount",
-        ["-t", fstype, fstype, fspath],
-    )
+    Task::new(format!("Mounting {fstype} {fspath}"), "mount")
+        .args(["-t", fstype, fstype, fspath])
+        .quiet()
+        .run()
 }
 
 /// Verify that we can load the manifest of the target image
@@ -1025,6 +1023,8 @@ async fn prepare_install(
     // Now, deal with SELinux state.
     let (override_disable_selinux, setenforce_guard) =
         reexecute_self_for_selinux_if_needed(&source, config_opts.disable_selinux)?;
+
+    println!("Installing: {:#}", &target_imgref);
 
     let install_config = config::load_config()?;
     tracing::debug!("Loaded install configuration");
