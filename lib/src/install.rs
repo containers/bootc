@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
 use crate::containerenv::ContainerExecutionInfo;
+use crate::mount::Filesystem;
 use crate::task::Task;
 use crate::utils::sigpolicy_from_opts;
 
@@ -1223,9 +1224,46 @@ fn clean_boot_directories(rootfs: &Dir) -> Result<()> {
     Ok(())
 }
 
+struct RootMountInfo {
+    mount_spec: String,
+    kargs: Vec<String>,
+}
+
+/// Discover how to mount the root filesystem, using existing kernel arguments and information
+/// about the root mount.
+fn find_root_args_to_inherit(cmdline: &[&str], root_info: &Filesystem) -> Result<RootMountInfo> {
+    let cmdline = || cmdline.iter().map(|&s| s);
+    let root = crate::kernel::find_first_cmdline_arg(cmdline(), "root");
+    // If we have a root= karg, then use that
+    let (mount_spec, kargs) = if let Some(root) = root {
+        let rootflags = cmdline().find(|arg| arg.starts_with(crate::kernel::ROOTFLAGS));
+        let inherit_kargs =
+            cmdline().filter(|arg| arg.starts_with(crate::kernel::INITRD_ARG_PREFIX));
+        (
+            root.to_owned(),
+            rootflags
+                .into_iter()
+                .chain(inherit_kargs)
+                .map(ToOwned::to_owned)
+                .collect(),
+        )
+    } else {
+        let uuid = root_info
+            .uuid
+            .as_deref()
+            .ok_or_else(|| anyhow!("No filesystem uuid found in target root"))?;
+        (format!("UUID={uuid}"), Vec::new())
+    };
+
+    Ok(RootMountInfo { mount_spec, kargs })
+}
+
 /// Implementation of the `bootc install to-filsystem` CLI command.
 #[context("Installing to filesystem")]
-pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Result<()> {
+pub(crate) async fn install_to_filesystem(
+    opts: InstallToFilesystemOpts,
+    targeting_host_root: bool,
+) -> Result<()> {
     let fsopts = opts.filesystem_opts;
     let root_path = &fsopts.root_path;
 
@@ -1266,25 +1304,39 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
 
     // We support overriding the mount specification for root (i.e. LABEL vs UUID versus
     // raw paths).
-    let (root_mount_spec, root_extra) = if let Some(s) = fsopts.root_mount_spec {
-        (s, None)
+    let root_info = if let Some(s) = fsopts.root_mount_spec {
+        RootMountInfo {
+            mount_spec: s.to_string(),
+            kargs: Vec::new(),
+        }
+    } else if targeting_host_root {
+        // In the to-existing-root case, look at /proc/cmdline
+        let cmdline = crate::kernel::parse_cmdline()?;
+        let cmdline = cmdline.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+        find_root_args_to_inherit(&cmdline, &inspect)?
     } else {
+        // Otherwise, gather metadata from the provided root and use its provided UUID as a
+        // default root= karg.
         let uuid = inspect
             .uuid
             .as_deref()
             .ok_or_else(|| anyhow!("No filesystem uuid found in target root"))?;
-        let uuid = format!("UUID={uuid}");
-        tracing::debug!("root {uuid}");
-        let opts = match inspect.fstype.as_str() {
+        let kargs = match inspect.fstype.as_str() {
             "btrfs" => {
                 let subvol = crate::utils::find_mount_option(&inspect.options, "subvol");
-                subvol.map(|vol| format!("rootflags=subvol={vol}"))
+                subvol
+                    .map(|vol| format!("rootflags=subvol={vol}"))
+                    .into_iter()
+                    .collect::<Vec<_>>()
             }
-            _ => None,
+            _ => Vec::new(),
         };
-        (uuid, opts)
+        RootMountInfo {
+            mount_spec: format!("UUID={uuid}"),
+            kargs,
+        }
     };
-    tracing::debug!("Root mount spec: {root_mount_spec}");
+    tracing::debug!("Root mount: {} {:?}", root_info.mount_spec, root_info.kargs);
 
     let boot_is_mount = {
         let root_dev = rootfs_fd.dir_metadata()?.dev();
@@ -1333,7 +1385,7 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     };
     tracing::debug!("Backing device: {backing_device}");
 
-    let rootarg = format!("root={root_mount_spec}");
+    let rootarg = format!("root={}", root_info.mount_spec);
     let mut boot = if let Some(spec) = fsopts.boot_mount_spec {
         Some(MountSpec::new(&spec, "/boot"))
     } else {
@@ -1351,7 +1403,7 @@ pub(crate) async fn install_to_filesystem(opts: InstallToFilesystemOpts) -> Resu
     let bootarg = boot.as_ref().map(|boot| format!("boot={}", &boot.source));
     let kargs = [rootarg]
         .into_iter()
-        .chain(root_extra)
+        .chain(root_info.kargs)
         .chain([RW_KARG.to_string()])
         .chain(bootarg)
         .collect::<Vec<_>>();
@@ -1390,7 +1442,7 @@ pub(crate) async fn install_to_existing_root(opts: InstallToExistingRootOpts) ->
         config_opts: opts.config_opts,
     };
 
-    install_to_filesystem(opts).await
+    install_to_filesystem(opts, true).await
 }
 
 #[test]
@@ -1410,4 +1462,33 @@ fn test_mountspec() {
     assert_eq!(ms.to_fstab(), "/dev/vda4 /boot auto ro 0 0");
     ms.push_option("relatime");
     assert_eq!(ms.to_fstab(), "/dev/vda4 /boot auto ro,relatime 0 0");
+}
+
+#[test]
+fn test_gather_root_args() {
+    // A basic filesystem using a UUID
+    let inspect = Filesystem {
+        source: "/dev/vda4".into(),
+        fstype: "xfs".into(),
+        options: "rw".into(),
+        uuid: Some("965eb3c7-5a3f-470d-aaa2-1bcf04334bc6".into()),
+    };
+    let r = find_root_args_to_inherit(&[], &inspect).unwrap();
+    assert_eq!(r.mount_spec, "UUID=965eb3c7-5a3f-470d-aaa2-1bcf04334bc6");
+
+    // In this case we take the root= from the kernel cmdline
+    let r = find_root_args_to_inherit(
+        &[
+            "root=/dev/mapper/root",
+            "rw",
+            "someother=karg",
+            "rd.lvm.lv=root",
+            "systemd.debug=1",
+        ],
+        &inspect,
+    )
+    .unwrap();
+    assert_eq!(r.mount_spec, "/dev/mapper/root");
+    assert_eq!(r.kargs.len(), 1);
+    assert_eq!(r.kargs[0], "rd.lvm.lv=root");
 }

@@ -238,7 +238,7 @@ support the root storage setup already initialized.
 The core command should look like this (root/elevated permission required):
 
 ```bash
-podman run --rm --privileged -v /var/lib/containers:/var/lib/containers -v /:/target \
+podman run --rm --privileged -v /dev:/dev -v /var/lib/containers:/var/lib/containers -v /:/target \
              --pid=host --security-opt label=type:unconfined_t \
              <image> \
              bootc install to-existing-root
