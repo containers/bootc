@@ -743,7 +743,7 @@ async fn test_container_chunked() -> Result<()> {
                 .created_by()
                 .as_ref()
                 .unwrap(),
-            "7 components"
+            "8 components"
         );
     }
     let import = imp.import(prep).await.context("Init pull derived").unwrap();
@@ -805,9 +805,9 @@ r usr/bin/bash bash-v0
     assert!(second.0.commit.is_none());
     assert_eq!(
         first.1,
-        "ostree export of commit 38ab1f9da373a0184b0b48db6e280076ab4b5d4691773475ae24825aae2272d4"
+        "ostree export of commit cc1180f8431dc5bd69172d9a9ded36038dc9449f7c6c48e7686c894e483bfb8a"
     );
-    assert_eq!(second.1, "7 components");
+    assert_eq!(second.1, "8 components");
 
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
     let n = store::count_layer_references(fixture.destrepo())? as i64;
