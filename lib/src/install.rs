@@ -633,6 +633,7 @@ async fn initialize_ostree_root_from_self(
     let root = rootfs_dir
         .open_dir(path.as_str())
         .context("Opening deployment dir")?;
+    let root_path = &rootfs.join(&path.as_str());
     let mut f = {
         let mut opts = cap_std::fs::OpenOptions::new();
         root.open_with("etc/fstab", opts.append(true).write(true).create(true))
@@ -644,8 +645,16 @@ async fn initialize_ostree_root_from_self(
     }
     f.flush()?;
 
+    let fstab_path = root_path.join("etc/fstab");
+    state.lsm_label(&fstab_path, "/etc/fstab".into(), false)?;
+
     if let Some(contents) = state.root_ssh_authorized_keys.as_deref() {
-        osconfig::inject_root_ssh_authorized_keys(&root, contents)?;
+        osconfig::inject_root_ssh_authorized_keys(
+            &root,
+            &root_path,
+            |target, path, recurse| state.lsm_label(target, path, recurse),
+            contents,
+        )?;
     }
 
     let uname = rustix::system::uname();
