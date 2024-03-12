@@ -155,7 +155,7 @@ fn selinux_label_for_path(target: &str) -> Result<String> {
 #[context("Labeling {as_path}")]
 pub(crate) fn lsm_label(target: &Utf8Path, as_path: &Utf8Path, recurse: bool) -> Result<()> {
     let label = selinux_label_for_path(as_path.as_str())?;
-    tracing::debug!("Label for {target} is {label}");
+    tracing::debug!("Label for {as_path} (target={target}) is {label}");
     Task::new_quiet("chcon")
         .arg("-h")
         .args(recurse.then_some("-R"))
