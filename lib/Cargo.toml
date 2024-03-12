@@ -43,7 +43,7 @@ tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1
 tokio-util = { features = ["io-util"], version = "0.7" }
 tracing = "0.1"
 tempfile = "3.10.1"
-toml = "0.8.10"
+toml = "0.8.11"
 xshell = { version = "0.2", optional = true }
 uuid = { version = "1.7.0", features = ["v4"] }
 
