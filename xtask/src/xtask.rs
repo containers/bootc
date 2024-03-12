@@ -134,7 +134,7 @@ fn man2markdown(sh: &Shell) -> Result<()> {
 fn git_timestamp(sh: &Shell) -> Result<String> {
     let ts = cmd!(sh, "git show -s --format=%ct").read()?;
     let ts = ts.trim().parse::<i64>()?;
-    let ts = chrono::NaiveDateTime::from_timestamp_opt(ts, 0)
+    let ts = chrono::DateTime::from_timestamp(ts, 0)
         .ok_or_else(|| anyhow::anyhow!("Failed to parse timestamp"))?;
     Ok(ts.format("%Y%m%d%H%M").to_string())
 }
