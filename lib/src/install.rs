@@ -1232,7 +1232,7 @@ struct RootMountInfo {
 /// Discover how to mount the root filesystem, using existing kernel arguments and information
 /// about the root mount.
 fn find_root_args_to_inherit(cmdline: &[&str], root_info: &Filesystem) -> Result<RootMountInfo> {
-    let cmdline = || cmdline.iter().map(|&s| s);
+    let cmdline = || cmdline.iter().copied();
     let root = crate::kernel::find_first_cmdline_arg(cmdline(), "root");
     // If we have a root= karg, then use that
     let (mount_spec, kargs) = if let Some(root) = root {
