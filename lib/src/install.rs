@@ -133,8 +133,10 @@ pub(crate) struct InstallConfigOpts {
     #[serde(default)]
     pub(crate) disable_selinux: bool,
 
+    /// Add a kernel argument.  This option can be provided multiple times.
+    ///
+    /// Example: --karg=nosmt --karg=console=ttyS0,114800n8
     #[clap(long)]
-    /// Add a kernel argument
     karg: Option<Vec<String>>,
 
     /// The path to an `authorized_keys` that will be injected into the `root` account.

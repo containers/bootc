@@ -98,7 +98,9 @@ disabled but where the target does have SELinux enabled.
 
 **\--karg**=*KARG*
 
-:   Add a kernel argument
+:   Add a kernel argument. This option can be provided multiple times.
+
+Example: \--karg=nosmt \--karg=console=ttyS0,114800n8
 
 **\--root-ssh-authorized-keys**=*ROOT_SSH_AUTHORIZED_KEYS*
 
