@@ -35,7 +35,16 @@ mount points (whether network or `tmpfs`)
 
 As of OSTree v2024.3, by default [content in /var acts like a Docker VOLUME /var](https://github.com/ostreedev/ostree/pull/3166/commits/f81b9fa1666c62a024d5ca0bbe876321f72529c7).
 
-This means that the content from the container image is copied at *initial installation time*, and not updated thereafter.
+This means that the content from the container image is copied at initial installation time, and *not updated thereafter*.
+
+The rationale for this is to keep operating system upgrades from touching machine-local data by default.
+If the system is rolled back to a previous bootloader entry, the `/var` content remains.  This also
+makes it possible to "stage" new operating system updates in an alternative root without affecting `/var` content.
+
+A common case is for applications to want some directory structure (e.g. `/var/lib/postgresql`) to be pre-created.
+It's recommended to use [systemd tmpfiles.d](https://www.freedesktop.org/software/systemd/man/latest/tmpfiles.d.html)
+for this.  An even better approach where applicable is [StateDirectory=](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#RuntimeDirectory=)
+in units.
 
 ## Other directories
 
