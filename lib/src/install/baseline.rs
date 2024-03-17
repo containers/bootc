@@ -195,6 +195,10 @@ pub(crate) fn install_create_rootfs(
         .transpose()
         .context("Parsing root size")?;
 
+    // Load the policy from the container root, which also must be our install root
+    let sepolicy = state.load_policy()?;
+    let sepolicy = sepolicy.as_ref();
+
     // Create a temporary directory to use for mount points.  Note that we're
     // in a mount namespace, so these should not be visible on the host.
     let rootfs = mntdir.join("rootfs");
@@ -368,15 +372,15 @@ pub(crate) fn install_create_rootfs(
         .collect::<Vec<_>>();
 
     mount::mount(&rootdev, &rootfs)?;
-    state.lsm_label(&rootfs, "/".into(), false)?;
+    let target_rootfs = Dir::open_ambient_dir(&rootfs, cap_std::ambient_authority())?;
+    crate::lsm::ensure_dir_labeled(&target_rootfs, "", Some("/".into()), 0o755.into(), sepolicy)?;
     let rootfs_fd = Dir::open_ambient_dir(&rootfs, cap_std::ambient_authority())?;
     let bootfs = rootfs.join("boot");
-    std::fs::create_dir(&bootfs).context("Creating /boot")?;
-    // The underlying directory on the root should be labeled
-    state.lsm_label(&bootfs, "/boot".into(), false)?;
+    // Create the underlying mount point directory, which should be labeled
+    crate::lsm::ensure_dir_labeled(&target_rootfs, "boot", None, 0o755.into(), sepolicy)?;
     mount::mount(bootdev, &bootfs)?;
     // And we want to label the root mount of /boot
-    state.lsm_label(&bootfs, "/boot".into(), false)?;
+    crate::lsm::ensure_dir_labeled(&target_rootfs, "boot", None, 0o755.into(), sepolicy)?;
 
     // Create the EFI system partition, if applicable
     if let Some(esp_partno) = esp_partno {

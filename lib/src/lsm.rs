@@ -6,13 +6,18 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
+use cap_std::fs::{Dir, DirBuilder, OpenOptions};
+use cap_std::io_lifetimes::AsFilelike;
+use cap_std_ext::cap_std;
+use cap_std_ext::cap_std::fs::{Metadata, MetadataExt};
+use cap_std_ext::dirext::CapStdExtDirExt;
 use fn_error_context::context;
 #[cfg(feature = "install")]
 use gvariant::{aligned_bytes::TryAsAligned, Marker, Structure};
-#[cfg(feature = "install")]
+use ostree_ext::gio;
 use ostree_ext::ostree;
-
-use crate::task::Task;
+use rustix::fd::AsFd;
+use std::os::fd::AsRawFd;
 
 /// The mount path for selinux
 #[cfg(feature = "install")]
@@ -75,8 +80,11 @@ pub(crate) fn selinux_ensure_install() -> Result<bool> {
     tmpf.as_file_mut()
         .set_permissions(meta.permissions())
         .context("Setting permissions of tempfile")?;
+    let container_root = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+    let policy = ostree::SePolicy::new_at(container_root.as_raw_fd(), gio::Cancellable::NONE)?;
+    let label = require_label(&policy, "/usr/bin/ostree".into(), libc::S_IFREG | 0o755)?;
+    set_security_selinux(tmpf.as_fd(), label.as_bytes())?;
     let tmpf: Utf8PathBuf = tmpf.keep()?.1.try_into().unwrap();
-    lsm_label(&tmpf, "/usr/bin/ostree".into(), false)?;
     tracing::debug!("Created {tmpf:?}");
 
     let mut cmd = Command::new(&tmpf);
@@ -142,28 +150,8 @@ pub(crate) fn selinux_set_permissive(permissive: bool) -> Result<()> {
     Ok(())
 }
 
-fn selinux_label_for_path(target: &str) -> Result<String> {
-    // TODO: detect case where SELinux isn't enabled
-    let label = Task::new_quiet("matchpathcon")
-        .args(["-n", target])
-        .read()?;
-    // TODO: trim in place instead of reallocating
-    Ok(label.trim().to_string())
-}
-
-// Write filesystem labels (currently just for SELinux)
-#[context("Labeling {as_path}")]
-pub(crate) fn lsm_label(target: &Utf8Path, as_path: &Utf8Path, recurse: bool) -> Result<()> {
-    let label = selinux_label_for_path(as_path.as_str())?;
-    tracing::debug!("Label for {as_path} (target={target}) is {label}");
-    Task::new_quiet("chcon")
-        .arg("-h")
-        .args(recurse.then_some("-R"))
-        .args(["-h", label.as_str(), target.as_str()])
-        .run()
-}
-
 #[cfg(feature = "install")]
+/// Check if the ostree-formatted extended attributes include a security.selinux value.
 pub(crate) fn xattrs_have_selinux(xattrs: &ostree::glib::Variant) -> bool {
     let v = xattrs.data_as_bytes();
     let v = v.try_as_aligned().unwrap();
@@ -175,4 +163,231 @@ pub(crate) fn xattrs_have_selinux(xattrs: &ostree::glib::Variant) -> bool {
         }
     }
     false
+}
+
+/// Look up the label for a path in a policy, and error if one is not found.
+pub(crate) fn require_label(
+    policy: &ostree::SePolicy,
+    destname: &Utf8Path,
+    mode: u32,
+) -> Result<ostree::glib::GString> {
+    policy
+        .label(destname.as_str(), mode, ostree::gio::Cancellable::NONE)?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No label found in policy '{}' for {destname})",
+                policy.name()
+            )
+        })
+}
+
+/// A thin wrapper for invoking fsetxattr(security.selinux)
+pub(crate) fn set_security_selinux(fd: std::os::fd::BorrowedFd, label: &[u8]) -> Result<()> {
+    rustix::fs::fsetxattr(
+        fd,
+        "security.selinux",
+        label,
+        rustix::fs::XattrFlags::empty(),
+    )
+    .context("fsetxattr(security.selinux)")
+}
+
+/// The labeling state; "unsupported" is distinct as we need to handle
+/// cases like the ESP which don't support labeling.
+pub(crate) enum SELinuxLabelState {
+    Unlabeled,
+    Unsupported,
+    Labeled,
+}
+
+/// Query the SELinux labeling for a particular path
+pub(crate) fn has_security_selinux(root: &Dir, path: &Utf8Path) -> Result<SELinuxLabelState> {
+    // TODO: avoid hardcoding a max size here
+    let mut buf = [0u8; 2048];
+    let fdpath = format!("/proc/self/fd/{}/{path}", root.as_raw_fd());
+    match rustix::fs::lgetxattr(fdpath, "security.selinux", &mut buf) {
+        Ok(_) => Ok(SELinuxLabelState::Labeled),
+        Err(rustix::io::Errno::OPNOTSUPP) => Ok(SELinuxLabelState::Unsupported),
+        Err(rustix::io::Errno::NODATA) => Ok(SELinuxLabelState::Unlabeled),
+        Err(e) => Err(e).with_context(|| format!("Failed to look up context for {path:?}")),
+    }
+}
+
+pub(crate) fn set_security_selinux_path(root: &Dir, path: &Utf8Path, label: &[u8]) -> Result<()> {
+    // TODO: avoid hardcoding a max size here
+    let fdpath = format!("/proc/self/fd/{}/", root.as_raw_fd());
+    let fdpath = &Path::new(&fdpath).join(path);
+    rustix::fs::lsetxattr(
+        fdpath,
+        "security.selinux",
+        label,
+        rustix::fs::XattrFlags::empty(),
+    )?;
+    Ok(())
+}
+
+pub(crate) fn ensure_labeled(
+    root: &Dir,
+    path: &Utf8Path,
+    metadata: &Metadata,
+    policy: &ostree::SePolicy,
+) -> Result<SELinuxLabelState> {
+    let r = has_security_selinux(root, path)?;
+    if matches!(r, SELinuxLabelState::Unlabeled) {
+        let abspath = Utf8Path::new("/").join(&path);
+        let label = require_label(policy, &abspath, metadata.mode())?;
+        tracing::trace!("Setting label for {path} to {label}");
+        set_security_selinux_path(root, &path, label.as_bytes())?;
+    }
+    Ok(r)
+}
+
+/// A wrapper for creating a directory, also optionally setting a SELinux label.
+/// The provided `skip` parameter is a device/inode that we will ignore (and not traverse).
+#[cfg(feature = "install")]
+pub(crate) fn ensure_dir_labeled_recurse(
+    root: &Dir,
+    path: &mut Utf8PathBuf,
+    policy: &ostree::SePolicy,
+    skip: Option<(libc::dev_t, libc::ino64_t)>,
+) -> Result<()> {
+    // Juggle the cap-std requirement for relative paths vs the libselinux
+    // requirement for absolute paths by special casing the empty string "" as "."
+    // just for the initial directory enumeration.
+    let path_for_read = if path.as_str().is_empty() {
+        Utf8Path::new(".")
+    } else {
+        &*path
+    };
+
+    let mut n = 0u64;
+
+    let metadata = root.symlink_metadata(path_for_read)?;
+    match ensure_labeled(root, path, &metadata, policy)? {
+        SELinuxLabelState::Unlabeled => {
+            n += 1;
+        }
+        SELinuxLabelState::Unsupported => return Ok(()),
+        SELinuxLabelState::Labeled => {}
+    }
+
+    for ent in root.read_dir(path_for_read)? {
+        let ent = ent?;
+        let metadata = ent.metadata()?;
+        if let Some((skip_dev, skip_ino)) = skip.as_ref().copied() {
+            if (metadata.dev(), metadata.ino()) == (skip_dev, skip_ino) {
+                tracing::debug!("Skipping dev={skip_dev} inode={skip_ino}");
+                continue;
+            }
+        }
+        let name = ent.file_name();
+        let name = name
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid non-UTF-8 filename: {name:?}"))?;
+        path.push(name);
+
+        if metadata.is_dir() {
+            ensure_dir_labeled_recurse(root, path, policy, skip)?;
+        } else {
+            match ensure_labeled(root, path, &metadata, policy)? {
+                SELinuxLabelState::Unlabeled => {
+                    n += 1;
+                }
+                SELinuxLabelState::Unsupported => break,
+                SELinuxLabelState::Labeled => {}
+            }
+        }
+        path.pop();
+    }
+
+    if n > 0 {
+        tracing::debug!("Relabeled {n} objects in {path}");
+    }
+    Ok(())
+}
+
+/// A wrapper for creating a directory, also optionally setting a SELinux label.
+#[cfg(feature = "install")]
+pub(crate) fn ensure_dir_labeled(
+    root: &Dir,
+    destname: impl AsRef<Utf8Path>,
+    as_path: Option<&Utf8Path>,
+    mode: rustix::fs::Mode,
+    policy: Option<&ostree::SePolicy>,
+) -> Result<()> {
+    use std::borrow::Cow;
+
+    let destname = destname.as_ref();
+    // Special case the empty string
+    let local_destname = if destname.as_str().is_empty() {
+        ".".into()
+    } else {
+        destname
+    };
+    tracing::debug!("Labeling {local_destname}");
+    let label = policy
+        .map(|policy| {
+            let as_path = as_path
+                .map(Cow::Borrowed)
+                .unwrap_or_else(|| Utf8Path::new("/").join(destname).into());
+            require_label(policy, &*as_path, libc::S_IFDIR | mode.as_raw_mode())
+        })
+        .transpose()
+        .with_context(|| format!("Labeling {local_destname}"))?;
+    tracing::trace!("Label for {local_destname} is {label:?}");
+
+    root.ensure_dir_with(local_destname, &DirBuilder::new())
+        .with_context(|| format!("Opening {local_destname}"))?;
+    let dirfd = cap_std_ext::cap_primitives::fs::open(
+        &root.as_filelike_view(),
+        local_destname.as_std_path(),
+        OpenOptions::new().read(true),
+    )
+    .context("opendir")?;
+    let dirfd = dirfd.as_fd();
+    rustix::fs::fchmod(dirfd, mode).context("fchmod")?;
+    if let Some(label) = label {
+        set_security_selinux(dirfd, label.as_bytes())?;
+    }
+
+    Ok(())
+}
+
+/// A wrapper for atomically writing a file, also optionally setting a SELinux label.
+#[cfg(feature = "install")]
+pub(crate) fn atomic_replace_labeled<F>(
+    root: &Dir,
+    destname: impl AsRef<Utf8Path>,
+    mode: rustix::fs::Mode,
+    policy: Option<&ostree::SePolicy>,
+    f: F,
+) -> Result<()>
+where
+    F: FnOnce(&mut std::io::BufWriter<cap_std_ext::cap_tempfile::TempFile>) -> Result<()>,
+{
+    let destname = destname.as_ref();
+    let label = policy
+        .map(|policy| {
+            let abs_destname = Utf8Path::new("/").join(destname);
+            require_label(policy, &abs_destname, libc::S_IFREG | mode.as_raw_mode())
+        })
+        .transpose()?;
+
+    root.atomic_replace_with(destname, |w| {
+        // Peel through the bufwriter to get the fd
+        let fd = w.get_mut();
+        let fd = fd.as_file_mut();
+        let fd = fd.as_fd();
+        // Apply the target mode bits
+        rustix::fs::fchmod(fd, mode).context("fchmod")?;
+        // If we have a label, apply it
+        if let Some(label) = label {
+            tracing::debug!("Setting label for {destname} to {label}");
+            set_security_selinux(fd, label.as_bytes())?;
+        } else {
+            tracing::debug!("No label for {destname}");
+        }
+        // Finally call the underlying writer function
+        f(w)
+    })
 }
