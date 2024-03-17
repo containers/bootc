@@ -10,7 +10,7 @@ function redprint {
 }
 
 greenprint "📥 Install required packages"
-sudo dnf install -y cargo zstd git openssl-devel ostree-devel rpm-build mock podman skopeo jq
+dnf install -y cargo zstd git openssl-devel ostree-devel rpm-build mock podman skopeo jq
 cargo install cargo-vendor-filterer
 
 greenprint "⛏ Build archive"
@@ -25,13 +25,13 @@ case "$TEST_OS" in
         TEMPLATE="rhel-9.tpl"
         greenprint "📝 update mock rhel-9 template"
         # disable subscription for nightlies
-        sudo sed -i "s/config_opts\['redhat_subscription_required'\] = True/config_opts['redhat_subscription_required'] = False/" /etc/mock/templates/"$TEMPLATE"
+        sed -i "s/config_opts\['redhat_subscription_required'\] = True/config_opts['redhat_subscription_required'] = False/" /etc/mock/templates/"$TEMPLATE"
         # delete default cdn compose and add nightly compose
         IMAGE_NAME="rhel9-rhel_bootc"
         TIER1_IMAGE_URL="${RHEL_REGISTRY_URL}/${IMAGE_NAME}:rhel-9.4"
         CURRENT_COMPOSE_RHEL94=$(skopeo inspect --tls-verify=false "docker://${TIER1_IMAGE_URL}" | jq -r '.Labels."redhat.compose-id"')
-        sudo sed -i '/user_agent/q' /etc/mock/templates/"$TEMPLATE"
-        sudo tee -a /etc/mock/templates/"$TEMPLATE" > /dev/null << EOF
+        sed -i '/user_agent/q' /etc/mock/templates/"$TEMPLATE"
+        tee -a /etc/mock/templates/"$TEMPLATE" > /dev/null << EOF
 [BaseOS]
 name=Red Hat Enterprise Linux - BaseOS
 baseurl=http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/BaseOS/\$basearch/os/
@@ -65,7 +65,7 @@ esac
 greenprint "🧬 Using mock config: ${MOCK_CONFIG}"
 
 greenprint "✏ Adding user to mock group"
-sudo usermod -a -G mock "$(whoami)"
+usermod -a -G mock "$(whoami)"
 
 greenprint "🎁 Building SRPM"
 mock -r "$MOCK_CONFIG" --buildsrpm \
