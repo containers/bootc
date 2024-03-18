@@ -610,13 +610,10 @@ async fn initialize_ostree_root_from_self(
     options.kargs = Some(kargs.as_slice());
     options.target_imgref = Some(&state.target_imgref);
     options.proxy_cfg = proxy_cfg;
-    println!("Creating initial deployment");
-    let target_image = state.target_imgref.to_string();
+    println!("Deploying container image");
     let imgstate =
         ostree_container::deploy::deploy(&sysroot, stateroot, &src_imageref, Some(options)).await?;
-    let digest = imgstate.manifest_digest.as_str();
-    println!("Installed: {target_image}");
-    println!("   Digest: {digest}");
+    println!("Deployment complete");
 
     // Write the entry for /boot to /etc/fstab.  TODO: Encourage OSes to use the karg?
     // Or better bind this with the grub data.
@@ -1031,7 +1028,10 @@ async fn prepare_install(
     let (override_disable_selinux, setenforce_guard) =
         reexecute_self_for_selinux_if_needed(&source, config_opts.disable_selinux)?;
 
-    println!("Installing: {:#}", &target_imgref);
+    println!("Installing image: {:#}", &target_imgref);
+    if let Some(digest) = source.digest.as_deref() {
+        println!("Digest: {digest}");
+    }
 
     let install_config = config::load_config()?;
     tracing::debug!("Loaded install configuration");
