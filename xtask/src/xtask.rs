@@ -118,7 +118,7 @@ fn man2markdown(sh: &Shell) -> Result<()> {
             .file_stem()
             .and_then(|name| name.to_str())
             .ok_or_else(|| anyhow!("Expected filename in {path:?}"))?;
-        let target = format!("docs/src/{filename}.md");
+        let target = format!("docs/src/man/{filename}.md");
         cmd!(
             sh,
             "pandoc --from=man --to=markdown --output={target} {path}"

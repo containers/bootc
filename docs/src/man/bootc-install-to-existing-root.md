@@ -1,0 +1,124 @@
+# NAME
+
+bootc-install-to-existing-root - Perform an installation to the host
+root filesystem
+
+# SYNOPSIS
+
+**bootc-install-to-existing-root** \[**\--replace**\]
+\[**\--source-imgref**\] \[**\--target-transport**\]
+\[**\--target-imgref**\] \[**\--enforce-container-sigpolicy**\]
+\[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
+\[**\--disable-selinux**\] \[**\--karg**\]
+\[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
+\[**-h**\|**\--help**\] \[**-V**\|**\--version**\] \[*ROOT_PATH*\]
+
+# DESCRIPTION
+
+Perform an installation to the host root filesystem
+
+# OPTIONS
+
+**\--replace**=*REPLACE* \[default: alongside\]
+
+:   Configure how existing data is treated\
+
+\
+*Possible values:*
+
+> -   wipe: Completely wipe the contents of the target filesystem. This
+>     cannot be done if the target filesystem is the one the system is
+>     booted from
+>
+> -   alongside: This is a destructive operation in the sense that the
+>     bootloader state will have its contents wiped and replaced.
+>     However, the running system (and all files) will remain in place
+>     until reboot
+
+**\--source-imgref**=*SOURCE_IMGREF*
+
+:   Install the system from an explicitly given source.
+
+By default, bootc install and install-to-filesystem assumes that it runs
+in a podman container, and it takes the container image to install from
+the podmans container registry. If \--source-imgref is given, bootc uses
+it as the installation source, instead of the behaviour explained in the
+previous paragraph. See skopeo(1) for accepted formats.
+
+**\--target-transport**=*TARGET_TRANSPORT* \[default: registry\]
+
+:   The transport; e.g. oci, oci-archive. Defaults to \`registry\`
+
+**\--target-imgref**=*TARGET_IMGREF*
+
+:   Specify the image to fetch for subsequent updates
+
+**\--enforce-container-sigpolicy**
+
+:   This is the inverse of the previous
+    \`\--target-no-signature-verification\` (which is now a no-op).
+    Enabling this option enforces that \`/etc/containers/policy.json\`
+    includes a default policy which requires signatures
+
+**\--target-ostree-remote**=*TARGET_OSTREE_REMOTE*
+
+:   Enable verification via an ostree remote
+
+**\--skip-fetch-check**
+
+:   By default, the accessiblity of the target image will be verified
+    (just the manifest will be fetched). Specifying this option
+    suppresses the check; use this when you know the issues it might
+    find are addressed.
+
+A common reason this may fail is when one is using an image which
+requires registry authentication, but not embedding the pull secret in
+the image so that updates can be fetched by the installed OS \"day 2\".
+
+**\--disable-selinux**
+
+:   Disable SELinux in the target (installed) system.
+
+This is currently necessary to install \*from\* a system with SELinux
+disabled but where the target does have SELinux enabled.
+
+**\--karg**=*KARG*
+
+:   Add a kernel argument
+
+**\--root-ssh-authorized-keys**=*ROOT_SSH_AUTHORIZED_KEYS*
+
+:   The path to an \`authorized_keys\` that will be injected into the
+    \`root\` account.
+
+The implementation of this uses systemd \`tmpfiles.d\`, writing to a
+file named \`/etc/tmpfiles.d/bootc-root-ssh.conf\`. This will have the
+effect that by default, the SSH credentials will be set if not present.
+The intention behind this is to allow mounting the whole \`/root\` home
+directory as a \`tmpfs\`, while still getting the SSH key replaced on
+boot.
+
+**\--generic-image**
+
+:   Perform configuration changes suitable for a \"generic\" disk image.
+    At the moment:
+
+\- All bootloader types will be installed - Changes to the system
+firmware will be skipped
+
+**-h**, **\--help**
+
+:   Print help (see a summary with -h)
+
+**-V**, **\--version**
+
+:   Print version
+
+\[*ROOT_PATH*\] \[default: /target\]
+
+:   Path to the mounted root; its expected to invoke podman with \`-v
+    /:/target\`, then supplying this argument is unnecessary
+
+# VERSION
+
+v0.1.0
