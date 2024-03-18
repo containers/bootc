@@ -35,6 +35,10 @@ bootc-install-to-filesystem(8)
 
 :   Install to the target filesystem
 
+bootc-install-to-existing-root(8)
+
+:   Perform an installation to the host root filesystem
+
 bootc-install-print-configuration(8)
 
 :   Output JSON to stdout that contains the merged installation

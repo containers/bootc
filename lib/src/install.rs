@@ -133,12 +133,10 @@ pub(crate) struct InstallConfigOpts {
     #[serde(default)]
     pub(crate) disable_selinux: bool,
 
-    // Only occupy at most this much space (if no units are provided, GB is assumed).
-    // Using this option reserves space for partitions created dynamically on the
-    // next boot, or by subsequent tools.
-    //    pub(crate) size: Option<String>,
+    /// Add a kernel argument.  This option can be provided multiple times.
+    ///
+    /// Example: --karg=nosmt --karg=console=ttyS0,114800n8
     #[clap(long)]
-    /// Add a kernel argument
     karg: Option<Vec<String>>,
 
     /// The path to an `authorized_keys` that will be injected into the `root` account.

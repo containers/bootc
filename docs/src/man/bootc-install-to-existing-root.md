@@ -1,41 +1,27 @@
 # NAME
 
-bootc-install-to-filesystem - Install to the target filesystem
+bootc-install-to-existing-root - Perform an installation to the host
+root filesystem
 
 # SYNOPSIS
 
-**bootc-install-to-filesystem** \[**\--root-mount-spec**\]
-\[**\--boot-mount-spec**\] \[**\--replace**\] \[**\--source-imgref**\]
-\[**\--target-transport**\] \[**\--target-imgref**\]
-\[**\--enforce-container-sigpolicy**\] \[**\--target-ostree-remote**\]
-\[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
+**bootc-install-to-existing-root** \[**\--replace**\]
+\[**\--source-imgref**\] \[**\--target-transport**\]
+\[**\--target-imgref**\] \[**\--enforce-container-sigpolicy**\]
+\[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
+\[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
-\[**-h**\|**\--help**\] \[**-V**\|**\--version**\] \<*ROOT_PATH*\>
+\[**-h**\|**\--help**\] \[**-V**\|**\--version**\] \[*ROOT_PATH*\]
 
 # DESCRIPTION
 
-Install to the target filesystem
+Perform an installation to the host root filesystem
 
 # OPTIONS
 
-**\--root-mount-spec**=*ROOT_MOUNT_SPEC*
+**\--replace**=*REPLACE* \[default: alongside\]
 
-:   Source device specification for the root filesystem. For example,
-    UUID=2e9f4241-229b-4202-8429-62d2302382e1
-
-**\--boot-mount-spec**=*BOOT_MOUNT_SPEC*
-
-:   Mount specification for the /boot filesystem.
-
-At the current time, a separate /boot is required. This restriction will
-be lifted in future versions. If not specified, the filesystem UUID will
-be used.
-
-**\--replace**=*REPLACE*
-
-:   Initialize the system in-place; at the moment, only one mode for
-    this is implemented. In the future, it may also be supported to set
-    up an explicit \"dual boot\" system\
+:   Configure how existing data is treated\
 
 \
 *Possible values:*
@@ -130,12 +116,10 @@ firmware will be skipped
 
 :   Print version
 
-\<*ROOT_PATH*\>
+\[*ROOT_PATH*\] \[default: /target\]
 
-:   Path to the mounted root filesystem.
-
-By default, the filesystem UUID will be discovered and used for
-mounting. To override this, use \`\--root-mount-spec\`.
+:   Path to the mounted root; its expected to invoke podman with \`-v
+    /:/target\`, then supplying this argument is unnecessary
 
 # VERSION
 
