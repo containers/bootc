@@ -203,6 +203,25 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    - name: check bootc-fetch-apply-updates.timer left time
+      shell: systemctl list-timers bootc-fetch-apply-updates.timer --output json | jq -r '.[].left'
+      register: result_bootc_timer_left
+
+    - name: check bootc-fetch-apply-updates.timer left time greater than 0
+      block:
+        - assert:
+            that:
+              - result_bootc_timer_left.stdout | int > 0
+            fail_msg: "bootc-fetch-apply-updates.timer won't be triggered"
+            success_msg: "bootc-fetch-apply-updates.timer is good"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
     - name: check installed package
       shell: rpm -qa | sort
       register: result_packages

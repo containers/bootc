@@ -10,6 +10,16 @@ function redprint {
     echo -e "\033[1;31m[$(date -Isecond)] ${1}\033[0m"
 }
 
+function retry {
+    n=0
+    until [ "$n" -ge 3 ]
+    do
+       "$@" && break
+       n=$((n+1))
+       sleep 10
+    done
+}
+
 TEMPDIR=$(mktemp -d)
 trap 'rm -rf -- "$TEMPDIR"' EXIT
 
@@ -92,10 +102,10 @@ greenprint "Login quay.io"
 podman login -u "${QUAY_USERNAME}" -p "${QUAY_PASSWORD}" quay.io
 
 greenprint "Build $TEST_OS installation container image"
-podman build --tls-verify=false -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$INSTALL_CONTAINERFILE" .
+podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$INSTALL_CONTAINERFILE" .
 
 greenprint "Push $TEST_OS installation container image"
-podman push "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
+retry podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
 
 greenprint "Prepare inventory file"
 tee -a "$INVENTORY_FILE" > /dev/null << EOF
@@ -146,9 +156,10 @@ RUN dnf -y install wget && \
 EOF
 
 greenprint "Build $TEST_OS upgrade container image"
-podman build --tls-verify=false -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$UPGRADE_CONTAINERFILE" .
+podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$UPGRADE_CONTAINERFILE" .
+
 greenprint "Push $TEST_OS upgrade container image"
-podman push "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
+retry podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
 
 greenprint "Upgrade $TEST_OS system"
 ansible-playbook -v \
@@ -161,6 +172,11 @@ ansible-playbook -v \
     -e bootc_image="$TEST_IMAGE_URL" \
     -e upgrade="true" \
     playbooks/check-system.yaml
+
+greenprint "Rollback $TEST_OS system"
+ansible-playbook -v \
+    -i "$INVENTORY_FILE" \
+    playbooks/rollback.yaml
 
 greenprint "Remove $PLATFORM instance"
 ansible-playbook -v \

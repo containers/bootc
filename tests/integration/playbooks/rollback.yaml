@@ -1,0 +1,75 @@
+---
+- hosts: guest
+  become: false
+  vars:
+    total_counter: "0"
+    failed_counter: "0"
+
+  tasks:
+    - name: rpm-ostree rollback
+      command: rpm-ostree rollback
+      become: true
+
+    - name: Reboot to deploy new system
+      reboot:
+        post_reboot_delay: 60
+        reboot_timeout: 180
+      become: true
+      ignore_errors: true
+
+    - name: Wait for connection to become reachable/usable
+      wait_for_connection:
+        delay: 30
+
+    - name: rollback checking
+      block:
+        - name: get booted cachedupdate imageDigest
+          shell: bootc status --json | jq -r '.status.booted.cachedUpdate.imageDigest'
+          register: result_booted_cachedupdate_digest
+          become: true
+
+        - name: get rollback image digest
+          shell: bootc status --json | jq -r '.status.rollback.image.imageDigest'
+          register: result_rollback_image_digest
+          become: true
+
+        - name: check booted cachedUpdate and rollback image digest
+          block:
+            - assert:
+                that:
+                  - result_booted_cachedupdate_digest.stdout == result_rollback_image_digest.stdout
+                fail_msg: "rollback failed"
+                success_msg: "rollback passed"
+          always:
+            - set_fact:
+                total_counter: "{{ total_counter | int + 1 }}"
+          rescue:
+            - name: failed count + 1
+              set_fact:
+                failed_counter: "{{ failed_counter | int + 1 }}"
+
+        - name: check installed package
+          shell: rpm -qa | sort
+          register: result_packages
+
+        # case: check wget not installed after rollback
+        - name: check wget not installed
+          block:
+            - assert:
+                that:
+                  - "'wget' not in result_packages.stdout"
+                fail_msg: "wget installed, ostree rollback might be failed"
+                success_msg: "wget not installed in ostree rollback"
+          always:
+            - set_fact:
+                total_counter: "{{ total_counter | int + 1 }}"
+          rescue:
+            - name: failed count + 1
+              set_fact:
+                failed_counter: "{{ failed_counter | int + 1 }}"
+
+    - assert:
+        that:
+          - failed_counter == "0"
+        fail_msg: "Run {{ total_counter }} tests, but {{ failed_counter }} of them failed"
+        success_msg: "Totally {{ total_counter }} test passed"
