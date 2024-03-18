@@ -133,10 +133,6 @@ pub(crate) struct InstallConfigOpts {
     #[serde(default)]
     pub(crate) disable_selinux: bool,
 
-    // Only occupy at most this much space (if no units are provided, GB is assumed).
-    // Using this option reserves space for partitions created dynamically on the
-    // next boot, or by subsequent tools.
-    //    pub(crate) size: Option<String>,
     #[clap(long)]
     /// Add a kernel argument
     karg: Option<Vec<String>>,
