@@ -150,6 +150,12 @@ pub(crate) enum TestingOpts {
         image: String,
         blockdev: Utf8PathBuf,
     },
+    #[clap(name = "verify-selinux")]
+    VerifySELinux {
+        root: String,
+        #[clap(long)]
+        warn: bool,
+    },
 }
 
 /// Deploy and transactionally in-place with bootable container images.

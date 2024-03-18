@@ -10,7 +10,6 @@ pub(crate) mod baseline;
 pub(crate) mod config;
 pub(crate) mod osconfig;
 
-use std::io::BufWriter;
 use std::io::Write;
 use std::os::fd::AsFd;
 use std::os::unix::process::CommandExt;
@@ -301,17 +300,17 @@ pub(crate) struct State {
 }
 
 impl State {
-    // Wraps core lsm labeling functionality, conditionalizing based on source state
-    pub(crate) fn lsm_label(
-        &self,
-        target: &Utf8Path,
-        as_path: &Utf8Path,
-        recurse: bool,
-    ) -> Result<()> {
-        if !self.source.selinux {
-            return Ok(());
+    #[context("Loading SELinux policy")]
+    pub(crate) fn load_policy(&self) -> Result<Option<ostree::SePolicy>> {
+        use std::os::fd::AsRawFd;
+        if !self.source.selinux || self.override_disable_selinux {
+            return Ok(None);
         }
-        crate::lsm::lsm_label(target, as_path, recurse)
+        // We always use the physical container root to bootstrap policy
+        let rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+        let r = ostree::SePolicy::new_at(rootfs.as_raw_fd(), gio::Cancellable::NONE)?;
+        tracing::debug!("Loaded SELinux policy: {}", r.name());
+        Ok(Some(r))
     }
 }
 
@@ -508,13 +507,17 @@ async fn initialize_ostree_root_from_self(
     state: &State,
     root_setup: &RootSetup,
 ) -> Result<InstallAleph> {
+    let sepolicy = state.load_policy()?;
+    let sepolicy = sepolicy.as_ref();
+
+    // Load a fd for the mounted target physical root
     let rootfs_dir = &root_setup.rootfs_fd;
     let rootfs = root_setup.rootfs.as_path();
     let cancellable = gio::Cancellable::NONE;
 
     // Ensure that the physical root is labeled.
     // Another implementation: https://github.com/coreos/coreos-assembler/blob/3cd3307904593b3a131b81567b13a4d0b6fe7c90/src/create_disk.sh#L295
-    state.lsm_label(rootfs, "/".into(), false)?;
+    crate::lsm::ensure_dir_labeled(rootfs_dir, "", Some("/".into()), 0o755.into(), sepolicy)?;
 
     // TODO: make configurable?
     let stateroot = STATEROOT_DEFAULT;
@@ -527,7 +530,7 @@ async fn initialize_ostree_root_from_self(
     // And also label /boot AKA xbootldr, if it exists
     let bootdir = rootfs.join("boot");
     if bootdir.try_exists()? {
-        state.lsm_label(&bootdir, "/boot".into(), false)?;
+        crate::lsm::ensure_dir_labeled(rootfs_dir, "boot", None, 0o755.into(), sepolicy)?;
     }
 
     // Default to avoiding grub2-mkconfig etc., but we need to use zipl on s390x.
@@ -555,8 +558,17 @@ async fn initialize_ostree_root_from_self(
         .cwd(rootfs_dir)?
         .run()?;
 
-    // Ensure everything in the ostree repo is labeled
-    state.lsm_label(&rootfs.join("ostree"), "/usr".into(), true)?;
+    // Bootstrap the initial labeling of the /ostree directory as usr_t
+    if let Some(policy) = sepolicy {
+        let ostree_dir = rootfs_dir.open_dir("ostree")?;
+        crate::lsm::ensure_dir_labeled(
+            &ostree_dir,
+            ".",
+            Some("/usr".into()),
+            0o755.into(),
+            Some(policy),
+        )?;
+    }
 
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
@@ -618,8 +630,6 @@ async fn initialize_ostree_root_from_self(
     println!("Installed: {target_image}");
     println!("   Digest: {digest}");
 
-    // Write the entry for /boot to /etc/fstab.  TODO: Encourage OSes to use the karg?
-    // Or better bind this with the grub data.
     sysroot.load(cancellable)?;
     let deployment = sysroot
         .deployments()
@@ -631,28 +641,35 @@ async fn initialize_ostree_root_from_self(
     let root = rootfs_dir
         .open_dir(path.as_str())
         .context("Opening deployment dir")?;
-    let root_path = &rootfs.join(&path.as_str());
-    let mut f = {
-        let mut opts = cap_std::fs::OpenOptions::new();
-        root.open_with("etc/fstab", opts.append(true).write(true).create(true))
-            .context("Opening etc/fstab")
-            .map(BufWriter::new)?
-    };
-    if let Some(boot) = root_setup.boot.as_ref() {
-        writeln!(f, "{}", boot.to_fstab())?;
-    }
-    f.flush()?;
 
-    let fstab_path = root_path.join("etc/fstab");
-    state.lsm_label(&fstab_path, "/etc/fstab".into(), false)?;
+    // And do another recursive relabeling pass over the ostree-owned directories
+    // but avoid recursing into the deployment root (because that's a *distinct*
+    // logical root).
+    if let Some(policy) = sepolicy {
+        let deployment_root_meta = root.dir_metadata()?;
+        let deployment_root_devino = (deployment_root_meta.dev(), deployment_root_meta.ino());
+        for d in ["ostree", "boot"] {
+            let mut pathbuf = Utf8PathBuf::from(d);
+            crate::lsm::ensure_dir_labeled_recurse(
+                rootfs_dir,
+                &mut pathbuf,
+                policy,
+                Some(deployment_root_devino),
+            )
+            .with_context(|| format!("Recursive SELinux relabeling of {d}"))?;
+        }
+    }
+
+    // Write the entry for /boot to /etc/fstab.  TODO: Encourage OSes to use the karg?
+    // Or better bind this with the grub data.
+    if let Some(boot) = root_setup.boot.as_ref() {
+        crate::lsm::atomic_replace_labeled(&root, "etc/fstab", 0o644.into(), sepolicy, |w| {
+            writeln!(w, "{}", boot.to_fstab()).map_err(Into::into)
+        })?;
+    }
 
     if let Some(contents) = state.root_ssh_authorized_keys.as_deref() {
-        osconfig::inject_root_ssh_authorized_keys(
-            &root,
-            &root_path,
-            |target, path, recurse| state.lsm_label(target, path, recurse),
-            contents,
-        )?;
+        osconfig::inject_root_ssh_authorized_keys(&root, sepolicy, contents)?;
     }
 
     let uname = rustix::system::uname();
