@@ -135,7 +135,7 @@ mod test {
             version: "v1".into(),
         };
         let b = ContentMetadata {
-            timestamp: t + Duration::seconds(1),
+            timestamp: t + Duration::try_seconds(1).unwrap(),
             version: "v2".into(),
         };
         assert!(a.can_upgrade_to(&b));
