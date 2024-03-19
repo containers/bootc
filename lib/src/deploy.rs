@@ -265,7 +265,7 @@ pub(crate) async fn stage(
     )
     .await?;
     crate::deploy::cleanup(sysroot).await?;
-    println!("Queued for next boot: {}", spec.image);
+    println!("Queued for next boot: {:#}", spec.image);
     if let Some(version) = image.version.as_deref() {
         println!("  Version: {version}");
     }
