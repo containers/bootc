@@ -8,6 +8,8 @@ all-test:
 
 install:
 	install -D -m 0755 -t $(DESTDIR)$(prefix)/bin target/release/bootc
+	install -d -m 0755 $(DESTDIR)$(prefix)/lib/systemd/system-generators/
+	ln -f $(DESTDIR)$(prefix)/bin/bootc $(DESTDIR)$(prefix)/lib/systemd/system-generators/bootc-systemd-generator
 	install -d $(DESTDIR)$(prefix)/lib/bootc/install
 	# Support installing pre-generated man pages shipped in source tarball, to avoid
 	# a dependency on pandoc downstream.  But in local builds these end up in target/man,
