@@ -175,8 +175,8 @@ pub(crate) fn require_label(
         .label(destname.as_str(), mode, ostree::gio::Cancellable::NONE)?
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "No label found in policy '{}' for {destname})",
-                policy.name()
+                "No label found in policy '{:?}' for {destname})",
+                policy.csum()
             )
         })
 }

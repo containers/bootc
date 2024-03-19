@@ -309,7 +309,10 @@ impl State {
         // We always use the physical container root to bootstrap policy
         let rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
         let r = ostree::SePolicy::new_at(rootfs.as_raw_fd(), gio::Cancellable::NONE)?;
-        tracing::debug!("Loaded SELinux policy: {}", r.name());
+        let csum = r
+            .csum()
+            .ok_or_else(|| anyhow::anyhow!("SELinux enabled, but no policy found in root"))?;
+        tracing::debug!("Loaded SELinux policy: {csum}");
         Ok(Some(r))
     }
 }
