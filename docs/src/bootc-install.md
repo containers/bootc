@@ -219,7 +219,7 @@ process, you can create a raw disk image (that can e.g. be booted via virtualiza
 via e.g.:
 
 ```bash
-truncate -s 10G exampleos.raw
+truncate -s 10G myimage.raw
 podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t  -v /var/lib/containers:/var/lib/containers -v .:/output <yourimage> bootc install to-disk --generic-image --via-loopback /output/myimage.raw
 ```
 
