@@ -286,6 +286,7 @@ pub(crate) fn require_root() -> Result<()> {
     if !rustix::thread::capability_is_in_bounding_set(rustix::thread::Capability::SystemAdmin)? {
         anyhow::bail!("This command requires full root privileges (CAP_SYS_ADMIN)");
     }
+    tracing::trace!("Verified uid 0 with CAP_SYS_ADMIN");
     Ok(())
 }
 

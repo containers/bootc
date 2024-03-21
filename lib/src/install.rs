@@ -436,6 +436,7 @@ impl SourceInfo {
             transport: ostree_container::Transport::ContainerStorage,
             name: container_info.image.clone(),
         };
+        tracing::debug!("Finding digest for image ID {}", container_info.imageid);
         let digest = crate::podman::imageid_to_digest(&container_info.imageid)?;
 
         let root = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
@@ -848,6 +849,7 @@ fn require_host_pidns() -> Result<()> {
     if rustix::process::getpid().is_init() {
         anyhow::bail!("This command must be run with --pid=host")
     }
+    tracing::trace!("OK: we're not pid 1");
     Ok(())
 }
 
@@ -975,6 +977,7 @@ async fn prepare_install(
     source_opts: InstallSourceOpts,
     target_opts: InstallTargetOpts,
 ) -> Result<Arc<State>> {
+    tracing::trace!("Preparing install");
     // We need full root privileges, i.e. --privileged in podman
     crate::cli::require_root()?;
     require_host_pidns()?;
@@ -996,6 +999,7 @@ async fn prepare_install(
                     "Cannot install from rootless podman; this command must be run as root"
                 );
             }
+            tracing::trace!("Read container engine info {:?}", container_info.engine);
 
             SourceInfo::from_container(&container_info)?
         }
