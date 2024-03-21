@@ -48,6 +48,7 @@ pub(crate) fn get_container_execution_info(rootfs: &Dir) -> Result<ContainerExec
             "id" => r.id = v.to_string(),
             "image" => r.image = v.to_string(),
             "imageid" => r.imageid = v.to_string(),
+            "rootless" => r.rootless = Some(v.to_string()),
             _ => {}
         }
     }

@@ -1003,7 +1003,7 @@ async fn prepare_install(
                     "Cannot install from rootless podman; this command must be run as root"
                 );
             }
-            tracing::trace!("Read container engine info {:?}", container_info.engine);
+            tracing::trace!("Read container engine info {:?}", container_info);
 
             SourceInfo::from_container(&container_info)?
         }
