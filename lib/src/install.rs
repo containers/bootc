@@ -28,7 +28,7 @@ use cap_std_ext::prelude::CapStdExtDirExt;
 use chrono::prelude::*;
 use clap::ValueEnum;
 use ostree_ext::oci_spec;
-use rustix::fs::FileTypeExt;
+use rustix::fs::{FileTypeExt, MetadataExt as _};
 
 use fn_error_context::context;
 use ostree::gio;
@@ -848,12 +848,29 @@ pub(crate) fn finalize_filesystem(fs: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
+/// A heuristic check that we were invoked with --pid=host
 fn require_host_pidns() -> Result<()> {
-    // We require --pid=host
     if rustix::process::getpid().is_init() {
         anyhow::bail!("This command must be run with --pid=host")
     }
     tracing::trace!("OK: we're not pid 1");
+    Ok(())
+}
+
+/// Verify that we can access /proc/1, which will catch rootless podman (with --pid=host)
+/// for example.
+fn require_host_userns() -> Result<()> {
+    let proc1 = "/proc/1";
+    let pid1_uid = Path::new(proc1)
+        .metadata()
+        .with_context(|| format!("Querying {proc1}"))?
+        .uid();
+    // We must really be in a rootless container, or in some way
+    // we're not part of the host user namespace.
+    if pid1_uid != 0 {
+        anyhow::bail!("{proc1} is owned by {pid1_uid}, not zero; this command must be run in the root user namespace (e.g. not rootless podman)");
+    }
+    tracing::trace!("OK: we're in a matching user namespace with pid1");
     Ok(())
 }
 
@@ -996,13 +1013,22 @@ async fn prepare_install(
     let external_source = source_opts.source_imgref.is_some();
     let source = match source_opts.source_imgref {
         None => {
+            // Out of conservatism we only verify the host userns path when we're expecting
+            // to do a self-install (e.g. not bootc-image-builder or equivalent).
+            require_host_userns()?;
             let container_info = crate::containerenv::get_container_execution_info(&rootfs)?;
             // This command currently *must* be run inside a privileged container.
-            if let Some("1") = container_info.rootless.as_deref() {
-                anyhow::bail!(
+            match container_info.rootless.as_deref() {
+                Some("1") => anyhow::bail!(
                     "Cannot install from rootless podman; this command must be run as root"
-                );
-            }
+                ),
+                Some(o) => tracing::debug!("rootless={o}"),
+                // This one shouldn't happen except on old podman
+                None => tracing::debug!(
+                    "notice: Did not find rootless= entry in {}",
+                    crate::containerenv::PATH,
+                ),
+            };
             tracing::trace!("Read container engine info {:?}", container_info);
 
             SourceInfo::from_container(&container_info)?

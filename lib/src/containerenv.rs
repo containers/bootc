@@ -8,7 +8,7 @@ use cap_std_ext::prelude::CapStdExtDirExt;
 use fn_error_context::context;
 
 /// Path is relative to container rootfs (assumed to be /)
-const PATH: &str = "run/.containerenv";
+pub(crate) const PATH: &str = "run/.containerenv";
 
 #[derive(Debug, Default)]
 pub(crate) struct ContainerExecutionInfo {
