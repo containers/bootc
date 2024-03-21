@@ -62,7 +62,7 @@ pub(crate) const ARCH_USES_EFI: bool = cfg!(any(target_arch = "x86_64", target_a
 /// Kernel argument used to specify we want the rootfs mounted read-write by default
 const RW_KARG: &str = "rw";
 
-#[derive(clap::Args, Debug, Clone, Serialize, Deserialize)]
+#[derive(clap::Args, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct InstallTargetOpts {
     // TODO: A size specifier which allocates free space for the root in *addition* to the base container image size
     // pub(crate) root_additional_size: Option<String>
@@ -110,7 +110,7 @@ pub(crate) struct InstallTargetOpts {
     pub(crate) skip_fetch_check: bool,
 }
 
-#[derive(clap::Args, Debug, Clone, Serialize, Deserialize)]
+#[derive(clap::Args, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct InstallSourceOpts {
     /// Install the system from an explicitly given source.
     ///
@@ -122,7 +122,7 @@ pub(crate) struct InstallSourceOpts {
     pub(crate) source_imgref: Option<String>,
 }
 
-#[derive(clap::Args, Debug, Clone, Serialize, Deserialize)]
+#[derive(clap::Args, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct InstallConfigOpts {
     /// Disable SELinux in the target (installed) system.
     ///
@@ -159,7 +159,7 @@ pub(crate) struct InstallConfigOpts {
 }
 
 /// Perform an installation to a block device.
-#[derive(Debug, Clone, clap::Parser, Serialize, Deserialize)]
+#[derive(Debug, Clone, clap::Parser, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct InstallToDiskOpts {
     #[clap(flatten)]
     #[serde(flatten)]
@@ -206,7 +206,7 @@ impl std::fmt::Display for ReplaceMode {
 }
 
 /// Options for installing to a filesystem
-#[derive(Debug, Clone, clap::Args)]
+#[derive(Debug, Clone, clap::Args, PartialEq, Eq)]
 pub(crate) struct InstallTargetFilesystemOpts {
     /// Path to the mounted root filesystem.
     ///
@@ -232,7 +232,7 @@ pub(crate) struct InstallTargetFilesystemOpts {
 }
 
 /// Perform an installation to a mounted filesystem.
-#[derive(Debug, Clone, clap::Parser)]
+#[derive(Debug, Clone, clap::Parser, PartialEq, Eq)]
 pub(crate) struct InstallToFilesystemOpts {
     #[clap(flatten)]
     pub(crate) filesystem_opts: InstallTargetFilesystemOpts,
@@ -248,7 +248,7 @@ pub(crate) struct InstallToFilesystemOpts {
 }
 
 /// Perform an installation to the host root filesystem.
-#[derive(Debug, Clone, clap::Parser)]
+#[derive(Debug, Clone, clap::Parser, PartialEq, Eq)]
 pub(crate) struct InstallToExistingRootOpts {
     /// Configure how existing data is treated.
     #[clap(long, default_value = "alongside")]

@@ -64,7 +64,7 @@ impl Default for BlockSetup {
 }
 
 /// Options for installing to a block device
-#[derive(Debug, Clone, clap::Args, Serialize, Deserialize)]
+#[derive(Debug, Clone, clap::Args, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct InstallBlockDeviceOpts {
     /// Target block device for installation.  The entire device will be wiped.

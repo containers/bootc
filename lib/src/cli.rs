@@ -23,7 +23,7 @@ use crate::spec::ImageReference;
 use crate::utils::sigpolicy_from_opts;
 
 /// Perform an upgrade operation
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, PartialEq, Eq)]
 pub(crate) struct UpgradeOpts {
     /// Don't display progress
     #[clap(long)]
@@ -46,7 +46,7 @@ pub(crate) struct UpgradeOpts {
 }
 
 /// Perform an switch operation
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, PartialEq, Eq)]
 pub(crate) struct SwitchOpts {
     /// Don't display progress
     #[clap(long)]
@@ -87,7 +87,7 @@ pub(crate) struct SwitchOpts {
 }
 
 /// Perform an edit operation
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, PartialEq, Eq)]
 pub(crate) struct EditOpts {
     /// Use filename to edit system specification
     #[clap(long, short = 'f')]
@@ -99,7 +99,7 @@ pub(crate) struct EditOpts {
 }
 
 /// Perform an status operation
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, PartialEq, Eq)]
 pub(crate) struct StatusOpts {
     /// Output in JSON format.
     #[clap(long)]
@@ -112,7 +112,7 @@ pub(crate) struct StatusOpts {
 
 /// Options for internal testing
 #[cfg(feature = "install")]
-#[derive(Debug, clap::Subcommand)]
+#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub(crate) enum InstallOpts {
     /// Install to the target block device
     ToDisk(crate::install::InstallToDiskOpts),
@@ -129,7 +129,7 @@ pub(crate) enum InstallOpts {
 }
 
 /// Options for man page generation
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, PartialEq, Eq)]
 pub(crate) struct ManOpts {
     #[clap(long)]
     /// Output to this directory
@@ -137,7 +137,7 @@ pub(crate) struct ManOpts {
 }
 
 /// Options for internal testing
-#[derive(Debug, clap::Subcommand)]
+#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub(crate) enum TestingOpts {
     /// Execute integration tests that require a privileged container
     RunPrivilegedIntegration {},
@@ -168,7 +168,7 @@ pub(crate) enum TestingOpts {
 ///
 /// Changes in `/etc` and `/var` persist.
 ///
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, PartialEq, Eq)]
 #[clap(name = "bootc")]
 #[clap(rename_all = "kebab-case")]
 #[allow(clippy::large_enum_variant)]
@@ -575,4 +575,15 @@ fn test_parse_install_args() {
     };
     assert!(o.target_opts.target_no_signature_verification);
     assert_eq!(o.filesystem_opts.root_path.as_str(), "/target");
+}
+
+#[test]
+fn test_parse_opts() {
+    assert!(matches!(
+        Opt::parse_from(["bootc", "status"]),
+        Opt::Status(StatusOpts {
+            json: false,
+            booted: false
+        })
+    ));
 }
