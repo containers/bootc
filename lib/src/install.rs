@@ -288,9 +288,7 @@ pub(crate) struct SourceInfo {
 pub(crate) struct State {
     pub(crate) source: SourceInfo,
     /// Force SELinux off in target system
-    pub(crate) override_disable_selinux: bool,
-    #[allow(dead_code)]
-    pub(crate) setenforce_guard: Option<crate::lsm::SetEnforceGuard>,
+    pub(crate) selinux_state: SELinuxFinalState,
     #[allow(dead_code)]
     pub(crate) config_opts: InstallConfigOpts,
     pub(crate) target_imgref: ostree_container::OstreeImageReference,
@@ -303,7 +301,7 @@ impl State {
     #[context("Loading SELinux policy")]
     pub(crate) fn load_policy(&self) -> Result<Option<ostree::SePolicy>> {
         use std::os::fd::AsRawFd;
-        if !self.source.selinux || self.override_disable_selinux {
+        if !self.selinux_state.enabled() {
             return Ok(None);
         }
         // We always use the physical container root to bootstrap policy
@@ -334,6 +332,8 @@ struct InstallAleph {
     timestamp: Option<chrono::DateTime<Utc>>,
     /// The `uname -r` of the kernel doing the installation
     kernel: String,
+    /// The state of SELinux at install time
+    selinux: String,
 }
 
 /// A mount specification is a subset of a line in `/etc/fstab`.
@@ -687,6 +687,7 @@ async fn initialize_ostree_root_from_self(
         version: imgstate.version().as_ref().map(|s| s.to_string()),
         timestamp,
         kernel: uname.release().to_str()?.to_string(),
+        selinux: state.selinux_state.to_aleph().to_string(),
     };
 
     Ok(aleph)
@@ -777,6 +778,38 @@ impl RootSetup {
     }
 }
 
+pub(crate) enum SELinuxFinalState {
+    /// Host and target both have SELinux, but user forced it off for target
+    ForceTargetDisabled,
+    /// Host and target both have SELinux
+    Enabled(Option<crate::lsm::SetEnforceGuard>),
+    /// Host has SELinux disabled, target is enabled.
+    HostDisabled,
+    /// Neither host or target have SELinux
+    Disabled,
+}
+
+impl SELinuxFinalState {
+    /// Returns true if the target system will have SELinux enabled.
+    pub(crate) fn enabled(&self) -> bool {
+        match self {
+            SELinuxFinalState::ForceTargetDisabled | SELinuxFinalState::Disabled => false,
+            SELinuxFinalState::Enabled(_) | SELinuxFinalState::HostDisabled => true,
+        }
+    }
+
+    /// Returns the canonical stringified version of self.  This is only used
+    /// for debugging purposes.
+    pub(crate) fn to_aleph(&self) -> &'static str {
+        match self {
+            SELinuxFinalState::ForceTargetDisabled => "force-target-disabled",
+            SELinuxFinalState::Enabled(_) => "enabled",
+            SELinuxFinalState::HostDisabled => "host-disabled",
+            SELinuxFinalState::Disabled => "disabled",
+        }
+    }
+}
+
 /// If we detect that the target ostree commit has SELinux labels,
 /// and we aren't passed an override to disable it, then ensure
 /// the running process is labeled with install_t so it can
@@ -784,16 +817,14 @@ impl RootSetup {
 pub(crate) fn reexecute_self_for_selinux_if_needed(
     srcdata: &SourceInfo,
     override_disable_selinux: bool,
-) -> Result<(bool, Option<crate::lsm::SetEnforceGuard>)> {
-    let mut ret_did_override = false;
+) -> Result<SELinuxFinalState> {
     // If the target state has SELinux enabled, we need to check the host state.
-    let mut g = None;
     if srcdata.selinux {
         let host_selinux = crate::lsm::selinux_enabled()?;
         tracing::debug!("Target has SELinux, host={host_selinux}");
-        if override_disable_selinux {
-            ret_did_override = true;
-            println!("notice: Target has SELinux enabled, overriding to disable")
+        let r = if override_disable_selinux {
+            println!("notice: Target has SELinux enabled, overriding to disable");
+            SELinuxFinalState::ForceTargetDisabled
         } else if host_selinux {
             // /sys/fs/selinuxfs is not normally mounted, so we do that now.
             // Because SELinux enablement status is cached process-wide and was very likely
@@ -802,17 +833,20 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
             // so let's just fall through to that.
             setup_sys_mount("selinuxfs", SELINUXFS)?;
             // This will re-execute the current process (once).
-            g = crate::lsm::selinux_ensure_install_or_setenforce()?;
+            let g = crate::lsm::selinux_ensure_install_or_setenforce()?;
+            SELinuxFinalState::Enabled(g)
         } else {
             // This used to be a hard error, but is now a mild warning
             crate::utils::medium_visibility_warning(
                 "Host kernel does not have SELinux support, but target enables it by default; this is less well tested.  See https://github.com/containers/bootc/issues/419",
             );
-        }
+            SELinuxFinalState::HostDisabled
+        };
+        Ok(r)
     } else {
         tracing::debug!("Target does not enable SELinux");
+        Ok(SELinuxFinalState::Disabled)
     }
-    Ok((ret_did_override, g))
 }
 
 /// Trim, flush outstanding writes, and freeze/thaw the target mounted filesystem;
@@ -1071,8 +1105,7 @@ async fn prepare_install(
     setup_sys_mount("efivarfs", EFIVARFS)?;
 
     // Now, deal with SELinux state.
-    let (override_disable_selinux, setenforce_guard) =
-        reexecute_self_for_selinux_if_needed(&source, config_opts.disable_selinux)?;
+    let selinux_state = reexecute_self_for_selinux_if_needed(&source, config_opts.disable_selinux)?;
 
     println!("Installing image: {:#}", &target_imgref);
     if let Some(digest) = source.digest.as_deref() {
@@ -1094,8 +1127,7 @@ async fn prepare_install(
     // so we can pass it to worker threads too. Right now this just
     // combines our command line options along with some bind mounts from the host.
     let state = Arc::new(State {
-        override_disable_selinux,
-        setenforce_guard,
+        selinux_state,
         source,
         config_opts,
         target_imgref,
@@ -1107,7 +1139,7 @@ async fn prepare_install(
 }
 
 async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Result<()> {
-    if state.override_disable_selinux {
+    if matches!(state.selinux_state, SELinuxFinalState::ForceTargetDisabled) {
         rootfs.kargs.push("selinux=0".to_string());
     }
 
