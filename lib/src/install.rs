@@ -1242,6 +1242,20 @@ pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
         loopback_dev.close()?;
     }
 
+    // At this point, all other threads should be gone.
+    if let Some(state) = Arc::into_inner(state) {
+        // If we had invoked `setenforce 0`, then let's re-enable it.
+        match state.selinux_state {
+            SELinuxFinalState::Enabled(Some(guard)) => {
+                guard.consume()?;
+            }
+            _ => {}
+        }
+    } else {
+        // This shouldn't happen...but we will make it not fatal right now
+        tracing::warn!("Failed to consume state Arc");
+    }
+
     installation_complete();
 
     Ok(())
