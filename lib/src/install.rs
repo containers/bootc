@@ -788,10 +788,6 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
     let mut ret_did_override = false;
     // If the target state has SELinux enabled, we need to check the host state.
     let mut g = None;
-    // We don't currently quite support installing SELinux enabled systems
-    // from SELinux disabled hosts, but this environment variable can be set
-    // to test it out anyways.
-    let skip_check_envvar = "BOOTC_SKIP_SELINUX_HOST_CHECK";
     if srcdata.selinux {
         let host_selinux = crate::lsm::selinux_enabled()?;
         tracing::debug!("Target has SELinux, host={host_selinux}");
@@ -807,14 +803,10 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
             setup_sys_mount("selinuxfs", SELINUXFS)?;
             // This will re-execute the current process (once).
             g = crate::lsm::selinux_ensure_install_or_setenforce()?;
-        } else if std::env::var_os(skip_check_envvar).is_some() {
-            eprintln!(
-                "Host kernel does not have SELinux support, but target enables it by default; {} is set, continuing anyways",
-                skip_check_envvar
-            );
         } else {
-            anyhow::bail!(
-                "Host kernel does not have SELinux support, but target enables it by default"
+            // This used to be a hard error, but is now a mild warning
+            crate::utils::medium_visibility_warning(
+                "Host kernel does not have SELinux support, but target enables it by default; this is less well tested.  See https://github.com/containers/bootc/issues/419",
             );
         }
     } else {
