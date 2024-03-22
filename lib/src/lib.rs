@@ -4,8 +4,7 @@
 //! to provide a fully "container native" tool for using
 //! bootable container images.
 
-// See https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 #![deny(missing_debug_implementations)]
 #![forbid(unused_must_use)]
 #![deny(unsafe_code)]
@@ -50,3 +49,8 @@ pub mod spec;
 
 #[cfg(feature = "docgen")]
 mod docgen;
+
+#[macro_use]
+extern crate shadow_rs;
+
+shadow!(shadow);

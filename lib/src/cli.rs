@@ -18,6 +18,7 @@ use std::os::unix::process::CommandExt;
 use std::process::Command;
 
 use crate::deploy::RequiredHostSpec;
+use crate::shadow;
 use crate::spec::Host;
 use crate::spec::ImageReference;
 use crate::utils::sigpolicy_from_opts;
@@ -171,6 +172,7 @@ pub(crate) enum TestingOpts {
 #[derive(Debug, Parser)]
 #[clap(name = "bootc")]
 #[clap(rename_all = "kebab-case")]
+#[clap(version=shadow::PKG_VERSION,long_version=shadow::CLAP_LONG_VERSION)]
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Opt {
     /// Download and queue an updated container image to apply.
