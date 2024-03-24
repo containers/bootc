@@ -6,6 +6,11 @@
 
 - [Installation](installation.md)
 
+# Building images
+
+- [Building images](building/guidance.md)
+- [Users, groups, SSH keys](building/users-and-groups.md)
+
 # Using bootc
 
 - [Upgrade and rollback](upgrades.md)
