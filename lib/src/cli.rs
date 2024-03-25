@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use cap_std_ext::cap_std;
+use cap_std_ext::cap_std::fs::Dir;
 use clap::Parser;
 use fn_error_context::context;
 use ostree::gio;
@@ -138,6 +139,24 @@ pub(crate) struct ManOpts {
     pub(crate) directory: Utf8PathBuf,
 }
 
+/// Hidden, internal only options
+#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
+pub(crate) enum InternalsOpts {
+    SystemdGenerator {
+        normal_dir: Utf8PathBuf,
+        #[allow(dead_code)]
+        early_dir: Option<Utf8PathBuf>,
+        #[allow(dead_code)]
+        late_dir: Option<Utf8PathBuf>,
+    },
+    FixupEtcFstab,
+}
+
+impl InternalsOpts {
+    /// The name of the binary we inject into /usr/lib/systemd/system-generators
+    const GENERATOR_BIN: &'static str = "bootc-systemd-generator";
+}
+
 /// Options for internal testing
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub(crate) enum TestingOpts {
@@ -229,6 +248,9 @@ pub(crate) enum Opt {
         #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<OsString>,
     },
+    #[clap(subcommand)]
+    #[clap(hide = true)]
+    Internals(InternalsOpts),
     /// Internal integration testing helpers.
     #[clap(hide(true), subcommand)]
     #[cfg(feature = "internal-testing-api")]
@@ -528,11 +550,39 @@ where
     I: IntoIterator,
     I::Item: Into<OsString> + Clone,
 {
-    run_from_opt(Opt::parse_from(args)).await
+    run_from_opt(Opt::parse_including_static(args)).await
+}
+
+impl Opt {
+    /// In some cases (e.g. systemd generator) we dispatch specifically on argv0.  This
+    /// requires some special handling in clap.
+    fn parse_including_static<I>(args: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<OsString> + Clone,
+    {
+        let mut args = args.into_iter();
+        let first = if let Some(first) = args.next() {
+            let first: OsString = first.into();
+            let argv0 = first.to_str().and_then(|s| s.rsplit_once('/')).map(|s| s.1);
+            tracing::debug!("argv0={argv0:?}");
+            if matches!(argv0, Some(InternalsOpts::GENERATOR_BIN)) {
+                let base_args = ["bootc", "internals", "systemd-generator"]
+                    .into_iter()
+                    .map(OsString::from);
+                return Opt::parse_from(base_args.chain(args.map(|i| i.into())));
+            }
+            Some(first)
+        } else {
+            None
+        };
+        Opt::parse_from(first.into_iter().chain(args.map(|i| i.into())))
+    }
 }
 
 /// Internal (non-generic/monomorphized) primary CLI entrypoint
 async fn run_from_opt(opt: Opt) -> Result<()> {
+    let root = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
     match opt {
         Opt::Upgrade(opts) => upgrade(opts).await,
         Opt::Switch(opts) => switch(opts).await,
@@ -554,6 +604,17 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             crate::install::exec_in_host_mountns(args.as_slice())
         }
         Opt::Status(opts) => super::status::status(opts).await,
+        Opt::Internals(opts) => match opts {
+            InternalsOpts::SystemdGenerator {
+                normal_dir,
+                early_dir: _,
+                late_dir: _,
+            } => {
+                let unit_dir = &Dir::open_ambient_dir(normal_dir, cap_std::ambient_authority())?;
+                crate::generator::generator(root, unit_dir)
+            }
+            InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
+        },
         #[cfg(feature = "internal-testing-api")]
         Opt::InternalTests(opts) => crate::privtests::run(opts).await,
         #[cfg(feature = "docgen")]
@@ -583,10 +644,21 @@ fn test_parse_install_args() {
 #[test]
 fn test_parse_opts() {
     assert!(matches!(
-        Opt::parse_from(["bootc", "status"]),
+        Opt::parse_including_static(["bootc", "status"]),
         Opt::Status(StatusOpts {
             json: false,
             booted: false
         })
+    ));
+}
+
+#[test]
+fn test_parse_generator() {
+    assert!(matches!(
+        Opt::parse_including_static([
+            "/usr/lib/systemd/system/bootc-systemd-generator",
+            "/run/systemd/system"
+        ]),
+        Opt::Internals(InternalsOpts::SystemdGenerator { .. })
     ));
 }
