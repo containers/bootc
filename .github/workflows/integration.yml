@@ -71,7 +71,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v1
+        uses: sclorg/testing-farm-as-github-action@v2
         with:
           compose: CentOS-Stream-9
           api_key: ${{ secrets.TF_API_KEY }}
@@ -102,7 +102,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v1
+        uses: sclorg/testing-farm-as-github-action@v2
         with:
           compose: CentOS-Stream-9
           api_key: ${{ secrets.TF_API_KEY }}
