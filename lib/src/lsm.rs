@@ -99,12 +99,29 @@ pub(crate) fn selinux_ensure_install() -> Result<bool> {
 /// gain the `mac_admin` permission (install_t).
 #[cfg(feature = "install")]
 #[must_use]
-pub(crate) struct SetEnforceGuard;
+pub(crate) struct SetEnforceGuard(Option<()>);
+
+#[cfg(feature = "install")]
+impl SetEnforceGuard {
+    pub(crate) fn new() -> Self {
+        SetEnforceGuard(Some(()))
+    }
+
+    pub(crate) fn consume(mut self) -> Result<()> {
+        // SAFETY: The option cannot have been consumed until now
+        self.0.take().unwrap();
+        // This returns errors
+        selinux_set_permissive(false)
+    }
+}
 
 #[cfg(feature = "install")]
 impl Drop for SetEnforceGuard {
     fn drop(&mut self) {
-        let _ = selinux_set_permissive(false);
+        // A best-effort attempt to re-enable enforcement on drop (installation failure)
+        if let Some(()) = self.0.take() {
+            let _ = selinux_set_permissive(false);
+        }
     }
 }
 
@@ -121,7 +138,7 @@ pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforce
     let g = if std::env::var_os("BOOTC_SETENFORCE0_FALLBACK").is_some() {
         tracing::warn!("Failed to enter install_t; temporarily setting permissive mode");
         selinux_set_permissive(true)?;
-        Some(SetEnforceGuard)
+        Some(SetEnforceGuard::new())
     } else {
         let current = get_current_security_context()?;
         anyhow::bail!("Failed to enter install_t (running as {current}) - use BOOTC_SETENFORCE0_FALLBACK=1 to override");
