@@ -347,7 +347,7 @@ pub(crate) fn ensure_dir_labeled(
             let as_path = as_path
                 .map(Cow::Borrowed)
                 .unwrap_or_else(|| Utf8Path::new("/").join(destname).into());
-            require_label(policy, &*as_path, libc::S_IFDIR | mode.as_raw_mode())
+            require_label(policy, &as_path, libc::S_IFDIR | mode.as_raw_mode())
         })
         .transpose()
         .with_context(|| format!("Labeling {local_destname}"))?;

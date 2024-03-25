@@ -395,7 +395,7 @@ pub(crate) fn fixup_etc_fstab(root: &Dir) -> Result<()> {
     // Returns Ok(true) if we made a change (and we wrote the modified line)
     // otherwise returns Ok(false) and the caller should write the original line.
     fn edit_fstab_line(line: &str, mut w: impl Write) -> Result<bool> {
-        if line.starts_with("#") {
+        if line.starts_with('#') {
             return Ok(false);
         }
         let parts = line.split_ascii_whitespace().collect::<Vec<_>>();
