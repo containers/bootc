@@ -10,6 +10,7 @@
 
 - [Building images](building/guidance.md)
 - [Users, groups, SSH keys](building/users-and-groups.md)
+- [Secrets](building/secrets.md)
 
 # Using bootc
 

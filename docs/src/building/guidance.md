@@ -50,8 +50,8 @@ and if you embed software in your derived image, the
 default would then be that that software is initially
 launched via a systemd unit.
 
-```
-RUN dnf -y install postgresql
+```dockerfile
+RUN dnf -y install postgresql && dnf clean all
 ```
 
 Would typically also carry a systemd unit, and that
@@ -88,3 +88,7 @@ make in the container image to e.g. `/etc/postgresql.conf`
 will be applied on update, assuming it is not modified
 locally.
 
+### Secrets
+
+There is a dedicated document for [secrets](secrets.md),
+which is a special case of configuration.
