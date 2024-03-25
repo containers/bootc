@@ -8,7 +8,7 @@ fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("version.rs");
     fs::write(
-        &dest_path,
+        dest_path,
         "
          #[allow(dead_code)]
          #[allow(clippy::all)]
