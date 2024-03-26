@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use fn_error_context::context;
 use serde::Deserialize;
+use std::fmt;
 
 use crate::task::Task;
 
@@ -15,6 +16,19 @@ pub(crate) struct Filesystem {
     pub(crate) fstype: String,
     pub(crate) options: String,
     pub(crate) uuid: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub(crate) enum FilesystemType {
+    DevTmpFs,
+}
+
+impl fmt::Display for FilesystemType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            FilesystemType::DevTmpFs => write!(f, "devtmpfs"),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -56,4 +70,14 @@ pub(crate) fn mount(dev: &str, target: &Utf8Path) -> Result<()> {
         "mount",
         [dev, target.as_str()],
     )
+}
+
+/// Create the target directory if it does not exist, then mount the specified filesystem
+pub(crate) fn ensure_mount(dev: &str, target: &Utf8Path, fstype: FilesystemType) -> Result<()> {
+    std::fs::create_dir_all(target)?;
+    Task::new(format!("Mounting {fstype} {target}"), "mount")
+        .args(["-t", format!("{fstype}").as_str(), dev, target.as_str()])
+        .quiet()
+        .run()?;
+    Ok(())
 }
