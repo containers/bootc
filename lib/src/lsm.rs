@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 #[cfg(feature = "install")]
 use std::io::Write;
 use std::os::unix::process::CommandExt;
@@ -246,12 +247,15 @@ pub(crate) fn set_security_selinux_path(root: &Dir, path: &Utf8Path, label: &[u8
 pub(crate) fn ensure_labeled(
     root: &Dir,
     path: &Utf8Path,
+    as_path: Option<&Utf8Path>,
     metadata: &Metadata,
     policy: &ostree::SePolicy,
 ) -> Result<SELinuxLabelState> {
     let r = has_security_selinux(root, path)?;
     if matches!(r, SELinuxLabelState::Unlabeled) {
-        let abspath = Utf8Path::new("/").join(&path);
+        let abspath = as_path
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Utf8Path::new("/").join(&path).into());
         let label = require_label(policy, &abspath, metadata.mode())?;
         tracing::trace!("Setting label for {path} to {label}");
         set_security_selinux_path(root, &path, label.as_bytes())?;
@@ -280,7 +284,7 @@ pub(crate) fn ensure_dir_labeled_recurse(
     let mut n = 0u64;
 
     let metadata = root.symlink_metadata(path_for_read)?;
-    match ensure_labeled(root, path, &metadata, policy)? {
+    match ensure_labeled(root, path, None, &metadata, policy)? {
         SELinuxLabelState::Unlabeled => {
             n += 1;
         }
@@ -306,7 +310,7 @@ pub(crate) fn ensure_dir_labeled_recurse(
         if metadata.is_dir() {
             ensure_dir_labeled_recurse(root, path, policy, skip)?;
         } else {
-            match ensure_labeled(root, path, &metadata, policy)? {
+            match ensure_labeled(root, path, None, &metadata, policy)? {
                 SELinuxLabelState::Unlabeled => {
                     n += 1;
                 }
@@ -332,8 +336,6 @@ pub(crate) fn ensure_dir_labeled(
     mode: rustix::fs::Mode,
     policy: Option<&ostree::SePolicy>,
 ) -> Result<()> {
-    use std::borrow::Cow;
-
     let destname = destname.as_ref();
     // Special case the empty string
     let local_destname = if destname.as_str().is_empty() {
