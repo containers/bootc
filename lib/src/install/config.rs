@@ -177,8 +177,7 @@ root-fs-type = "xfs"
     let other = InstallConfigurationToplevel {
         install: Some(InstallConfiguration {
             root_fs_type: Some(Filesystem::Ext4),
-            filesystem: None,
-            kargs: None,
+            ..Default::default()
         }),
     };
     install.merge(other.install.unwrap());
@@ -206,14 +205,13 @@ kargs = ["console=ttyS0", "foo=bar"]
     assert_eq!(install.root_fs_type.unwrap(), Filesystem::Ext4);
     let other = InstallConfigurationToplevel {
         install: Some(InstallConfiguration {
-            root_fs_type: None,
-            filesystem: None,
             kargs: Some(
                 ["console=tty0", "nosmt"]
                     .into_iter()
                     .map(ToOwned::to_owned)
                     .collect(),
             ),
+            ..Default::default()
         }),
     };
     install.merge(other.install.unwrap());
@@ -245,13 +243,12 @@ type = "xfs"
     );
     let other = InstallConfigurationToplevel {
         install: Some(InstallConfiguration {
-            root_fs_type: None,
             filesystem: Some(BasicFilesystems {
                 root: Some(RootFS {
                     fstype: Some(Filesystem::Ext4),
                 }),
             }),
-            kargs: None,
+            ..Default::default()
         }),
     };
     install.merge(other.install.unwrap());
