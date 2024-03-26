@@ -1,5 +1,4 @@
 use std::fmt::Write;
-use std::os::unix::prelude::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
@@ -15,14 +14,19 @@ const DROPINDIR: &str = "configs.d";
 pub(crate) fn find_efi_vendordir(efidir: &openat::Dir) -> Result<PathBuf> {
     for d in efidir.list_dir(".")? {
         let d = d?;
-        if d.file_name().as_bytes() == b"BOOT" {
-            continue;
-        }
         let meta = efidir.metadata(d.file_name())?;
         if !meta.is_dir() {
             continue;
         }
-        return Ok(d.file_name().into());
+        // skip if not find shim under dir
+        let dir = efidir.sub_dir(d.file_name())?;
+        for entry in dir.list_dir(".")? {
+            let entry = entry?;
+            if entry.file_name() != super::efi::SHIM {
+                continue;
+            }
+            return Ok(d.file_name().into());
+        }
     }
     anyhow::bail!("Failed to find EFI vendor dir")
 }
@@ -140,6 +144,32 @@ mod tests {
 
         assert!(td.exists("boot/grub2/grub.cfg")?);
         assert!(td.exists("boot/efi/EFI/fedora/grub.cfg")?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_find_efi_vendordir() -> Result<()> {
+        let td = tempfile::tempdir()?;
+        let tdp = td.path();
+        let efidir = tdp.join("EFI");
+        std::fs::create_dir_all(efidir.join("BOOT"))?;
+        std::fs::create_dir_all(efidir.join("dell"))?;
+        std::fs::create_dir_all(efidir.join("fedora"))?;
+        let td = openat::Dir::open(&efidir)?;
+
+        std::fs::write(efidir.join("dell").join("foo"), "foo data")?;
+        std::fs::write(efidir.join("fedora").join("grub.cfg"), "grub config")?;
+        std::fs::write(efidir.join("fedora").join("shimx64.efi"), "shim data")?;
+
+        assert!(td.exists("BOOT")?);
+        assert!(td.exists("dell/foo")?);
+        assert!(td.exists("fedora/grub.cfg")?);
+        assert!(td.exists("fedora/shimx64.efi")?);
+        assert_eq!(find_efi_vendordir(&td)?.to_str(), Some("fedora"));
+
+        std::fs::remove_file(efidir.join("fedora").join("shimx64.efi"))?;
+        let x = find_efi_vendordir(&td);
+        assert_eq!(x.is_err(), true);
         Ok(())
     }
 }
