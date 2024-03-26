@@ -6,6 +6,8 @@ use anyhow::{Context, Result};
 use fn_error_context::context;
 use serde::{Deserialize, Serialize};
 
+use super::baseline::BlockSetup;
+
 /// The toplevel config entry for installation configs stored
 /// in bootc/install (e.g. /etc/bootc/install/05-custom.toml)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -39,6 +41,8 @@ pub(crate) struct BasicFilesystems {
 pub(crate) struct InstallConfiguration {
     /// Root filesystem type
     pub(crate) root_fs_type: Option<super::baseline::Filesystem>,
+    /// Enabled block storage configurations
+    pub(crate) block: Option<Vec<BlockSetup>>,
     pub(crate) filesystem: Option<BasicFilesystems>,
     /// Kernel arguments, applied at installation time
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -93,6 +97,7 @@ impl Mergeable for InstallConfiguration {
     /// Apply any values in other, overriding any existing values in `self`.
     fn merge(&mut self, other: Self) {
         merge_basic(&mut self.root_fs_type, other.root_fs_type);
+        merge_basic(&mut self.block, other.block);
         self.filesystem.merge(other.filesystem);
         if let Some(other_kargs) = other.kargs {
             self.kargs
@@ -103,8 +108,8 @@ impl Mergeable for InstallConfiguration {
 }
 
 impl InstallConfiguration {
-    /// Some fields can be specified multiple ways.  This synchronizes the values of the fields
-    /// to ensure they're the same.
+    /// Set defaults (e.g. `block`), and also handle fields that can be specified multiple ways
+    /// by synchronizing the values of the fields to ensure they're the same.
     ///
     /// - install.root-fs-type is synchronized with install.filesystems.root.type; if
     ///   both are set, then the latter takes precedence
@@ -117,6 +122,10 @@ impl InstallConfiguration {
             let root = fs.root.get_or_insert_with(Default::default);
             root.fstype = Some(*rootfs);
         }
+
+        if self.block.is_none() {
+            self.block = Some(vec![BlockSetup::Direct]);
+        }
     }
 
     /// Convenience helper to access the root filesystem
@@ -127,6 +136,18 @@ impl InstallConfiguration {
     // Remove all configuration which is handled by `install to-filesystem`.
     pub(crate) fn filter_to_external(&mut self) {
         self.kargs.take();
+    }
+
+    pub(crate) fn get_block_setup(&self, default: Option<BlockSetup>) -> Result<BlockSetup> {
+        let valid_block_setups = self.block.as_deref().unwrap_or_default();
+        let default_block = valid_block_setups.iter().next().ok_or_else(|| {
+            anyhow::anyhow!("Empty block storage configuration in install configuration")
+        })?;
+        let block_setup = default.as_ref().unwrap_or(default_block);
+        if !valid_block_setups.contains(block_setup) {
+            anyhow::bail!("Block setup {block_setup:?} is not enabled in installation config");
+        }
+        Ok(*block_setup)
     }
 }
 
@@ -256,4 +277,44 @@ type = "xfs"
         install.filesystem_root().unwrap().fstype.unwrap(),
         Filesystem::Ext4
     );
+}
+
+#[test]
+fn test_parse_block() {
+    let c: InstallConfigurationToplevel = toml::from_str(
+        r##"[install.filesystem.root]
+type = "xfs"
+"##,
+    )
+    .unwrap();
+    let mut install = c.install.unwrap();
+    // Verify the default (but note canonicalization mutates)
+    {
+        let mut install = install.clone();
+        install.canonicalize();
+        assert_eq!(install.get_block_setup(None).unwrap(), BlockSetup::Direct);
+    }
+    let other = InstallConfigurationToplevel {
+        install: Some(InstallConfiguration {
+            block: Some(vec![]),
+            ..Default::default()
+        }),
+    };
+    install.merge(other.install.unwrap());
+    // Should be set, but zero length
+    assert_eq!(install.block.as_ref().unwrap().len(), 0);
+    assert!(install.get_block_setup(None).is_err());
+
+    let c: InstallConfigurationToplevel = toml::from_str(
+        r##"[install]
+block = ["tpm2-luks"]"##,
+    )
+    .unwrap();
+    let mut install = c.install.unwrap();
+    install.canonicalize();
+    assert_eq!(install.block.as_ref().unwrap().len(), 1);
+    assert_eq!(install.get_block_setup(None).unwrap(), BlockSetup::Tpm2Luks);
+
+    // And verify passing a disallowed config is an error
+    assert!(install.get_block_setup(Some(BlockSetup::Direct)).is_err());
 }
