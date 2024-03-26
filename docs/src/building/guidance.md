@@ -88,6 +88,32 @@ make in the container image to e.g. `/etc/postgresql.conf`
 will be applied on update, assuming it is not modified
 locally.
 
+### Prefer using drop-in directories
+
+These "locally modified" files can be a source of state drift.  The best
+pattern to use is "drop-in" directories that are merged dynamically by
+the relevant software.  systemd supports this comprehensively; see
+[drop-ins](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html)
+for example in units.
+
+And instead of modifying `/etc/sudoers.conf`, it's best practice to add
+a file into `/etc/sudoers.d` for example.
+
+Not all software supports this, however; and this is why there
+is generic support for `/etc`.
+
+### Configuration in /usr vs /etc
+
+Some software supports generic configuration both `/usr` and `/etc` - systemd,
+among others.  Because bootc supports *derivation* (the way OCI
+containers work) - it is supported and encourged to put configuration
+files in `/usr` (instead of `/etc`) where possible, because then
+the state is consistently immutable.
+
+One pattern is to replace a configuration file like
+`/etc/postgresql.conf` with a symlink to e.g. `/usr/postgres/etc/postgresql.conf`
+for example, although this can run afoul of SELinux labeling.
+
 ### Secrets
 
 There is a dedicated document for [secrets](secrets.md),
