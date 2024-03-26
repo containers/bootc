@@ -25,7 +25,7 @@ pub(crate) const ESP_MOUNTS: &[&str] = &["boot/efi", "efi", "boot"];
 
 /// The binary to change EFI boot ordering
 const EFIBOOTMGR: &str = "efibootmgr";
-const SHIM: &str = "shimx64.efi";
+pub(crate) const SHIM: &str = "shimx64.efi";
 
 /// The ESP partition label on Fedora CoreOS derivatives
 pub(crate) const COREOS_ESP_PART_LABEL: &str = "EFI-SYSTEM";
