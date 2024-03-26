@@ -22,22 +22,48 @@ The overall recommendation is to keep all operating system content in `/usr`.  S
 
 ## `/etc`
 
-The `/etc` directory contains persistent state by default; however,
+The `/etc` directory contains mutable persistent state by default; however,
 it is suppported to enable the [`etc.transient` config option](https://ostreedev.github.io/ostree/man/ostree-prepare-root.html).
 
 When in persistent mode, it inherits the OSTree semantics of [performing a 3-way merge](https://ostreedev.github.io/ostree/atomic-upgrades/#assembling-a-new-deployment-directory)
-across upgrades.
+across upgrades.  In a nutshell:
+
+- The *new default* `/etc` is used as a base
+- The diff between current and previous `/etc` is applied to the new `/etc`
+- Locally modified files in `/etc` different from the default `/usr/etc` (of the same deployment) will be retained
+
+The implmentation of this defaults to being executed by `ostree-finalize-staged.service`
+at shutdown time, before the new bootloader entry is created.
+
+The rationale for this design is that in practice today, many components of a Linux system end up shipping
+default configuration files in `/etc`.  And even if the default package doesn't, often the software
+only looks for config files there by default.
+
+Some other image-based update systems do not have distinct "versions" of `/etc` and
+it may be populated only set up at a install time, and untouched thereafter.  But
+that creates "hysteresis" where the state of the system's `/etc` is strongly
+influenced by the initial image version.  This can lead to problems
+where e.g. a change to `/etc/sudoers.conf` (to give on simple example)
+would require external intervention to apply.
+
+For more on configuration file best practices, see [Building](building/guidance.md).
 
 ## `/var`
 
 Content in `/var` persists by default; it is however supported to make it or subdirectories
-mount points (whether network or `tmpfs`)
+mount points (whether network or `tmpfs`).  There is exactly one `/var`.  If it is
+not a distinct partition, then "physically" currently it is a bind mount into
+`/ostree/deploy/$stateroot/var` and shared across "deployments" (bootloader entries).
 
 As of OSTree v2024.3, by default [content in /var acts like a Docker VOLUME /var](https://github.com/ostreedev/ostree/pull/3166/commits/f81b9fa1666c62a024d5ca0bbe876321f72529c7).
 
 This means that the content from the container image is copied at initial installation time, and *not updated thereafter*.
 
-The rationale for this is to keep operating system upgrades from touching machine-local data by default.
+Note this is very different from the handling of `/etc`.   The rationale for this is
+that `/etc` should generally only hold small text files, but `/var` should hold arbitrarily
+large data (system logs, databases, etc.).  Creating multiple copies of it would have
+
+to keep operating system upgrades from touching machine-local data by default.
 If the system is rolled back to a previous bootloader entry, the `/var` content remains.  This also
 makes it possible to "stage" new operating system updates in an alternative root without affecting `/var` content.
 
@@ -65,7 +91,7 @@ cases, there are several options (containerizing the app, running it in a system
 However, some use cases may find it easier to enable a fully transient writable rootfs by default.
 To do this, set the
 
-```
+```toml
 [root]
 transient = true
 ```
