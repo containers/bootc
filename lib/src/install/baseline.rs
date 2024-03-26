@@ -79,9 +79,8 @@ pub(crate) struct InstallBlockDeviceOpts {
     ///
     /// direct: Filesystem written directly to block device
     /// tpm2-luks: Bind unlock of filesystem to presence of the default tpm2 device.
-    #[clap(long, value_enum, default_value_t)]
-    #[serde(default)]
-    pub(crate) block_setup: BlockSetup,
+    #[clap(long, value_enum)]
+    pub(crate) block_setup: Option<BlockSetup>,
 
     /// Target root filesystem type.
     #[clap(long, value_enum)]
@@ -297,7 +296,10 @@ pub(crate) fn install_create_rootfs(
     };
 
     let base_rootdev = findpart(ROOTPN)?;
-    let (rootdev, root_blockdev_kargs) = match opts.block_setup {
+    let block_setup = state
+        .install_config
+        .get_block_setup(opts.block_setup.as_ref().copied())?;
+    let (rootdev, root_blockdev_kargs) = match block_setup {
         BlockSetup::Direct => (base_rootdev, None),
         BlockSetup::Tpm2Luks => {
             let uuid = uuid::Uuid::new_v4().to_string();
@@ -394,7 +396,7 @@ pub(crate) fn install_create_rootfs(
         mount::mount(espdev, &efifs_path)?;
     }
 
-    let luks_device = match opts.block_setup {
+    let luks_device = match block_setup {
         BlockSetup::Direct => None,
         BlockSetup::Tpm2Luks => Some(luks_name.to_string()),
     };
