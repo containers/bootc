@@ -1177,6 +1177,9 @@ pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
                 block_opts.device
             );
         }
+        if !crate::mount::is_same_as_host(Utf8Path::new("/dev"))? {
+            anyhow::bail!("Loopback mounts (--via-loopback) require host devices (-v /dev:/dev)");
+        }
     } else if !target_blockdev_meta.file_type().is_block_device() {
         anyhow::bail!("Not a block device: {}", block_opts.device);
     }
