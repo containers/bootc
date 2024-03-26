@@ -1069,6 +1069,11 @@ async fn prepare_install(
 
     ensure_var()?;
     setup_tmp_mounts()?;
+    crate::mount::ensure_mount(
+        "none",
+        Utf8Path::new("/dev"),
+        crate::mount::FilesystemType::DevTmpFs,
+    )?;
 
     // Even though we require running in a container, the mounts we create should be specific
     // to this process, so let's enter a private mountns to avoid leaking them.

@@ -13,6 +13,10 @@ use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::process::Command;
 
+/// The mount path and type for devtmpfs
+#[cfg(feature = "install")]
+const DEV_MOUNT_POINT: &str = "/dev";
+
 #[derive(Debug, Deserialize)]
 struct DevicesOutput {
     blockdevices: Vec<Device>,
@@ -80,9 +84,21 @@ pub(crate) struct LoopbackDevice {
     pub(crate) dev: Option<Utf8PathBuf>,
 }
 
+// Ensure that `/dev` directory exists and is mounted.
+fn ensure_dev_mounted() -> Result<()> {
+    crate::mount::ensure_mount(
+        "none",
+        DEV_MOUNT_POINT.into(),
+        crate::mount::FilesystemType::DevTmpFs,
+    )?;
+    Ok(())
+}
+
 impl LoopbackDevice {
     // Create a new loopback block device targeting the provided file path.
     pub(crate) fn new(path: &Path) -> Result<Self> {
+        // Ensure /dev exists and is mounted
+        ensure_dev_mounted()?;
         let dev = Task::new("losetup", "losetup")
             .args(["--show", "--direct-io=on", "-P", "--find"])
             .arg(path)
