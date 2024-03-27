@@ -2,6 +2,7 @@
 //!
 //! Command line tool to manage bootable ostree-based containers.
 
+use anyhow::Ok;
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use cap_std_ext::cap_std;
@@ -257,6 +258,8 @@ pub(crate) enum Opt {
     #[clap(subcommand)]
     #[cfg(feature = "install")]
     Install(InstallOpts),
+    /// Validate non supported files are not present.
+    BuildLint,
     /// Execute the given command in the host mount namespace
     #[cfg(feature = "install")]
     #[clap(hide = true)]
@@ -575,6 +578,21 @@ async fn usroverlay() -> Result<()> {
         .into());
 }
 
+/// Implementation of `bootc build commit`
+/// async fn lint() -> Result<()> {
+#[context("linting")]
+fn lint() -> Result<()> {
+    if !ostree_ext::container_utils::is_ostree_container()? {
+        anyhow::bail!(
+            "Not in a ostree container, this command only verifies ostree containers."
+        );
+    }
+
+    let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+    ostree_ext::bootabletree::find_kernel_dir_fs(&root)?;
+    return Ok(());
+}
+
 /// Parse the provided arguments and execute.
 /// Calls [`structopt::clap::Error::exit`] on failure, printing the error message and aborting the program.
 pub async fn run_from_iter<I>(args: I) -> Result<()>
@@ -621,6 +639,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         Opt::Rollback(opts) => rollback(opts).await,
         Opt::Edit(opts) => edit(opts).await,
         Opt::UsrOverlay => usroverlay().await,
+        Opt::BuildLint => lint(),
         #[cfg(feature = "install")]
         Opt::Install(opts) => match opts {
             InstallOpts::ToDisk(opts) => crate::install::install_to_disk(opts).await,

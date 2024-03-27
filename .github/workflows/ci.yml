@@ -116,6 +116,31 @@ jobs:
         run: sudo tar -C / -xvf bootc.tar.zst
       - name: Integration tests
         run: bootc internal-tests run-container-integration
+      - name: lint tests
+        run: |
+        set -xeuo pipefail
+        bootc build-lint
+        if ["$1" -eq 0]; then
+          echo "No errors found"
+        else
+          echo "Linting failed"
+          exit 1
+        fi
+        cd /usr/lib/modules
+        kernel=$(ls | tail -n 1)
+        sudo cp -r $kernel "$kernel-to-delete"
+        bootc build-lint
+        if ["$1" -eq 0]; then
+          echo "No errors found"
+          exit 1
+        else
+          echo "Linting found both kernels"
+        fi
+        
+        #clean-up
+        sudo rm -rf "$kernel-to-delete"
+
+
   privtest-alongside:
     name: "Test install-alongside"
     needs: [build-c9s]
