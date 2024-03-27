@@ -6,8 +6,8 @@
     failed_counter: "0"
 
   tasks:
-    - name: rpm-ostree rollback
-      command: rpm-ostree rollback
+    - name: bootc rollback
+      command: bootc rollback
       become: true
 
     - name: Reboot to deploy new system
