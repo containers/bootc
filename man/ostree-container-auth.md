@@ -9,7 +9,8 @@ The OSTree container stack uses the same file formats as **containers-auth(5)** 
 not the same locations.
 
 When running as uid 0 (root), the tooling uses `/etc/ostree/auth.json` first, then looks
-in `/run/ostree/auth.json`.  For any other uid, the file paths used are in `${XDG_RUNTIME_DIR}/ostree/auth.json`.
+in `/run/ostree/auth.json`, and finally checks `/usr/lib/ostree/auth.json`.
+For any other uid, the file paths used are in `${XDG_RUNTIME_DIR}/ostree/auth.json`.
 
 In the future, it is likely that a path that is supported for both "system podman"
 usage and ostree will be added.
