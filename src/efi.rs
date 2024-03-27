@@ -25,6 +25,10 @@ pub(crate) const ESP_MOUNTS: &[&str] = &["boot/efi", "efi", "boot"];
 
 /// The binary to change EFI boot ordering
 const EFIBOOTMGR: &str = "efibootmgr";
+#[cfg(target_arch = "aarch64")]
+pub(crate) const SHIM: &str = "shimaa64.efi";
+
+#[cfg(target_arch = "x86_64")]
 pub(crate) const SHIM: &str = "shimx64.efi";
 
 /// The ESP partition label on Fedora CoreOS derivatives
@@ -484,7 +488,7 @@ pub(crate) fn set_efi_current(device: &str, espdir: &openat::Dir, vendordir: &st
     if espdir.exists(&shim)? {
         anyhow::bail!("Failed to find {SHIM}");
     }
-    let loader = format!("\\EFI\\{}\\shimx64.efi", vendordir);
+    let loader = format!("\\EFI\\{}\\{SHIM}", vendordir);
     let st = Command::new(EFIBOOTMGR)
         .args([
             "--create",

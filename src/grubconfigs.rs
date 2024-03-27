@@ -5,6 +5,8 @@ use anyhow::{anyhow, Context, Result};
 use fn_error_context::context;
 use openat_ext::OpenatDirExt;
 
+use crate::efi::SHIM;
+
 /// The subdirectory of /boot we use
 const GRUB2DIR: &str = "grub2";
 const CONFIGDIR: &str = "/usr/lib/bootupd/grub2-static";
@@ -22,13 +24,13 @@ pub(crate) fn find_efi_vendordir(efidir: &openat::Dir) -> Result<PathBuf> {
         let dir = efidir.sub_dir(d.file_name())?;
         for entry in dir.list_dir(".")? {
             let entry = entry?;
-            if entry.file_name() != super::efi::SHIM {
+            if entry.file_name() != SHIM {
                 continue;
             }
             return Ok(d.file_name().into());
         }
     }
-    anyhow::bail!("Failed to find EFI vendor dir")
+    anyhow::bail!("Failed to find EFI vendor dir that contains {SHIM}")
 }
 
 /// Install the static GRUB config files.
@@ -159,15 +161,15 @@ mod tests {
 
         std::fs::write(efidir.join("dell").join("foo"), "foo data")?;
         std::fs::write(efidir.join("fedora").join("grub.cfg"), "grub config")?;
-        std::fs::write(efidir.join("fedora").join("shimx64.efi"), "shim data")?;
+        std::fs::write(efidir.join("fedora").join(SHIM), "shim data")?;
 
         assert!(td.exists("BOOT")?);
         assert!(td.exists("dell/foo")?);
         assert!(td.exists("fedora/grub.cfg")?);
-        assert!(td.exists("fedora/shimx64.efi")?);
+        assert!(td.exists(format!("fedora/{SHIM}"))?);
         assert_eq!(find_efi_vendordir(&td)?.to_str(), Some("fedora"));
 
-        std::fs::remove_file(efidir.join("fedora").join("shimx64.efi"))?;
+        std::fs::remove_file(efidir.join("fedora").join(SHIM))?;
         let x = find_efi_vendordir(&td);
         assert_eq!(x.is_err(), true);
         Ok(())
