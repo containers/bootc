@@ -9,11 +9,12 @@ use std::path::{Path, PathBuf};
 struct ConfigPaths {
     persistent: PathBuf,
     runtime: PathBuf,
+    system: Option<PathBuf>,
 }
 
 /// Get the runtime and persistent config directories.  In the system (root) case, these
-/// system(root) case:  /run/ostree           /etc/ostree
-/// user(nonroot) case: /run/user/$uid/ostree ~/.config/ostree
+/// system(root) case:  /run/ostree           /etc/ostree        /usr/lib/ostree
+/// user(nonroot) case: /run/user/$uid/ostree ~/.config/ostree   <none>
 fn get_config_paths() -> &'static ConfigPaths {
     static PATHS: OnceCell<ConfigPaths> = OnceCell::new();
     PATHS.get_or_init(|| {
@@ -21,16 +22,21 @@ fn get_config_paths() -> &'static ConfigPaths {
             ConfigPaths {
                 persistent: PathBuf::from("/etc"),
                 runtime: PathBuf::from("/run"),
+                system: PathBuf::from("/usr/lib").into(),
             }
         } else {
             ConfigPaths {
                 persistent: glib::user_config_dir(),
                 runtime: glib::user_runtime_dir(),
+                system: None,
             }
         };
         let path = "ostree";
         r.persistent.push(path);
         r.runtime.push(path);
+        if let Some(system) = r.system.as_mut() {
+            system.push(path);
+        }
         r
     })
 }
@@ -48,6 +54,12 @@ impl ConfigPaths {
         persistent.push(p);
         if let Some(f) = crate::container_utils::open_optional(&persistent)? {
             return Ok(Some((persistent, f)));
+        }
+        if let Some(mut system) = self.system.clone() {
+            system.push(p);
+            if let Some(f) = crate::container_utils::open_optional(&system)? {
+                return Ok(Some((system, f)));
+            }
         }
         Ok(None)
     }
