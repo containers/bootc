@@ -1261,6 +1261,47 @@ async fn test_container_write_derive() -> Result<()> {
     Ok(())
 }
 
+/// Test for zstd
+/// We need to handle the case of modified hardlinks into /sysroot
+#[tokio::test]
+async fn test_container_zstd() -> Result<()> {
+    let fixture = Fixture::new_v1()?;
+    let baseimg = &fixture.export_container().await?.0;
+    let basepath = &match baseimg.transport {
+        Transport::OciDir => fixture.path.join(baseimg.name.as_str()),
+        _ => unreachable!(),
+    };
+    let baseimg_ref = format!("oci:{basepath}");
+    let zstd_image_path = &fixture.path.join("zstd.oci");
+    let st = tokio::process::Command::new("skopeo")
+        .args([
+            "copy",
+            "--dest-compress-format=zstd",
+            baseimg_ref.as_str(),
+            &format!("oci:{zstd_image_path}"),
+        ])
+        .status()
+        .await?;
+    assert!(st.success());
+
+    let zstdref = &OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: ImageReference {
+            transport: Transport::OciDir,
+            name: zstd_image_path.to_string(),
+        },
+    };
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), zstdref, Default::default()).await?;
+    let prep = match imp.prepare().await.context("Init prep derived")? {
+        store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        store::PrepareResult::Ready(r) => r,
+    };
+    let _ = imp.import(prep).await.unwrap();
+
+    Ok(())
+}
+
 /// Test for https://github.com/ostreedev/ostree-rs-ext/issues/405
 /// We need to handle the case of modified hardlinks into /sysroot
 #[tokio::test]
