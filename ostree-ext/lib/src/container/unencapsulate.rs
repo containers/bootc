@@ -198,6 +198,9 @@ fn new_async_decompressor<'a>(
         oci_image::MediaType::ImageLayerGzip => Ok(Box::new(tokio::io::BufReader::new(
             async_compression::tokio::bufread::GzipDecoder::new(src),
         ))),
+        oci_image::MediaType::ImageLayerZstd => Ok(Box::new(tokio::io::BufReader::new(
+            async_compression::tokio::bufread::ZstdDecoder::new(src),
+        ))),
         oci_image::MediaType::ImageLayer => Ok(Box::new(src)),
         oci_image::MediaType::Other(t) if t.as_str() == DOCKER_TYPE_LAYER_TAR => Ok(Box::new(src)),
         o => Err(anyhow::anyhow!("Unhandled layer type: {}", o)),
