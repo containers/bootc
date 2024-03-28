@@ -162,6 +162,18 @@ fn test_install_filesystem(image: &str, blockdev: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
+#[context("Container tests")]
+fn test_build_lint(image: &str) -> Result<()> {
+    let sh = Shell::new()?;
+
+    cmd!(sh, "podman run --rm --privileged --pid=host --env=RUST_LOG -v /usr/bin/bootc:/usr/bin/bootc {image} bootc build-lint").run()?;
+    let copy_kernel = "bootc build-lint";
+    cmd!(sh, "podman run --rm --privileged --pid=host --env=RUST_LOG -v /usr/bin/bootc:/usr/bin/bootc {image} {copy_kernel}").run()?;
+
+    Ok(())
+  
+}
+
 pub(crate) async fn run(opts: TestingOpts) -> Result<()> {
     match opts {
         TestingOpts::RunPrivilegedIntegration {} => {
@@ -179,5 +191,9 @@ pub(crate) async fn run(opts: TestingOpts) -> Result<()> {
             crate::cli::ensure_self_unshared_mount_namespace().await?;
             tokio::task::spawn_blocking(move || test_install_filesystem(&image, &blockdev)).await?
         }
+        TestingOpts::TestBuildLint { image } => {
+            tokio::task::spawn_blocking(move || test_build_lint(&image)).await?
+        }
+
     }
 }

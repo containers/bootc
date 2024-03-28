@@ -2,7 +2,6 @@
 //!
 //! Command line tool to manage bootable ostree-based containers.
 
-use anyhow::Ok;
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use cap_std_ext::cap_std;
@@ -150,6 +149,10 @@ pub(crate) enum TestingOpts {
     TestInstallFilesystem {
         image: String,
         blockdev: Utf8PathBuf,
+    },
+    // Test set of lints on ostree container
+    TestBuildLint {
+        image: String,
     },
 }
 
@@ -587,4 +590,22 @@ fn test_parse_install_args() {
     };
     assert!(o.target_opts.target_no_signature_verification);
     assert_eq!(o.filesystem_opts.root_path.as_str(), "/target");
+}
+
+#[test]
+fn test_linting() {
+    // linting should only occur in side of a container.
+    match ostree_ext::container_utils::is_ostree_container() {
+        Ok(result) => {
+            if !result {
+                let expected_error_message = "Not in a ostree container, this command only verifies ostree containers.";
+
+                let result = lint();
+                assert_eq!(result.err().unwrap().to_string(), expected_error_message, "Error message mismatch");
+            }
+
+        },
+        Err(_) =>{
+        }
+    }
 }
