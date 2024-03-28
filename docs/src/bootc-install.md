@@ -128,58 +128,7 @@ The bootc project aims to support generic/general-purpose operating
 systems and distributions that will ship unconfigured images.  An
 unconfigured image does not have a default password or SSH key, etc.
 
-There are two fundamental ways to handle this:
-
-### Using cloud-init type flows
-
-Some operating systems may come with `cloud-init` or similar tools
-that know how to e.g. inject SSH keys or external configuration.
-
-Other tools in this space are:
-
-- [systemd-firstboot](https://www.freedesktop.org/software/systemd/man/systemd-firstboot.html)
-- [gnome-initial-setup](https://gitlab.gnome.org/GNOME/gnome-initial-setup)
-
-The general idea here is that things like users, passwords and ssh keys
-are dynamically created on first boot (and in general managed per-system);
-the configuration comes from a place *external* to the image.
-
-### Injecting configuration into a custom image
-
-But a new super-power with `bootc` is that you can also easily
-create a derived container that injects your desired configuration,
-alongside any additional executable code (binaries, packages, scripts, etc).
-
-The expectation is that most operating systems will be designed such
-that user state i.e. `/root` and `/home` will be on a separate, persistent data store.
-For example, in the default ostree model, `/root` is `/var/roothome`
-and `/home` is `/var/home`.  Content in `/var` cannot be shipped
-in the image - it is per machine state.
-
-#### Injecting SSH keys in a container image
-
-In the following example, we will configure OpenSSH to read the
-set of authorized keys for the root user from content
-that lives in `/usr` (i.e. is owned by the container image).
-We will also create a `/usr/etc-system` directory which is intentionally distinct
-from the default ostree `/etc` which may be locally writable.
-
-The `AuthorizedKeysFile` invocation below then configures sshd to look
-for keys in this location.
-
-```Dockerfile
-FROM <image>
-RUN mkdir -p /usr/etc-system/ && \
-    echo 'AuthorizedKeysFile /usr/etc-system/%u.keys' >> /etc/ssh/sshd_config.d/30-auth-system.conf && \
-    echo 'ssh-ed25519 AAAAC3Nza... root@example.com' > /usr/etc-system/root.keys && chmod 0600 /usr/etc-system/root.keys && \
-    ostree container commit
-```
-
-A key point here is that now the set of authorized keys is "owned"
-by the container image - it will be read-only at runtime because
-the files are underneath `/usr`.  To rotate or change the set of keys,
-one would build a new container image.  Client systems using `bootc upgrade`
-will transactionally update to this new system state.
+For more information, see [Image building and configuration guidance](building/guidance.md).
 
 ## More advanced installation with `to-filesystem`
 

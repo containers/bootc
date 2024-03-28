@@ -18,21 +18,34 @@ There is also an opinionated `bootc-fetch-apply-updates.timer` and corresponding
 service available in upstream for operating systems and distributions
 to enable.
 
+Man page: [bootc-upgrade](man/bootc-upgrade.md).
+
 ## Changing the container image source
 
 Another useful pattern to implement can be to use a management agent
-to invoke `bootc switch` to implement e.g. blue/green deployments,
+to invoke `bootc switch` (or declaratively via `bootc edit`)
+to implement e.g. blue/green deployments,
 where some hosts are rolled onto a new image independently of others.
 
 ```shell
-bootc switch quay.io/examplecorp/os-prod-blue:lastest
+bootc switch quay.io/examplecorp/os-prod-blue:latest
 ```
+
+`bootc switch` has the same effect as `bootc upgrade`; there is no
+semantic difference between the two other than changing the
+container image being tracked.
 
 This will preserve existing state in `/etc` and `/var` - for example,
 host SSH keys and home directories.
 
+Man page: [bootc-switch](man/bootc-switch.md).
+
 ## Rollback
 
-At the current time, bootc does not ship with an opinionated integrated
-rollback flow.  However, bootc always maintains (by default) a
-`rollback` container image that is accessible via `bootc status`.
+There is a  `bootc rollback` verb, and associated declarative interface
+accessible to tools via `bootc edit`.  This will swap the bootloader
+ordering to the previous boot entry.
+
+Man page: [bootc-rollback](man/bootc-rollback.md).
+
+
