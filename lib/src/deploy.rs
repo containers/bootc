@@ -18,6 +18,9 @@ use ostree_ext::container::store::PrepareResult;
 use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
+use ostree_ext::prelude::FileExt;
+use ostree_ext::prelude::Cast;
+use ostree_ext::prelude::FileEnumeratorExt;
 
 use crate::spec::ImageReference;
 use crate::spec::{BootOrder, HostSpec};
@@ -221,8 +224,10 @@ async fn deploy(
     stateroot: &str,
     image: &ImageState,
     origin: &glib::KeyFile,
+    opts: Option<ostree::SysrootDeployTreeOpts<'_>>,
 ) -> Result<()> {
     let stateroot = Some(stateroot);
+    let opts = opts.unwrap_or(Default::default());
     // Copy to move into thread
     let cancellable = gio::Cancellable::NONE;
     let _new_deployment = sysroot.stage_tree_with_options(
@@ -230,7 +235,7 @@ async fn deploy(
         image.ostree_commit.as_str(),
         Some(origin),
         merge_deployment,
-        &Default::default(),
+        &opts,
         cancellable,
     )?;
     Ok(())
@@ -255,6 +260,7 @@ pub(crate) async fn stage(
     stateroot: &str,
     image: &ImageState,
     spec: &RequiredHostSpec<'_>,
+    opts: Option<ostree::SysrootDeployTreeOpts<'_>>,
 ) -> Result<()> {
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
     let origin = origin_from_imageref(spec.image)?;
@@ -264,6 +270,7 @@ pub(crate) async fn stage(
         stateroot,
         image,
         &origin,
+        opts,
     )
     .await?;
     crate::deploy::cleanup(sysroot).await?;
@@ -397,6 +404,64 @@ pub(crate) fn switch_origin_inplace(root: &Dir, imgref: &ImageReference) -> Resu
         .atomic_write(&origin_path, serialized_origin.as_bytes())
         .context("Writing origin")?;
     Ok(newest_deployment)
+}
+
+pub fn get_kargs(repo: &ostree::Repo, fetched: &ImageState) -> Result<Vec<String>> {
+    let cancellable = gio::Cancellable::NONE;
+
+    // Get the running kernel commandline arguments
+    let kargs = ostree::KernelArgs::new();
+    ostree::KernelArgs::append_proc_cmdline(
+        &kargs,
+        cancellable,
+    )?;
+    let mut kargs: Vec<String> = kargs.to_strv().iter().map(|s| { s.as_str().to_string() }).collect();
+
+    // Get the kargs in kargs.d of the booted system
+    let mut existing_kargs = vec![];
+    let fragments = liboverdrop::scan(&["/usr/lib"], "bootc/kargs.d", &["toml"], true);
+    for (_name, path) in fragments {
+        let buffer = std::fs::read_to_string(&path)?;
+        existing_kargs.push(buffer.trim().to_string());
+    }
+    
+    // Get the kargs in kargs.d of the remote image
+    let mut remote_kargs = vec![];
+    let (fetched_tree, _) = repo.read_commit(fetched.ostree_commit.as_str(), cancellable)?;
+    let fetched_tree = fetched_tree.resolve_relative_path("/usr/lib/bootc/kargs.d");
+    let fetched_tree = fetched_tree.downcast::<ostree::RepoFile>().expect("downcast");
+    match fetched_tree.query_exists(cancellable) {
+        true => {}
+        false => {
+            return Ok(vec![]);
+        }
+    }
+    let queryattrs = "standard::name,standard::type";
+    let queryflags = gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS;
+    let fetched_iter = fetched_tree.enumerate_children(queryattrs, queryflags, cancellable)?;
+    while let Some(fetched_info) = fetched_iter.next_file(cancellable)? {
+        let fetched_child = fetched_iter.child(&fetched_info);
+        let fetched_child = fetched_child.downcast::<ostree::RepoFile>().expect("downcast");
+        fetched_child.ensure_resolved()?;
+        let fetched_contents_checksum = fetched_child.checksum();
+        let f = ostree::Repo::load_file(repo, fetched_contents_checksum.as_str(), cancellable)?;
+        let file_content = f.0;
+        let mut buffer = vec![];
+        let mut reader = ostree_ext::prelude::InputStreamExtManual::into_read(file_content.unwrap());
+        let _ = std::io::Read::read_to_end(&mut reader, &mut buffer);
+        let s = std::string::String::from_utf8(buffer)?;
+        remote_kargs.push(s.trim().to_string());
+    }
+
+    // get the diff between the existing and remote kargs
+    let mut added_kargs: Vec<String> = remote_kargs.clone().into_iter().filter(|item| !existing_kargs.contains(item)).collect();
+    let removed_kargs: Vec<String> = existing_kargs.clone().into_iter().filter(|item| !remote_kargs.contains(item)).collect();
+
+    // apply the diff to the system kargs
+    kargs.retain(|x| !removed_kargs.contains(x));
+    kargs.append(&mut added_kargs);
+
+    Ok(kargs)
 }
 
 #[test]
