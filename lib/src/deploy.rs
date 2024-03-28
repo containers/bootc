@@ -81,6 +81,21 @@ impl From<ostree_container::store::LayeredImageState> for ImageState {
     }
 }
 
+impl From<crate::podman::PodmanInspect> for ImageState {
+    fn from(value: crate::podman::PodmanInspect) -> Self {
+        let version = None;
+        let ostree_commit = "".to_owned();
+        let created = value.created;
+        Self {
+            backend: Backend::Container,
+            manifest_digest: value.digest,
+            created,
+            version,
+            ostree_commit,
+        }
+    }
+}
+
 impl ImageState {
     /// Fetch the manifest corresponding to this image.  May not be available in all backends.
     pub(crate) fn get_manifest(
@@ -388,7 +403,8 @@ pub(crate) async fn stage(
 pub(crate) async fn rollback(sysroot: &SysrootLock) -> Result<()> {
     const ROLLBACK_JOURNAL_ID: &str = "26f3b1eb24464d12aa5e7b544a6b5468";
     let repo = &sysroot.repo();
-    let (booted_deployment, deployments, host) = crate::status::get_status_require_booted(sysroot)?;
+    let (booted_deployment, deployments, host) =
+        crate::status::get_status_require_booted(sysroot).await?;
 
     let new_spec = {
         let mut new_spec = host.spec.clone();

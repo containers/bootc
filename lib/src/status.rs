@@ -15,6 +15,7 @@ use ostree_ext::sysroot::SysrootLock;
 
 use crate::cli::OutputFormat;
 use crate::deploy::ImageState;
+use crate::podman;
 use crate::spec::{
     Backend, BootEntry, BootOrder, Host, HostSpec, HostStatus, HostType, ImageStatus,
 };
@@ -154,7 +155,7 @@ pub(crate) fn create_imagestatus(
 
 /// Given an OSTree deployment, parse out metadata into our spec.
 #[context("Reading deployment metadata")]
-fn boot_entry_from_deployment(
+async fn boot_entry_from_deployment(
     sysroot: &SysrootLock,
     deployment: &ostree::Deployment,
 ) -> Result<BootEntry> {
@@ -171,7 +172,11 @@ fn boot_entry_from_deployment(
                 let csum = deployment.csum();
                 let imgstate = match backend {
                     Backend::Container => {
-                        todo!()
+                        // TODO: encapsulate this better
+                        let rootfs = &cap_std_ext::cap_std::fs::Dir::reopen_dir(
+                            &crate::utils::sysroot_fd_borrowed(sysroot),
+                        )?;
+                        ImageState::from(podman::podman_inspect(rootfs, &image.image).await?)
                     }
                     Backend::OstreeContainer => {
                         ImageState::from(*ostree_container::store::query_image_commit(repo, &csum)?)
@@ -233,18 +238,18 @@ impl BootEntry {
 }
 
 /// A variant of [`get_status`] that requires a booted deployment.
-pub(crate) fn get_status_require_booted(
+pub(crate) async fn get_status_require_booted(
     sysroot: &SysrootLock,
 ) -> Result<(ostree::Deployment, Deployments, Host)> {
     let booted_deployment = sysroot.require_booted_deployment()?;
-    let (deployments, host) = get_status(sysroot, Some(&booted_deployment))?;
+    let (deployments, host) = get_status(sysroot, Some(&booted_deployment)).await?;
     Ok((booted_deployment, deployments, host))
 }
 
 /// Gather the ostree deployment objects, but also extract metadata from them into
 /// a more native Rust structure.
 #[context("Computing status")]
-pub(crate) fn get_status(
+pub(crate) async fn get_status(
     sysroot: &SysrootLock,
     booted_deployment: Option<&ostree::Deployment>,
 ) -> Result<(Deployments, Host)> {
@@ -283,23 +288,36 @@ pub(crate) fn get_status(
         other,
     };
 
-    let staged = deployments
-        .staged
-        .as_ref()
-        .map(|d| boot_entry_from_deployment(sysroot, d))
-        .transpose()
-        .context("Staged deployment")?;
-    let booted = booted_deployment
-        .as_ref()
-        .map(|d| boot_entry_from_deployment(sysroot, d))
-        .transpose()
-        .context("Booted deployment")?;
-    let rollback = deployments
-        .rollback
-        .as_ref()
-        .map(|d| boot_entry_from_deployment(sysroot, d))
-        .transpose()
-        .context("Rollback deployment")?;
+    let staged = if let Some(d) = deployments.staged.as_ref() {
+        Some(
+            boot_entry_from_deployment(sysroot, d)
+                .await
+                .context("Staged deployment")?,
+        )
+    } else {
+        None
+    };
+
+    let booted = if let Some(d) = booted_deployment {
+        Some(
+            boot_entry_from_deployment(sysroot, d)
+                .await
+                .context("Booted deployment")?,
+        )
+    } else {
+        None
+    };
+
+    let rollback = if let Some(d) = deployments.rollback.as_ref() {
+        Some(
+            boot_entry_from_deployment(sysroot, d)
+                .await
+                .context("Rollback deployment")?,
+        )
+    } else {
+        None
+    };
+
     let spec = staged
         .as_ref()
         .or(booted.as_ref())
@@ -347,7 +365,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     } else {
         let sysroot = super::cli::get_locked_sysroot().await?;
         let booted_deployment = sysroot.booted_deployment();
-        let (_deployments, host) = get_status(&sysroot, booted_deployment.as_ref())?;
+        let (_deployments, host) = get_status(&sysroot, booted_deployment.as_ref()).await?;
         host
     };
 
