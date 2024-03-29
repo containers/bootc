@@ -46,7 +46,7 @@ tracing = "0.1"
 tempfile = "3.10.1"
 toml = "0.8.12"
 xshell = { version = "0.2", optional = true }
-uuid = { version = "1.7.0", features = ["v4"] }
+uuid = { version = "1.8.0", features = ["v4"] }
 
 [features]
 default = ["install"]
