@@ -40,7 +40,7 @@ serde_ignored = "0.1.10"
 serde_json = "1.0.114"
 serde_yaml = "0.9.33"
 serde_with = ">= 3.7.0, < 4"
-tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1.36.0" }
+tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1.37.0" }
 tokio-util = { features = ["io-util"], version = "0.7" }
 tracing = "0.1"
 tempfile = "3.10.1"
