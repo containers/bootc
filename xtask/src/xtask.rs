@@ -26,7 +26,21 @@ const TASKS: &[(&str, fn(&Shell) -> Result<()>)] = &[
 ];
 
 fn try_main() -> Result<()> {
+    // Ensure our working directory is the toplevel
+    {
+        let toplevel_path = Command::new("git")
+            .args(["rev-parse", "--show-toplevel"])
+            .output()
+            .context("Invoking git rev-parse")?;
+        if !toplevel_path.status.success() {
+            anyhow::bail!("Failed to invoke git rev-parse");
+        }
+        let path = String::from_utf8(toplevel_path.stdout)?;
+        std::env::set_current_dir(path.trim()).context("Changing to toplevel")?;
+    }
+
     let task = std::env::args().nth(1);
+
     let sh = xshell::Shell::new()?;
     if let Some(cmd) = task.as_deref() {
         let f = TASKS

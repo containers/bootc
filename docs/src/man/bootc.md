@@ -5,7 +5,8 @@ images
 
 # SYNOPSIS
 
-**bootc** \[**-h**\|**\--help**\] \<*subcommands*\>
+**bootc** \[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
+\<*subcommands*\>
 
 # DESCRIPTION
 
@@ -25,6 +26,10 @@ Changes in \`/etc\` and \`/var\` persist.
 
 :   Print help (see a summary with -h)
 
+**-V**, **\--version**
+
+:   Print version
+
 # SUBCOMMANDS
 
 bootc-upgrade(8)
@@ -34,6 +39,13 @@ bootc-upgrade(8)
 bootc-switch(8)
 
 :   Target a new container image reference to boot
+
+bootc-rollback(8)
+
+:   Change the bootloader entry ordering; the deployment under
+    \`rollback\` will be queued for the next boot, and the current will
+    become rollback. If there is a \`staged\` entry (an unapplied,
+    queued upgrade) then it will be discarded
 
 bootc-edit(8)
 
@@ -45,7 +57,7 @@ bootc-status(8)
 
 bootc-usr-overlay(8)
 
-:   Add a transient writable overlayfs on \`/usr\` that will be
+:   Adds a transient writable overlayfs on \`/usr\` that will be
     discarded on reboot
 
 bootc-install(8)
@@ -55,3 +67,7 @@ bootc-install(8)
 bootc-help(8)
 
 :   Print this message or the help of the given subcommand(s)
+
+# VERSION
+
+v0.1.9

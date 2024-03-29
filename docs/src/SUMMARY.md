@@ -20,7 +20,8 @@
 - [`man bootc status`](man/bootc-status.md)
 - [`man bootc upgrade`](man/bootc-upgrade.md)
 - [`man bootc switch`](man/bootc-switch.md)
-- [`man bootc usroverlay`](man/bootc-usr-overlay.md)
+- [`man bootc rollback`](man/bootc-rollback.md)
+- [`man bootc usr-overlay`](man/bootc-usr-overlay.md)
 - [`man bootc-fetch-apply-updates.service`](man-md/bootc-fetch-apply-updates-service.md)
 
 # Using `bootc install`

@@ -189,10 +189,7 @@ pub(crate) enum TestingOpts {
 /// to support a model of bootable container images.  Once installed,
 /// whether directly via `bootc install` (executed as part of a container)
 /// or via another mechanism such as an OS installer tool, further
-/// updates can be pulled via e.g. `bootc upgrade`.
-///
-/// Changes in `/etc` and `/var` persist.
-///
+/// updates can be pulled and `bootc upgrade`.
 #[derive(Debug, Parser, PartialEq, Eq)]
 #[clap(name = "bootc")]
 #[clap(rename_all = "kebab-case")]
@@ -210,13 +207,19 @@ pub(crate) enum Opt {
     /// if the system has changed.
     ///
     /// However, in the future this is likely to change such that reboots outside of a `bootc upgrade --apply`
-    /// do *not* upgrade.
+    /// do *not* automatically apply the update in addition.
     #[clap(alias = "update")]
     Upgrade(UpgradeOpts),
     /// Target a new container image reference to boot.
     ///
-    /// This operates in a very similar fashion to `upgrade`, but changes the container image reference
+    /// This is almost exactly the same operation as `upgrade`, but additionally changes the container image reference
     /// instead.
+    ///
+    /// ## Usage
+    ///
+    /// A common pattern is to have a management agent control operating system updates via container image tags;
+    /// for example, `quay.io/exampleos/someuser:v1.0` and `quay.io/exampleos/someuser:v1.1` where some machines
+    /// are tracking `:v1.0`, and as a rollout progresses, machines can be switched to `v:1.1`.
     Switch(SwitchOpts),
     /// Change the bootloader entry ordering; the deployment under `rollback` will be queued for the next boot,
     /// and the current will become rollback.  If there is a `staged` entry (an unapplied, queued upgrade)
@@ -247,13 +250,45 @@ pub(crate) enum Opt {
     ///
     /// The exact API format is not currently declared stable.
     Status(StatusOpts),
-    /// Add a transient writable overlayfs on `/usr` that will be discarded on reboot.
+    /// Adds a transient writable overlayfs on `/usr` that will be discarded on reboot.
+    ///
+    /// ## Use cases
+    ///
+    /// A common pattern is wanting to use tracing/debugging tools, such as `strace`
+    /// that may not be in the base image.  A system package manager such as `apt` or
+    /// `dnf` can apply changes into this transient overlay that will be discarded on
+    /// reboot.
+    ///
+    /// ## /etc and /var
+    ///
+    /// However, this command has no effect on `/etc` and `/var` - changes written
+    /// there will persist.  It is common for package installations to modify these
+    /// directories.
+    ///
+    /// ## Unmounting
+    ///
+    /// Almost always, a system process will hold a reference to the open mount point.
+    /// You can however invoke `umount -l /usr` to perform a "lazy unmount".
+    ///
     #[clap(alias = "usroverlay")]
     UsrOverlay,
     /// Install the running container to a target.
     ///
-    /// This has two main sub-commands `to-disk` (which expects an empty block device) and `to-filesystem`
-    /// which supports installation to an already extant filesystem.
+    /// ## Understanding installations
+    ///
+    /// OCI containers are effectively layers of tarballs with JSON for metadata; they
+    /// cannot be booted directly.  The `bootc install` flow is a highly opinionated
+    /// method to take the contents of the container image and install it to a target
+    /// block device (or an existing filesystem) in such a way that it can be booted.
+    ///
+    /// For example, a Linux partition table and filesystem is used, and the bootloader and kernel
+    /// embedded in the container image are also prepared.
+    ///
+    /// A bootc installed container currently uses OSTree as a backend, and this sets
+    /// it up such that a subsequent `bootc upgrade` can perform in-place updates.
+    ///
+    /// An installation is not simply a copy of the container filesystem, but includes
+    /// other setup and metadata.
     #[clap(subcommand)]
     #[cfg(feature = "install")]
     Install(InstallOpts),

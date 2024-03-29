@@ -13,8 +13,17 @@ bootc-switch - Target a new container image reference to boot
 
 Target a new container image reference to boot.
 
-This operates in a very similar fashion to \`upgrade\`, but changes the
-container image reference instead.
+This is almost exactly the same operation as \`upgrade\`, but
+additionally changes the container image reference instead.
+
+## Usage
+
+A common pattern is to have a management agent control operating system
+updates via container image tags; for example,
+\`quay.io/exampleos/someuser:v1.0\` and
+\`quay.io/exampleos/someuser:v1.1\` where some machines are tracking
+\`:v1.0\`, and as a rollout progresses, machines can be switched to
+\`v:1.1\`.
 
 # OPTIONS
 
@@ -56,4 +65,4 @@ includes a default policy which requires signatures.
 
 # VERSION
 
-v0.1.0
+v0.1.9

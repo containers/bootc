@@ -21,6 +21,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install deps
         run: ./ci/installdeps.sh
+      - name: Mark git checkout as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       # xref containers/containers-image-proxy-rs
       - name: Cache Dependencies
         uses: Swatinem/rust-cache@v2

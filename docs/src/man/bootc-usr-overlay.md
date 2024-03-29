@@ -1,6 +1,6 @@
 # NAME
 
-bootc-usr-overlay - Add a transient writable overlayfs on \`/usr\` that
+bootc-usr-overlay - Adds a transient writable overlayfs on \`/usr\` that
 will be discarded on reboot
 
 # SYNOPSIS
@@ -9,14 +9,35 @@ will be discarded on reboot
 
 # DESCRIPTION
 
-Add a transient writable overlayfs on \`/usr\` that will be discarded on
-reboot
+Adds a transient writable overlayfs on \`/usr\` that will be discarded
+on reboot.
+
+(`usroverlay` is an alias for this command)
+
+## Use cases
+
+A common pattern is wanting to use tracing/debugging tools, such as
+\`strace\` that may not be in the base image. A system package manager
+such as \`apt\` or \`dnf\` can apply changes into this transient overlay
+that will be discarded on reboot.
+
+## /etc and /var
+
+However, this command has no effect on \`/etc\` and \`/var\` - changes
+written there will persist. It is common for package installations to
+modify these directories.
+
+## Unmounting
+
+Almost always, a system process will hold a reference to the open mount
+point. You can however invoke \`umount -l /usr\` to perform a \"lazy
+unmount\".
 
 # OPTIONS
 
 **-h**, **\--help**
 
-:   Print help
+:   Print help (see a summary with -h)
 
 **-V**, **\--version**
 
@@ -24,4 +45,4 @@ reboot
 
 # VERSION
 
-v0.1.0
+v0.1.9

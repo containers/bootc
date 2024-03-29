@@ -22,7 +22,8 @@ upgrade \--apply\` verb which will automatically take action (rebooting)
 if the system has changed.
 
 However, in the future this is likely to change such that reboots
-outside of a \`bootc upgrade \--apply\` do \*not\* upgrade.
+outside of a \`bootc upgrade \--apply\` do \*not\* automatically apply
+the update.
 
 # OPTIONS
 
@@ -55,4 +56,4 @@ userspace-only restart.
 
 # VERSION
 
-v0.1.0
+v0.1.9
