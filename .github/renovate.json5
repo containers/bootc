@@ -73,8 +73,6 @@
   // Don't leave dep. update. PRs "hanging", assign them to people.
   // "assignees": ["containers/netavark-maintainers"],
 
-  "constraints": {"rust": "1.76"},
-
   /**************************************************
    ***** Manager-specific configuration options *****
    **************************************************/
