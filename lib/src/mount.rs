@@ -57,3 +57,25 @@ pub(crate) fn mount(dev: &str, target: &Utf8Path) -> Result<()> {
         [dev, target.as_str()],
     )
 }
+
+/// If the fsid of the passed path matches the fsid of the same path rooted
+/// at /proc/1/root, it is assumed that these are indeed the same mounted
+/// filesystem between container and host.
+/// Path should be absolute.
+#[context("Comparing filesystems at {path} and /proc/1/root/{path}")]
+pub(crate) fn is_same_as_host(path: &Utf8Path) -> Result<bool> {
+    // Add a leading '/' in case a relative path is passed
+    let path = Utf8Path::new("/").join(path);
+
+    // Using statvfs instead of fs, since rustix will translate the fsid field
+    // for us.
+    let devstat = rustix::fs::statvfs(path.as_std_path())?;
+    let hostpath = Utf8Path::new("/proc/1/root").join(path.strip_prefix("/")?);
+    let hostdevstat = rustix::fs::statvfs(hostpath.as_std_path())?;
+    tracing::trace!(
+        "base mount id {:?}, host mount id {:?}",
+        devstat.f_fsid,
+        hostdevstat.f_fsid
+    );
+    Ok(devstat.f_fsid == hostdevstat.f_fsid)
+}
