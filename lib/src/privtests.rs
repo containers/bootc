@@ -122,7 +122,7 @@ pub(crate) fn impl_run_container() -> Result<()> {
     Ok(())
 }
 
-#[context("Container tests")]
+#[context("Prep test install filesystem")]
 fn prep_test_install_filesystem(blockdev: &Utf8Path) -> Result<tempfile::TempDir> {
     let sh = Shell::new()?;
     // Arbitrarily larger partition offsets
@@ -151,7 +151,7 @@ fn prep_test_install_filesystem(blockdev: &Utf8Path) -> Result<tempfile::TempDir
     Ok(mountpoint_dir)
 }
 
-#[context("Container tests")]
+#[context("Test install filesystem")]
 fn test_install_filesystem(image: &str, blockdev: &Utf8Path) -> Result<()> {
     let sh = Shell::new()?;
 
