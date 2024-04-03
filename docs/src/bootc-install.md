@@ -113,14 +113,7 @@ taking precedence.  If for example you are building a derived container image fr
 you could create a `50-myos.toml`  that sets `type = "btrfs"` which will override the
 prior setting.
 
-Other available options, also under the `[install]` section:
-
-`kargs`: This allows setting kernel arguments which apply only at the time of `bootc install`.
-This option is particularly useful when creating derived/layered images; for example, a cloud
-image may want to have its default `console=` set, in contrast with a default base image.
-The values in this field are space separated.
-
-`root-fs-type`: This value is the same as `install.filesystem.root.type`.
+For other available options, see [bootc-install-config](man/bootc-install-config.md).
 
 ## Installing an "unconfigured" image
 
