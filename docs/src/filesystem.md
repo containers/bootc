@@ -18,7 +18,25 @@ This will ensure that the entire `/` is a read-only filesystem.
 
 ## `/usr`
 
-The overall recommendation is to keep all operating system content in `/usr`.  See [UsrMove](https://fedoraproject.org/wiki/Features/UsrMove) for example.
+The overall recommendation is to keep all operating system content in `/usr`,
+with directories such as `/bin` being symbolic links to `/usr/bin`, etc.
+See [UsrMove](https://fedoraproject.org/wiki/Features/UsrMove) for example.
+
+However, with composefs enabled `/usr` is not different from `/`;
+they are part of the same immutable image.  So there is not a fundamental
+need to do a full "UsrMove" with a bootc system.
+
+### `/usr/local`
+
+The OSTree upstream recommendation suggests making `/usr/local` a symbolic
+link to `/var/usrlocal`. But because the emphasis of a bootc-oriented system is
+on users deriving custom container images as the default entrypoint,
+it is recommended here that base images configure `/usr/local` be a regular
+directory (i.e. the default).
+
+Projects that want to produce "final" images that are themselves
+not intended to be derived from in general can enable that symbolic link
+in derived builds.
 
 ## `/etc`
 
@@ -60,12 +78,21 @@ As of OSTree v2024.3, by default [content in /var acts like a Docker VOLUME /var
 This means that the content from the container image is copied at initial installation time, and *not updated thereafter*.
 
 Note this is very different from the handling of `/etc`.   The rationale for this is
-that `/etc` should generally only hold small text files, but `/var` should hold arbitrarily
-large data (system logs, databases, etc.).  Creating multiple copies of it would have
+that `/etc` is relatively small configuration files, and the expected configuration
+files are often bound to the operating system binaries in `/usr`.
 
-to keep operating system upgrades from touching machine-local data by default.
-If the system is rolled back to a previous bootloader entry, the `/var` content remains.  This also
-makes it possible to "stage" new operating system updates in an alternative root without affecting `/var` content.
+But `/var` has arbitrarily large data (system logs, databases, etc.).  It would
+also not be expected to be rolled back if the operating system state is rolled
+back.  A simple exmaple is that an `apt|dnf downgrade postgresql` should not
+affect the physical database in general in `/var/lib/postgres`.  Similarly,
+a bootc update or rollback should not affect this application data.
+
+Having `/var` separate also makes it work cleanly to "stage" new
+operating system updates before applying them (they're downloaded
+and ready, but only take effect on reboot).
+
+In general, this is the same rationale for Docker `VOLUME`: decouple the application
+code from its data.
 
 A common case is for applications to want some directory structure (e.g. `/var/lib/postgresql`) to be pre-created.
 It's recommended to use [systemd tmpfiles.d](https://www.freedesktop.org/software/systemd/man/latest/tmpfiles.d.html)
@@ -83,8 +110,18 @@ Besides those, for other toplevel directories such as `/usr` `/opt`, they will b
 In the default suggested model of using composefs (per above) the `/opt` directory will be read-only, alongside
 other toplevels such as `/usr`.
 
-Some software expects to be able to write to its own directory in `/opt/exampleapp`.  For these
-cases, there are several options (containerizing the app, running it in a system unit that sets up custom mounts, etc.)
+Some software expects to be able to write to its own directory in `/opt/exampleapp`.  A common
+pattern is to use a symbolic link to redirect to e.g. `/var` for things like log files:
+
+```
+RUN rmdir /opt/exampleapp/logs && ln -sr /var/log/exampleapp /opt/exampleapp/logs
+```
+
+Another option is to configure the systemd unit launching the service to do these mounts
+dynamically via e.g.
+```
+BindPaths=/var/log/exampleapp:/opt/exampleapp/logs
+```
 
 #### Enabling transient root
 
