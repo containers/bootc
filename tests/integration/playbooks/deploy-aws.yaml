@@ -8,7 +8,6 @@
     ssh_key_pub: ""
     inventory_file: ""
     download_node: "{{ lookup('env', 'DOWNLOAD_NODE') | default('', true) }}"
-    ami_id: ""
     ami:
       x86_64:
         rhel-9-4: ami-044442bf4326c9933
@@ -41,61 +40,72 @@
         random_instance_type: "{{ lookup('env', 'instance_type') | default(instance_type[arch][instance_type_index], true) }}"
 
     - name: "get available zone for instance {{ random_instance_type }}"
-      shell: aws ec2 describe-instance-type-offerings --location-type availability-zone --filters="Name=instance-type,Values={{ random_instance_type }}" --query InstanceTypeOfferings | jq -r '.[0].Location'
+      shell: |
+        aws ec2 describe-instance-type-offerings \
+          --location-type availability-zone \
+          --filters="Name=instance-type,Values={{ random_instance_type }}" \
+          --query InstanceTypeOfferings | jq -r '.[0].Location'
       register: ec2_zone
       when: "'rhel' not in test_os"
 
     - name: get subnet
-      amazon.aws.ec2_vpc_subnet_info:
-        filters:
-          "tag:Name": "kite-ci"
-          "availabilityZone": "{{ ec2_zone.stdout }}"
+      shell: |
+        aws ec2 describe-subnets \
+          --output json \
+          --filters "Name=tag:Name,Values=kite-ci" "Name=availabilityZone,Values={{ ec2_zone.stdout }}" | \
+          jq -r ".Subnets[0].SubnetId"
       register: ec2_vpc_subnet
       when: "'rhel' not in test_os"
 
     - set_fact:
-        subnet_id: "{{ ec2_vpc_subnet.subnets[0].subnet_id }}"
+        subnet_id: "{{ ec2_vpc_subnet.stdout }}"
       when: "'rhel' not in test_os"
 
     - name: get virtqe subnet
-      amazon.aws.ec2_vpc_subnet_info:
-        filters:
-          "tag:Name": "InternalA-virtqe"
+      shell: |
+        aws ec2 describe-subnets \
+          --output json \
+          --filters "Name=tag:Name,Values=InternalA-virtqe" | \
+          jq -r ".Subnets[0].SubnetId"
       register: ec2_vpc_subnet
       when: '"rhel" in test_os'
 
     - set_fact:
-        subnet_id: "{{ ec2_vpc_subnet.subnets[0].subnet_id }}"
+        subnet_id: "{{ ec2_vpc_subnet.stdout }}"
       when: "'rhel' in test_os"
 
     - name: get security group
-      amazon.aws.ec2_security_group_info:
-        filters:
-          "tag:Name": "kite-ci"
+      shell: |
+        aws ec2 describe-security-groups \
+          --filters="Name=tag:Name,Values=kite-ci" \
+          --output json | \
+          jq -r ".SecurityGroups[0].GroupId"
       register: ec2_security_group
       when: "'rhel' not in test_os"
 
     - set_fact:
-        group_id: "{{ ec2_security_group.security_groups[0].group_id }}"
+        group_id: "{{ ec2_security_group.stdout }}"
       when: "'rhel' not in test_os"
 
     - name: get virtqe security group
-      amazon.aws.ec2_security_group_info:
-        filters:
-          "tag:Name": "bootc-test"
+      shell: |
+        aws ec2 describe-security-groups \
+          --filters="Name=tag:Name,Values=bootc-test" \
+          --output json | \
+          jq -r ".SecurityGroups[0].GroupId"
       register: ec2_security_group
       when: "'rhel' in test_os"
 
     - set_fact:
-        group_id: "{{ ec2_security_group.security_groups[0].group_id }}"
+        group_id: "{{ ec2_security_group.stdout }}"
       when: "'rhel' in test_os"
 
     - name: config ssh keypair used by test
-      amazon.aws.ec2_key:
-        name: "kp-bootc-{{ random_num }}"
-        key_material: "{{ lookup('file', ssh_key_pub) }}"
-        tags:
-          name: "bootc-test"
+      shell: |
+        aws ec2 import-key-pair \
+          --key-name "kp-bootc-{{ random_num }}" \
+          --public-key-material "fileb://{{ ssh_key_pub }}" \
+          --tag-specification 'ResourceType=key-pair,Tags=[{Key=Name,Value=bootc-test}]'
 
     - name: generate ec2_run_instance script
       template:
@@ -112,14 +122,16 @@
         instance_json: "{{ result_instance.stdout | from_json }}"
 
     - name: wait for instance running
-      shell: aws ec2 describe-instances --instance-ids {{ instance_json.Instances[0].InstanceId }} --query 'Reservations[0].Instances[0].State.Name' --output text
-      register: describe_result
-      retries: 60
-      delay: 5
-      until: describe_result.stdout == "running"
+      shell: |
+        aws ec2 wait instance-running \
+          --instance-ids {{ instance_json.Instances[0].InstanceId }}
 
     - name: get instance public ip
-      shell: aws ec2 describe-instances --instance-ids {{ instance_json.Instances[0].InstanceId }} --query 'Reservations[*].Instances[*].PublicIpAddress' --output text
+      shell: |
+        aws ec2 describe-instances \
+          --instance-ids {{ instance_json.Instances[0].InstanceId }} \
+          --query 'Reservations[*].Instances[*].PublicIpAddress' \
+          --output text
       register: ip_result
       when: "'rhel' not in test_os"
 
@@ -128,7 +140,11 @@
       when: "'rhel' not in test_os"
 
     - name: get instance private ip
-      shell: aws ec2 describe-instances --instance-ids {{ instance_json.Instances[0].InstanceId }} --query 'Reservations[*].Instances[*].PrivateIpAddress' --output text
+      shell: |
+        aws ec2 describe-instances \
+          --instance-ids {{ instance_json.Instances[0].InstanceId }} \
+          --query 'Reservations[*].Instances[*].PrivateIpAddress' \
+          --output text
       register: ip_result
       when: "'rhel' in test_os"
 
@@ -173,12 +189,4 @@
         section: cloud:vars
         option: instance_id
         value: "{{ instance_json.Instances[0].InstanceId }}"
-        no_extra_spaces: true
-
-    - name: write AWS ami id to inventory file
-      community.general.ini_file:
-        path: "{{ inventory_file }}"
-        section: cloud:vars
-        option: ami_id
-        value: "{{ ami_id }}"
         no_extra_spaces: true

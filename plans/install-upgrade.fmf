@@ -11,6 +11,8 @@ prepare:
       - jq
       - python3-devel
       - unzip
+  - how: shell
+    script: ansible-galaxy collection install community.general ansible.posix
 execute:
   how: tmt
 
@@ -27,9 +29,5 @@ execute:
     - when: arch != x86_64 and arch != aarch64
       enabled: false
   prepare+:
-    - how: shell
-      script: |
-        pip install boto3 botocore
-        ansible-galaxy collection install amazon.aws community.general ansible.posix
     - how: shell
       script: curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install
