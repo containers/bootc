@@ -7,30 +7,18 @@
     - name: Remove AWS resources
       block:
         - name: terminate instance
-          amazon.aws.ec2_instance:
-            instance_ids: "{{ instance_id }}"
-            state: absent
-            wait: true
+          shell: |
+            aws ec2 terminate-instances \
+              --instance-ids "{{ instance_id }}"
           ignore_errors: true
 
         - name: wait until instance terminated
-          amazon.aws.ec2_instance_info:
-            instance_ids:
-              - "{{ instance_id }}"
-          register: result_instance_status
-          retries: 30
-          delay: 10
-          until: result_instance_status.instances[0].state.name == "terminated"
+          shell: |
+            aws ec2 wait instance-terminated \
+              --instance-ids "{{ instance_id }}"
 
         - name: remove ec2 key
-          amazon.aws.ec2_key:
-            name: "kp-bootc-{{ random_num }}"
-            state: absent
-
-        - name: Deregister AMI (delete associated snapshots too)
-          amazon.aws.ec2_ami:
-            image_id: "{{ ami_id }}"
-            delete_snapshot: true
-            state: absent
-          when: ami_id != ""
+          shell: |
+            aws ec2 delete-key-pair \
+              --key-name "kp-bootc-{{ random_num }}"
       when: platform == "aws"
