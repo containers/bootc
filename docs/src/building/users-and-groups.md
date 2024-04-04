@@ -140,10 +140,6 @@ and `/home`.  The choice for how these work is up to the base image, but
 a common default for generic base images is to have both be machine-local persistent state.
 In this model `/home` would be a symlink to `/var/home/someuser`.
 
-But it is also valid to default to having e.g. `/home` be a `tmpfs`
-to ensure user data is cleaned up across reboots (and this pairs particularly
-well with a transient `/etc` as well).
-
 #### Injecting users and SSH keys via at system provisioning time
 
 For base images where `/etc` and `/var` are configured to persist by default, it
@@ -162,6 +158,26 @@ tool (such as `passwd` or a GUI as part of [Cockpit](https://cockpit-project.org
 It is intended that these flows work equivalently in a bootc-compatible
 system, to support users directly installing "generic" base images, without
 requiring changes to the tools above.
+
+#### Transient home directories
+
+Many operating system deployments will want to minimize persistent,
+mutable and executable state - and user home directories are that
+
+But it is also valid to default to having e.g. `/home` be a `tmpfs`
+to ensure user data is cleaned up across reboots (and this pairs particularly
+well with a transient `/etc` as well):
+
+In order to set up the user's home directory to e.g. inject SSH `authorized_keys`
+or other files, a good approach is to use systemd `tmpfiles.d` snippets:
+
+```
+f~ /home/someuser/.ssh/authorized_keys 600 someuser someuser - <base64 encoded data>
+```
+which can be embedded in the image as `/usr/lib/tmpfiles.d/someuser-keys.conf`.
+
+Or a service embedded in the image can fetch keys from the network and write
+them; this is the pattern used by cloud-init and [afterburn](https://github.com/coreos/afterburn).
 
 ### UID/GID drift
 
