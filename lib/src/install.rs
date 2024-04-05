@@ -229,6 +229,12 @@ pub(crate) struct InstallTargetFilesystemOpts {
     /// In the future, it may also be supported to set up an explicit "dual boot" system.
     #[clap(long)]
     pub(crate) replace: Option<ReplaceMode>,
+
+    /// The default mode is to "finalize" the target filesystem by invoking `fstrim` and similar
+    /// operations, and finally mounting it readonly.  This option skips those operations.  It
+    /// is then the responsibility of the invoking code to perform those operations.
+    #[clap(long)]
+    pub(crate) skip_finalize: bool,
 }
 
 /// Perform an installation to a mounted filesystem.
@@ -763,8 +769,8 @@ pub(crate) struct RootSetup {
     rootfs: Utf8PathBuf,
     rootfs_fd: Dir,
     rootfs_uuid: Option<String>,
-    /// True if this is an "alongside" install where we didn't create the filesystem
-    is_alongside: bool,
+    /// True if we should skip finalizing
+    skip_finalize: bool,
     boot: Option<MountSpec>,
     kargs: Vec<String>,
 }
@@ -1175,7 +1181,7 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
     tracing::debug!("Installed bootloader");
 
     // Finalize mounted filesystems
-    if !rootfs.is_alongside {
+    if !rootfs.skip_finalize {
         let bootfs = rootfs.rootfs.join("boot");
         for fs in [bootfs.as_path(), rootfs.rootfs.as_path()] {
             finalize_filesystem(fs)?;
@@ -1513,6 +1519,8 @@ pub(crate) async fn install_to_filesystem(
         .chain(bootarg)
         .collect::<Vec<_>>();
 
+    let skip_finalize =
+        matches!(fsopts.replace, Some(ReplaceMode::Alongside)) || fsopts.skip_finalize;
     let mut rootfs = RootSetup {
         luks_device: None,
         device: backing_device.into(),
@@ -1521,7 +1529,7 @@ pub(crate) async fn install_to_filesystem(
         rootfs_uuid: inspect.uuid.clone(),
         boot,
         kargs,
-        is_alongside: matches!(fsopts.replace, Some(ReplaceMode::Alongside)),
+        skip_finalize,
     };
 
     install_to_filesystem_impl(&state, &mut rootfs).await?;
@@ -1541,6 +1549,7 @@ pub(crate) async fn install_to_existing_root(opts: InstallToExistingRootOpts) ->
             root_mount_spec: None,
             boot_mount_spec: None,
             replace: opts.replace,
+            skip_finalize: true,
         },
         source_opts: opts.source_opts,
         target_opts: opts.target_opts,
