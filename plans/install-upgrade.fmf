@@ -12,7 +12,7 @@ prepare:
       - python3-devel
       - unzip
   - how: shell
-    script: ansible-galaxy collection install community.general ansible.posix
+    script: ansible-galaxy collection install https://ansible-collection.s3.amazonaws.com/ansible-posix-1.5.4.tar.gz https://ansible-collection.s3.amazonaws.com/community-general-8.5.0.tar.gz
 execute:
   how: tmt
 
