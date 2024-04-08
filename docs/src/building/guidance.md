@@ -35,6 +35,26 @@ Docker got started.
 There's not much special to this that doesn't also apply
 to application containers; but see below.
 
+### Nesting OCI containers in bootc containers
+
+The [OCI format](https://github.com/opencontainers/image-spec/blob/main/spec.md) uses
+"whiteouts" represented in the tar stream as special `.wh` files, and typically
+consumed by the Linux kernel `overlayfs` driver as special `0:0` character
+devices.  Without special work, whiteouts cannot be nested.
+
+Hence, an invocation like
+
+```
+RUN podman pull quay.io/exampleimage/someimage
+```
+
+will create problems, as the `podman` runtime will create whiteout files
+inside the container image filesystem itself.
+
+Special care and code changes will need to be made to container
+runtimes to support such nesting.  Some more discussion in
+[this tracker issue](https://github.com/containers/bootc/issues/128).
+
 ## systemd units
 
 The model that is most popular with the Docker/OCI world
