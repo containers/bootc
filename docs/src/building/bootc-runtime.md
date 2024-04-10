@@ -45,3 +45,19 @@ function at runtime.
 
 Ignored by bootc; typically you should configure individual services inside
 the bootc container to run as unprivileged users instead.
+
+### `HEALTHCHECK` (OCI: *no equivalent*)
+
+This is currently a Docker-specific metadata, and did not make it into the
+OCI standards.  (Note [podman healthchecks](https://developers.redhat.com/blog/2019/04/18/monitoring-container-vitality-and-availability-with-podman#))
+
+It is important to understand again is that there is no "outer container runtime" when a
+bootc container is deployed on a host.  The system must perform health checking on itself (or have an external
+system do it).
+
+Relevant links:
+
+- [bootc rollback](../man/bootc-rollback.md)
+- [CentOS Automotive SIG unattended updates](https://sigs.centos.org/automotive/building/unattended_updates/#watchdog-in-qemu)
+  (note that as of right now, greenboot does not yet integrate with bootc)
+- <https://systemd.io/AUTOMATIC_BOOT_ASSESSMENT/>
