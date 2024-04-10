@@ -9,6 +9,7 @@
 # Building images
 
 - [Building images](building/guidance.md)
+- [Container runtime vs bootc runtime](building/bootc-runtime.md)
 - [Users, groups, SSH keys](building/users-and-groups.md)
 - [Secrets](building/secrets.md)
 - [Management Services](building/management-services.md)
