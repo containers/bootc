@@ -39,6 +39,10 @@ pub(crate) struct UpgradeOpts {
     #[clap(long, conflicts_with = "apply")]
     pub(crate) check: bool,
 
+    /// Output JSON
+    #[clap(long, conflicts_with = "apply", required_if_eq("check", "true"))]
+    pub(crate) json: bool,
+
     /// Restart or reboot into the new target image.
     ///
     /// Currently, this option always reboots.  In the future this command
@@ -433,7 +437,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
                 if let Some(previous_image) = booted_image.as_ref() {
                     let diff =
                         ostree_container::ManifestDiff::new(&previous_image.manifest, &r.manifest);
-                    diff.print();
+                    diff.print(opts.json);
                 }
             }
         }
@@ -466,7 +470,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
                 if let Some(fetched_manifest) = fetched.get_manifest(repo)? {
                     let diff =
                         ostree_container::ManifestDiff::new(&prev.manifest, &fetched_manifest);
-                    diff.print();
+                    diff.print(opts.json);
                 }
             }
         }
