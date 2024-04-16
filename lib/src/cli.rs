@@ -46,6 +46,11 @@ pub(crate) struct UpgradeOpts {
     /// a userspace-only restart.
     #[clap(long, conflicts_with = "check")]
     pub(crate) apply: bool,
+
+    /// Skip TLS and certificate verification.
+    /// This is very insecure and should only be used in testing environments
+    #[clap(long)]
+    pub(crate) insecure_disable_tls_verification: bool,
 }
 
 /// Perform an switch operation
@@ -62,6 +67,11 @@ pub(crate) struct SwitchOpts {
     /// This argument is deprecated and does nothing.
     #[clap(long, hide = true)]
     pub(crate) no_signature_verification: bool,
+
+    /// Skip TLS and certificate verification.
+    /// This is very insecure and should only be used in testing environments
+    #[clap(long)]
+    pub(crate) insecure_disable_tls_verification: bool,
 
     /// This is the inverse of the previous `--target-no-signature-verification` (which is now
     /// a no-op).
@@ -103,6 +113,11 @@ pub(crate) struct EditOpts {
     /// Don't display progress
     #[clap(long)]
     pub(crate) quiet: bool,
+
+    /// Skip TLS and certificate verification.
+    /// This is very insecure and should only be used in testing environments
+    #[clap(long)]
+    pub(crate) insecure_disable_tls_verification: bool,
 }
 
 /// Perform an status operation
@@ -494,7 +509,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
         !opts.enforce_container_sigpolicy,
         opts.ostree_remote.as_deref(),
     );
-    let target = ostree_container::OstreeImageReference { sigverify, imgref };
+    let target = ostree_container::OstreeImageReference { sigverify, imgref, opts: opts.insecure_disable_tls_verification };
     let target = ImageReference::from(target);
 
     // If we're doing an in-place mutation, we shortcut most of the rest of the work here

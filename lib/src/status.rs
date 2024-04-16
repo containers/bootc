@@ -59,6 +59,7 @@ impl From<OstreeImageReference> for ImageReference {
             signature,
             transport: transport_to_string(imgref.imgref.transport),
             image: imgref.imgref.name,
+            insecure_disable_tls_verification: imgref.insecure_disable_tls_verification,
         }
     }
 }
@@ -71,6 +72,7 @@ impl From<ImageReference> for OstreeImageReference {
         };
         Self {
             sigverify,
+            insecure_disable_tls_verification: img.insecure_disable_tls_verification,
             imgref: ostree_container::ImageReference {
                 // SAFETY: We validated the schema in kube-rs
                 transport: img.transport.as_str().try_into().unwrap(),

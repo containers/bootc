@@ -618,6 +618,7 @@ async fn initialize_ostree_root_from_self(
             None
         };
         let proxy_cfg = ostree_container::store::ImageProxyConfig {
+            insecure_skip_tls_verification: src_imageref.insecure_disable_tls_verification,
             skopeo_cmd,
             ..Default::default()
         };

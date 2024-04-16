@@ -74,6 +74,9 @@ pub struct ImageReference {
     /// Signature verification type
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<ImageSignature>,
+    /// Skip TLS and certificate verification; this is very insecure and
+    /// should only be used in testing environments.
+    pub insecure_disable_tls_verification: bool,
 }
 
 /// The status of the booted image
