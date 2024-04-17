@@ -28,6 +28,7 @@
 use anyhow::anyhow;
 use containers_image_proxy::oci_spec;
 use ostree::glib;
+use serde::Serialize;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -295,27 +296,31 @@ impl std::fmt::Display for OstreeImageReference {
 }
 
 /// Represents the difference in layer/blob content between two OCI image manifests.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ManifestDiff<'a> {
     /// The source container image manifest.
+    #[serde(skip)]
     pub from: &'a oci_spec::image::ImageManifest,
     /// The target container image manifest.
+    #[serde(skip)]
     pub to: &'a oci_spec::image::ImageManifest,
     /// Layers which are present in the old image but not the new image.
+    #[serde(skip)]
     pub removed: Vec<&'a oci_spec::image::Descriptor>,
     /// Layers which are present in the new image but not the old image.
+    #[serde(skip)]
     pub added: Vec<&'a oci_spec::image::Descriptor>,
-    /// Total number of packages
+    /// Total number of layers
     pub total: u64,
-    /// Size of total number of packages.
+    /// Size of total number of layers.
     pub total_size: u64,
-    /// Number of packages removed
+    /// Number of layers removed
     pub n_removed: u64,
-    /// Size of the number of packages removed
+    /// Size of the number of layers removed
     pub removed_size: u64,
     /// Number of packages added
     pub n_added: u64,
-    /// Size of the number of packages added
+    /// Size of the number of layers added
     pub added_size: u64,
 }
 
