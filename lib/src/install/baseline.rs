@@ -269,14 +269,12 @@ pub(crate) fn install_create_rootfs(
     tracing::debug!("Created partition table");
 
     // Reread the partition table
-    {
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .open(&device)
-            .with_context(|| format!("opening {device}"))?;
-        crate::blockdev::reread_partition_table(&mut f, true)
-            .context("Rereading partition table")?;
-    }
+    Task::new("partx", "partx")
+        .arg("-a")
+        .arg(&device)
+        .quiet()
+        .run()
+        .context("Rereading partition table")?;
 
     crate::blockdev::udev_settle()?;
 

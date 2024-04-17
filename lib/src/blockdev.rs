@@ -141,30 +141,6 @@ pub(crate) fn udev_settle() -> Result<()> {
     Ok(())
 }
 
-#[allow(unsafe_code)]
-pub(crate) fn reread_partition_table(file: &mut File, retry: bool) -> Result<()> {
-    let fd = file.as_raw_fd();
-    // Reread sometimes fails inexplicably.  Retry several times before
-    // giving up.
-    let max_tries = if retry { 20 } else { 1 };
-    for retries in (0..max_tries).rev() {
-        let result = unsafe { ioctl::blkrrpart(fd) };
-        match result {
-            Ok(_) => break,
-            Err(err) if retries == 0 && err == Errno::EINVAL => {
-                return Err(err)
-                    .context("couldn't reread partition table: device may not support partitions")
-            }
-            Err(err) if retries == 0 && err == Errno::EBUSY => {
-                return Err(err).context("couldn't reread partition table: device is in use")
-            }
-            Err(err) if retries == 0 => return Err(err).context("couldn't reread partition table"),
-            Err(_) => std::thread::sleep(std::time::Duration::from_millis(100)),
-        }
-    }
-    Ok(())
-}
-
 /// Parse key-value pairs from lsblk --pairs.
 /// Newer versions of lsblk support JSON but the one in CentOS 7 doesn't.
 fn split_lsblk_line(line: &str) -> HashMap<String, String> {
