@@ -1,5 +1,8 @@
 # Relationship with other projects
 
+bootc is the key component in a broader mission of [bootable containers](https://containers.github.io/bootable/).
+Here's its relationship to other moving parts.
+
 ## Relationship with podman
 
 It gets a bit confusing to talk about shipping bootable operating systems in container images.

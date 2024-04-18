@@ -1,6 +1,7 @@
 # bootc
 
 Transactional, in-place operating system updates using OCI/Docker container images.
+bootc is the key component in a broader mission of [bootable containers](https://containers.github.io/bootable/).
 
 The original Docker container model of using "layers" to model
 applications has been extremely successful.  This project
