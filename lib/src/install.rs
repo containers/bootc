@@ -298,7 +298,7 @@ pub(crate) struct State {
     #[allow(dead_code)]
     pub(crate) config_opts: InstallConfigOpts,
     pub(crate) target_imgref: ostree_container::OstreeImageReference,
-    pub(crate) install_config: config::InstallConfiguration,
+    pub(crate) install_config: Option<config::InstallConfiguration>,
     /// The parsed contents of the authorized_keys (not the file path)
     pub(crate) root_ssh_authorized_keys: Option<String>,
 }
@@ -515,7 +515,7 @@ impl SourceInfo {
 }
 
 pub(crate) fn print_configuration() -> Result<()> {
-    let mut install_config = config::load_config()?;
+    let mut install_config = config::load_config()?.unwrap_or_default();
     install_config.filter_to_external();
     let stdout = std::io::stdout().lock();
     serde_json::to_writer(stdout, &install_config).map_err(Into::into)
@@ -1128,7 +1128,11 @@ async fn prepare_install(
     }
 
     let install_config = config::load_config()?;
-    tracing::debug!("Loaded install configuration");
+    if install_config.is_some() {
+        tracing::debug!("Loaded install configuration");
+    } else {
+        tracing::debug!("No install configuration found");
+    }
 
     // Eagerly read the file now to ensure we error out early if e.g. it doesn't exist,
     // instead of much later after we're 80% of the way through an install.
