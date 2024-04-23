@@ -53,7 +53,7 @@ to an existing system and install your container image. Failure to run
 Here's an example of using `bootc install` (root/elevated permission required):
 
 ```bash
-podman run --rm --privileged --pid=host -v /var/lib/containers:/var/lib/containers --security-opt label=type:unconfined_t <image> bootc install to-disk /path/to/disk
+podman run --rm --privileged --pid=host -v /var/lib/containers:/var/lib/containers -v /dev:/dev --security-opt label=type:unconfined_t <image> bootc install to-disk /path/to/disk
 ```
 
 Note that while `--privileged` is used, this command will not perform any
