@@ -153,7 +153,7 @@ impl InstallConfiguration {
 
 #[context("Loading configuration")]
 /// Load the install configuration, merging all found configuration files.
-pub(crate) fn load_config() -> Result<InstallConfiguration> {
+pub(crate) fn load_config() -> Result<Option<InstallConfiguration>> {
     const SYSTEMD_CONVENTIONAL_BASES: &[&str] = &["/usr/lib", "/usr/local/lib", "/etc", "/run"];
     let fragments = liboverdrop::scan(SYSTEMD_CONVENTIONAL_BASES, "bootc/install", &["toml"], true);
     let mut config: Option<InstallConfiguration> = None;
@@ -177,8 +177,9 @@ pub(crate) fn load_config() -> Result<InstallConfiguration> {
             config = c.install;
         }
     }
-    let mut config = config.ok_or_else(|| anyhow::anyhow!("No bootc/install config found; this operating system must define a default configuration to be installable"))?;
-    config.canonicalize();
+    if let Some(config) = config.as_mut() {
+        config.canonicalize();
+    }
     Ok(config)
 }
 

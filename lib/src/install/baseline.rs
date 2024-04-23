@@ -146,6 +146,15 @@ pub(crate) fn install_create_rootfs(
     opts: InstallBlockDeviceOpts,
 ) -> Result<RootSetup> {
     let luks_name = "root";
+    // Ensure we have a root filesystem upfront
+    let root_filesystem = opts
+        .filesystem
+        .or(state
+            .install_config
+            .as_ref()
+            .and_then(|c| c.filesystem_root())
+            .and_then(|r| r.fstype))
+        .ok_or_else(|| anyhow::anyhow!("No root filesystem specified"))?;
     // Verify that the target is empty (if not already wiped in particular, but it's
     // also good to verify that the wipe worked)
     let device = crate::blockdev::list_dev(&opts.device)?;
@@ -296,9 +305,18 @@ pub(crate) fn install_create_rootfs(
     };
 
     let base_rootdev = findpart(ROOTPN)?;
-    let block_setup = state
-        .install_config
-        .get_block_setup(opts.block_setup.as_ref().copied())?;
+    // Use the install configuration to find the block setup, if we have one
+    let block_setup = if let Some(config) = state.install_config.as_ref() {
+        config.get_block_setup(opts.block_setup.as_ref().copied())?
+    } else if opts.filesystem.is_some() {
+        // Otherwise, if a filesystem is specified then we default to whatever was
+        // specified via --block-setup, or the default
+        opts.block_setup.unwrap_or_default()
+    } else {
+        // If there was no default filesystem, then there's no default block setup,
+        // and we need to error out.
+        anyhow::bail!("No install configuration found, and no filesystem specified")
+    };
     let (rootdev, root_blockdev_kargs) = match block_setup {
         BlockSetup::Direct => (base_rootdev, None),
         BlockSetup::Tpm2Luks => {
@@ -342,13 +360,6 @@ pub(crate) fn install_create_rootfs(
     let boot_uuid = mkfs(bootdev, bootfs_type, Some("boot"), []).context("Initializing /boot")?;
 
     // Initialize rootfs
-    let root_filesystem = opts
-        .filesystem
-        .or(state
-            .install_config
-            .filesystem_root()
-            .and_then(|r| r.fstype))
-        .ok_or_else(|| anyhow::anyhow!("No root filesystem specified"))?;
     let root_uuid = mkfs(&rootdev, root_filesystem, Some("root"), [])?;
     let rootarg = format!("root=UUID={root_uuid}");
     let bootsrc = format!("UUID={boot_uuid}");
@@ -359,18 +370,18 @@ pub(crate) fn install_create_rootfs(
         fstype: MountSpec::AUTO.into(),
         options: Some("ro".into()),
     };
+    let install_config_kargs = state
+        .install_config
+        .as_ref()
+        .and_then(|c| c.kargs.as_ref())
+        .into_iter()
+        .flatten()
+        .map(ToOwned::to_owned);
     let kargs = root_blockdev_kargs
         .into_iter()
         .flatten()
         .chain([rootarg, RW_KARG.to_string(), bootarg].into_iter())
-        .chain(
-            state
-                .install_config
-                .kargs
-                .iter()
-                .flatten()
-                .map(ToOwned::to_owned),
-        )
+        .chain(install_config_kargs)
         .collect::<Vec<_>>();
 
     mount::mount(&rootdev, &rootfs)?;
