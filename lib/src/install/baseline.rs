@@ -119,11 +119,14 @@ fn sgdisk_partition(
 fn mkfs<'a>(
     dev: &str,
     fs: Filesystem,
-    label: Option<&'_ str>,
+    label: &str,
     opts: impl IntoIterator<Item = &'a str>,
 ) -> Result<uuid::Uuid> {
     let u = uuid::Uuid::new_v4();
-    let mut t = Task::new("Creating filesystem", format!("mkfs.{fs}"));
+    let mut t = Task::new(
+        &format!("Creating {label} filesystem ({fs})"),
+        format!("mkfs.{fs}"),
+    );
     match fs {
         Filesystem::Xfs => {
             t.cmd.arg("-m");
@@ -135,9 +138,7 @@ fn mkfs<'a>(
         }
     };
     // Today all the above mkfs commands take -L
-    if let Some(label) = label {
-        t.cmd.args(["-L", label]);
-    }
+    t.cmd.args(["-L", label]);
     t.cmd.args(opts);
     t.cmd.arg(dev);
     // All the mkfs commands are unnecessarily noisy by default
@@ -366,10 +367,10 @@ pub(crate) fn install_create_rootfs(
 
     // Initialize the /boot filesystem
     let bootdev = &findpart(BOOTPN)?;
-    let boot_uuid = mkfs(bootdev, bootfs_type, Some("boot"), []).context("Initializing /boot")?;
+    let boot_uuid = mkfs(bootdev, bootfs_type, "boot", []).context("Initializing /boot")?;
 
     // Initialize rootfs
-    let root_uuid = mkfs(&rootdev, root_filesystem, Some("root"), [])?;
+    let root_uuid = mkfs(&rootdev, root_filesystem, "root", [])?;
     let rootarg = format!("root=UUID={root_uuid}");
     let bootsrc = format!("UUID={boot_uuid}");
     let bootarg = format!("boot={bootsrc}");
