@@ -57,6 +57,12 @@ pub(crate) enum BlockSetup {
     Tpm2Luks,
 }
 
+impl Display for BlockSetup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
+}
+
 impl Default for BlockSetup {
     fn default() -> Self {
         Self::Direct
@@ -196,6 +202,20 @@ pub(crate) fn install_create_rootfs(
         .context("Absolute device path in /dev/ required")?;
     let device = devdir.join(reldevice);
 
+    // Use the install configuration to find the block setup, if we have one
+    let block_setup = if let Some(config) = state.install_config.as_ref() {
+        config.get_block_setup(opts.block_setup.as_ref().copied())?
+    } else if opts.filesystem.is_some() {
+        // Otherwise, if a filesystem is specified then we default to whatever was
+        // specified via --block-setup, or the default
+        opts.block_setup.unwrap_or_default()
+    } else {
+        // If there was no default filesystem, then there's no default block setup,
+        // and we need to error out.
+        anyhow::bail!("No install configuration found, and no filesystem specified")
+    };
+    println!("Using block setup: {block_setup}");
+
     let root_size = opts
         .root_size
         .as_deref()
@@ -305,18 +325,7 @@ pub(crate) fn install_create_rootfs(
     };
 
     let base_rootdev = findpart(ROOTPN)?;
-    // Use the install configuration to find the block setup, if we have one
-    let block_setup = if let Some(config) = state.install_config.as_ref() {
-        config.get_block_setup(opts.block_setup.as_ref().copied())?
-    } else if opts.filesystem.is_some() {
-        // Otherwise, if a filesystem is specified then we default to whatever was
-        // specified via --block-setup, or the default
-        opts.block_setup.unwrap_or_default()
-    } else {
-        // If there was no default filesystem, then there's no default block setup,
-        // and we need to error out.
-        anyhow::bail!("No install configuration found, and no filesystem specified")
-    };
+
     let (rootdev, root_blockdev_kargs) = match block_setup {
         BlockSetup::Direct => (base_rootdev, None),
         BlockSetup::Tpm2Luks => {
