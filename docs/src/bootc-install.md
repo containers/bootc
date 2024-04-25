@@ -167,6 +167,8 @@ podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t  
 
 Notice that we use `--generic-image` for this use case.
 
+Set the environment variable `BOOTC_DIRECT_IO=on` to create the loopback device with direct-io enabled.
+
 ### Using `bootc install to-existing-root`
 
 This is a variant of `install to-filesystem`, which maximizes convenience for using
