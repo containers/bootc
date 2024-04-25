@@ -8,6 +8,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::env;
 use std::fs::File;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
@@ -83,8 +84,24 @@ pub(crate) struct LoopbackDevice {
 impl LoopbackDevice {
     // Create a new loopback block device targeting the provided file path.
     pub(crate) fn new(path: &Path) -> Result<Self> {
+        let direct_io = match env::var("BOOTC_DIRECT_IO") {
+            Ok(val) => {
+                if val == "on" {
+                    "on"
+                } else {
+                    "off"
+                }
+            }
+            Err(_e) => "off",
+        };
+
         let dev = Task::new("losetup", "losetup")
-            .args(["--show", "--direct-io=on", "-P", "--find"])
+            .args([
+                "--show",
+                format!("--direct-io={direct_io}").as_str(),
+                "-P",
+                "--find",
+            ])
             .arg(path)
             .quiet()
             .read()?;
