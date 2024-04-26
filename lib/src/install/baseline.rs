@@ -50,9 +50,10 @@ impl Display for Filesystem {
     }
 }
 
-#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(clap::ValueEnum, Default, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum BlockSetup {
+    #[default]
     Direct,
     Tpm2Luks,
 }
@@ -60,12 +61,6 @@ pub(crate) enum BlockSetup {
 impl Display for BlockSetup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.to_possible_value().unwrap().get_name().fmt(f)
-    }
-}
-
-impl Default for BlockSetup {
-    fn default() -> Self {
-        Self::Direct
     }
 }
 
