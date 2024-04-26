@@ -34,19 +34,19 @@ case "$TEST_OS" in
         tee -a /etc/mock/templates/"$TEMPLATE" > /dev/null << EOF
 [BaseOS]
 name=Red Hat Enterprise Linux - BaseOS
-baseurl=http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/BaseOS/\$basearch/os/
+baseurl=http://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/BaseOS/\$basearch/os/
 enabled=1
 gpgcheck=0
 
 [AppStream]
 name=Red Hat Enterprise Linux - AppStream
-baseurl=http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/AppStream/\$basearch/os/
+baseurl=http://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/AppStream/\$basearch/os/
 enabled=1
 gpgcheck=0
 
 [CRB]
 name = Red Hat Enterprise Linux - CRB
-baseurl = http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/CRB/\$basearch/os/
+baseurl = http://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/CRB/\$basearch/os/
 enabled = 1
 gpgcheck = 0
 """
