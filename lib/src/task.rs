@@ -9,9 +9,21 @@ use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtCommandExt;
 
+/// How much information we output
+#[derive(Debug, PartialEq, Eq, Default)]
+enum CmdVerbosity {
+    /// Nothing is output
+    Quiet,
+    /// Only the task description is output
+    #[default]
+    Description,
+    /// The task description and the full command line are output
+    Verbose,
+}
+
 pub(crate) struct Task {
     description: String,
-    quiet: bool,
+    verbosity: CmdVerbosity,
     quiet_output: bool,
     pub(crate) cmd: Command,
 }
@@ -40,14 +52,21 @@ impl Task {
         cmd.stdin(Stdio::null());
         Self {
             description,
-            quiet: false,
+            verbosity: Default::default(),
             quiet_output: false,
             cmd,
         }
     }
 
+    /// Don't output description by default
     pub(crate) fn quiet(mut self) -> Self {
-        self.quiet = true;
+        self.verbosity = CmdVerbosity::Quiet;
+        self
+    }
+
+    /// Output description and cmdline
+    pub(crate) fn verbose(mut self) -> Self {
+        self.verbosity = CmdVerbosity::Verbose;
         self
     }
 
@@ -72,13 +91,38 @@ impl Task {
         self.run_with_stdin_buf(None)
     }
 
+    fn pre_run_output(&self) {
+        match self.verbosity {
+            CmdVerbosity::Quiet => {}
+            CmdVerbosity::Description => {
+                println!("{}", self.description);
+            }
+            CmdVerbosity::Verbose => {
+                // Output the description first
+                println!("{}", self.description);
+
+                // Lock stdout so we buffer
+                let mut stdout = std::io::stdout().lock();
+                let cmd_args = std::iter::once(self.cmd.get_program())
+                    .chain(self.cmd.get_args())
+                    .map(|arg| arg.to_string_lossy());
+                // We unwrap() here to match the default for println!() even though
+                // arguably that's wrong
+                stdout.write_all(b">").unwrap();
+                for s in cmd_args {
+                    stdout.write_all(b" ").unwrap();
+                    stdout.write_all(s.as_bytes()).unwrap();
+                }
+                stdout.write_all(b"\n").unwrap();
+            }
+        }
+    }
+
     /// Run the command with optional stdin buffer, returning an error if the command does not exit successfully.
     pub(crate) fn run_with_stdin_buf(self, stdin: Option<&[u8]>) -> Result<()> {
+        self.pre_run_output();
         let description = self.description;
         let mut cmd = self.cmd;
-        if !self.quiet {
-            println!("{description}");
-        }
         let mut output = None;
         if self.quiet_output {
             let tmpf = tempfile::tempfile()?;
@@ -117,11 +161,9 @@ impl Task {
 
     /// Like [`run()`], but return stdout.
     pub(crate) fn read(self) -> Result<String> {
+        self.pre_run_output();
         let description = self.description;
         let mut cmd = self.cmd;
-        if !self.quiet {
-            println!("{description}");
-        }
         tracing::debug!("exec: {cmd:?}");
         cmd.stdout(Stdio::piped());
         let child = cmd

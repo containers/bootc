@@ -50,16 +50,17 @@ impl Display for Filesystem {
     }
 }
 
-#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(clap::ValueEnum, Default, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum BlockSetup {
+    #[default]
     Direct,
     Tpm2Luks,
 }
 
-impl Default for BlockSetup {
-    fn default() -> Self {
-        Self::Direct
+impl Display for BlockSetup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
     }
 }
 
@@ -113,11 +114,14 @@ fn sgdisk_partition(
 fn mkfs<'a>(
     dev: &str,
     fs: Filesystem,
-    label: Option<&'_ str>,
+    label: &str,
     opts: impl IntoIterator<Item = &'a str>,
 ) -> Result<uuid::Uuid> {
     let u = uuid::Uuid::new_v4();
-    let mut t = Task::new("Creating filesystem", format!("mkfs.{fs}"));
+    let mut t = Task::new(
+        &format!("Creating {label} filesystem ({fs})"),
+        format!("mkfs.{fs}"),
+    );
     match fs {
         Filesystem::Xfs => {
             t.cmd.arg("-m");
@@ -129,14 +133,13 @@ fn mkfs<'a>(
         }
     };
     // Today all the above mkfs commands take -L
-    if let Some(label) = label {
-        t.cmd.args(["-L", label]);
-    }
+    t.cmd.args(["-L", label]);
     t.cmd.args(opts);
     t.cmd.arg(dev);
     // All the mkfs commands are unnecessarily noisy by default
     t.cmd.stdout(Stdio::null());
-    t.run()?;
+    // But this one is notable so let's print the whole thing with verbose()
+    t.verbose().run()?;
     Ok(u)
 }
 
@@ -195,6 +198,20 @@ pub(crate) fn install_create_rootfs(
         .strip_prefix("/dev/")
         .context("Absolute device path in /dev/ required")?;
     let device = devdir.join(reldevice);
+
+    // Use the install configuration to find the block setup, if we have one
+    let block_setup = if let Some(config) = state.install_config.as_ref() {
+        config.get_block_setup(opts.block_setup.as_ref().copied())?
+    } else if opts.filesystem.is_some() {
+        // Otherwise, if a filesystem is specified then we default to whatever was
+        // specified via --block-setup, or the default
+        opts.block_setup.unwrap_or_default()
+    } else {
+        // If there was no default filesystem, then there's no default block setup,
+        // and we need to error out.
+        anyhow::bail!("No install configuration found, and no filesystem specified")
+    };
+    println!("Using block setup: {block_setup}");
 
     let root_size = opts
         .root_size
@@ -305,18 +322,7 @@ pub(crate) fn install_create_rootfs(
     };
 
     let base_rootdev = findpart(ROOTPN)?;
-    // Use the install configuration to find the block setup, if we have one
-    let block_setup = if let Some(config) = state.install_config.as_ref() {
-        config.get_block_setup(opts.block_setup.as_ref().copied())?
-    } else if opts.filesystem.is_some() {
-        // Otherwise, if a filesystem is specified then we default to whatever was
-        // specified via --block-setup, or the default
-        opts.block_setup.unwrap_or_default()
-    } else {
-        // If there was no default filesystem, then there's no default block setup,
-        // and we need to error out.
-        anyhow::bail!("No install configuration found, and no filesystem specified")
-    };
+
     let (rootdev, root_blockdev_kargs) = match block_setup {
         BlockSetup::Direct => (base_rootdev, None),
         BlockSetup::Tpm2Luks => {
@@ -335,10 +341,12 @@ pub(crate) fn install_create_rootfs(
                 .args([base_rootdev.as_str()])
                 .run()?;
             // The --wipe-slot=all removes our temporary passphrase, and binds to the local TPM device.
+            // We also use .verbose() here as the details are important/notable.
             Task::new("Enrolling root device with TPM", "systemd-cryptenroll")
                 .args(["--wipe-slot=all", "--tpm2-device=auto", "--unlock-key-file"])
                 .args([tmp_keyfile])
                 .args([base_rootdev.as_str()])
+                .verbose()
                 .run_with_stdin_buf(dummy_passphrase_input)?;
             Task::new("Opening root LUKS device", "cryptsetup")
                 .args(["luksOpen", base_rootdev.as_str(), luks_name])
@@ -357,10 +365,10 @@ pub(crate) fn install_create_rootfs(
 
     // Initialize the /boot filesystem
     let bootdev = &findpart(BOOTPN)?;
-    let boot_uuid = mkfs(bootdev, bootfs_type, Some("boot"), []).context("Initializing /boot")?;
+    let boot_uuid = mkfs(bootdev, bootfs_type, "boot", []).context("Initializing /boot")?;
 
     // Initialize rootfs
-    let root_uuid = mkfs(&rootdev, root_filesystem, Some("root"), [])?;
+    let root_uuid = mkfs(&rootdev, root_filesystem, "root", [])?;
     let rootarg = format!("root=UUID={root_uuid}");
     let bootsrc = format!("UUID={boot_uuid}");
     let bootarg = format!("boot={bootsrc}");
