@@ -58,6 +58,8 @@ pub enum Transport {
     OciDir,
     /// A local OCI archive tarball (`oci-archive:`)
     OciArchive,
+    /// A local Docker archive tarball (`docker-archive:`)
+    DockerArchive,
     /// Local container storage (`containers-storage:`)
     ContainerStorage,
     /// Local directory (`dir:`)
@@ -107,6 +109,7 @@ impl TryFrom<&str> for Transport {
             Self::REGISTRY_STR | "docker" => Self::Registry,
             Self::OCI_STR => Self::OciDir,
             Self::OCI_ARCHIVE_STR => Self::OciArchive,
+            Self::DOCKER_ARCHIVE_STR => Self::DockerArchive,
             Self::CONTAINERS_STORAGE_STR => Self::ContainerStorage,
             Self::LOCAL_DIRECTORY_STR => Self::Dir,
             o => return Err(anyhow!("Unknown transport '{}'", o)),
@@ -117,6 +120,7 @@ impl TryFrom<&str> for Transport {
 impl Transport {
     const OCI_STR: &'static str = "oci";
     const OCI_ARCHIVE_STR: &'static str = "oci-archive";
+    const DOCKER_ARCHIVE_STR: &'static str = "docker-archive";
     const CONTAINERS_STORAGE_STR: &'static str = "containers-storage";
     const LOCAL_DIRECTORY_STR: &'static str = "dir";
     const REGISTRY_STR: &'static str = "registry";
@@ -127,6 +131,7 @@ impl Transport {
             Transport::Registry => Self::REGISTRY_STR,
             Transport::OciDir => Self::OCI_STR,
             Transport::OciArchive => Self::OCI_ARCHIVE_STR,
+            Transport::DockerArchive => Self::DOCKER_ARCHIVE_STR,
             Transport::ContainerStorage => Self::CONTAINERS_STORAGE_STR,
             Transport::Dir => Self::LOCAL_DIRECTORY_STR,
         }
@@ -247,6 +252,7 @@ impl std::fmt::Display for Transport {
             // TODO once skopeo supports this, canonicalize as registry:
             Self::Registry => "docker://",
             Self::OciArchive => "oci-archive:",
+            Self::DockerArchive => "docker-archive:",
             Self::OciDir => "oci:",
             Self::ContainerStorage => "containers-storage:",
             Self::Dir => "dir:",
@@ -502,6 +508,7 @@ mod tests {
             Transport::Registry,
             Transport::ContainerStorage,
             Transport::OciArchive,
+            Transport::DockerArchive,
             Transport::OciDir,
         ] {
             assert_eq!(Transport::try_from(v.serializable_name()).unwrap(), v);
@@ -550,6 +557,11 @@ mod tests {
                 s: "oci-archive:/path/to/foo.ociarchive",
                 transport: Transport::OciArchive,
                 name: "/path/to/foo.ociarchive",
+            },
+            Case {
+                s: "docker-archive:/path/to/foo.dockerarchive",
+                transport: Transport::DockerArchive,
+                name: "/path/to/foo.dockerarchive",
             },
             Case {
                 s: "containers-storage:localhost/someimage:blah",
