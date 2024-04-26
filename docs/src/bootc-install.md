@@ -9,6 +9,12 @@ or virtualized), one needs a few key components:
 - kernel (and optionally initramfs)
 - root filesystem (xfs/ext4/btrfs etc.)
 
+The bootloader state is managed by the external [bootupd](https://github.com/coreos/bootupd/)
+project which abstracts over bootloader installs and upgrades.  The invocation of
+`bootc install` will always run `bootupd` to handle bootloader installation
+to the target disk.   The default expectation is that bootloader contents and install logic
+come from the container image in a `bootc` based system.
+
 The Linux kernel (and optionally initramfs) is embedded in the container image; the canonical location
 is `/usr/lib/modules/$kver/vmlinuz`, and the initramfs should be in `initramfs.img`
 in that directory.

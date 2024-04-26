@@ -77,3 +77,10 @@ container build tool supports producing OCI container images.
 You may find some references to this; it is no longer very useful
 and is not recommended.
 
+# The bootloader setup
+
+At the current time bootc relies on the [bootupd](https://github.com/coreos/bootupd/)
+project which handles bootloader installs and upgrades.  The invocation of
+`bootc install` will always run `bootupd` to perform installations.
+Additionally, `bootc upgrade` will currently not upgrade the bootloader;
+you must invoke `bootupctl update`.
