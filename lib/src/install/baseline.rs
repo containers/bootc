@@ -143,7 +143,8 @@ fn mkfs<'a>(
     t.cmd.arg(dev);
     // All the mkfs commands are unnecessarily noisy by default
     t.cmd.stdout(Stdio::null());
-    t.run()?;
+    // But this one is notable so let's print the whole thing with verbose()
+    t.verbose().run()?;
     Ok(u)
 }
 
@@ -345,10 +346,12 @@ pub(crate) fn install_create_rootfs(
                 .args([base_rootdev.as_str()])
                 .run()?;
             // The --wipe-slot=all removes our temporary passphrase, and binds to the local TPM device.
+            // We also use .verbose() here as the details are important/notable.
             Task::new("Enrolling root device with TPM", "systemd-cryptenroll")
                 .args(["--wipe-slot=all", "--tpm2-device=auto", "--unlock-key-file"])
                 .args([tmp_keyfile])
                 .args([base_rootdev.as_str()])
+                .verbose()
                 .run_with_stdin_buf(dummy_passphrase_input)?;
             Task::new("Opening root LUKS device", "cryptsetup")
                 .args(["luksOpen", base_rootdev.as_str(), luks_name])
