@@ -52,12 +52,12 @@ case "$TEST_OS" in
 yum_repos:
   rhel-9x-baseos:
     name: rhel-9x-baseos
-    baseurl: http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/BaseOS/${ARCH}/os/
+    baseurl: http://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/BaseOS/${ARCH}/os/
     enabled: true
     gpgcheck: false
   rhel-9x-appstream:
     name: rhel-9x-appstream
-    baseurl: http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/AppStream/${ARCH}/os/
+    baseurl: http://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/AppStream/${ARCH}/os/
     enabled: true
     gpgcheck: false
 EOF
