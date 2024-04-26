@@ -59,7 +59,7 @@ jobs:
 
   rhel94-integration:
     needs: pr-info
-    if: ${{ needs.pr-info.outputs.allowed_user == 'true' }}
+    if: ${{ needs.pr-info.outputs.allowed_user == 'true' && !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
     continue-on-error: true
     strategy:
       matrix:
@@ -90,7 +90,7 @@ jobs:
 
   cs9-dev-integration:
     needs: pr-info
-    if: ${{ needs.pr-info.outputs.allowed_user == 'true' }}
+    if: ${{ needs.pr-info.outputs.allowed_user == 'true' && !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
     continue-on-error: true
     strategy:
       matrix:
