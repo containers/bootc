@@ -84,3 +84,57 @@ project which handles bootloader installs and upgrades.  The invocation of
 `bootc install` will always run `bootupd` to perform installations.
 Additionally, `bootc upgrade` will currently not upgrade the bootloader;
 you must invoke `bootupctl update`.
+
+# SELinux
+
+Container runtimes such as `podman` and `docker` commonly
+apply a "coarse" SELinux policy to running containers.
+See [container-selinux](https://github.com/containers/container-selinux/blob/main/container_selinux.8).
+It is very important to understand that non-bootc base
+images do not (usually) have any embedded `security.selinux` metadata
+at all; all labels on the toplevel container image
+are *dynamically* generated per container invocation,
+and there are no individually distinct e.g. `etc_t` and
+`usr_t` types.
+
+In contrast, with the current OSTree backend for bootc,
+when the base image is built, label metadata is included
+in special metadata files in `/sysroot/ostree` that correspond
+to components of the base image.
+
+When a bootc container is deployed, the system
+will use these default SELinux labels.
+Further non-OSTree layers will be dynamically labeled
+using the base policy.
+
+Hence, at the current time it will *not* work to override
+the labels for files in derived layers by using e.g.
+
+```
+RUN semanage fcontext -a -t httpd_sys_content_t "/web(/.*)?"
+```
+
+(This command will write to `/etc/selinux/policy/$policy/`)
+
+It will *never* work to do e.g.:
+
+```
+RUN chcon -t foo_t /usr/bin/foo
+```
+
+Because the container runtime state will deny the attempt to
+"physically" set the `security.selinux` extended attribute.
+In contrast per above, future support for custom labeling
+will by default be done by customizing the policy file_contexts.
+
+### Toplevel directories
+
+In particular, a common problem is that inside a container image,
+it's easy to create arbitrary toplevel directories such as
+e.g. `/app` or `/aimodel` etc.  But in some SELinux policies
+such as Fedora derivatives, these will be labeled as `default_t`
+which few domains can access.
+
+References:
+
+- <https://github.com/ostreedev/ostree-rs-ext/issues/510>
