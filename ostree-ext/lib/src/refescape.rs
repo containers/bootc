@@ -151,8 +151,10 @@ mod test {
         "localhost:5000/foo:latest",
         "fedora/x86_64/coreos",
         "/foo/bar/foo.oci-archive",
+        "/foo/bar/foo.docker-archive",
         "docker://quay.io/exampleos/blah:latest",
         "oci-archive:/path/to/foo.ociarchive",
+        "docker-archive:/path/to/foo.dockerarchive",
     ];
     const CORNERCASES: &[&str] = &["/", "blah/", "/foo/"];
 
