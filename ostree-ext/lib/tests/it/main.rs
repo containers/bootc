@@ -401,10 +401,11 @@ async fn test_tar_write() -> Result<()> {
 #[tokio::test]
 async fn test_tar_write_tar_layer() -> Result<()> {
     let fixture = Fixture::new_v1()?;
-    let uncompressed_tar = tokio::io::BufReader::new(
-        async_compression::tokio::bufread::GzipDecoder::new(EXAMPLE_TAR_LAYER),
-    );
-    ostree_ext::tar::write_tar(fixture.destrepo(), uncompressed_tar, "test", None).await?;
+    let mut v = Vec::new();
+    let mut dec = flate2::bufread::GzDecoder::new(std::io::Cursor::new(EXAMPLE_TAR_LAYER));
+    let _n = std::io::copy(&mut dec, &mut v)?;
+    let r = tokio::io::BufReader::new(std::io::Cursor::new(v));
+    ostree_ext::tar::write_tar(fixture.destrepo(), r, "test", None).await?;
     Ok(())
 }
 
