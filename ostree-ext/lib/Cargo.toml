@@ -12,7 +12,6 @@ rust-version = "1.74.0"
 [dependencies]
 anyhow = "1.0"
 containers-image-proxy = "0.5.5"
-async-compression = { version = "0.4", features = ["gzip", "tokio", "zstd"] }
 camino = "1.0.4"
 chrono = "0.4.19"
 olpc-cjson = "0.1.1"
@@ -43,6 +42,7 @@ tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1
 tokio-util = { features = ["io-util"], version = "0.7" }
 tokio-stream = { features = ["sync"], version = "0.1.8" }
 tracing = "0.1"
+zstd = "0.13.1"
 
 indoc = { version = "2", optional = true }
 xshell = { version = "0.2", optional = true }

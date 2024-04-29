@@ -401,10 +401,11 @@ async fn test_tar_write() -> Result<()> {
 #[tokio::test]
 async fn test_tar_write_tar_layer() -> Result<()> {
     let fixture = Fixture::new_v1()?;
-    let uncompressed_tar = tokio::io::BufReader::new(
-        async_compression::tokio::bufread::GzipDecoder::new(EXAMPLE_TAR_LAYER),
-    );
-    ostree_ext::tar::write_tar(fixture.destrepo(), uncompressed_tar, "test", None).await?;
+    let mut v = Vec::new();
+    let mut dec = flate2::bufread::GzDecoder::new(std::io::Cursor::new(EXAMPLE_TAR_LAYER));
+    let _n = std::io::copy(&mut dec, &mut v)?;
+    let r = tokio::io::BufReader::new(std::io::Cursor::new(v));
+    ostree_ext::tar::write_tar(fixture.destrepo(), r, "test", None).await?;
     Ok(())
 }
 
@@ -1261,10 +1262,8 @@ async fn test_container_write_derive() -> Result<()> {
     Ok(())
 }
 
-/// Test for zstd
-/// We need to handle the case of modified hardlinks into /sysroot
-#[tokio::test]
-async fn test_container_zstd() -> Result<()> {
+/// Implementation of a test case for non-gzip (i.e. zstd or zstd:chunked) compression
+async fn test_non_gzip(format: &str) -> Result<()> {
     let fixture = Fixture::new_v1()?;
     let baseimg = &fixture.export_container().await?.0;
     let basepath = &match baseimg.transport {
@@ -1276,7 +1275,7 @@ async fn test_container_zstd() -> Result<()> {
     let st = tokio::process::Command::new("skopeo")
         .args([
             "copy",
-            "--dest-compress-format=zstd",
+            &format!("--dest-compress-format={format}"),
             baseimg_ref.as_str(),
             &format!("oci:{zstd_image_path}"),
         ])
@@ -1300,6 +1299,18 @@ async fn test_container_zstd() -> Result<()> {
     let _ = imp.import(prep).await.unwrap();
 
     Ok(())
+}
+
+/// Test for zstd
+#[tokio::test]
+async fn test_container_zstd() -> Result<()> {
+    test_non_gzip("zstd").await
+}
+
+/// Test for zstd:chunked
+#[tokio::test]
+async fn test_container_zstd_chunked() -> Result<()> {
+    test_non_gzip("zstd:chunked").await
 }
 
 /// Test for https://github.com/ostreedev/ostree-rs-ext/issues/405
