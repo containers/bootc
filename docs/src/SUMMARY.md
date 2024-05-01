@@ -38,6 +38,7 @@
 
 - [Image layout](bootc-images.md)
 - [Filesystem](filesystem.md)
+- [Filesystem: sysroot](filesystem-sysroot.md)
 
 # More information
 
