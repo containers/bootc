@@ -22,8 +22,10 @@ When the system is fully booted, it is into the equivalent of a `chroot`.
 The "physical" host root filesystem will be mounted at `/sysroot`.
 For more on this, see [filesystem: sysroot](filesystem-sysroot.md).
 
-All the remaining filesystem paths below are part of a "deployment root" which
-is used as a final target for the system boot.
+This `chroot` filesystem is called a "deployment root". All the remaining
+filesystem paths below are part of a deployment root which is used as a
+final target for the system boot.  The target deployment is determined
+via the `ostree=` kernel commandline argument.
 
 ## `/usr`
 
