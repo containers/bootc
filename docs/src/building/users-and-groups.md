@@ -64,10 +64,22 @@ users and credentials as part of a derived build:
 RUN useradd someuser
 ```
 
-However, it is important to understand some issues with the default
-`shadow-utils` implementation of `useradd`:
+However, it is important to understand some two very important issues
+with this as it exists today (the `shadow-utils` implementation of `useradd`)
+and the default glibc `files` backend for the traditional `/etc/passwd`
+and `/etc/shadow` files.
 
-First, typically user/group IDs are allocated dynamically, and this can result in "drift" (see below).
+It is common for user/group IDs are allocated dynamically, and this can result in "drift" (see below).
+
+Further, if `/etc/passwd` is modified locally (because there is a machine-local user),
+then any added users injected via `useradd` *will not appear* on subsequent updates by default (they will be
+in `/usr/etc/passwd` instead - the default image version).
+
+These "system users" that may be created by packaging tools invoking `useradd` (e.g. `apt|dnf install httpd`) that do
+not also install a `sysusers.d` file.  Currently for example, this is the case with
+the CentOS Stream 9 `httpd` package.  Per below, the general solution to this
+is to avoid invoking `useradd` in container builds, and prefer one of the below
+solutions.
 
 #### User and group home directories and `/var`
 
