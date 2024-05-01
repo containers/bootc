@@ -39,7 +39,7 @@ on `/sysroot`.
 Fundamentally bootc is agnostic to the underlying block device setup.
 How to grow the root block device depends on the underlying
 storage stack, from basic partitions to LVM.  However, a
-common tool is the [growpart(https://manpages.debian.org/testing/cloud-guest-utils/growpart.1.en.html)
+common tool is the [growpart](https://manpages.debian.org/testing/cloud-guest-utils/growpart.1.en.html)
 utility from `cloud-init`.
 
 ### Growing the filesytem
