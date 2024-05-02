@@ -21,8 +21,8 @@ architecture:
 A simple way to explain the current architecture is that podman uses
 two Go libraries:
 
-- https://github.com/containers/image
-- https://github.com/containers/storage/
+- <https://github.com/containers/image>
+- <https://github.com/containers/storage>
 
 Whereas ostree uses a custom container storage, not `containers/storage`.
 
