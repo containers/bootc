@@ -17,6 +17,7 @@ use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Ok;
 use anyhow::{anyhow, Context, Result};
@@ -230,6 +231,10 @@ pub(crate) struct InstallTargetFilesystemOpts {
     #[clap(long)]
     pub(crate) replace: Option<ReplaceMode>,
 
+    /// If the target is the running system's root filesystem, this will skip any warnings.
+    #[clap(long)]
+    pub(crate) acknowledge_destructive: bool,
+
     /// The default mode is to "finalize" the target filesystem by invoking `fstrim` and similar
     /// operations, and finally mounting it readonly.  This option skips those operations.  It
     /// is then the responsibility of the invoking code to perform those operations.
@@ -268,6 +273,10 @@ pub(crate) struct InstallToExistingRootOpts {
 
     #[clap(flatten)]
     pub(crate) config_opts: InstallConfigOpts,
+
+    /// Accept that this is a destructive action and skip a warning timer.
+    #[clap(long)]
+    pub(crate) acknowledge_destructive: bool,
 
     /// Path to the mounted root; it's expected to invoke podman with
     /// `-v /:/target`, then supplying this argument is unnecessary.
@@ -1373,6 +1382,34 @@ fn find_root_args_to_inherit(cmdline: &[&str], root_info: &Filesystem) -> Result
     Ok(RootMountInfo { mount_spec, kargs })
 }
 
+fn warn_on_host_root(rootfs_fd: &Dir) -> Result<()> {
+    // Seconds for which we wait while warning
+    const DELAY_SECONDS: u64 = 20;
+
+    let host_root_dfd = &Dir::open_ambient_dir("/proc/1/root", cap_std::ambient_authority())?;
+    let host_root_devstat = rustix::fs::fstatvfs(host_root_dfd)?;
+    let target_devstat = rustix::fs::fstatvfs(rootfs_fd)?;
+    if host_root_devstat.f_fsid != target_devstat.f_fsid {
+        tracing::debug!("Not the host root");
+        return Ok(());
+    }
+    let dashes = "----------------------------";
+    let timeout = Duration::from_secs(DELAY_SECONDS);
+    eprintln!("{dashes}");
+    crate::utils::medium_visibility_warning(
+        "WARNING: This operation will OVERWRITE THE BOOTED HOST ROOT FILESYSTEM and is NOT REVERSIBLE.",
+    );
+    eprintln!("Waiting {timeout:?} to continue; interrupt (Control-C) to cancel.");
+    eprintln!("{dashes}");
+
+    let bar = indicatif::ProgressBar::new_spinner();
+    bar.enable_steady_tick(Duration::from_millis(100));
+    std::thread::sleep(timeout);
+    bar.finish();
+
+    Ok(())
+}
+
 /// Implementation of the `bootc install to-filsystem` CLI command.
 #[context("Installing to filesystem")]
 pub(crate) async fn install_to_filesystem(
@@ -1391,7 +1428,12 @@ pub(crate) async fn install_to_filesystem(
     let rootfs_fd = Dir::open_ambient_dir(root_path, cap_std::ambient_authority())
         .with_context(|| format!("Opening target root directory {root_path}"))?;
     if let Some(false) = ostree_ext::mountutil::is_mountpoint(&rootfs_fd, ".")? {
-        anyhow::bail!("Not a root mountpoint: {root_path}");
+        anyhow::bail!("Not a mountpoint: {root_path}");
+    }
+
+    // Check to see if this happens to be the real host root
+    if !fsopts.acknowledge_destructive {
+        warn_on_host_root(&rootfs_fd)?;
     }
 
     // Gather global state, destructuring the provided options
@@ -1554,6 +1596,7 @@ pub(crate) async fn install_to_existing_root(opts: InstallToExistingRootOpts) ->
             boot_mount_spec: None,
             replace: opts.replace,
             skip_finalize: true,
+            acknowledge_destructive: opts.acknowledge_destructive,
         },
         source_opts: opts.source_opts,
         target_opts: opts.target_opts,
