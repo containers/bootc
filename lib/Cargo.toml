@@ -6,7 +6,7 @@ name = "bootc-lib"
 readme = "README.md"
 repository = "https://github.com/containers/bootc"
 version = "0.1.10"
-rust-version = "1.64.0"
+rust-version = "1.75.0"
 build = "build.rs"
 
 include = ["/src", "LICENSE-APACHE", "LICENSE-MIT"]
