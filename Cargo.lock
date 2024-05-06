@@ -182,7 +182,7 @@ dependencies = [
  "clap",
  "clap_mangen",
  "fn-error-context",
- "gvariant",
+ "gvariant 0.5.0",
  "hex",
  "indicatif",
  "libc",
@@ -894,7 +894,18 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f7a982b6b38ff2380ea1b1b480cb7f5b51dac917aceff2e16af0c207781e13a"
 dependencies = [
- "gvariant-macro",
+ "gvariant-macro 0.4.0",
+ "memchr",
+ "ref-cast",
+]
+
+[[package]]
+name = "gvariant"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd8ea59586b3b91a49369121fb626b8afaa094baef5ea5569adec2d679b5460e"
+dependencies = [
+ "gvariant-macro 0.5.0",
  "memchr",
  "ref-cast",
 ]
@@ -904,6 +915,15 @@ name = "gvariant-macro"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9915719ccd7435a28103eea8dba78bcf35a25d5637c70273b47dbb49c6d2eb6d"
+dependencies = [
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "gvariant-macro"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26d6c33b3796d2656c765308a4b70b5f3176123c82174b96db351aeef549b9f1"
 dependencies = [
  "syn 1.0.109",
 ]
@@ -1368,7 +1388,7 @@ dependencies = [
  "flate2",
  "fn-error-context",
  "futures-util",
- "gvariant",
+ "gvariant 0.4.0",
  "hex",
  "indicatif",
  "io-lifetimes",
