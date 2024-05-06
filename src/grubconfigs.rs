@@ -5,37 +5,18 @@ use anyhow::{anyhow, Context, Result};
 use fn_error_context::context;
 use openat_ext::OpenatDirExt;
 
-use crate::efi::SHIM;
-
 /// The subdirectory of /boot we use
 const GRUB2DIR: &str = "grub2";
 const CONFIGDIR: &str = "/usr/lib/bootupd/grub2-static";
 const DROPINDIR: &str = "configs.d";
 
-#[context("Locating EFI vendordir")]
-pub(crate) fn find_efi_vendordir(efidir: &openat::Dir) -> Result<PathBuf> {
-    for d in efidir.list_dir(".")? {
-        let d = d?;
-        let meta = efidir.metadata(d.file_name())?;
-        if !meta.is_dir() {
-            continue;
-        }
-        // skip if not find shim under dir
-        let dir = efidir.sub_dir(d.file_name())?;
-        for entry in dir.list_dir(".")? {
-            let entry = entry?;
-            if entry.file_name() != SHIM {
-                continue;
-            }
-            return Ok(d.file_name().into());
-        }
-    }
-    anyhow::bail!("Failed to find EFI vendor dir that contains {SHIM}")
-}
-
 /// Install the static GRUB config files.
 #[context("Installing static GRUB configs")]
-pub(crate) fn install(target_root: &openat::Dir, efi: bool, write_uuid: bool) -> Result<()> {
+pub(crate) fn install(
+    target_root: &openat::Dir,
+    installed_efi_vendor: Option<&str>,
+    write_uuid: bool,
+) -> Result<()> {
     let bootdir = &target_root.sub_dir("boot").context("Opening /boot")?;
     let boot_is_mount = {
         let root_dev = target_root.self_metadata()?.stat().st_dev;
@@ -99,29 +80,26 @@ pub(crate) fn install(target_root: &openat::Dir, efi: bool, write_uuid: bool) ->
         None
     };
 
-    let efidir = efi
-        .then(|| {
-            target_root
-                .sub_dir_optional("boot/efi/EFI")
-                .context("Opening /boot/efi/EFI")
-        })
-        .transpose()?
-        .flatten();
-    if let Some(efidir) = efidir.as_ref() {
-        let vendordir = find_efi_vendordir(efidir)?;
+    if let Some(vendordir) = installed_efi_vendor {
         log::debug!("vendordir={:?}", &vendordir);
-        let target = &vendordir.join("grub.cfg");
-        efidir
-            .copy_file(&Path::new(CONFIGDIR).join("grub-static-efi.cfg"), target)
-            .context("Copying static EFI")?;
-        println!("Installed: {target:?}");
-        if let Some(uuid_path) = uuid_path {
-            // SAFETY: we always have a filename
-            let filename = Path::new(&uuid_path).file_name().unwrap();
-            let target = &vendordir.join(filename);
-            bootdir
-                .copy_file_at(uuid_path, efidir, target)
-                .context("Writing bootuuid.cfg to efi dir")?;
+        let vendor = PathBuf::from(vendordir);
+        let target = &vendor.join("grub.cfg");
+        let dest_efidir = target_root
+            .sub_dir_optional("boot/efi/EFI")
+            .context("Opening /boot/efi/EFI")?;
+        if let Some(efidir) = dest_efidir {
+            efidir
+                .copy_file(&Path::new(CONFIGDIR).join("grub-static-efi.cfg"), target)
+                .context("Copying static EFI")?;
+            println!("Installed: {target:?}");
+            if let Some(uuid_path) = uuid_path {
+                // SAFETY: we always have a filename
+                let filename = Path::new(&uuid_path).file_name().unwrap();
+                let target = &vendor.join(filename);
+                bootdir
+                    .copy_file_at(uuid_path, &efidir, target)
+                    .context("Writing bootuuid.cfg to efi dir")?;
+            }
         }
     }
 
@@ -142,36 +120,10 @@ mod tests {
         std::fs::create_dir_all(tdp.join("boot/grub2"))?;
         std::fs::create_dir_all(tdp.join("boot/efi/EFI/BOOT"))?;
         std::fs::create_dir_all(tdp.join("boot/efi/EFI/fedora"))?;
-        install(&td, true, false).unwrap();
+        install(&td, Some("fedora"), false).unwrap();
 
         assert!(td.exists("boot/grub2/grub.cfg")?);
         assert!(td.exists("boot/efi/EFI/fedora/grub.cfg")?);
-        Ok(())
-    }
-
-    #[test]
-    fn test_find_efi_vendordir() -> Result<()> {
-        let td = tempfile::tempdir()?;
-        let tdp = td.path();
-        let efidir = tdp.join("EFI");
-        std::fs::create_dir_all(efidir.join("BOOT"))?;
-        std::fs::create_dir_all(efidir.join("dell"))?;
-        std::fs::create_dir_all(efidir.join("fedora"))?;
-        let td = openat::Dir::open(&efidir)?;
-
-        std::fs::write(efidir.join("dell").join("foo"), "foo data")?;
-        std::fs::write(efidir.join("fedora").join("grub.cfg"), "grub config")?;
-        std::fs::write(efidir.join("fedora").join(SHIM), "shim data")?;
-
-        assert!(td.exists("BOOT")?);
-        assert!(td.exists("dell/foo")?);
-        assert!(td.exists("fedora/grub.cfg")?);
-        assert!(td.exists(format!("fedora/{SHIM}"))?);
-        assert_eq!(find_efi_vendordir(&td)?.to_str(), Some("fedora"));
-
-        std::fs::remove_file(efidir.join("fedora").join(SHIM))?;
-        let x = find_efi_vendordir(&td);
-        assert_eq!(x.is_err(), true);
         Ok(())
     }
 }

@@ -12,6 +12,7 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 use fn_error_context::context;
 use openat_ext::OpenatDirExt;
+use walkdir::WalkDir;
 use widestring::U16CString;
 
 use crate::filetree;
@@ -131,16 +132,11 @@ impl Efi {
     }
 
     #[context("Updating EFI firmware variables")]
-    fn update_firmware(&self, device: &str, espdir: &openat::Dir) -> Result<()> {
+    fn update_firmware(&self, device: &str, espdir: &openat::Dir, vendordir: &str) -> Result<()> {
         if !is_efi_booted()? {
             log::debug!("Not booted via EFI, skipping firmware update");
             return Ok(());
         }
-        let efidir = &espdir.sub_dir("EFI").context("Opening EFI")?;
-        let vendordir = super::grubconfigs::find_efi_vendordir(efidir)?;
-        let vendordir = vendordir
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("Invalid non-UTF-8 vendordir"))?;
         clear_efi_current()?;
         set_efi_current(device, espdir, vendordir)
     }
@@ -319,7 +315,9 @@ impl Component for Efi {
             anyhow::bail!("Failed to copy");
         }
         if update_firmware {
-            self.update_firmware(device, destd)?
+            if let Some(vendordir) = self.get_efi_vendor(&src_root)? {
+                self.update_firmware(device, destd, &vendordir)?
+            }
         }
         Ok(InstalledContent {
             meta,
@@ -417,6 +415,28 @@ impl Component for Efi {
             Ok(ValidationResult::Valid)
         }
     }
+
+    fn get_efi_vendor(&self, sysroot: &openat::Dir) -> Result<Option<String>> {
+        let updated = sysroot
+            .sub_dir(&component_updatedirname(self))
+            .context("opening update dir")?;
+        let shim_files = find_file_recursive(updated.recover_path()?, SHIM)?;
+
+        // Does not support multiple shim for efi
+        if shim_files.len() > 1 {
+            anyhow::bail!("Found multiple {SHIM} in the image");
+        }
+        if let Some(p) = shim_files.first() {
+            let p = p
+                .parent()
+                .unwrap()
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("No file name found"))?;
+            Ok(Some(p.to_string_lossy().into_owned()))
+        } else {
+            anyhow::bail!("Failed to find {SHIM} in the image")
+        }
+    }
 }
 
 impl Drop for Efi {
@@ -506,4 +526,23 @@ pub(crate) fn set_efi_current(device: &str, espdir: &openat::Dir, vendordir: &st
         anyhow::bail!("Failed to invoke {EFIBOOTMGR}")
     }
     anyhow::Ok(())
+}
+
+#[context("Find target file recursively")]
+fn find_file_recursive<P: AsRef<Path>>(dir: P, target_file: &str) -> Result<Vec<PathBuf>> {
+    let mut result = Vec::new();
+
+    for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() {
+            if let Some(file_name) = entry.file_name().to_str() {
+                if file_name == target_file {
+                    if let Some(path) = entry.path().to_str() {
+                        result.push(path.into());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(result)
 }
