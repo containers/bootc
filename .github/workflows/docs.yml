@@ -28,11 +28,18 @@ jobs:
           mkdir mdbook
           curl -sSL $url | tar -xz --directory=./mdbook
           echo `pwd`/mdbook >> $GITHUB_PATH
+      - name: Install mdbook-mermaid
+        run: |
+          tag=$(curl 'https://api.github.com/repos/badboy/mdbook-mermaid/releases/latest' | jq -r '.tag_name')
+          url="https://github.com/badboy/mdbook-mermaid/releases/download/${tag}/mdbook-mermaid-${tag}-x86_64-unknown-linux-gnu.tar.gz"
+          mkdir mdbook-mermaid
+          curl -sSL $url | tar -xz --directory=./mdbook-mermaid
+          echo `pwd`/mdbook-mermaid >> $GITHUB_PATH
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v4
       - name: Build with mdBook
-        run: cd docs && mdbook build
+        run: cd docs && mdbook-mermaid install && mdbook build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
