@@ -72,6 +72,9 @@ pub(crate) trait Component {
 
     /// Used on the client to validate an installed version.
     fn validate(&self, current: &InstalledContent) -> Result<ValidationResult>;
+
+    /// Locating efi vendor dir
+    fn get_efi_vendor(&self, sysroot: &openat::Dir) -> Result<Option<String>>;
 }
 
 /// Given a component name, create an implementation.
@@ -138,5 +141,44 @@ pub(crate) fn get_component_update(
         Ok(Some(u))
     } else {
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_efi_vendor() -> Result<()> {
+        let td = tempfile::tempdir()?;
+        let tdp = td.path();
+        let tdp_updates = tdp.join("usr/lib/bootupd/updates");
+        let td = openat::Dir::open(tdp)?;
+        std::fs::create_dir_all(tdp_updates.join("EFI/BOOT"))?;
+        std::fs::create_dir_all(tdp_updates.join("EFI/fedora"))?;
+        std::fs::create_dir_all(tdp_updates.join("EFI/centos"))?;
+        std::fs::write(
+            tdp_updates.join("EFI/fedora").join(crate::efi::SHIM),
+            "shim data",
+        )?;
+        std::fs::write(
+            tdp_updates.join("EFI/centos").join(crate::efi::SHIM),
+            "shim data",
+        )?;
+
+        let all_components = crate::bootupd::get_components();
+        let target_components: Vec<_> = all_components.values().collect();
+        for &component in target_components.iter() {
+            if component.name() == "BIOS" {
+                assert_eq!(component.get_efi_vendor(&td)?, None);
+            }
+            if component.name() == "EFI" {
+                let x = component.get_efi_vendor(&td);
+                assert_eq!(x.is_err(), true);
+                std::fs::remove_dir_all(tdp_updates.join("EFI/centos"))?;
+                assert_eq!(component.get_efi_vendor(&td)?, Some("fedora".to_string()));
+            }
+        }
+        Ok(())
     }
 }

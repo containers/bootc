@@ -155,4 +155,8 @@ impl Component for Bios {
     fn validate(&self, _: &InstalledContent) -> Result<ValidationResult> {
         Ok(ValidationResult::Skip)
     }
+
+    fn get_efi_vendor(&self, _: &openat::Dir) -> Result<Option<String>> {
+        Ok(None)
+    }
 }

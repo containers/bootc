@@ -83,7 +83,7 @@ pub(crate) fn install(
     }
 
     let mut state = SavedState::default();
-    let mut installed_efi = false;
+    let mut installed_efi_vendor = None;
     for &component in target_components.iter() {
         // skip for BIOS if device is empty
         if component.name() == "BIOS" && device.is_empty() {
@@ -100,8 +100,9 @@ pub(crate) fn install(
         log::info!("Installed {} {}", component.name(), meta.meta.version);
         state.installed.insert(component.name().into(), meta);
         // Yes this is a hack...the Component thing just turns out to be too generic.
-        if component.name() == "EFI" {
-            installed_efi = true;
+        if let Some(vendor) = component.get_efi_vendor(&source_root)? {
+            assert!(installed_efi_vendor.is_none());
+            installed_efi_vendor = Some(vendor);
         }
     }
     let sysroot = &openat::Dir::open(dest_root)?;
@@ -115,7 +116,7 @@ pub(crate) fn install(
                 target_arch = "aarch64",
                 target_arch = "powerpc64"
             ))]
-            crate::grubconfigs::install(sysroot, installed_efi, uuid)?;
+            crate::grubconfigs::install(sysroot, installed_efi_vendor.as_deref(), uuid)?;
             // On other architectures, assume that there's nothing to do.
         }
         None => {}
