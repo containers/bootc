@@ -13,3 +13,14 @@ The container image includes a Linux kernel (in e.g. `/usr/lib/modules`),
 which is used to boot.  At runtime on a target system, the base userspace is
 *not* itself running in a container by default.  For example, assuming
 systemd is in use, systemd acts as pid1 as usual - there's no "outer" process.
+
+# Status
+
+At the current time, bootc has not reached 1.0, and it is possible
+that some APIs and CLIs may change.  For more information, see
+the [1.0 milestone](https://github.com/containers/bootc/milestone/1).
+
+However, the core underlying code uses the [ostree](https://github.com/ostreedev/ostree)
+project which has been powering stable operating system updates for
+many years.  The stability here generally refers to the surface
+APIs, not the underlying logic.

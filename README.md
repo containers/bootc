@@ -15,6 +15,11 @@ which is used to boot.  At runtime on a target system, the base userspace is
 *not* itself running in a container by default.  For example, assuming
 systemd is in use, systemd acts as pid1 as usual - there's no "outer" process.
 
+# Status
+
+NOTE: At the current time, bootc has not reached 1.0, and it is possible
+that some APIs and CLIs may change.
+
 # More information
 
 See the [project documentation](https://containers.github.io/bootc/).
