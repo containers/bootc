@@ -138,3 +138,35 @@ for example, although this can run afoul of SELinux labeling.
 
 There is a dedicated document for [secrets](secrets.md),
 which is a special case of configuration.
+
+## Handling read-only vs writable locations
+
+The high level pattern for bootc systems is summarized again
+this way:
+
+- Put read-only data and executables in `/usr`
+- Put configuration files in `/usr` (if they're static), or `/etc` if they need to be machine-local
+- Put "data" (log files, databases, etc.) underneath `/var`
+
+However, some software installs to `/opt/examplepkg` or another
+location outside of `/usr`, and may include all three types of data
+undernath its single toplevel directory.  For example, it
+may write log files to `/opt/examplepkg/logs`.  A simple way to handle
+this is to change the directories that need to be writble to symbolic links
+to `/var`:
+
+```dockerfile
+RUN apt|dnf install examplepkg && \
+    mv /opt/examplepkg/logs && /var/log/examplepkg && \
+    ln -sr /opt/examplepkg/logs /var/log/examplepkg
+```
+
+The [Fedora/CentOS bootc puppet example](https://gitlab.com/fedora/bootc/examples/-/tree/main/opt-puppet)
+is one instance of this.
+
+Another option is to configure the systemd unit launching the service to do these mounts
+dynamically via e.g.
+
+```
+BindPaths=/var/log/exampleapp:/opt/exampleapp/logs
+```
