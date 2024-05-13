@@ -121,18 +121,11 @@ Besides those, for other toplevel directories such as `/usr` `/opt`, they will b
 In the default suggested model of using composefs (per above) the `/opt` directory will be read-only, alongside
 other toplevels such as `/usr`.
 
-Some software expects to be able to write to its own directory in `/opt/exampleapp`.  A common
-pattern is to use a symbolic link to redirect to e.g. `/var` for things like log files:
+Some software (especially "3rd party" deb/rpm packages) expect to be able to write to
+a subdirectory of `/opt` such as `/opt/examplepkg`.
 
-```
-RUN rmdir /opt/exampleapp/logs && ln -sr /var/log/exampleapp /opt/exampleapp/logs
-```
-
-Another option is to configure the systemd unit launching the service to do these mounts
-dynamically via e.g.
-```
-BindPaths=/var/log/exampleapp:/opt/exampleapp/logs
-```
+See [building images](building/guidance.md) for recommendations on how to build
+container images and adjust the filesystem for cases like this.
 
 #### Enabling transient root
 
