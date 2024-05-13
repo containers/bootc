@@ -31,7 +31,7 @@
 
 - [Understanding `bootc install`](bootc-install.md)
 - [`man bootc-install.md`](man/bootc-install.md)
-- [`man bootc-install-config`](man-md/bootc-install-config.md)
+- [`man bootc-install-config`](man/bootc-install-config.md)
 - [`man bootc-install-to-disk.md`](man/bootc-install-to-disk.md)
 - [`man bootc-install-to-filesystem.md`](man/bootc-install-to-filesystem.md)
 
