@@ -149,7 +149,7 @@ and apply that to the base operating system too.
 There is a very strong security rationale behind much of the design proposal
 of "particles" and DDIs.  It is absolutely true today, quoting the blog:
 
-> That said, I think [OCI has] relatively weak properties, in particular when it comes to security, since immutability/measurements and similar are not provided. This means, unlike for system extensions and portable services a complete trust chain with attestation and per-app cryptographically protected data is much harder to implement sanely.
+> That said, I think \[OCI has\] relatively weak properties, in particular when it comes to security, since immutability/measurements and similar are not provided. This means, unlike for system extensions and portable services a complete trust chain with attestation and per-app cryptographically protected data is much harder to implement sanely.
 
 The [composefs project](https://github.com/containers/composefs/) aims to close
 this gap, and the bootc project will use it, and has an explicit goal
