@@ -119,7 +119,7 @@ taking precedence.  If for example you are building a derived container image fr
 you could create a `50-myos.toml`  that sets `type = "btrfs"` which will override the
 prior setting.
 
-For other available options, see [bootc-install-config](man/bootc-install-config.md).
+For other available options, see [bootc-install-config](man-md/bootc-install-config.md).
 
 ## Installing an "unconfigured" image
 
