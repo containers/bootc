@@ -35,6 +35,14 @@ jobs:
           mkdir mdbook-mermaid
           curl -sSL $url | tar -xz --directory=./mdbook-mermaid
           echo `pwd`/mdbook-mermaid >> $GITHUB_PATH
+      - name: Install mdbook-linkcheck
+        run: |
+          tag=$(curl 'https://api.github.com/repos/Michael-F-Bryan/mdbook-linkcheck/releases/latest' | jq -r '.tag_name')
+          archive="mdbook-linkcheck.x86_64-unknown-linux-gnu.zip"
+          url="https://github.com/Michael-F-Bryan/mdbook-linkcheck/releases/download/${tag}/${archive}"
+          mkdir mdbook-linkcheck
+          curl -sSL -O $url && unzip ${archive} -d ./mdbook-linkcheck && chmod +x ./mdbook-linkcheck/mdbook-linkcheck
+          echo `pwd`/mdbook-linkcheck >> $GITHUB_PATH
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v4
@@ -43,7 +51,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./docs/book
+          path: ./docs/book/html
 
   deploy:
     environment:
