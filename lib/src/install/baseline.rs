@@ -32,7 +32,6 @@ use crate::task::Task;
 pub(crate) const BOOTPN: u32 = 3;
 // This ensures we end up under 512 to be small-sized.
 pub(crate) const BOOTPN_SIZE_MB: u32 = 510;
-pub(crate) const ROOTPN: u32 = 4;
 pub(crate) const EFIPN: u32 = 2;
 pub(crate) const EFIPN_SIZE_MB: u32 = 512;
 
@@ -92,6 +91,16 @@ pub(crate) struct InstallBlockDeviceOpts {
     /// By default, all remaining space on the disk will be used.
     #[clap(long)]
     pub(crate) root_size: Option<String>,
+}
+
+impl BlockSetup {
+    /// Returns true if the block setup requires a separate /boot aka XBOOTLDR partition.
+    pub(crate) fn requires_bootpart(&self) -> bool {
+        match self {
+            BlockSetup::Direct => false,
+            BlockSetup::Tpm2Luks => true,
+        }
+    }
 }
 
 fn sgdisk_partition(
@@ -274,19 +283,28 @@ pub(crate) fn install_create_rootfs(
         None
     };
 
-    sgdisk_partition(
-        &mut sgdisk.cmd,
-        BOOTPN,
-        format!("0:+{BOOTPN_SIZE_MB}M"),
-        "boot",
-        None,
-    );
+    // Initialize the /boot filesystem.  Note that in the future, we may match
+    // what systemd/uapi-group encourages and make /boot be FAT32 as well, as
+    // it would aid systemd-boot.
+    let use_xbootldr = block_setup.requires_bootpart();
+    let mut partno = EFIPN;
+    if use_xbootldr {
+        partno += 1;
+        sgdisk_partition(
+            &mut sgdisk.cmd,
+            partno,
+            format!("0:+{BOOTPN_SIZE_MB}M"),
+            "boot",
+            None,
+        );
+    }
+    let rootpn = if use_xbootldr { BOOTPN + 1 } else { EFIPN + 1 };
     let root_size = root_size
         .map(|v| Cow::Owned(format!("0:{v}M")))
         .unwrap_or_else(|| Cow::Borrowed("0:0"));
     sgdisk_partition(
         &mut sgdisk.cmd,
-        ROOTPN,
+        rootpn,
         root_size,
         "root",
         Some("0FC63DAF-8483-4772-8E79-3D69D8477DE4"),
@@ -321,7 +339,7 @@ pub(crate) fn install_create_rootfs(
         Ok(devdir.join(devname).to_string())
     };
 
-    let base_rootdev = findpart(ROOTPN)?;
+    let base_rootdev = findpart(rootpn)?;
 
     let (rootdev, root_blockdev_kargs) = match block_setup {
         BlockSetup::Direct => (base_rootdev, None),
@@ -360,23 +378,29 @@ pub(crate) fn install_create_rootfs(
         }
     };
 
-    // Initialize the /boot filesystem.  Note that in the future, we may match
-    // what systemd/uapi-group encourages and make /boot be FAT32 as well, as
-    // it would aid systemd-boot.
-    let bootdev = &findpart(BOOTPN)?;
-    let boot_uuid = mkfs(bootdev, root_filesystem, "boot", []).context("Initializing /boot")?;
+    // Initialize the /boot filesystem
+    let bootdev = if use_xbootldr {
+        Some(findpart(BOOTPN)?)
+    } else {
+        None
+    };
+    let boot_uuid = if let Some(bootdev) = bootdev.as_deref() {
+        Some(mkfs(bootdev, root_filesystem, "boot", []).context("Initializing /boot")?)
+    } else {
+        None
+    };
 
     // Initialize rootfs
     let root_uuid = mkfs(&rootdev, root_filesystem, "root", [])?;
     let rootarg = format!("root=UUID={root_uuid}");
-    let bootsrc = format!("UUID={boot_uuid}");
-    let bootarg = format!("boot={bootsrc}");
-    let boot = MountSpec {
+    let bootsrc = boot_uuid.as_ref().map(|uuid| format!("UUID={uuid}"));
+    let bootarg = bootsrc.as_deref().map(|bootsrc| format!("boot={bootsrc}"));
+    let boot = bootsrc.map(|bootsrc| MountSpec {
         source: bootsrc,
         target: "/boot".into(),
         fstype: MountSpec::AUTO.into(),
         options: Some("ro".into()),
-    };
+    });
     let install_config_kargs = state
         .install_config
         .as_ref()
@@ -387,7 +411,8 @@ pub(crate) fn install_create_rootfs(
     let kargs = root_blockdev_kargs
         .into_iter()
         .flatten()
-        .chain([rootarg, RW_KARG.to_string(), bootarg].into_iter())
+        .chain([rootarg, RW_KARG.to_string()].into_iter())
+        .chain(bootarg)
         .chain(install_config_kargs)
         .collect::<Vec<_>>();
 
@@ -398,7 +423,9 @@ pub(crate) fn install_create_rootfs(
     let bootfs = rootfs.join("boot");
     // Create the underlying mount point directory, which should be labeled
     crate::lsm::ensure_dir_labeled(&target_rootfs, "boot", None, 0o755.into(), sepolicy)?;
-    mount::mount(bootdev, &bootfs)?;
+    if let Some(bootdev) = bootdev.as_deref() {
+        mount::mount(bootdev, &bootfs)?;
+    }
     // And we want to label the root mount of /boot
     crate::lsm::ensure_dir_labeled(&target_rootfs, "boot", None, 0o755.into(), sepolicy)?;
 
@@ -424,7 +451,7 @@ pub(crate) fn install_create_rootfs(
         rootfs,
         rootfs_fd,
         rootfs_uuid: Some(root_uuid.to_string()),
-        boot: Some(boot),
+        boot,
         kargs,
         skip_finalize: false,
     })
