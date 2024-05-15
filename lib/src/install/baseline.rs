@@ -360,12 +360,11 @@ pub(crate) fn install_create_rootfs(
         }
     };
 
-    // TODO: make this configurable
-    let bootfs_type = Filesystem::Ext4;
-
-    // Initialize the /boot filesystem
+    // Initialize the /boot filesystem.  Note that in the future, we may match
+    // what systemd/uapi-group encourages and make /boot be FAT32 as well, as
+    // it would aid systemd-boot.
     let bootdev = &findpart(BOOTPN)?;
-    let boot_uuid = mkfs(bootdev, bootfs_type, "boot", []).context("Initializing /boot")?;
+    let boot_uuid = mkfs(bootdev, root_filesystem, "boot", []).context("Initializing /boot")?;
 
     // Initialize rootfs
     let root_uuid = mkfs(&rootdev, root_filesystem, "root", [])?;
