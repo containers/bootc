@@ -23,7 +23,7 @@ if the system has changed.
 
 However, in the future this is likely to change such that reboots
 outside of a \`bootc upgrade \--apply\` do \*not\* automatically apply
-the update.
+the update in addition.
 
 # OPTIONS
 
@@ -56,4 +56,4 @@ userspace-only restart.
 
 # VERSION
 
-v0.1.9
+v0.1.11

@@ -23,7 +23,7 @@ Install to the target block device
 
 :   Automatically wipe all existing data on device
 
-**\--block-setup**=*BLOCK_SETUP* \[default: direct\]
+**\--block-setup**=*BLOCK_SETUP*
 
 :   Target root block device setup.
 
@@ -139,4 +139,4 @@ firmware will be skipped
 
 # VERSION
 
-v0.1.9
+v0.1.11

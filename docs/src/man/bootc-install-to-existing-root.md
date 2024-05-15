@@ -11,7 +11,8 @@ root filesystem
 \[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
 \[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
-\[**-h**\|**\--help**\] \[**-V**\|**\--version**\] \[*ROOT_PATH*\]
+\[**\--acknowledge-destructive**\] \[**-h**\|**\--help**\]
+\[**-V**\|**\--version**\] \[*ROOT_PATH*\]
 
 # DESCRIPTION
 
@@ -108,6 +109,10 @@ boot.
 \- All bootloader types will be installed - Changes to the system
 firmware will be skipped
 
+**\--acknowledge-destructive**
+
+:   Accept that this is a destructive action and skip a warning timer
+
 **-h**, **\--help**
 
 :   Print help (see a summary with -h)
@@ -123,4 +128,4 @@ firmware will be skipped
 
 # VERSION
 
-v0.1.9
+v0.1.11

@@ -38,4 +38,4 @@ rollback invocation.
 
 # VERSION
 
-v0.1.9
+v0.1.11

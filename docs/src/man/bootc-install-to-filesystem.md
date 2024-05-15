@@ -5,10 +5,12 @@ bootc-install-to-filesystem - Install to the target filesystem
 # SYNOPSIS
 
 **bootc-install-to-filesystem** \[**\--root-mount-spec**\]
-\[**\--boot-mount-spec**\] \[**\--replace**\] \[**\--source-imgref**\]
-\[**\--target-transport**\] \[**\--target-imgref**\]
-\[**\--enforce-container-sigpolicy**\] \[**\--target-ostree-remote**\]
-\[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
+\[**\--boot-mount-spec**\] \[**\--replace**\]
+\[**\--acknowledge-destructive**\] \[**\--skip-finalize**\]
+\[**\--source-imgref**\] \[**\--target-transport**\]
+\[**\--target-imgref**\] \[**\--enforce-container-sigpolicy**\]
+\[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
+\[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
 \[**-h**\|**\--help**\] \[**-V**\|**\--version**\] \<*ROOT_PATH*\>
 
@@ -48,6 +50,18 @@ be used.
 >     bootloader state will have its contents wiped and replaced.
 >     However, the running system (and all files) will remain in place
 >     until reboot
+
+**\--acknowledge-destructive**
+
+:   If the target is the running systems root filesystem, this will skip
+    any warnings
+
+**\--skip-finalize**
+
+:   The default mode is to \"finalize\" the target filesystem by
+    invoking \`fstrim\` and similar operations, and finally mounting it
+    readonly. This option skips those operations. It is then the
+    responsibility of the invoking code to perform those operations
 
 **\--source-imgref**=*SOURCE_IMGREF*
 
@@ -139,4 +153,4 @@ mounting. To override this, use \`\--root-mount-spec\`.
 
 # VERSION
 
-v0.1.9
+v0.1.11
