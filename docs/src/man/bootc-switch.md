@@ -16,7 +16,7 @@ Target a new container image reference to boot.
 This is almost exactly the same operation as \`upgrade\`, but
 additionally changes the container image reference instead.
 
-## Usage
+\## Usage
 
 A common pattern is to have a management agent control operating system
 updates via container image tags; for example,
@@ -65,4 +65,4 @@ includes a default policy which requires signatures.
 
 # VERSION
 
-v0.1.9
+v0.1.11
