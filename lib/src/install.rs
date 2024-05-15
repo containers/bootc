@@ -1195,8 +1195,9 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
 
     // Finalize mounted filesystems
     if !rootfs.skip_finalize {
-        let bootfs = rootfs.rootfs.join("boot");
-        for fs in [bootfs.as_path(), rootfs.rootfs.as_path()] {
+        let bootfs = rootfs.boot.as_ref().map(|_| rootfs.rootfs.join("boot"));
+        let bootfs = bootfs.as_ref().map(|p| p.as_path());
+        for fs in std::iter::once(rootfs.rootfs.as_path()).chain(bootfs) {
             finalize_filesystem(fs)?;
         }
     }
