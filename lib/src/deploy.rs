@@ -113,6 +113,55 @@ pub(crate) fn check_bootc_label(config: &ostree_ext::oci_spec::image::ImageConfi
     }
 }
 
+/// Write container fetch progress to standard output.
+async fn handle_layer_progress_print(
+    mut layers: tokio::sync::mpsc::Receiver<ostree_container::store::ImportProgress>,
+    mut layer_bytes: tokio::sync::watch::Receiver<Option<ostree_container::store::LayerProgress>>,
+    total_layers: usize,
+    n_layers_fetched: &mut usize,
+) {
+    let style = indicatif::ProgressStyle::default_bar();
+    let pb = indicatif::ProgressBar::new(100);
+    pb.set_style(
+        style
+            .template("{prefix} {bytes} [{bar:20}] ({eta}) {msg}")
+            .unwrap(),
+    );
+    loop {
+        tokio::select! {
+            // Always handle layer changes first.
+            biased;
+            layer = layers.recv() => {
+                if let Some(l) = layer {
+                    if l.is_starting() {
+                        pb.set_position(0);
+                    } else {
+                        pb.finish();
+                        *n_layers_fetched += 1;
+                    }
+                    pb.set_prefix(format!("[{}/{}]", *n_layers_fetched, total_layers));
+                    pb.set_message(ostree_ext::cli::layer_progress_format(&l));
+                } else {
+                    // If the receiver is disconnected, then we're done
+                    break
+                };
+            },
+            r = layer_bytes.changed() => {
+                if r.is_err() {
+                    // If the receiver is disconnected, then we're done
+                    break
+                }
+                let bytes = layer_bytes.borrow();
+                if let Some(bytes) = &*bytes {
+                    pb.set_length(bytes.total);
+                    pb.set_position(bytes.fetched);
+                }
+            }
+
+        }
+    }
+}
+
 /// Wrapper for pulling a container image, wiring up status output.
 #[context("Pulling")]
 pub(crate) async fn pull(
@@ -138,8 +187,16 @@ pub(crate) async fn pull(
     let printer = (!quiet).then(|| {
         let layer_progress = imp.request_progress();
         let layer_byte_progress = imp.request_layer_progress();
+        let total_layers = prep.layers_to_fetch().count();
+        let mut n_fetched = 0usize;
         tokio::task::spawn(async move {
-            ostree_ext::cli::handle_layer_progress_print(layer_progress, layer_byte_progress).await
+            handle_layer_progress_print(
+                layer_progress,
+                layer_byte_progress,
+                total_layers,
+                &mut n_fetched,
+            )
+            .await
         })
     });
     let import = imp.import(prep).await;
