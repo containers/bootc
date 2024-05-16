@@ -59,7 +59,7 @@ assert_not_file_has_content out.txt '  Installed:.*'"${TARGET_GRUB_PKG}"
 assert_file_has_content out.txt 'Update: Available:.*'"${TARGET_GRUB_PKG}"
 assert_file_has_content out.txt 'Update: Available:.*test-bootupd-payload-1.0'
 bootupctl status --print-if-available > out.txt
-assert_file_has_content_literal 'out.txt' 'Updates available: EFI'
+assert_file_has_content_literal 'out.txt' 'Updates available: BIOS EFI'
 ok update avail
 
 # Mount the EFI partition.
