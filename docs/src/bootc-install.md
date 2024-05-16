@@ -32,17 +32,18 @@ However, nothing *else* (external) is required to perform a basic installation
 to disk - the container image itself comes with a baseline self-sufficient installer
 that sets things up ready to boot.
 
-This is motivated by experience gained from the Fedora CoreOS
-project where today the expectation is that one boots from a pre-existing disk
-image (AMI, qcow2, etc) or uses [coreos-installer](https://github.com/coreos/coreos-installer)
-for many bare metal setups.  But the problem is that coreos-installer
-is oriented to installing raw disk images.  This means that if
-one creates a custom derived container, then it's required for
-one to also generate a raw disk image to install.  This is a large
-ergonomic hit.
+## Internal vs external installers
 
-With the `bootc` install methods, no extra steps are required.  Every container
-image comes with a basic installer.
+The `bootc install to-disk` process only sets up a very simple
+filesystem layout, using the default filesystem type defined in the container image,
+plus hardcoded requisite platform-specific partitions such as the ESP.
+
+In general, the `to-disk` flow should be considered mainly a "demo" for
+the `bootc install to-filesystem` flow, which can be used by "external" installers
+today.  For example, in the  [Fedora/CentOS bootc project](https://docs.fedoraproject.org/en-US/bootc/)
+project, there are two "external" installers in Anaconda and `bootc-image-builder`.
+
+More on this below.
 
 ## Executing `bootc install`
 
@@ -98,21 +99,18 @@ the image in `/etc/ostree/auth.json`.
 Alternatively, the secret can be added after an installation process completes and managed separately;
 in that case you will need to specify `--skip-fetch-check`.
 
-### Operating system install configuration required
+### Configuring the default root filesystem type
 
-The container image **MUST** define its default install configuration.  A key choice
-that bootc by default leaves up to the operating system image is the root filesystem
-type.
+To use the `to-disk` installation flow, the container should include a root filesystem
+type.  If it does not, then each user will need to specify `install to-disk --filesystem`.
 
-To enable `bootc install` as part of your OS/distribution base image,
+To set a default filesystem type for `bootc install to-disk` as part of your OS/distribution base image,
 create a file named `/usr/lib/bootc/install/00-<osname>.toml` with the contents of the form:
 
 ```toml
 [install.filesystem.root]
 type = "xfs"
 ```
-
-The `install.filesystem.root` value **MUST** be set.
 
 Configuration files found in this directory will be merged, with higher alphanumeric values
 taking precedence.  If for example you are building a derived container image from the above OS,
@@ -223,3 +221,15 @@ a different sandboxing tool (e.g. [bubblewrap](https://github.com/containers/bub
 
 This argument is mainly useful for 3rd-party tooling for building disk images from bootable
 containers (e.g. based on [osbuild](https://github.com/osbuild/osbuild)).   
+
+## Configuring machine-local state
+
+Per the [filesystem](filesystem.md) section, `/etc` and `/var` are machine-local
+state by default.  If you want to inject additional content after the installation
+process, at the current time this can be done by manually finding the
+target "deployment root" which will be underneath `/ostree/deploy/<stateroot/deploy/`.
+
+Installation software such as [Anaconda](https://github.com/rhinstaller/anaconda)
+do this today to implement generic `%post` scripts and the like.
+
+However, it is very likely that a generic bootc API to do this will be added.
