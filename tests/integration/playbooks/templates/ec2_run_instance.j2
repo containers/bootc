@@ -9,8 +9,8 @@
 {% if test_os.startswith('rhel') %}
     --user-data file://user-data \
 {% endif %}
-    --image-id {{ ami[arch][test_os] }} \
-    --instance-market-options MarketType=spot,SpotOptions=\{MaxPrice=0.1,SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate\} \
+    --image-id {{ ami_id }} \
+    --instance-market-options MarketType=spot,SpotOptions=\{MaxPrice={{ spot_max_price }},SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate\} \
     --instance-type {{ random_instance_type }} \
     --key-name kp-bootc-{{ random_num }} \
     --security-group-ids {{ group_id }} \

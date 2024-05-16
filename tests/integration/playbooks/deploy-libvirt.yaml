@@ -1,0 +1,239 @@
+---
+- hosts: cloud
+  become: false
+  vars:
+    test_os: ""
+    arch: "{{ lookup('env', 'ARCH') | default('x86_64', true) }}"
+    ssh_key_pub: ""
+    ssh_user: "cloud-user"
+    inventory_file: ""
+    download_node: "{{ lookup('env', 'DOWNLOAD_NODE') | default('', true) }}"
+    instance_name: "bootc-{{ test_os }}"
+    image_path: "/var/lib/libvirt/images"
+    bib: "false"
+    bib_firmware: ""
+    boot_args: ""
+    os_variant:
+      centos-stream-9: centos-stream9
+      rhel-9-5: rhel9-unknown
+      rhel-9-4: rhel9-unknown
+      fedora-40: fedora-unknown
+      fedora-41: fedora-unknown
+
+  tasks:
+    - name: Get temp folder
+      command: dirname "{{ inventory_file }}"
+      register: result_temp_folder
+
+    - set_fact:
+        temp_folder: "{{ result_temp_folder.stdout }}"
+
+    - set_fact:
+        random_num: "{{ 9999 | random(start=1001) }}"
+
+    - name: Get CentOS-Stream-GenericCloud image filename
+      block:
+        - name: Get CentOS-Stream-GenericCloud image filename
+          shell: curl -s https://composes.stream.centos.org/production/latest-CentOS-Stream/compose/BaseOS/{{ arch }}/images/ | grep -oP '(?<=href=")CentOS-Stream-GenericCloud-(9|10)-[^"]+.qcow2(?=")'
+          register: out
+
+        - set_fact:
+            download_image_name: "{{ out.stdout }}"
+            rhel_guest_image_fname: "{{ instance_name }}.qcow2"
+      when:
+        - "'centos' in test_os"
+        - bib == "false"
+
+    - name: Get rhel-guest-image filename
+      block:
+        - name: Get version from test_os
+          shell: echo {{ test_os }} | sed 's/rhel-//;s/-/\./'
+          register: result_os_version
+
+        - set_fact:
+            test_os_dot_version: "{{ result_os_version.stdout }}"
+
+        - name: Get rhel-guest-image filename
+          shell: curl -s http://{{ download_node }}/rhel-9/nightly/RHEL-9/latest-RHEL-{{ test_os_dot_version }}.0/compose/BaseOS/{{ arch }}/images/ | grep -oP '(?<=href=")rhel-guest-image-[^"]+.qcow2(?=")'
+          register: out
+
+        - set_fact:
+            download_image_name: "{{ out.stdout }}"
+            rhel_guest_image_fname: "{{ instance_name }}.qcow2"
+      when:
+        - "'rhel' in test_os"
+        - bib == "false"
+
+    - name: Get Fedora-Cloud-Base-Generic 40 image filename
+      block:
+        - name: Get CentOS-Stream-GenericCloud image filename
+          shell: curl -s https://dl.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/{{ arch }}/images/ | grep -ioE '>Fedora-Cloud-Base-Generic.*.qcow2' | tr -d '><'
+          register: out
+
+        - set_fact:
+            download_image_name: "{{ out.stdout }}"
+            rhel_guest_image_fname: "{{ instance_name }}.qcow2"
+      when:
+        - test_os == "fedora-40"
+        - bib == "false"
+
+    - name: Get Fedora-Cloud-Base-Generic 41 image filename
+      block:
+        - name: Get CentOS-Stream-GenericCloud image filename
+          shell: curl -s https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Cloud/{{ arch }}/images/ | grep -ioE '>Fedora-Cloud-Base-Generic.*.qcow2' | tr -d '><'
+          register: out
+
+        - set_fact:
+            download_image_name: "{{ out.stdout }}"
+            rhel_guest_image_fname: "{{ instance_name }}.qcow2"
+      when:
+        - test_os == "fedora-41"
+        - bib == "false"
+
+    - name: Download CentOS-Stream-GenericCloud image
+      get_url:
+        url: "https://composes.stream.centos.org/production/latest-CentOS-Stream/compose/BaseOS/{{ arch }}/images/{{ download_image_name }}"
+        dest: "{{ image_path }}/{{ rhel_guest_image_fname }}"
+        validate_certs: false
+      become: true
+      when:
+        - "'centos' in test_os"
+        - bib == "false"
+
+    - name: Download rhel-guest-image
+      get_url:
+        url: "http://{{ download_node }}/rhel-9/nightly/RHEL-9/latest-RHEL-{{ test_os_dot_version }}.0/compose/BaseOS/{{ arch }}/images/{{ download_image_name }}"
+        dest: "{{ image_path }}/{{ rhel_guest_image_fname }}"
+        validate_certs: false
+      become: true
+      when:
+        - "'rhel' in test_os"
+        - bib == "false"
+
+    - name: Download Fedora-Cloud-Base-Generic 40
+      get_url:
+        url: "https://dl.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/{{ arch }}/images/{{ download_image_name }}"
+        dest: "{{ image_path }}/{{ rhel_guest_image_fname }}"
+        validate_certs: false
+      become: true
+      when:
+        - test_os == "fedora-40"
+        - bib == "false"
+
+    - name: Download Fedora-Cloud-Base-Generic 41
+      get_url:
+        url: "https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Cloud/{{ arch }}/images/{{ download_image_name }}"
+        dest: "{{ image_path }}/{{ rhel_guest_image_fname }}"
+        validate_certs: false
+      become: true
+      when:
+        - test_os == "fedora-41"
+        - bib == "false"
+
+    - set_fact:
+        rhel_guest_image_fname: "disk.qcow2"
+      when: bib == "true"
+
+    - name: Start libvirtd service
+      command: systemctl start libvirtd.service
+      become: true
+
+    - name: Generate user-data and meta-data
+      template:
+        src: "{{ item }}.j2"
+        dest: "{{ temp_folder }}/{{ item }}"
+      loop:
+        - user-data
+        - meta-data
+
+    # virt-install with uefi, the system has a "system reset" in the first boot and shutdown
+    # Then the --cloud-init will be dropped when start after system reset
+    - name: Generate seed.iso for NoCloud cloud-init
+      command: |
+        genisoimage -output "{{ image_path }}/seed.iso" \
+          -volid cidata \
+          -joliet \
+          -rock \
+          "{{ temp_folder }}/user-data" "{{ temp_folder }}/meta-data"
+      become: true
+
+    - name: Generate virt-install script
+      template:
+        src: virt-install.bash.j2
+        dest: "{{ temp_folder }}/virt-install.bash"
+        mode: 0755
+
+    - name: Run virt-install
+      command: "{{ temp_folder }}/virt-install.bash"
+      become: true
+
+    - name: Wait until VM is shut off
+      command: virsh domstate {{ instance_name }}
+      become: true
+      register: result_domestate
+      retries: 10
+      until: result_domestate.stdout == "shut off"
+
+    - name: Start vm
+      shell: |
+        virsh start {{ instance_name }}
+      become: true
+
+    - name: Get VM xml
+      command: virsh dumpxml {{ instance_name }}
+      become: true
+
+    - name: Get VM IP address
+      shell:
+        virsh domifaddr {{ instance_name }} | grep -oP '(?:\d+\.){3}\d+'
+      register: result
+      until: result.stdout != ""
+      retries: 30
+      delay: 10
+      become: true
+
+    - set_fact:
+        instance_ip: "{{ result.stdout }}"
+
+    - name: Remove seed.iso
+      command: rm -f "{{ image_path }}/seed.iso"
+      become: true
+
+    - name: Waits until instance is reachable
+      wait_for:
+        host: "{{ instance_ip }}"
+        port: 22
+        search_regex: OpenSSH
+        delay: 10
+      retries: 30
+      register: result_ssh_check
+      until: result_ssh_check is success
+
+    - name: Add instance ip into host group guest
+      add_host:
+        name: "{{ instance_ip }}"
+        groups: guest
+
+    - name: Write instance ip to inventory file
+      community.general.ini_file:
+        path: "{{ inventory_file }}"
+        section: guest
+        option: guest ansible_host
+        value: "{{ instance_ip }}"
+        no_extra_spaces: true
+
+    - name: Write random number to inventory file
+      community.general.ini_file:
+        path: "{{ inventory_file }}"
+        section: cloud:vars
+        option: rhel_guest_image_fname
+        value: "{{ rhel_guest_image_fname }}"
+        no_extra_spaces: true
+
+    - name: Write instance name to inventory file
+      community.general.ini_file:
+        path: "{{ inventory_file }}"
+        section: cloud:vars
+        option: instance_name
+        value: "{{ instance_name }}"
+        no_extra_spaces: true

@@ -2,7 +2,7 @@
 - hosts: guest
   become: false
   vars:
-    test_os: "{{ lookup('env', 'TEST_OS') | default('centos-stream-9', true) }}"
+    test_os: ""
     platform: "{{ lookup('env', 'PLATFORM') | default('aws', true) }}"
     test_image_url: ""
 
@@ -25,18 +25,27 @@
       command: findmnt
       ignore_errors: true
 
+    # installing SELinux-enabled targets from SELinux-disabled hosts
+    # https://github.com/containers/bootc/issues/419
+    - name: disable selinux for libvirt only
+      command: setenforce 0
+      become: true
+      ignore_errors: true
+      when:
+        - platform == "libvirt"
+
     - name: Install podman
       dnf:
         name:
           - podman
         state: present
       become: true
-      when: ('rhel' not in test_os) or (platform != 'aws')
+      when: ('rhel' not in test_os and test_os != 'fedora-41') or (platform != 'aws' and test_os != 'fedora-41')
 
     - name: Install podman from internal
       dnf:
         disablerepo: "*"
-        enablerepo: "rhel-9x-*"
+        enablerepo: "rhel-9y-*"
         name:
           - podman
         state: present
@@ -44,6 +53,12 @@
       when:
         - "'rhel' in test_os"
         - platform == "aws"
+
+    # ansible dnf5 module needs python3-libdnf5
+    - name: Install podman on fedora-41(dnf5)
+      command: dnf -y install podman
+      become: true
+      when: test_os == 'fedora-41'
 
     - name: Auth for RHEL private image
       command:

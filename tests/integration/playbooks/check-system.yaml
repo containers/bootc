@@ -100,11 +100,18 @@
             failed_counter: "{{ failed_counter | int + 1 }}"
 
     - name: set mount point device name
-      command: findmnt -r -o SOURCE -n /sysroot
+      command: findmnt -r -v -o SOURCE -n /sysroot
       register: result_sysroot_source
 
     - set_fact:
         device_name: "{{ result_sysroot_source.stdout }}"
+
+    - name: get filesystem type
+      shell: df --output=fstype -v /sysroot | grep -v Type
+      register: result_fstype
+
+    - set_fact:
+        fstype: "{{ result_fstype.stdout }}"
 
     - name: get ostree osname
       shell: rpm-ostree status --json | jq -r '.deployments[0].osname'
@@ -162,6 +169,28 @@
             failed_counter: "{{ failed_counter | int + 1 }}"
       vars:
         var_mount_path: "{{ device_name }}[/ostree/deploy/{{ osname }}/var]"
+      when: fstype != "btrfs"
+
+    # btrfs defines subvolume /root in fedora
+    # but for bootc install to-disk will set btrfs subvolume /
+    - name: /var mount point checking - btrfs
+      block:
+        - assert:
+            that:
+              - result_var_mount_point.stdout == var_mount_path_1 or result_var_mount_point.stdout == var_mount_path_2
+            fail_msg: "/var does not mount on {{ var_mount_path_1 }} or {{ var_mount_path_2 }}"
+            success_msg: "/var mounts on {{ var_mount_path_1 }} or {{ var_mount_path_2 }}"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      vars:
+        var_mount_path_1: "{{ device_name }}[/root/ostree/deploy/{{ osname }}/var]"
+        var_mount_path_2: "{{ device_name }}[/ostree/deploy/{{ osname }}/var]"
+      when: fstype == "btrfs"
 
     # case: check /var mount status
     - name: check /var mount status
@@ -195,6 +224,44 @@
               - result_root_mount_point.stdout == "overlay"
             fail_msg: "/ does not mount with overlay"
             success_msg: "/ mounts with overlay"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    - name: check VERSION_ID in /etc/os-release
+      shell: awk -F '=' '/^VERSION_ID/ {print $2}' /etc/os-release | tr -d '"'
+      register: result_os_release_version_id
+
+    - name: redhat.version-id == VERSION_ID
+      block:
+        - assert:
+            that:
+              - image_label_version_id == result_os_release_version_id.stdout
+            fail_msg: "version_id in label != version_id in /etc/os-release"
+            success_msg: "version_id in label == version_id in /etc/os-release"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    - name: check selinux status
+      shell: getenforce
+      register: result_selinux
+
+    - name: selinux is Enforcing
+      block:
+        - assert:
+            that:
+              - result_selinux.stdout == "Enforcing"
+            fail_msg: "SELinux status is not Enforcing"
+            success_msg: "SELinux is Enforcing"
       always:
         - set_fact:
             total_counter: "{{ total_counter | int + 1 }}"
@@ -277,6 +344,17 @@
       shell: dmesg --notime | grep -i "error\|fail" | grep -v "skipped" | grep -v "failover" | grep -v "ignition" | grep -v "Driver 'pcspkr'" || true
       register: result_dmesg_error
       become: true
+
+    - name: check journal error and fail log
+      shell: journalctl | grep -i "error\|fail" | grep -v "skipped" | grep -v "failover" | grep -v "ignition" | grep -v "Driver 'pcspkr'" || true
+      register: result_journalctl_error
+      become: true
+
+    - name: check selinux deny log
+      shell: journalctl | grep -i denied
+      register: result_selinux_denied
+      become: true
+      ignore_errors: true
 
     # case: check running container with podman in root
     - name: run CentOS Stream 9 image with podman in root
@@ -371,6 +449,8 @@
         - name: failed count + 1
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
+      when: ansible_facts['distribution_version'] != "41"
+      # workaround for issue https://gitlab.com/fedora/bootc/base-images/-/issues/10
 
     # case: check reboot times
     - name: check reboot times

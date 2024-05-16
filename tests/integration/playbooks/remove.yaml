@@ -22,3 +22,25 @@
             aws ec2 delete-key-pair \
               --key-name "kp-bootc-{{ random_num }}"
       when: platform == "aws"
+
+    - name: Destroy and undefine libvirt vm
+      block:
+        - name: "Destroy vm"
+          command: virsh destroy {{ instance_name }}
+          become: true
+          ignore_errors: true
+        - name: "Undefine vm"
+          command: virsh undefine {{ instance_name }}
+          become: true
+          register: result_undefine
+          ignore_errors: true
+        - name: "Undefine vm with --nvram"
+          command: virsh undefine {{ instance_name }} --nvram
+          become: true
+          ignore_errors: true
+          when: result_undefine is failed
+        - name: "Delete disk file"
+          command: virsh vol-delete --pool images "{{ rhel_guest_image_fname }}"
+          become: true
+          ignore_errors: true
+      when: platform == "libvirt"
