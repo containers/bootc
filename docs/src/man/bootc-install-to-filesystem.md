@@ -12,7 +12,7 @@ bootc-install-to-filesystem - Install to the target filesystem
 \[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
 \[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
-\[**-h**\|**\--help**\] \[**-V**\|**\--version**\] \<*ROOT_PATH*\>
+\[**-h**\|**\--help**\] \<*ROOT_PATH*\>
 
 # DESCRIPTION
 
@@ -139,10 +139,6 @@ firmware will be skipped
 **-h**, **\--help**
 
 :   Print help (see a summary with -h)
-
-**-V**, **\--version**
-
-:   Print version
 
 \<*ROOT_PATH*\>
 

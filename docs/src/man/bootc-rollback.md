@@ -7,7 +7,7 @@ queued upgrade) then it will be discarded
 
 # SYNOPSIS
 
-**bootc rollback** \[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
+**bootc rollback** \[**-h**\|**\--help**\]
 
 # DESCRIPTION
 
@@ -31,10 +31,6 @@ rollback invocation.
 **-h**, **\--help**
 
 :   Print help (see a summary with -h)
-
-**-V**, **\--version**
-
-:   Print version
 
 # VERSION
 

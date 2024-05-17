@@ -46,7 +46,8 @@ fn generate_one(directory: &Utf8Path, cmd: Command) -> Result<()> {
             .name(subname)
             .alias(subname)
             .bin_name(bin_name)
-            .version(version);
+            .version(version)
+            .disable_version_flag(true);
         generate_one(directory, subcmd.clone().name(subname).version(version))?;
     }
     Ok(())

@@ -5,7 +5,7 @@ will be discarded on reboot
 
 # SYNOPSIS
 
-**bootc usr-overlay** \[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
+**bootc usr-overlay** \[**-h**\|**\--help**\]
 
 # DESCRIPTION
 
@@ -36,10 +36,6 @@ unmount\".
 **-h**, **\--help**
 
 :   Print help (see a summary with -h)
-
-**-V**, **\--version**
-
-:   Print version
 
 # VERSION
 
