@@ -20,6 +20,15 @@ Let's however restate a base goal of this project:
 Every tool and technique for creating application base images
 should apply to the host Linux OS as much as possible.
 
+## Understanding mutability
+
+When run as a container (particularly as part of a build), bootc-compatible
+images have all parts of the filesystem (e.g. `/usr` in particular) as fully
+mutable state, and writing there is encouraged (see below).
+
+When "deployed" to a physical or virtual machine, the container image
+files are read-only by default; for more, see [filesystem](../filesystem.md).
+
 ## Installing software
 
 For package management tools like `apt`, `dnf`, `zypper` etc.

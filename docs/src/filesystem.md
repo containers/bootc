@@ -16,6 +16,15 @@ enabled = true
 
 This will ensure that the entire `/` is a read-only filesystem.
 
+## Understanding container build/runtime vs deployment
+
+When run *as a container* (e.g. as part of a container build), the
+filesystem is fully mutable in order to allow derivation to work.
+For more on container builds, see [build guidance](building/guidance.md).
+
+The rest of this document describes the state of the system when
+"deployed" to a physical or virtual machine, and managed by `bootc`.
+
 ## Understanding physical vs logical root with `/sysroot`
 
 When the system is fully booted, it is into the equivalent of a `chroot`.
