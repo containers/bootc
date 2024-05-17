@@ -12,10 +12,10 @@ build = "build.rs"
 include = ["/src", "LICENSE-APACHE", "LICENSE-MIT"]
 
 [dependencies]
-anstream = "0.6.13"
-anstyle = "1.0.6"
-anyhow = "1.0.82"
-camino = { version = "1.1.6", features = ["serde1"] }
+anstream = "0.6.14"
+anstyle = "1.0.7"
+anyhow = "1.0.83"
+camino = { version = "1.1.7", features = ["serde1"] }
 ostree-ext = { version = "0.13.4"  }
 chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version= "4.5.4", features = ["derive","cargo"] }
@@ -34,17 +34,17 @@ openssl = "^0.10.64"
 nix = { version = "0.28", features = ["ioctl", "sched"] }
 regex = "1.10.4"
 rustix = { "version" = "0.38.34", features = ["thread", "fs", "system", "process"] }
-schemars = { version = "0.8.17", features = ["chrono"] }
-serde = { features = ["derive"], version = "1.0.199" }
+schemars = { version = "0.8.19", features = ["chrono"] }
+serde = { features = ["derive"], version = "1.0.202" }
 serde_ignored = "0.1.10"
-serde_json = "1.0.116"
+serde_json = "1.0.117"
 serde_yaml = "0.9.34"
 serde_with = ">= 3.8.1, < 4"
 tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1.37.0" }
-tokio-util = { features = ["io-util"], version = "0.7.10" }
+tokio-util = { features = ["io-util"], version = "0.7.11" }
 tracing = "0.1.40"
 tempfile = "3.10.1"
-toml = "0.8.12"
+toml = "0.8.13"
 xshell = { version = "0.2.6", optional = true }
 uuid = { version = "1.8.0", features = ["v4"] }
 

@@ -17,7 +17,7 @@ default-run = "bootc"
 platforms = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "powerpc64le-unknown-linux-gnu", "s390x-unknown-linux-gnu", "riscv64gc-unknown-linux-gnu"]
 
 [dependencies]
-anyhow = "1.0.82"
+anyhow = "1.0.83"
 bootc-lib = { version = "0.1", path = "../lib" }
 clap = "4.5.4"
 libc = "0.2.154"

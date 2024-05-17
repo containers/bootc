@@ -12,8 +12,8 @@ name = "xtask"
 path = "src/xtask.rs"
 
 [dependencies]
-anyhow = "1.0.82"
-camino = "1.1.6"
+anyhow = "1.0.83"
+camino = "1.1.7"
 chrono = { version = "0.4.38", default_features = false, features = ["std"] }
 fn-error-context = "0.2.1"
 tempfile = "3.10.1"
