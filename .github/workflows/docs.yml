@@ -45,7 +45,7 @@ jobs:
           echo `pwd`/mdbook-linkcheck >> $GITHUB_PATH
       - name: Setup Pages
         id: pages
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@v5
       - name: Build with mdBook
         run: cd docs && mdbook-mermaid install && mdbook build
       - name: Upload artifact
