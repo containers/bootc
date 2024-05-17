@@ -4,8 +4,8 @@ bootc-status - Display status
 
 # SYNOPSIS
 
-**bootc-status** \[**\--json**\] \[**\--booted**\]
-\[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
+**bootc status** \[**\--json**\] \[**\--booted**\]
+\[**-h**\|**\--help**\]
 
 # DESCRIPTION
 
@@ -30,10 +30,6 @@ The exact API format is not currently declared stable.
 **-h**, **\--help**
 
 :   Print help (see a summary with -h)
-
-**-V**, **\--version**
-
-:   Print version
 
 # VERSION
 

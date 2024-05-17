@@ -4,8 +4,8 @@ bootc-upgrade - Download and queue an updated container image to apply
 
 # SYNOPSIS
 
-**bootc-upgrade** \[**\--quiet**\] \[**\--check**\] \[**\--apply**\]
-\[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
+**bootc upgrade** \[**\--quiet**\] \[**\--check**\] \[**\--apply**\]
+\[**-h**\|**\--help**\]
 
 # DESCRIPTION
 
@@ -49,10 +49,6 @@ userspace-only restart.
 **-h**, **\--help**
 
 :   Print help (see a summary with -h)
-
-**-V**, **\--version**
-
-:   Print version
 
 # VERSION
 

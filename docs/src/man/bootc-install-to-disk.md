@@ -4,14 +4,13 @@ bootc-install-to-disk - Install to the target block device
 
 # SYNOPSIS
 
-**bootc-install-to-disk** \[**\--wipe**\] \[**\--block-setup**\]
+**bootc install to-disk** \[**\--wipe**\] \[**\--block-setup**\]
 \[**\--filesystem**\] \[**\--root-size**\] \[**\--source-imgref**\]
 \[**\--target-transport**\] \[**\--target-imgref**\]
 \[**\--enforce-container-sigpolicy**\] \[**\--target-ostree-remote**\]
 \[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
-\[**\--via-loopback**\] \[**-h**\|**\--help**\]
-\[**-V**\|**\--version**\] \<*DEVICE*\>
+\[**\--via-loopback**\] \[**-h**\|**\--help**\] \<*DEVICE*\>
 
 # DESCRIPTION
 
@@ -127,10 +126,6 @@ firmware will be skipped
 **-h**, **\--help**
 
 :   Print help (see a summary with -h)
-
-**-V**, **\--version**
-
-:   Print version
 
 \<*DEVICE*\>
 

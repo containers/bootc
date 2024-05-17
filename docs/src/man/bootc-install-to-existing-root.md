@@ -5,14 +5,14 @@ root filesystem
 
 # SYNOPSIS
 
-**bootc-install-to-existing-root** \[**\--replace**\]
+**bootc install to-existing-root** \[**\--replace**\]
 \[**\--source-imgref**\] \[**\--target-transport**\]
 \[**\--target-imgref**\] \[**\--enforce-container-sigpolicy**\]
 \[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
 \[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
 \[**\--acknowledge-destructive**\] \[**-h**\|**\--help**\]
-\[**-V**\|**\--version**\] \[*ROOT_PATH*\]
+\[*ROOT_PATH*\]
 
 # DESCRIPTION
 
@@ -116,10 +116,6 @@ firmware will be skipped
 **-h**, **\--help**
 
 :   Print help (see a summary with -h)
-
-**-V**, **\--version**
-
-:   Print version
 
 \[*ROOT_PATH*\] \[default: /target\]
 

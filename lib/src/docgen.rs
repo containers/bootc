@@ -15,6 +15,8 @@ pub fn generate_manpages(directory: &Utf8Path) -> Result<()> {
 fn generate_one(directory: &Utf8Path, cmd: Command) -> Result<()> {
     let version = env!("CARGO_PKG_VERSION");
     let name = cmd.get_name();
+    let bin_name = cmd.get_bin_name()
+        .unwrap_or_else(|| name);
     let path = directory.join(format!("{name}.8"));
     println!("Generating {path}...");
 
@@ -26,7 +28,6 @@ fn generate_one(directory: &Utf8Path, cmd: Command) -> Result<()> {
         .with_context(|| format!("opening {path}"))
         .map(std::io::BufWriter::new)?;
     clap_mangen::Man::new(cmd.clone())
-        .title("bootc")
         .section("8")
         .source(format!("bootc {version}"))
         .render(&mut out)
@@ -36,10 +37,17 @@ fn generate_one(directory: &Utf8Path, cmd: Command) -> Result<()> {
 
     for subcmd in cmd.get_subcommands().filter(|c| !c.is_hide_set()) {
         let subname = format!("{}-{}", name, subcmd.get_name());
+        let bin_name =  format!("{} {}", bin_name, subcmd.get_name());
         // SAFETY: Latest clap 4 requires names are &'static - this is
         // not long-running production code, so we just leak the names here.
         let subname = &*std::boxed::Box::leak(subname.into_boxed_str());
-        let subcmd = subcmd.clone().name(subname).alias(subname).version(version);
+        let bin_name = &*std::boxed::Box::leak(bin_name.into_boxed_str());
+        let subcmd = subcmd.clone()
+            .name(subname)
+            .alias(subname)
+            .bin_name(bin_name)
+            .version(version)
+            .disable_version_flag(true);
         generate_one(directory, subcmd.clone().name(subname).version(version))?;
     }
     Ok(())

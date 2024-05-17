@@ -7,8 +7,7 @@ processes using \`install to-filesystem\` that want to honor e.g.
 
 # SYNOPSIS
 
-**bootc-install-print-configuration** \[**-h**\|**\--help**\]
-\[**-V**\|**\--version**\]
+**bootc install print-configuration** \[**-h**\|**\--help**\]
 
 # DESCRIPTION
 
@@ -24,10 +23,6 @@ string-valued filesystem name suitable for passing to \`mkfs.\$type\`.
 **-h**, **\--help**
 
 :   Print help (see a summary with -h)
-
-**-V**, **\--version**
-
-:   Print version
 
 # VERSION
 
