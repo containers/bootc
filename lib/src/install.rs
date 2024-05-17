@@ -24,7 +24,9 @@ use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use cap_std::fs::{Dir, MetadataExt};
+use cap_std_ext::cap_primitives;
 use cap_std_ext::cap_std;
+use cap_std_ext::cap_std::io_lifetimes::AsFilelike;
 use cap_std_ext::prelude::CapStdExtDirExt;
 use chrono::prelude::*;
 use clap::ValueEnum;
@@ -138,6 +140,27 @@ pub(crate) struct InstallConfigOpts {
     /// Example: --karg=nosmt --karg=console=ttyS0,114800n8
     #[clap(long)]
     karg: Option<Vec<String>>,
+
+    /// Inject arbitrary files into the target deployment `/etc`.  One can use
+    /// this for example to inject systemd units, or `tmpfiles.d` snippets
+    /// which set up SSH keys.
+    ///
+    /// Files injected this way become "unmanaged state"; they will be carried
+    /// forward across upgrades, but will not otherwise be updated unless
+    /// a secondary mechanism takes ownership thereafter.
+    ///
+    /// This option can be specified multiple times; the files will be copied
+    /// in order.
+    ///
+    /// Any missing parent directories will be implicitly created with root ownership
+    /// and mode 0755.
+    ///
+    /// This option pairs well with additional bind mount
+    /// volumes set up via the container orchestrator, e.g.:
+    /// `podman run ... -v /path/to/config:/config <image> bootc install to-disk --copy-etc /config`
+    #[clap(long)]
+    #[serde(default)]
+    pub(crate) copy_etc: Option<Vec<Utf8PathBuf>>,
 
     /// The path to an `authorized_keys` that will be injected into the `root` account.
     ///
@@ -697,6 +720,24 @@ async fn initialize_ostree_root_from_self(
         osconfig::inject_root_ssh_authorized_keys(&root, sepolicy, contents)?;
     }
 
+    // Copy unmanaged configuration
+    let target_etc = root.open_dir("etc").context("Opening deployment /etc")?;
+    let copy_etc = state
+        .config_opts
+        .copy_etc
+        .iter()
+        .flatten()
+        .cloned()
+        .collect::<Vec<_>>();
+    for src in copy_etc {
+        println!("Injecting configuration from {src}");
+        let src = Dir::open_ambient_dir(&src, cap_std::ambient_authority())
+            .with_context(|| format!("Opening {src}"))?;
+        let mut pb = ".".into();
+        let n = copy_unmanaged_etc(sepolicy, &src, &target_etc, &mut pb)?;
+        tracing::debug!("Copied config files: {n}");
+    }
+
     let uname = rustix::system::uname();
 
     let labels = crate::status::labels_of_config(&imgstate.configuration);
@@ -1166,6 +1207,70 @@ async fn prepare_install(
     Ok(state)
 }
 
+// Backing implementation of --copy-etc; just your basic
+// recursive copy algorithm.  Parent directories are
+// created as necessary
+fn copy_unmanaged_etc(
+    sepolicy: Option<&ostree::SePolicy>,
+    src: &Dir,
+    dest: &Dir,
+    path: &mut Utf8PathBuf,
+) -> Result<u64> {
+    let mut r = 0u64;
+    for ent in src.read_dir(&path)? {
+        let ent = ent?;
+        let name = ent.file_name();
+        let name = if let Some(name) = name.to_str() {
+            name
+        } else {
+            anyhow::bail!("Non-UTF8 name: {name:?}");
+        };
+        let meta = ent.metadata()?;
+        // Build the relative path
+        path.push(Utf8Path::new(name));
+        // And the absolute path for looking up SELinux labels
+        let as_path = {
+            let mut p = Utf8PathBuf::from("/etc");
+            p.push(&path);
+            p
+        };
+        r += 1;
+        if meta.is_dir() {
+            if let Some(parent) = path.parent() {
+                dest.create_dir_all(parent)
+                    .with_context(|| format!("Creating {parent}"))?;
+            }
+            crate::lsm::ensure_dir_labeled(
+                dest,
+                &path,
+                Some(&as_path),
+                meta.mode().into(),
+                sepolicy,
+            )?;
+            r += copy_unmanaged_etc(sepolicy, src, dest, path)?;
+        } else {
+            dest.remove_file_optional(&path)?;
+            if meta.is_symlink() {
+                let link_target = cap_primitives::fs::read_link_contents(
+                    &src.as_filelike_view(),
+                    path.as_std_path(),
+                )
+                .context("Reading symlink")?;
+                cap_primitives::fs::symlink_contents(link_target, &dest.as_filelike_view(), &path)
+                    .with_context(|| format!("Writing symlink {path:?}"))?;
+            } else {
+                src.copy(&path, dest, &path)
+                    .with_context(|| format!("Copying {path:?}"))?;
+            }
+            if let Some(sepolicy) = sepolicy {
+                crate::lsm::ensure_labeled(dest, path, Some(&as_path), &meta, sepolicy)?;
+            }
+        }
+        assert!(path.pop());
+    }
+    Ok(r)
+}
+
 async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Result<()> {
     if matches!(state.selinux_state, SELinuxFinalState::ForceTargetDisabled) {
         rootfs.kargs.push("selinux=0".to_string());
@@ -1607,13 +1712,79 @@ pub(crate) async fn install_to_existing_root(opts: InstallToExistingRootOpts) ->
     install_to_filesystem(opts, true).await
 }
 
-#[test]
-fn install_opts_serializable() {
-    let c: InstallToDiskOpts = serde_json::from_value(serde_json::json!({
-        "device": "/dev/vda"
-    }))
-    .unwrap();
-    assert_eq!(c.block_opts.device, "/dev/vda");
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn install_opts_serializable() {
+        let c: InstallToDiskOpts = serde_json::from_value(serde_json::json!({
+            "device": "/dev/vda"
+        }))
+        .unwrap();
+        assert_eq!(c.block_opts.device, "/dev/vda");
+    }
+
+    #[test]
+    fn test_copy_etc() -> Result<()> {
+        use std::path::PathBuf;
+        fn impl_count(d: &Dir, path: &mut PathBuf) -> Result<u64> {
+            let mut c = 0u64;
+            for ent in d.read_dir(&path)? {
+                let ent = ent?;
+                path.push(ent.file_name());
+                c += 1;
+                if ent.file_type()?.is_dir() {
+                    c += impl_count(d, path)?;
+                }
+                path.pop();
+            }
+            return Ok(c);
+        }
+        fn count(d: &Dir) -> Result<u64> {
+            let mut p = PathBuf::from(".");
+            impl_count(d, &mut p)
+        }
+
+        use cap_std_ext::cap_tempfile::TempDir;
+        let tmproot = TempDir::new(cap_std::ambient_authority())?;
+        let src_etc = TempDir::new(cap_std::ambient_authority())?;
+
+        let init_tmproot = || -> Result<()> {
+            tmproot.write("foo.conf", "somefoo")?;
+            tmproot.symlink("foo.conf", "foo-link.conf")?;
+            tmproot.create_dir_all("systemd/system")?;
+            tmproot.write("systemd/system/foo.service", "[fooservice]")?;
+            tmproot.write("systemd/system/other.service", "[otherservice]")?;
+            Ok(())
+        };
+
+        let mut pb = ".".into();
+        // First, a no-op
+        copy_unmanaged_etc(None, &src_etc, &tmproot, &mut pb).unwrap();
+        assert_eq!(count(&tmproot).unwrap(), 0);
+
+        init_tmproot()?;
+
+        // Another no-op but with data in dest already
+        copy_unmanaged_etc(None, &src_etc, &tmproot, &mut pb).unwrap();
+        assert_eq!(count(&tmproot).unwrap(), 6);
+
+        src_etc.write("injected.conf", "injected")?;
+        copy_unmanaged_etc(None, &src_etc, &tmproot, &mut pb).unwrap();
+        assert_eq!(count(&tmproot).unwrap(), 7);
+
+        src_etc.create_dir_all("systemd/system")?;
+        src_etc.write("systemd/system/foo.service", "[overwrittenfoo]")?;
+        copy_unmanaged_etc(None, &src_etc, &tmproot, &mut pb).unwrap();
+        assert_eq!(count(&tmproot).unwrap(), 7);
+        assert_eq!(
+            tmproot.read_to_string("systemd/system/foo.service")?,
+            "[overwrittenfoo]"
+        );
+
+        Ok(())
+    }
 }
 
 #[test]
