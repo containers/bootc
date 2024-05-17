@@ -4,7 +4,7 @@ bootc-edit - Apply full changes to the host specification
 
 # SYNOPSIS
 
-**bootc-edit** \[**-f**\|**\--filename**\] \[**\--quiet**\]
+**bootc edit** \[**-f**\|**\--filename**\] \[**\--quiet**\]
 \[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
 
 # DESCRIPTION

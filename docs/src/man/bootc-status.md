@@ -4,7 +4,7 @@ bootc-status - Display status
 
 # SYNOPSIS
 
-**bootc-status** \[**\--json**\] \[**\--booted**\]
+**bootc status** \[**\--json**\] \[**\--booted**\]
 \[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
 
 # DESCRIPTION

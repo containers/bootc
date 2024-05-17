@@ -5,7 +5,7 @@ root filesystem
 
 # SYNOPSIS
 
-**bootc-install-to-existing-root** \[**\--replace**\]
+**bootc install to-existing-root** \[**\--replace**\]
 \[**\--source-imgref**\] \[**\--target-transport**\]
 \[**\--target-imgref**\] \[**\--enforce-container-sigpolicy**\]
 \[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]

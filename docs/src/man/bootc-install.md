@@ -4,7 +4,7 @@ bootc-install - Install the running container to a target
 
 # SYNOPSIS
 
-**bootc-install** \[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
+**bootc install** \[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
 \<*subcommands*\>
 
 # DESCRIPTION

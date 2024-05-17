@@ -4,7 +4,7 @@ bootc-switch - Target a new container image reference to boot
 
 # SYNOPSIS
 
-**bootc-switch** \[**\--quiet**\] \[**\--transport**\]
+**bootc switch** \[**\--quiet**\] \[**\--transport**\]
 \[**\--enforce-container-sigpolicy**\] \[**\--ostree-remote**\]
 \[**\--retain**\] \[**-h**\|**\--help**\] \[**-V**\|**\--version**\]
 \<*TARGET*\>

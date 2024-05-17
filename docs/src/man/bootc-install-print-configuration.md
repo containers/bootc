@@ -7,7 +7,7 @@ processes using \`install to-filesystem\` that want to honor e.g.
 
 # SYNOPSIS
 
-**bootc-install-print-configuration** \[**-h**\|**\--help**\]
+**bootc install print-configuration** \[**-h**\|**\--help**\]
 \[**-V**\|**\--version**\]
 
 # DESCRIPTION

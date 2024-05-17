@@ -4,7 +4,7 @@ bootc-install-to-filesystem - Install to the target filesystem
 
 # SYNOPSIS
 
-**bootc-install-to-filesystem** \[**\--root-mount-spec**\]
+**bootc install to-filesystem** \[**\--root-mount-spec**\]
 \[**\--boot-mount-spec**\] \[**\--replace**\]
 \[**\--acknowledge-destructive**\] \[**\--skip-finalize**\]
 \[**\--source-imgref**\] \[**\--target-transport**\]

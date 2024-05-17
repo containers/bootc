@@ -4,7 +4,7 @@ bootc-install-to-disk - Install to the target block device
 
 # SYNOPSIS
 
-**bootc-install-to-disk** \[**\--wipe**\] \[**\--block-setup**\]
+**bootc install to-disk** \[**\--wipe**\] \[**\--block-setup**\]
 \[**\--filesystem**\] \[**\--root-size**\] \[**\--source-imgref**\]
 \[**\--target-transport**\] \[**\--target-imgref**\]
 \[**\--enforce-container-sigpolicy**\] \[**\--target-ostree-remote**\]
