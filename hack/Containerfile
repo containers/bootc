@@ -1,7 +1,10 @@
-# This container build is just a demo effectively; it shows how one might
-# build bootc in a container flow, using Fedora ELN as the target.
-FROM quay.io/centos-bootc/centos-bootc:stream9 as build
-RUN dnf config-manager --set-enabled crb && dnf -y install cargo ostree-devel openssl-devel && dnf clean all
+# Build bootc from the current git into a c9s-bootc container image.
+# Use e.g. --build-arg=base=quay.io/fedora/fedora-bootc:40 to target
+# Fedora instead.
+ARG base=quay.io/centos-bootc/centos-bootc:stream9
+FROM $base as build
+COPY hack/build.sh /build.sh
+RUN /build.sh && rm -v /build.sh
 COPY . /build
 WORKDIR /build
 RUN mkdir -p /build/target/dev-rootfs  # This can hold arbitrary extra content
@@ -9,7 +12,7 @@ RUN mkdir -p /build/target/dev-rootfs  # This can hold arbitrary extra content
 # We aren't using the full recommendations there, just the simple bits.
 RUN --mount=type=cache,target=/build/target --mount=type=cache,target=/var/roothome make bin-archive && mkdir -p /out && cp target/bootc.tar.zst /out
 
-FROM quay.io/centos-bootc/centos-bootc:stream9
+FROM $base
 COPY --from=build /out/bootc.tar.zst /tmp
 COPY --from=build /build/target/dev-rootfs/ /
 RUN tar -C / --zstd -xvf /tmp/bootc.tar.zst && rm -vf /tmp/*
