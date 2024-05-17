@@ -20,20 +20,21 @@
 - [Offline/disconnected updates](offline-updates.md)
 - [Booting local builds](booting-local-builds.md)
 - [`man bootc`](man/bootc.md)
-- [`man bootc status`](man/bootc-status.md)
-- [`man bootc upgrade`](man/bootc-upgrade.md)
-- [`man bootc switch`](man/bootc-switch.md)
-- [`man bootc rollback`](man/bootc-rollback.md)
-- [`man bootc usr-overlay`](man/bootc-usr-overlay.md)
+- [`man bootc-status`](man/bootc-status.md)
+- [`man bootc-upgrade`](man/bootc-upgrade.md)
+- [`man bootc-switch`](man/bootc-switch.md)
+- [`man bootc-rollback`](man/bootc-rollback.md)
+- [`man bootc-usr-overlay`](man/bootc-usr-overlay.md)
 - [`man bootc-fetch-apply-updates.service`](man-md/bootc-fetch-apply-updates-service.md)
 
 # Using `bootc install`
 
 - [Understanding `bootc install`](bootc-install.md)
-- [`man bootc-install.md`](man/bootc-install.md)
+- [`man bootc-install`](man/bootc-install.md)
 - [`man bootc-install-config`](man-md/bootc-install-config.md)
-- [`man bootc-install-to-disk.md`](man/bootc-install-to-disk.md)
-- [`man bootc-install-to-filesystem.md`](man/bootc-install-to-filesystem.md)
+- [`man bootc-install-to-disk`](man/bootc-install-to-disk.md)
+- [`man bootc-install-to-filesystem`](man/bootc-install-to-filesystem.md)
+- [`man bootc-install-to-existing-root`](man/bootc-install-to-existing-root.md)
 
 # Architecture
 

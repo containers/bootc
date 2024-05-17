@@ -18,7 +18,7 @@ that can be overridden in a derived container image.
 
 This is the only defined toplevel table.
 
-The `install`` section supports two subfields:
+The `install` section supports two subfields:
 
 - `block`: An array of supported `to-disk` backends enabled by this base container image;
    if not specified, this will just be `direct`.  The only other supported value is `tpm2-luks`.
