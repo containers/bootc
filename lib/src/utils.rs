@@ -1,4 +1,7 @@
+use std::future::Future;
+use std::io::Write;
 use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use ostree::glib;
@@ -85,6 +88,35 @@ pub(crate) fn medium_visibility_warning(s: &str) {
     );
     // When warning, add a sleep to ensure it's seen
     std::thread::sleep(std::time::Duration::from_secs(1));
+}
+
+/// Call an async task function, and write a message to stdout
+/// with an automatic spinner to show that we're not blocked.
+/// Note that generally the called function should not output
+/// anything to stdout as this will interfere with the spinner.
+pub(crate) async fn async_task_with_spinner<F, T>(msg: &'static str, f: F) -> T
+where
+    F: Future<Output = T>,
+{
+    let pb = indicatif::ProgressBar::new_spinner();
+    let style = indicatif::ProgressStyle::default_bar();
+    pb.set_style(style.template("{spinner} {msg}").unwrap());
+    pb.set_message(msg);
+    pb.enable_steady_tick(Duration::from_millis(150));
+    // We need to handle the case where we aren't connected to
+    // a tty, so indicatif would show nothing by default.
+    if pb.is_hidden() {
+        print!("{}...", msg);
+        std::io::stdout().flush().unwrap();
+    } else {
+    }
+    let r = f.await;
+    if pb.is_hidden() {
+        println!("done");
+    } else {
+        pb.finish_with_message(format!("{msg}: done"));
+    }
+    r
 }
 
 /// Given a possibly tagged image like quay.io/foo/bar:latest and a digest 0ab32..., return

@@ -650,10 +650,11 @@ async fn initialize_ostree_root_from_self(
     options.kargs = Some(kargs.as_slice());
     options.target_imgref = Some(&state.target_imgref);
     options.proxy_cfg = proxy_cfg;
-    println!("Deploying container image");
-    let imgstate =
-        ostree_container::deploy::deploy(&sysroot, stateroot, &src_imageref, Some(options)).await?;
-    println!("Deployment complete");
+    let imgstate = crate::utils::async_task_with_spinner(
+        "Deploying container image",
+        ostree_container::deploy::deploy(&sysroot, stateroot, &src_imageref, Some(options)),
+    )
+    .await?;
 
     sysroot.load(cancellable)?;
     let deployment = sysroot
