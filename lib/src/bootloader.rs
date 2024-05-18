@@ -27,5 +27,8 @@ pub(crate) fn install_via_bootupd(
             device.as_str(),
             rootfs.as_str(),
         ]);
-    Task::new_and_run("Running bootupctl to install bootloader", "bootupctl", args)
+    Task::new("Running bootupctl to install bootloader", "bootupctl")
+        .args(args)
+        .verbose()
+        .run()
 }
