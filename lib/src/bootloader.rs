@@ -21,8 +21,6 @@ pub(crate) fn install_via_bootupd(
         .chain(verbose)
         .chain(bootupd_opts.iter().copied().flatten())
         .chain([
-            "--src-root",
-            "/",
             "--device",
             device.as_str(),
             rootfs.as_str(),
