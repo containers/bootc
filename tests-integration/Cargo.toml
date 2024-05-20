@@ -1,0 +1,21 @@
+# Our integration tests
+[package]
+name = "tests-integration"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "tests-integration"
+path = "src/tests-integration.rs"
+
+[dependencies]
+anyhow = "1.0.82"
+camino = "1.1.6"
+cap-std-ext = "4"
+clap = { version= "4.5.4", features = ["derive","cargo"] }
+fn-error-context = "0.2.1"
+libtest-mimic = "0.7.3"
+tempfile = "3.10.1"
+xshell = { version = "0.2.6" }

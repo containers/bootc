@@ -68,26 +68,6 @@ jobs:
         with:
           name: bootc.tar.zst
           path: target/bootc.tar.zst
-  build-c9s:
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
-    runs-on: ubuntu-latest
-    container: quay.io/centos/centos:stream9
-    steps:
-      - run: dnf -y install git-core
-      - uses: actions/checkout@v4
-      - name: Install deps
-        run: ./ci/installdeps.sh
-      - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: "build-c9s"
-      - name: Build
-        run: make test-bin-archive
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: bootc-c9s.tar.zst
-          path: target/bootc.tar.zst
   cargo-deny:
     runs-on: ubuntu-latest
     steps:
@@ -127,78 +107,24 @@ jobs:
         run: sudo tar -C / -xvf bootc.tar.zst
       - name: Integration tests
         run: bootc internal-tests run-container-integration
-  privtest-alongside:
+  install-tests:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
-    name: "Test install-alongside"
-    needs: [build-c9s]
-    runs-on: ubuntu-latest
+    name: "Test install"
+    # For a not-ancient podman
+    runs-on: ubuntu-24.04
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Ensure host skopeo is disabled
         run: sudo rm -f /bin/skopeo /usr/bin/skopeo
-      - name: Download
-        uses: actions/download-artifact@v4
-        with:
-          name: bootc-c9s.tar.zst
-      - name: Install
-        run: tar -xvf bootc.tar.zst
       - name: Integration tests
         run: |
-          set -xeuo pipefail
-          image=quay.io/centos-bootc/centos-bootc-dev:stream9 
-          echo 'ssh-ed25519 ABC0123 testcase@example.com' > test_authorized_keys
-          sudo podman run --rm --privileged -v ./test_authorized_keys:/test_authorized_keys --env RUST_LOG=debug -v /:/target -v /var/lib/containers:/var/lib/containers -v ./usr/bin/bootc:/usr/bin/bootc --pid=host --security-opt label=disable \
-            ${image} bootc install to-filesystem --acknowledge-destructive \
-            --karg=foo=bar --disable-selinux --replace=alongside --root-ssh-authorized-keys=/test_authorized_keys /target
-          ls -al /boot/loader/
-          sudo grep foo=bar /boot/loader/entries/*.conf
-          grep authorized_keys /ostree/deploy/default/deploy/*/etc/tmpfiles.d/bootc-root-ssh.conf
-          # TODO fix https://github.com/containers/bootc/pull/137
-          sudo chattr -i /ostree/deploy/default/deploy/*
-          sudo rm /ostree/deploy/default -rf
-          sudo podman run --rm --privileged --env RUST_LOG=debug -v /:/target -v /var/lib/containers:/var/lib/containers -v ./usr/bin/bootc:/usr/bin/bootc --pid=host --security-opt label=disable \
-            ${image} bootc install to-existing-root --acknowledge-destructive
-          sudo podman run --rm --privileged -v /:/target -v ./usr/bin/bootc:/usr/bin/bootc --pid=host --security-opt label=disable ${image} bootc internal-tests verify-selinux /target/ostree --warn
-  install-to-existing-root:
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
-    name: "Test install-to-existing-root"
-    needs: [build-c9s]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download
-        uses: actions/download-artifact@v4
-        with:
-          name: bootc-c9s.tar.zst
-      - name: Install
-        run: tar -xvf bootc.tar.zst
-      - name: Integration tests
-        run: |
-          set -xeuo pipefail
-          # We should be able to install to-existing-root with no install config,
-          # so we bind mount an empty directory over /usr/lib/bootc/install.
-          empty=$(mktemp -d)
-          image=quay.io/centos-bootc/centos-bootc-dev:stream9
-          sudo podman run --rm --privileged --env RUST_LOG=debug -v /:/target -v /var/lib/containers:/var/lib/containers -v ./usr/bin/bootc:/usr/bin/bootc -v ${empty}:/usr/lib/bootc/install --pid=host --security-opt label=disable \
-            ${image} bootc install to-existing-root
-  install-to-loopback:
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
-    name: "Test install to-disk --via-loopback"
-    needs: [build-c9s]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download
-        uses: actions/download-artifact@v4
-        with:
-          name: bootc-c9s.tar.zst
-      - name: Install
-        run: tar -xvf bootc.tar.zst
-      - name: Integration tests
-        run: |
-          set -xeuo pipefail
-          image=quay.io/centos-bootc/centos-bootc-dev:stream9
-          tmpdisk=$(mktemp -p /var/tmp)
-          truncate -s 20G ${tmpdisk}
-          sudo podman run --rm --privileged --env RUST_LOG=debug -v /dev:/dev -v /:/target -v /var/lib/containers:/var/lib/containers -v ./usr/bin/bootc:/usr/bin/bootc --pid=host --security-opt label=disable \
-            -v ${tmpdisk}:/disk ${image} bootc install to-disk --via-loopback /disk
+          set -xeu
+          sudo podman build -t localhost/bootc -f hack/Containerfile .
+          # Nondestructive but privileged tests
+          cargo run -p tests-integration host-privileged localhost/bootc
+          # Finally the install-alongside suite
+          cargo run -p tests-integration install-alongside localhost/bootc
   docs:
     if: ${{ contains(github.event.pull_request.labels.*.name, 'documentation') }}
     runs-on: ubuntu-latest
