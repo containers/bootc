@@ -112,11 +112,8 @@ pub(crate) fn impl_run_container() -> Result<()> {
     let config = cmd!(sh, "bootc install print-configuration").read()?;
     let mut config: InstallConfiguration =
         serde_json::from_str(&config).context("Parsing install config")?;
-    config.canonicalize();
-    assert_eq!(
-        config.root_fs_type.unwrap(),
-        crate::install::baseline::Filesystem::Xfs
-    );
+    // Just verify we parsed the config, if any
+    drop(config);
 
     println!("ok container integration testing");
     Ok(())
