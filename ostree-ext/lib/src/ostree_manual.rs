@@ -3,7 +3,6 @@
 use std::io::Read;
 use std::ptr;
 
-use ostree;
 use ostree::prelude::{Cast, InputStreamExtManual};
 use ostree::{gio, glib};
 

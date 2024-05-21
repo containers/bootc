@@ -22,7 +22,7 @@ pub(crate) fn load_config(root: &ostree::RepoFile) -> Result<Option<glib::KeyFil
     let kf = glib::KeyFile::new();
     for path in ["etc", "usr/lib"].into_iter().map(Utf8Path::new) {
         let path = &path.join(CONF_PATH);
-        let f = root.resolve_relative_path(&path);
+        let f = root.resolve_relative_path(path);
         if !f.query_exists(cancellable) {
             continue;
         }

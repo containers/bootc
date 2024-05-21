@@ -1097,7 +1097,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     // off by default, and must be explicitly enabled.
                     no_signature_verification = !enforce_container_sigpolicy;
                     let sysroot = &if let Some(sysroot) = sysroot {
-                        ostree::Sysroot::new(Some(&gio::File::for_path(&sysroot)))
+                        ostree::Sysroot::new(Some(&gio::File::for_path(sysroot)))
                     } else {
                         ostree::Sysroot::new_default()
                     };
@@ -1118,7 +1118,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                         let booted_stateroot = sysroot
                             .booted_deployment()
                             .map(|d| Cow::Owned(d.osname().to_string()));
-                        booted_stateroot.unwrap_or_else(|| {
+                        booted_stateroot.unwrap_or({
                             Cow::Borrowed(crate::container::deploy::STATEROOT_DEFAULT)
                         })
                     };
