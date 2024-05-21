@@ -52,15 +52,6 @@ cargo build --release
 %make_install INSTALL="install -p -c"
 make install-grub-static DESTDIR=%{?buildroot} INSTALL="%{__install} -p"
 
-%post        -n %{crate}
-%systemd_post bootupd.service bootupd.socket
-
-%preun       -n %{crate}
-%systemd_preun bootupd.service bootupd.socket
-
-%postun      -n %{crate}
-%systemd_postun bootupd.service bootupd.socket
-
 %changelog
 * Tue Oct 18 2022 Colin Walters <walters@verbum.org> - 0.2.8-3
 - Dummy changelog

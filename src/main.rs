@@ -22,7 +22,6 @@ mod bootupd;
 mod cli;
 mod component;
 mod coreos;
-mod daemon;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod efi;
 mod filesystem;
@@ -33,7 +32,6 @@ mod filetree;
     target_arch = "powerpc64"
 ))]
 mod grubconfigs;
-mod ipc;
 mod model;
 mod model_legacy;
 mod ostreeutil;
