@@ -973,6 +973,7 @@ impl ImageImporter {
                 let modifier =
                     ostree::RepoCommitModifier::new(ostree::RepoCommitModifierFlags::CONSUME, None);
                 modifier.set_devino_cache(&devino);
+                modifier.set_sepolicy_from_commit(&repo, &base_commit, cancellable)?;
 
                 let mt = ostree::MutableTree::new();
                 repo.write_dfd_to_mtree(
