@@ -10,7 +10,7 @@ use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
-use chrono::NaiveDateTime;
+use chrono::DateTime;
 use containers_image_proxy::oci_spec;
 use flate2::Compression;
 use fn_error_context::context;
@@ -169,7 +169,7 @@ fn build_oci(
     let commit = repo.require_rev(rev)?;
     let commit = commit.as_str();
     let (commit_v, _) = repo.load_commit(commit)?;
-    let commit_timestamp = NaiveDateTime::from_timestamp_opt(
+    let commit_timestamp = DateTime::from_timestamp(
         ostree::commit_get_timestamp(&commit_v).try_into().unwrap(),
         0,
     )
