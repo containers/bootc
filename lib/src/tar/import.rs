@@ -393,9 +393,9 @@ impl Importer {
     /// Given a tar entry that looks like an object (its path is under ostree/repo/objects/),
     /// determine its type and import it.
     #[context("Importing object {}", path)]
-    fn import_object<'b, R: std::io::Read>(
+    fn import_object<R: std::io::Read>(
         &mut self,
-        entry: tar::Entry<'b, R>,
+        entry: tar::Entry<'_, R>,
         path: &Utf8Path,
         cancellable: Option<&gio::Cancellable>,
     ) -> Result<()> {

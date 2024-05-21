@@ -194,7 +194,7 @@ pub async fn unencapsulate(repo: &ostree::Repo, imgref: &OstreeImageReference) -
 /// This is implemented with a background thread using a pipe-to-self,
 /// and so there is an additional Future object returned that is a "driver"
 /// task and must also be checked for errors.
-pub(crate) fn decompress_bridge<'a>(
+pub(crate) fn decompress_bridge(
     src: impl tokio::io::AsyncBufRead + Send + Unpin + 'static,
     is_zstd: bool,
 ) -> Result<(
@@ -234,7 +234,7 @@ pub(crate) fn decompress_bridge<'a>(
 }
 
 /// Create a decompressor for this MIME type, given a stream of input.
-fn new_async_decompressor<'a>(
+fn new_async_decompressor(
     media_type: &oci_image::MediaType,
     src: impl AsyncBufRead + Send + Unpin + 'static,
 ) -> Result<(

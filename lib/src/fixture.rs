@@ -583,7 +583,9 @@ impl Fixture {
             .timestamp_opt(ostree::commit_get_timestamp(&commit) as i64, 0)
             .single()
             .unwrap();
-        let new_ts = ts.add(chrono::Duration::days(1)).timestamp() as u64;
+        let new_ts = ts
+            .add(chrono::TimeDelta::try_days(1).expect("one day does not overflow"))
+            .timestamp() as u64;
 
         // Prepare a transaction
         let tx = self.srcrepo.auto_transaction(cancellable)?;
