@@ -100,7 +100,7 @@ pub async fn update_detached_metadata(
 
         // Splice it into both the manifest and config
         manifest.layers_mut()[commit_layer_idx] = out_layer_descriptor;
-        config.rootfs_mut().diff_ids_mut()[commit_layer_idx] = out_layer_diffid.clone();
+        config.rootfs_mut().diff_ids_mut()[commit_layer_idx].clone_from(&out_layer_diffid);
 
         let labels = ctrcfg.labels_mut().get_or_insert_with(Default::default);
         // Nothing to do except in the special case where there's somehow only one

@@ -619,7 +619,7 @@ pub(crate) fn export_chunk<W: std::io::Write>(
 ) -> Result<()> {
     // For chunking, we default to format version 1
     #[allow(clippy::needless_update)]
-    let opts = ExportOptions::default();
+    let opts = ExportOptions;
     let writer = &mut OstreeTarWriter::new(repo, commit, out, opts)?;
     writer.write_repo_structure()?;
     write_chunk(writer, chunk)
@@ -633,7 +633,7 @@ pub(crate) fn export_final_chunk<W: std::io::Write>(
     remainder: chunking::Chunk,
     out: &mut tar::Builder<W>,
 ) -> Result<()> {
-    let options = ExportOptions::default();
+    let options = ExportOptions;
     let writer = &mut OstreeTarWriter::new(repo, commit_checksum, out, options)?;
     // For the final chunk, output the commit object, plus all ostree metadata objects along with
     // the containing directories.
