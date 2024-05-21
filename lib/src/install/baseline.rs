@@ -434,6 +434,7 @@ pub(crate) fn install_create_rootfs(
         let espdev = &findpart(esp_partno)?;
         Task::new("Creating ESP filesystem", "mkfs.fat")
             .args([espdev.as_str(), "-n", "EFI-SYSTEM"])
+            .verbose()
             .quiet_output()
             .run()?;
         let efifs_path = bootfs.join(crate::bootloader::EFI_DIR);
