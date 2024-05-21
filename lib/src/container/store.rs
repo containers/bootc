@@ -376,7 +376,7 @@ pub(crate) fn parse_manifest_layout<'a>(
 
     let first_layer = manifest
         .layers()
-        .get(0)
+        .first()
         .ok_or_else(|| anyhow!("No layers in manifest"))?;
     let target_diffid = config_labels
         .and_then(|labels| labels.get(DIFFID_LABEL))
@@ -1132,7 +1132,7 @@ pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<Layer
         repo.read_commit_detached_metadata(&merge_commit, gio::Cancellable::NONE)?;
     let detached_commitmeta = detached_commitmeta
         .as_ref()
-        .map(|v| glib::VariantDict::new(Some(&v)));
+        .map(|v| glib::VariantDict::new(Some(v)));
     let cached_update = detached_commitmeta
         .as_ref()
         .map(parse_cached_update)
@@ -1187,9 +1187,9 @@ pub async fn copy(
             let opts = glib::VariantDict::new(None);
             let refs = [ostree_ref.as_str()];
             // Some older archives may have bindings, we don't need to verify them.
-            opts.insert("disable-verify-bindings", &true);
-            opts.insert("refs", &&refs[..]);
-            opts.insert("flags", &(flags.bits() as i32));
+            opts.insert("disable-verify-bindings", true);
+            opts.insert("refs", &refs[..]);
+            opts.insert("flags", flags.bits() as i32);
             let options = opts.to_variant();
             dest_repo.pull_with_options(srcfd, &options, None, cancellable)?;
             Ok(())

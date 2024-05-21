@@ -377,9 +377,10 @@ pub async fn write_tar(
     let mut child_stdout = r.stdout.take().unwrap();
     let mut child_stderr = r.stderr.take().unwrap();
     // Copy the filtered tar stream to child stdin
-    let mut import_config = TarImportConfig::default();
-    import_config.allow_nonusr = options.allow_nonusr;
-    import_config.remap_factory_var = !options.retain_var;
+    let import_config = TarImportConfig {
+        allow_nonusr: options.allow_nonusr,
+        remap_factory_var: !options.retain_var,
+    };
     let repo_tmpdir = Dir::reopen_dir(&repo.dfd_borrow())?
         .open_dir("tmp")
         .context("Getting repo tmpdir")?;
@@ -415,7 +416,7 @@ pub async fn write_tar(
                 if let Ok((_, child_stderr)) = output_copier.await {
                     // Avoid trailing newline
                     let child_stderr = child_stderr.trim();
-                    Err(e.context(format!("{child_stderr}")))?
+                    Err(e.context(child_stderr.to_string()))?
                 } else {
                     Err(e)?
                 }

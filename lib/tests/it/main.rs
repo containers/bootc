@@ -488,7 +488,7 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
     let cfg = skopeo_inspect_config(&srcoci_imgref.to_string())?;
     let creation_time =
         chrono::NaiveDateTime::parse_from_str(cfg.created().as_deref().unwrap(), "%+").unwrap();
-    assert_eq!(creation_time.timestamp(), 872879442);
+    assert_eq!(creation_time.and_utc().timestamp(), 872879442);
     let found_cfg = cfg.config().as_ref().unwrap();
     // unwrap.  Unwrap.  UnWrap.  UNWRAP!!!!!!!
     assert_eq!(
