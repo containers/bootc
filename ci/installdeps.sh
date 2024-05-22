@@ -29,5 +29,5 @@ dnf -y install skopeo zstd
 
 case $OS_ID in
     fedora) dnf -y builddep bootc ;;
-    *) dnf -y install openssl-devel ostree-devel cargo ;;
+    *) dnf -y install libzstd-devel openssl-devel ostree-devel cargo ;;
 esac
