@@ -45,7 +45,6 @@ mod k8sapitypes;
 mod kernel;
 #[cfg(feature = "install")]
 pub(crate) mod mount;
-#[cfg(feature = "install")]
 mod podman;
 pub mod spec;
 

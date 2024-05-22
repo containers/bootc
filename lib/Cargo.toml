@@ -47,6 +47,7 @@ tempfile = "3.10.1"
 toml = "0.8.12"
 xshell = { version = "0.2.6", optional = true }
 uuid = { version = "1.8.0", features = ["v4"] }
+rust-ini = "0.21.0"
 
 [features]
 default = ["install"]

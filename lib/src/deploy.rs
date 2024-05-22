@@ -2,7 +2,9 @@
 //!
 //! Create a merged filesystem tree with the image and mounted configmaps.
 
+use std::collections::HashSet;
 use std::io::{BufRead, Write};
+use std::process::Command;
 
 use anyhow::Ok;
 use anyhow::{anyhow, Context, Result};
@@ -18,7 +20,9 @@ use ostree_ext::container::store::PrepareResult;
 use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
+use rustix::fd::BorrowedFd;
 
+use crate::podman;
 use crate::spec::ImageReference;
 use crate::spec::{BootOrder, HostSpec};
 use crate::status::labels_of_config;
@@ -111,6 +115,53 @@ pub(crate) fn check_bootc_label(config: &ostree_ext::oci_spec::image::ImageConfi
             ),
         )
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BoundState {
+    pub(crate) total_images: usize,
+    pub(crate) bound_images: HashSet<String>,
+}
+
+impl BoundState {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.bound_images.is_empty()
+    }
+
+    pub(crate) fn print(&self) {
+        if self.total_images == 0 {
+            println!("No podman .image definitions found");
+        } else {
+            println!("podman systemd .image entries: {}", self.total_images);
+            println!("Bound images: {}", self.bound_images.len());
+        }
+    }
+}
+
+pub(crate) fn query_bound_state(root: &Dir) -> Result<BoundState> {
+    let (total_images, bound_images) = podman::list_container_images(root)?;
+    tracing::debug!("images={total_images} bound={}", bound_images.len());
+    Ok(BoundState {
+        total_images,
+        bound_images,
+    })
+}
+
+/// Pre-fetch e.g. podman `.image` files which reference external images.  This
+/// expects that podman sees e.g. `/var` set up as the deployment root.
+#[context("Fetching bound state")]
+pub(crate) async fn fetch_bound_state(state: &BoundState) -> Result<()> {
+    for image in state.bound_images.iter() {
+        let mut cmd = Command::new("podman");
+        cmd.args(["pull", image.as_str()]);
+        let mut cmd = tokio::process::Command::from(cmd);
+        cmd.kill_on_drop(true);
+        let status = cmd.status().await.context("bound podman pull")?;
+        if !status.success() {
+            anyhow::bail!("Failed to pull {image}");
+        }
+    }
+    Ok(())
 }
 
 /// Write container fetch progress to standard output.
@@ -278,19 +329,20 @@ async fn deploy(
     stateroot: &str,
     image: &ImageState,
     origin: &glib::KeyFile,
-) -> Result<()> {
+) -> Result<Deployment> {
     let stateroot = Some(stateroot);
     // Copy to move into thread
     let cancellable = gio::Cancellable::NONE;
-    let _new_deployment = sysroot.stage_tree_with_options(
-        stateroot,
-        image.ostree_commit.as_str(),
-        Some(origin),
-        merge_deployment,
-        &Default::default(),
-        cancellable,
-    )?;
-    Ok(())
+    sysroot
+        .stage_tree_with_options(
+            stateroot,
+            image.ostree_commit.as_str(),
+            Some(origin),
+            merge_deployment,
+            &Default::default(),
+            cancellable,
+        )
+        .map_err(Into::into)
 }
 
 #[context("Generating origin")]
@@ -307,6 +359,7 @@ fn origin_from_imageref(imgref: &ImageReference) -> Result<glib::KeyFile> {
 
 /// Stage (queue deployment of) a fetched container image.
 #[context("Staging")]
+#[allow(unsafe_code)]
 pub(crate) async fn stage(
     sysroot: &SysrootLock,
     stateroot: &str,
@@ -315,7 +368,7 @@ pub(crate) async fn stage(
 ) -> Result<()> {
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
     let origin = origin_from_imageref(spec.image)?;
-    crate::deploy::deploy(
+    let deployment = crate::deploy::deploy(
         sysroot,
         merge_deployment.as_ref(),
         stateroot,
@@ -323,6 +376,12 @@ pub(crate) async fn stage(
         &origin,
     )
     .await?;
+    let sysroot_fd = Dir::reopen_dir(unsafe { &BorrowedFd::borrow_raw(sysroot.fd()) })?;
+    let deployment_dir = sysroot_fd.open_dir(sysroot.deployment_dirpath(&deployment))?;
+    // TODO: Make things atomic here by not completing the staging unless we can fetch
+    // the new images.
+    let bound = query_bound_state(&deployment_dir)?;
+    fetch_bound_state(&bound).await?;
     crate::deploy::cleanup(sysroot).await?;
     println!("Queued for next boot: {:#}", spec.image);
     if let Some(version) = image.version.as_deref() {

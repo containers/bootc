@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
 use crate::containerenv::ContainerExecutionInfo;
+use crate::deploy::query_bound_state;
 use crate::mount::Filesystem;
 use crate::task::Task;
 use crate::utils::sigpolicy_from_opts;
@@ -530,11 +531,17 @@ pub(crate) fn print_configuration() -> Result<()> {
     serde_json::to_writer(stdout, &install_config).map_err(Into::into)
 }
 
+pub(crate) struct InitializedRoot {
+    aleph: InstallAleph,
+    deployment: Dir,
+    var: Dir,
+}
+
 #[context("Creating ostree deployment")]
 async fn initialize_ostree_root_from_self(
     state: &State,
     root_setup: &RootSetup,
-) -> Result<InstallAleph> {
+) -> Result<InitializedRoot> {
     let sepolicy = state.load_policy()?;
     let sepolicy = sepolicy.as_ref();
 
@@ -667,6 +674,10 @@ async fn initialize_ostree_root_from_self(
     let root = rootfs_dir
         .open_dir(path.as_str())
         .context("Opening deployment dir")?;
+    let varpath = format!("ostree/deploy/{stateroot}/var");
+    let var = rootfs_dir
+        .open_dir(&varpath)
+        .with_context(|| format!("Opening {varpath}"))?;
 
     // And do another recursive relabeling pass over the ostree-owned directories
     // but avoid recursing into the deployment root (because that's a *distinct*
@@ -715,7 +726,11 @@ async fn initialize_ostree_root_from_self(
         selinux: state.selinux_state.to_aleph().to_string(),
     };
 
-    Ok(aleph)
+    Ok(InitializedRoot {
+        aleph,
+        deployment: root,
+        var: var,
+    })
 }
 
 /// Run a command in the host mount namespace
@@ -1180,15 +1195,29 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
     tracing::debug!("boot uuid={boot_uuid}");
 
     // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
-    {
-        let aleph = initialize_ostree_root_from_self(state, rootfs).await?;
-        rootfs
-            .rootfs_fd
-            .atomic_replace_with(BOOTC_ALEPH_PATH, |f| {
-                serde_json::to_writer(f, &aleph)?;
-                anyhow::Ok(())
-            })
-            .context("Writing aleph version")?;
+    let inst = initialize_ostree_root_from_self(state, rootfs).await?;
+    rootfs
+        .rootfs_fd
+        .atomic_replace_with(BOOTC_ALEPH_PATH, |f| {
+            serde_json::to_writer(f, &inst.aleph)?;
+            anyhow::Ok(())
+        })
+        .context("Writing aleph version")?;
+
+    let bound = query_bound_state(&inst.deployment)?;
+    bound.print();
+    if !bound.is_empty() {
+        println!();
+        Task::new("Mounting deployment /var", "mount")
+            .args(["--bind", ".", "/var"])
+            .cwd(&inst.var)?
+            .run()?;
+        // podman needs this
+        Task::new("Initializing /var/tmp", "systemd-tmpfiles")
+            .args(["--create", "--boot", "--prefix=/var/tmp"])
+            .verbose()
+            .run()?;
+        crate::deploy::fetch_bound_state(&bound).await?;
     }
 
     crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, &state.config_opts)?;
