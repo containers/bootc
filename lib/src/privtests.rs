@@ -93,21 +93,11 @@ pub(crate) fn impl_run_container() -> Result<()> {
         assert!(!st.success());
         let stderr = String::from_utf8(o.stderr)?;
         assert!(
-            stderr.contains("This command requires full root privileges"),
+            stderr.contains("this command requires a booted host system"),
             "stderr: {stderr}",
         );
     }
     println!("ok upgrade/update are errors in container");
-
-    let o = Command::new("runuser")
-        .args(["-u", "bin", "bootc", "upgrade"])
-        .output()?;
-    assert!(!o.status.success());
-    let stderr = String::from_utf8(o.stderr)?;
-    assert!(
-        stderr.contains("requires root privileges"),
-        "stderr: {stderr}"
-    );
 
     let config = cmd!(sh, "bootc install print-configuration").read()?;
     let mut config: InstallConfiguration =

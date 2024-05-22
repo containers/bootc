@@ -377,6 +377,9 @@ pub(crate) async fn prepare_for_write() -> Result<()> {
     if ostree_ext::container_utils::running_in_container() {
         anyhow::bail!("Detected container; this command requires a booted host system.");
     }
+    if !std::path::Path::new("/run/ostree-booted").exists() {
+        anyhow::bail!("This command requires an ostree-booted host system");
+    }
     crate::cli::require_root()?;
     ensure_self_unshared_mount_namespace().await?;
     if crate::lsm::selinux_enabled()? && !crate::lsm::selinux_ensure_install()? {
