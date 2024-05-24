@@ -48,7 +48,7 @@ previous paragraph. See skopeo(1) for accepted formats.
 
 **\--target-transport**=*TARGET_TRANSPORT* \[default: registry\]
 
-:   The transport; e.g. oci, oci-archive. Defaults to \`registry\`
+:   The transport; e.g. oci, oci-archive, containers-storage. Defaults to \`registry\`
 
 **\--target-imgref**=*TARGET_IMGREF*
 

@@ -32,7 +32,7 @@ updates via container image tags; for example,
 
 **\--transport**=*TRANSPORT* \[default: registry\]
 
-:   The transport; e.g. oci, oci-archive. Defaults to \`registry\`
+:   The transport; e.g. oci, oci-archive, containers-storage. Defaults to \`registry\`
 
 **\--enforce-container-sigpolicy**
 

@@ -67,7 +67,7 @@ const RW_KARG: &str = "rw";
 pub(crate) struct InstallTargetOpts {
     // TODO: A size specifier which allocates free space for the root in *addition* to the base container image size
     // pub(crate) root_additional_size: Option<String>
-    /// The transport; e.g. oci, oci-archive.  Defaults to `registry`.
+    /// The transport; e.g. oci, oci-archive, containers-storage.  Defaults to `registry`.
     #[clap(long, default_value = "registry")]
     #[serde(default)]
     pub(crate) target_transport: String,

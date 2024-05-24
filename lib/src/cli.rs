@@ -55,7 +55,7 @@ pub(crate) struct SwitchOpts {
     #[clap(long)]
     pub(crate) quiet: bool,
 
-    /// The transport; e.g. oci, oci-archive.  Defaults to `registry`.
+    /// The transport; e.g. oci, oci-archive, containers-storage.  Defaults to `registry`.
     #[clap(long, default_value = "registry")]
     pub(crate) transport: String,
 
