@@ -25,6 +25,7 @@ The `install` section supports two subfields:
    The first value specified will be the default.  To enable both, use `block = ["direct", "tpm2-luks"]`.
 - `filesystem`: See below.
 - `kargs`: An array of strings; this will be appended to the set of kernel arguments.
+- `match_architectures`: An array of strings; this filters the install config.
 
 # filesystem
 
