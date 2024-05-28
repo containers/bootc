@@ -1,0 +1,20 @@
+#!/bin/bash
+
+virt-install \
+    --name {{ instance_name }} \
+    --ram 3072 \
+    --vcpus 2 \
+    --os-variant {{ os_variant[test_os] }} \
+    --network default \
+    --disk size=10,path="{{ image_path }}/{{ rhel_guest_image_fname }}" \
+{% if bib_firmware == 'uefi' %}
+    --boot {{ boot_args }} \
+{% endif %}
+    --cdrom "{{ image_path }}/seed.iso" \
+    --install no_install=yes \
+{% if bib == 'false' %}
+    --filesystem={{ air_gapped_dir }},mount_tag,driver.type=virtiofs,accessmode=passthrough \
+    --memorybacking=source.type=memfd,access.mode=shared \
+{% endif %}
+    --noautoconsole \
+    --wait

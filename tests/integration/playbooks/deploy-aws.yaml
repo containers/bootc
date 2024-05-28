@@ -3,18 +3,12 @@
   gather_facts: false
   become: false
   vars:
-    test_os: "{{ lookup('env', 'TEST_OS') | default('centos-stream-9', true) }}"
+    test_os: ""
     arch: "{{ lookup('env', 'ARCH') | default('x86_64', true) }}"
     ssh_key_pub: ""
     inventory_file: ""
     download_node: "{{ lookup('env', 'DOWNLOAD_NODE') | default('', true) }}"
-    ami:
-      x86_64:
-        rhel-9-4: ami-044442bf4326c9933
-        centos-stream-9: ami-08f2fe20b72b2ffa7
-      aarch64:
-        rhel-9-4: ami-0eb96688e8d46c2af
-        centos-stream-9: ami-09866c25c2d97b6cc
+    spot_max_price: "0.1"
     instance_type:
       x86_64:
         "0": t2.medium
@@ -39,53 +33,16 @@
       set_fact:
         random_instance_type: "{{ lookup('env', 'instance_type') | default(instance_type[arch][instance_type_index], true) }}"
 
-    - name: "get available zone for instance {{ random_instance_type }}"
-      shell: |
-        aws ec2 describe-instance-type-offerings \
-          --location-type availability-zone \
-          --filters="Name=instance-type,Values={{ random_instance_type }}" \
-          --query InstanceTypeOfferings | jq -r '.[0].Location'
-      register: ec2_zone
-      when: "'rhel' not in test_os"
-
-    - name: get subnet
-      shell: |
-        aws ec2 describe-subnets \
-          --output json \
-          --filters "Name=tag:Name,Values=kite-ci" "Name=availabilityZone,Values={{ ec2_zone.stdout }}" | \
-          jq -r ".Subnets[0].SubnetId"
-      register: ec2_vpc_subnet
-      when: "'rhel' not in test_os"
-
-    - set_fact:
-        subnet_id: "{{ ec2_vpc_subnet.stdout }}"
-      when: "'rhel' not in test_os"
-
     - name: get virtqe subnet
       shell: |
         aws ec2 describe-subnets \
           --output json \
-          --filters "Name=tag:Name,Values=InternalA-virtqe" | \
+          --filters "Name=tag:Name,Values=virtqe_test_prod_us-west-2_internal-a" | \
           jq -r ".Subnets[0].SubnetId"
       register: ec2_vpc_subnet
-      when: '"rhel" in test_os'
 
     - set_fact:
         subnet_id: "{{ ec2_vpc_subnet.stdout }}"
-      when: "'rhel' in test_os"
-
-    - name: get security group
-      shell: |
-        aws ec2 describe-security-groups \
-          --filters="Name=tag:Name,Values=kite-ci" \
-          --output json | \
-          jq -r ".SecurityGroups[0].GroupId"
-      register: ec2_security_group
-      when: "'rhel' not in test_os"
-
-    - set_fact:
-        group_id: "{{ ec2_security_group.stdout }}"
-      when: "'rhel' not in test_os"
 
     - name: get virtqe security group
       shell: |
@@ -94,11 +51,9 @@
           --output json | \
           jq -r ".SecurityGroups[0].GroupId"
       register: ec2_security_group
-      when: "'rhel' in test_os"
 
     - set_fact:
         group_id: "{{ ec2_security_group.stdout }}"
-      when: "'rhel' in test_os"
 
     - name: config ssh keypair used by test
       shell: |
@@ -106,6 +61,15 @@
           --key-name "kp-bootc-{{ random_num }}" \
           --public-key-material "fileb://{{ ssh_key_pub }}" \
           --tag-specification 'ResourceType=key-pair,Tags=[{Key=Name,Value=bootc-test}]'
+
+    - name: get ami id from aws ssm
+      shell: |
+        aws ssm get-parameter \
+          --name "bootc-{{ test_os }}-{{ arch }}" | jq -r '.Parameter.Value'
+      register: result_ami_id
+
+    - set_fact:
+        ami_id: "{{ result_ami_id.stdout }}"
 
     - name: generate ec2_run_instance script
       template:
@@ -126,19 +90,6 @@
         aws ec2 wait instance-running \
           --instance-ids {{ instance_json.Instances[0].InstanceId }}
 
-    - name: get instance public ip
-      shell: |
-        aws ec2 describe-instances \
-          --instance-ids {{ instance_json.Instances[0].InstanceId }} \
-          --query 'Reservations[*].Instances[*].PublicIpAddress' \
-          --output text
-      register: ip_result
-      when: "'rhel' not in test_os"
-
-    - set_fact:
-        instance_ip: "{{ ip_result.stdout }}"
-      when: "'rhel' not in test_os"
-
     - name: get instance private ip
       shell: |
         aws ec2 describe-instances \
@@ -146,11 +97,9 @@
           --query 'Reservations[*].Instances[*].PrivateIpAddress' \
           --output text
       register: ip_result
-      when: "'rhel' in test_os"
 
     - set_fact:
         instance_ip: "{{ ip_result.stdout }}"
-      when: "'rhel' in test_os"
 
     - name: waits until instance is reachable
       wait_for:

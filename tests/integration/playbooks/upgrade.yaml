@@ -1,11 +1,34 @@
 ---
 - hosts: guest
   become: false
+  vars:
 
   tasks:
+    - name: Air-gapped upgrade
+      block:
+        - name: Mount virtiofs
+          mount:
+            path: /mnt
+            src: mount_tag
+            fstype: virtiofs
+            state: ephemeral
+          become: true
+
+        - name: ls
+          command: ls /mnt
+          become: true
+
+        - name: bootc switch
+          command: bootc switch --transport dir /mnt
+          become: true
+      when:
+        - air_gapped_dir | default('') != ""
+
     - name: bootc upgrade
       command: bootc upgrade
       become: true
+      when:
+        - air_gapped_dir | default('') == ""
 
     - name: Reboot to deploy new system
       reboot:
@@ -17,3 +40,7 @@
     - name: Wait for connection to become reachable/usable
       wait_for_connection:
         delay: 30
+
+    - name: bootc booted status
+      command: bootc status --booted
+      become: true

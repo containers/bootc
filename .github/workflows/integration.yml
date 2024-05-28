@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: us-west-2
 
 jobs:
   pr-info:
@@ -57,14 +57,19 @@ jobs:
       ref: ${{ fromJson(steps.pr-api.outputs.data).head.ref }}
       repo_url: ${{ fromJson(steps.pr-api.outputs.data).head.repo.html_url }}
 
-  rhel94-integration:
+  integration:
     needs: pr-info
     if: ${{ needs.pr-info.outputs.allowed_user == 'true' && !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
     continue-on-error: true
     strategy:
       matrix:
         arch: [x86_64, aarch64]
-        platform: [aws]
+        distro: [rhel-9-5, centos-stream-9, fedora-40]
+        exclude:
+          - arch: x86_64
+            distro: centos-stream-9
+          - arch: aarch64
+            distro: fedora-40
     runs-on: ubuntu-latest
 
     steps:
@@ -75,46 +80,17 @@ jobs:
           fetch-depth: 0
 
       - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v1
+        uses: sclorg/testing-farm-as-github-action@v2
         with:
-          compose: CentOS-Stream-9
+          compose: Fedora-40
           api_key: ${{ secrets.TF_API_KEY }}
           git_url: ${{ needs.pr-info.outputs.repo_url }}
           git_ref: ${{ needs.pr-info.outputs.ref }}
           arch: ${{ matrix.arch }}
+          update_pull_request_status: true
+          pull_request_status_name: "bootc-${{ matrix.distro }}-${{ matrix.arch }}"
           tmt_context: "arch=${{ matrix.arch }}"
-          tmt_plan_regex: "${{ matrix.platform }}"
+          tmt_plan_regex: "/install-upgrade/"
           tf_scope: private
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};QUAY_SECRET=${{ secrets.QUAY_SECRET }};RHEL_REGISTRY_URL=${{ secrets.RHEL_REGISTRY_URL }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }};AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }};AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
-          variables: "TEST_OS=rhel-9-4;PLATFORM=${{ matrix.platform }};ARCH=${{ matrix.arch }};AWS_REGION=${{ env.AWS_REGION }}"
-
-  cs9-dev-integration:
-    needs: pr-info
-    if: ${{ needs.pr-info.outputs.allowed_user == 'true' && !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
-    continue-on-error: true
-    strategy:
-      matrix:
-        arch: [x86_64, aarch64]
-        platform: [aws]
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.pr-info.outputs.sha }}
-          fetch-depth: 0
-
-      - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v1
-        with:
-          compose: CentOS-Stream-9
-          api_key: ${{ secrets.TF_API_KEY }}
-          git_url: ${{ needs.pr-info.outputs.repo_url }}
-          git_ref: ${{ needs.pr-info.outputs.ref }}
-          arch: ${{ matrix.arch }}
-          tmt_context: "arch=${{ matrix.arch }}"
-          tmt_plan_regex: "${{ matrix.platform }}"
-          tf_scope: private
-          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};QUAY_SECRET=${{ secrets.QUAY_SECRET }};AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }};AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
-          variables: "TEST_OS=centos-stream-9;PLATFORM=${{ matrix.platform }};ARCH=${{ matrix.arch }};AWS_REGION=${{ env.AWS_REGION }}"
+          variables: "TEST_OS=${{ matrix.distro }};ARCH=${{ matrix.arch }};AWS_REGION=${{ env.AWS_REGION }}"

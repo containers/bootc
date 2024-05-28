@@ -1,6 +1,8 @@
 #!/bin/bash
 set -exuo pipefail
 
+ARCH=$(uname -m)
+
 # Colorful output.
 function greenprint {
   echo -e "\033[1;32m[$(date -Isecond)] ${1}\033[0m"
@@ -21,40 +23,50 @@ shopt -s extglob
 TARGET_FOLDER=(target/.tmp*)
 
 case "$TEST_OS" in
-    "rhel-9-4")
+    "rhel-9"*)
         TEMPLATE="rhel-9.tpl"
         greenprint "📝 update mock rhel-9 template"
         # disable subscription for nightlies
         sed -i "s/config_opts\['redhat_subscription_required'\] = True/config_opts['redhat_subscription_required'] = False/" /etc/mock/templates/"$TEMPLATE"
         # delete default cdn compose and add nightly compose
-        IMAGE_NAME="rhel9-rhel_bootc"
-        TIER1_IMAGE_URL="${RHEL_REGISTRY_URL}/${IMAGE_NAME}:rhel-9.4"
-        CURRENT_COMPOSE_RHEL94=$(skopeo inspect --tls-verify=false "docker://${TIER1_IMAGE_URL}" | jq -r '.Labels."redhat.compose-id"')
         sed -i '/user_agent/q' /etc/mock/templates/"$TEMPLATE"
+        if [[ "$TEST_OS" == "rhel-9-4" ]]; then
+            BATCH_COMPOSE="updates/"
+            LATEST_COMPOSE_ID="latest-RHEL-9.4.0"
+        else
+            BATCH_COMPOSE=""
+            LATEST_COMPOSE_ID="latest-RHEL-9.5.0"
+        fi
         tee -a /etc/mock/templates/"$TEMPLATE" > /dev/null << EOF
 [BaseOS]
 name=Red Hat Enterprise Linux - BaseOS
-baseurl=http://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/BaseOS/\$basearch/os/
+baseurl=http://${DOWNLOAD_NODE}/rhel-9/nightly/${BATCH_COMPOSE}RHEL-9/${LATEST_COMPOSE_ID}/compose/BaseOS/\$basearch/os/
 enabled=1
 gpgcheck=0
 
 [AppStream]
 name=Red Hat Enterprise Linux - AppStream
-baseurl=http://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/AppStream/\$basearch/os/
+baseurl=http://${DOWNLOAD_NODE}/rhel-9/nightly/${BATCH_COMPOSE}RHEL-9/${LATEST_COMPOSE_ID}/compose/AppStream/\$basearch/os/
 enabled=1
 gpgcheck=0
 
 [CRB]
-name = Red Hat Enterprise Linux - CRB
-baseurl = http://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${CURRENT_COMPOSE_RHEL94}/compose/CRB/\$basearch/os/
-enabled = 1
-gpgcheck = 0
+name=Red Hat Enterprise Linux - CRB
+baseurl=http://${DOWNLOAD_NODE}/rhel-9/nightly/${BATCH_COMPOSE}RHEL-9/${LATEST_COMPOSE_ID}/compose/CRB/\$basearch/os/
+enabled=1
+gpgcheck=0
 """
 EOF
         MOCK_CONFIG="rhel-9-${ARCH}"
         ;;
     "centos-stream-9")
         MOCK_CONFIG="centos-stream-9-${ARCH}"
+        ;;
+    "fedora-40")
+        MOCK_CONFIG="fedora-40-${ARCH}"
+        ;;
+    "fedora-41")
+        MOCK_CONFIG="fedora-41-${ARCH}"
         ;;
     *)
         redprint "Variable TEST_OS has to be defined"

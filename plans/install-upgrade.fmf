@@ -5,11 +5,9 @@ prepare:
   - how: install
     package:
       - ansible-core
-      - gcc
       - podman
       - skopeo
       - jq
-      - python3-devel
       - unzip
   - how: shell
     script: ansible-galaxy collection install https://ansible-collection.s3.amazonaws.com/ansible-posix-1.5.4.tar.gz https://ansible-collection.s3.amazonaws.com/community-general-8.5.0.tar.gz
@@ -18,7 +16,6 @@ execute:
 
 /aws:
   summary: Run bootc install and upgrade test on aws
-  tag: aws
   environment+:
     PLATFORM: aws
   discover+:
@@ -31,3 +28,74 @@ execute:
   prepare+:
     - how: shell
       script: curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install
+
+/libvirt:
+  summary: Run bootc install and upgrade test locally (nested)
+  environment+:
+    PLATFORM: libvirt
+    AIR_GAPPED: 1
+  discover+:
+    test:
+      - /rpm-build
+      - /bootc-install-upgrade
+  prepare+:
+    - how: shell
+      script: |
+        source /etc/os-release
+        if [[ "$ID" == "rhel" ]] || [[ "$ID" == "centos" ]]; then
+            # EPEL for genisoimage
+            dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+        fi
+    - how: install
+      package:
+        - qemu-kvm
+        - libvirt
+        - virt-install
+        - genisoimage
+  adjust+:
+    - when: arch == ppc64le
+      enabled: false
+    - when: arch == x86_64 or arch == aarch64
+      provision+:
+        hardware:
+          cpu:
+            processors: ">= 2"
+          memory: ">= 6 GB"
+          virtualization:
+            is-supported: true
+
+/to-disk:
+  summary: Use bootc install to-disk to generate raw image and test locally (nested)
+  environment+:
+    PLATFORM: libvirt
+    IMAGE_TYPE: to-disk
+  discover+:
+    test:
+      - /rpm-build
+      - /image-install-upgrade
+  prepare+:
+    - how: shell
+      script: |
+        source /etc/os-release
+        if [[ "$ID" == "rhel" ]] || [[ "$ID" == "centos" ]]; then
+            # EPEL for genisoimage
+            dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+        fi
+    - how: install
+      package:
+        - qemu-img
+        - qemu-kvm
+        - libvirt
+        - virt-install
+        - genisoimage
+  adjust+:
+    - when: arch == ppc64le
+      enabled: false
+    - when: arch == x86_64 or arch == aarch64
+      provision+:
+        hardware:
+          cpu:
+            processors: ">= 2"
+          memory: ">= 6 GB"
+          virtualization:
+            is-supported: true
