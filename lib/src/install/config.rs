@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 
 use super::baseline::BlockSetup;
 
+/// Properties of the environment, such as the system architecture
+/// Left open for future properties such as `platform.id`
+pub(crate) struct EnvProperties {
+    pub(crate) sys_arch: String,
+}
+
 /// The toplevel config entry for installation configs stored
 /// in bootc/install (e.g. /etc/bootc/install/05-custom.toml)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -47,16 +53,18 @@ pub(crate) struct InstallConfiguration {
     /// Kernel arguments, applied at installation time
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) kargs: Option<Vec<String>>,
+    /// Supported architectures for this configuration
+    pub(crate) match_architectures: Option<Vec<String>>,
 }
 
-fn merge_basic<T>(s: &mut Option<T>, o: Option<T>) {
+fn merge_basic<T>(s: &mut Option<T>, o: Option<T>, _env: &EnvProperties) {
     if let Some(o) = o {
         *s = Some(o);
     }
 }
 
 trait Mergeable {
-    fn merge(&mut self, other: Self)
+    fn merge(&mut self, other: Self, env: &EnvProperties)
     where
         Self: Sized;
 }
@@ -65,13 +73,13 @@ impl<T> Mergeable for Option<T>
 where
     T: Mergeable,
 {
-    fn merge(&mut self, other: Self)
+    fn merge(&mut self, other: Self, env: &EnvProperties)
     where
         Self: Sized,
     {
         if let Some(other) = other {
             if let Some(s) = self.as_mut() {
-                s.merge(other)
+                s.merge(other, env)
             } else {
                 *self = Some(other);
             }
@@ -81,28 +89,36 @@ where
 
 impl Mergeable for RootFS {
     /// Apply any values in other, overriding any existing values in `self`.
-    fn merge(&mut self, other: Self) {
-        merge_basic(&mut self.fstype, other.fstype)
+    fn merge(&mut self, other: Self, env: &EnvProperties) {
+        merge_basic(&mut self.fstype, other.fstype, env)
     }
 }
 
 impl Mergeable for BasicFilesystems {
     /// Apply any values in other, overriding any existing values in `self`.
-    fn merge(&mut self, other: Self) {
-        self.root.merge(other.root)
+    fn merge(&mut self, other: Self, env: &EnvProperties) {
+        self.root.merge(other.root, env)
     }
 }
 
 impl Mergeable for InstallConfiguration {
     /// Apply any values in other, overriding any existing values in `self`.
-    fn merge(&mut self, other: Self) {
-        merge_basic(&mut self.root_fs_type, other.root_fs_type);
-        merge_basic(&mut self.block, other.block);
-        self.filesystem.merge(other.filesystem);
-        if let Some(other_kargs) = other.kargs {
-            self.kargs
-                .get_or_insert_with(Default::default)
-                .extend(other_kargs)
+    fn merge(&mut self, other: Self, env: &EnvProperties) {
+        // if arch is specified, only merge config if it matches the current arch
+        // if arch is not specified, merge config unconditionally
+        if other
+            .match_architectures
+            .map(|a| a.contains(&env.sys_arch))
+            .unwrap_or(true)
+        {
+            merge_basic(&mut self.root_fs_type, other.root_fs_type, env);
+            merge_basic(&mut self.block, other.block, env);
+            self.filesystem.merge(other.filesystem, env);
+            if let Some(other_kargs) = other.kargs {
+                self.kargs
+                    .get_or_insert_with(Default::default)
+                    .extend(other_kargs)
+            }
         }
     }
 }
@@ -154,6 +170,9 @@ impl InstallConfiguration {
 #[context("Loading configuration")]
 /// Load the install configuration, merging all found configuration files.
 pub(crate) fn load_config() -> Result<Option<InstallConfiguration>> {
+    let env = EnvProperties {
+        sys_arch: std::env::consts::ARCH.to_string(),
+    };
     const SYSTEMD_CONVENTIONAL_BASES: &[&str] = &["/usr/lib", "/usr/local/lib", "/etc", "/run"];
     let fragments = liboverdrop::scan(SYSTEMD_CONVENTIONAL_BASES, "bootc/install", &["toml"], true);
     let mut config: Option<InstallConfiguration> = None;
@@ -161,7 +180,7 @@ pub(crate) fn load_config() -> Result<Option<InstallConfiguration>> {
         let buf = std::fs::read_to_string(&path)?;
         let mut unused = std::collections::HashSet::new();
         let de = toml::Deserializer::new(&buf);
-        let c: InstallConfigurationToplevel = serde_ignored::deserialize(de, |path| {
+        let mut c: InstallConfigurationToplevel = serde_ignored::deserialize(de, |path| {
             unused.insert(path.to_string());
         })
         .with_context(|| format!("Parsing {path:?}"))?;
@@ -171,10 +190,21 @@ pub(crate) fn load_config() -> Result<Option<InstallConfiguration>> {
         if let Some(config) = config.as_mut() {
             if let Some(install) = c.install {
                 tracing::debug!("Merging install config: {install:?}");
-                config.merge(install);
+                config.merge(install, &env);
             }
         } else {
-            config = c.install;
+            // Only set the config if it matches the current arch
+            // If no arch is specified, set the config unconditionally
+            if let Some(ref mut install) = c.install {
+                if install
+                    .match_architectures
+                    .as_ref()
+                    .map(|a| a.contains(&env.sys_arch))
+                    .unwrap_or(true)
+                {
+                    config = c.install;
+                }
+            }
         }
     }
     if let Some(config) = config.as_mut() {
@@ -188,6 +218,9 @@ pub(crate) fn load_config() -> Result<Option<InstallConfiguration>> {
 fn test_parse_config() {
     use super::baseline::Filesystem;
 
+    let env = EnvProperties {
+        sys_arch: "x86_64".to_string(),
+    };
     let c: InstallConfigurationToplevel = toml::from_str(
         r##"[install]
 root-fs-type = "xfs"
@@ -202,7 +235,7 @@ root-fs-type = "xfs"
             ..Default::default()
         }),
     };
-    install.merge(other.install.unwrap());
+    install.merge(other.install.unwrap(), &env);
     assert_eq!(
         install.root_fs_type.as_ref().copied().unwrap(),
         Filesystem::Ext4
@@ -236,7 +269,7 @@ kargs = ["console=ttyS0", "foo=bar"]
             ..Default::default()
         }),
     };
-    install.merge(other.install.unwrap());
+    install.merge(other.install.unwrap(), &env);
     assert_eq!(install.root_fs_type.unwrap(), Filesystem::Ext4);
     assert_eq!(
         install.kargs,
@@ -252,6 +285,9 @@ kargs = ["console=ttyS0", "foo=bar"]
 #[test]
 fn test_parse_filesystems() {
     use super::baseline::Filesystem;
+    let env = EnvProperties {
+        sys_arch: "x86_64".to_string(),
+    };
     let c: InstallConfigurationToplevel = toml::from_str(
         r##"[install.filesystem.root]
 type = "xfs"
@@ -273,7 +309,7 @@ type = "xfs"
             ..Default::default()
         }),
     };
-    install.merge(other.install.unwrap());
+    install.merge(other.install.unwrap(), &env);
     assert_eq!(
         install.filesystem_root().unwrap().fstype.unwrap(),
         Filesystem::Ext4
@@ -282,6 +318,9 @@ type = "xfs"
 
 #[test]
 fn test_parse_block() {
+    let env = EnvProperties {
+        sys_arch: "x86_64".to_string(),
+    };
     let c: InstallConfigurationToplevel = toml::from_str(
         r##"[install.filesystem.root]
 type = "xfs"
@@ -301,7 +340,7 @@ type = "xfs"
             ..Default::default()
         }),
     };
-    install.merge(other.install.unwrap());
+    install.merge(other.install.unwrap(), &env);
     // Should be set, but zero length
     assert_eq!(install.block.as_ref().unwrap().len(), 0);
     assert!(install.get_block_setup(None).is_err());
@@ -318,4 +357,196 @@ block = ["tpm2-luks"]"##,
 
     // And verify passing a disallowed config is an error
     assert!(install.get_block_setup(Some(BlockSetup::Direct)).is_err());
+}
+
+#[test]
+/// Verify that kargs are only applied to supported architectures
+fn test_arch() {
+    // no arch specified, kargs ensure that kargs are applied unconditionally
+    let env = EnvProperties {
+        sys_arch: "x86_64".to_string(),
+    };
+    let c: InstallConfigurationToplevel = toml::from_str(
+        r##"[install]
+root-fs-type = "xfs"
+"##,
+    )
+    .unwrap();
+    let mut install = c.install.unwrap();
+    let other = InstallConfigurationToplevel {
+        install: Some(InstallConfiguration {
+            kargs: Some(
+                ["console=tty0", "nosmt"]
+                    .into_iter()
+                    .map(ToOwned::to_owned)
+                    .collect(),
+            ),
+            ..Default::default()
+        }),
+    };
+    install.merge(other.install.unwrap(), &env);
+    assert_eq!(
+        install.kargs,
+        Some(
+            ["console=tty0", "nosmt"]
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect()
+        )
+    );
+    let env = EnvProperties {
+        sys_arch: "aarch64".to_string(),
+    };
+    let c: InstallConfigurationToplevel = toml::from_str(
+        r##"[install]
+root-fs-type = "xfs"
+"##,
+    )
+    .unwrap();
+    let mut install = c.install.unwrap();
+    let other = InstallConfigurationToplevel {
+        install: Some(InstallConfiguration {
+            kargs: Some(
+                ["console=tty0", "nosmt"]
+                    .into_iter()
+                    .map(ToOwned::to_owned)
+                    .collect(),
+            ),
+            ..Default::default()
+        }),
+    };
+    install.merge(other.install.unwrap(), &env);
+    assert_eq!(
+        install.kargs,
+        Some(
+            ["console=tty0", "nosmt"]
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect()
+        )
+    );
+
+    // one arch matches and one doesn't, ensure that kargs are only applied for the matching arch
+    let env = EnvProperties {
+        sys_arch: "aarch64".to_string(),
+    };
+    let c: InstallConfigurationToplevel = toml::from_str(
+        r##"[install]
+root-fs-type = "xfs"
+"##,
+    )
+    .unwrap();
+    let mut install = c.install.unwrap();
+    let other = InstallConfigurationToplevel {
+        install: Some(InstallConfiguration {
+            kargs: Some(
+                ["console=ttyS0", "foo=bar"]
+                    .into_iter()
+                    .map(ToOwned::to_owned)
+                    .collect(),
+            ),
+            match_architectures: Some(["x86_64"].into_iter().map(ToOwned::to_owned).collect()),
+            ..Default::default()
+        }),
+    };
+    install.merge(other.install.unwrap(), &env);
+    assert_eq!(install.kargs, None);
+    let other = InstallConfigurationToplevel {
+        install: Some(InstallConfiguration {
+            kargs: Some(
+                ["console=tty0", "nosmt"]
+                    .into_iter()
+                    .map(ToOwned::to_owned)
+                    .collect(),
+            ),
+            match_architectures: Some(["aarch64"].into_iter().map(ToOwned::to_owned).collect()),
+            ..Default::default()
+        }),
+    };
+    install.merge(other.install.unwrap(), &env);
+    assert_eq!(
+        install.kargs,
+        Some(
+            ["console=tty0", "nosmt"]
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect()
+        )
+    );
+
+    // multiple arch specified, ensure that kargs are applied to both archs
+    let env = EnvProperties {
+        sys_arch: "x86_64".to_string(),
+    };
+    let c: InstallConfigurationToplevel = toml::from_str(
+        r##"[install]
+root-fs-type = "xfs"
+"##,
+    )
+    .unwrap();
+    let mut install = c.install.unwrap();
+    let other = InstallConfigurationToplevel {
+        install: Some(InstallConfiguration {
+            kargs: Some(
+                ["console=tty0", "nosmt"]
+                    .into_iter()
+                    .map(ToOwned::to_owned)
+                    .collect(),
+            ),
+            match_architectures: Some(
+                ["x86_64", "aarch64"]
+                    .into_iter()
+                    .map(ToOwned::to_owned)
+                    .collect(),
+            ),
+            ..Default::default()
+        }),
+    };
+    install.merge(other.install.unwrap(), &env);
+    assert_eq!(
+        install.kargs,
+        Some(
+            ["console=tty0", "nosmt"]
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect()
+        )
+    );
+    let env = EnvProperties {
+        sys_arch: "aarch64".to_string(),
+    };
+    let c: InstallConfigurationToplevel = toml::from_str(
+        r##"[install]
+root-fs-type = "xfs"
+"##,
+    )
+    .unwrap();
+    let mut install = c.install.unwrap();
+    let other = InstallConfigurationToplevel {
+        install: Some(InstallConfiguration {
+            kargs: Some(
+                ["console=tty0", "nosmt"]
+                    .into_iter()
+                    .map(ToOwned::to_owned)
+                    .collect(),
+            ),
+            match_architectures: Some(
+                ["x86_64", "aarch64"]
+                    .into_iter()
+                    .map(ToOwned::to_owned)
+                    .collect(),
+            ),
+            ..Default::default()
+        }),
+    };
+    install.merge(other.install.unwrap(), &env);
+    assert_eq!(
+        install.kargs,
+        Some(
+            ["console=tty0", "nosmt"]
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect()
+        )
+    );
 }
