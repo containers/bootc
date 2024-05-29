@@ -18,10 +18,8 @@ ifeq ($(CONTAINER_RUNTIME), podman)
         IMAGE_PREFIX = localhost/
 endif
 
-units = $(addprefix systemd/, bootupd.service bootupd.socket)
-
 .PHONY: all
-all: $(units)
+all:
 	cargo build ${CARGO_ARGS}
 	ln -f target/${PROFILE}/bootupd target/${PROFILE}/bootupctl
 
@@ -33,17 +31,11 @@ create-build-container:
 build-in-container: create-build-container
 	${CONTAINER_RUNTIME} run -ti --rm -v .:/srv/bootupd:z ${IMAGE_PREFIX}${IMAGE_NAME} make
 
-.PHONY: install-units
-install-units: $(units)
-	for unit in $(units); do install -D -m 644 --target-directory=$(DESTDIR)$(PREFIX)/lib/systemd/system/ $$unit; done
-
 .PHONY: install
-install: install-units
+install:
 	mkdir -p "${DESTDIR}$(PREFIX)/bin" "${DESTDIR}$(LIBEXECDIR)"
 	install -D -t "${DESTDIR}$(LIBEXECDIR)" target/${PROFILE}/bootupd
 	ln -f ${DESTDIR}$(LIBEXECDIR)/bootupd ${DESTDIR}$(PREFIX)/bin/bootupctl
-	install -d "${DESTDIR}$(PREFIX)/lib/systemd/system/multi-user.target.wants"
-	ln -s ../bootupd.socket "${DESTDIR}$(PREFIX)/lib/systemd/system/multi-user.target.wants"
 
 install-grub-static:
 	install -m 644 -D -t ${DESTDIR}$(PREFIX)/lib/bootupd/grub2-static src/grub2/*.cfg

@@ -53,6 +53,7 @@ jobs:
           device=$(losetup --list --noheadings --output NAME,BACK-FILE | grep myimage.raw | awk '{print $1}')
           sudo mount "${device}p2" /mnt/
           sudo ls /mnt/EFI/centos/{grub.cfg,shimx64.efi}
+          sudo umount /mnt
           sudo losetup -D "${device}"
           sudo rm -f myimage.raw
       - name: bootc install to filesystem

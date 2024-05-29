@@ -47,18 +47,13 @@ assert_file_has_content_literal out.txt 'Update: At latest version'
 assert_file_has_content out.txt '^CoreOS aleph version:'
 ok status
 
-# Validate we auto-exited
-sleep 2
-systemctl show -p ActiveState bootupd > out.txt
-assert_file_has_content_literal out.txt 'ActiveState=inactive'
-
 bootupctl validate | tee out.txt
 ok validate
 
 if env LANG=C.UTF-8 runuser -u bin bootupctl status 2>err.txt; then
   fatal "Was able to bootupctl status as non-root"
 fi
-assert_file_has_content err.txt 'error:.*: Permission denied'
+assert_file_has_content err.txt 'error: This command requires root privileges'
 
 # From here we'll fake updates
 test -w /usr || rpm-ostree usroverlay

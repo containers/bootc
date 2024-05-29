@@ -62,7 +62,10 @@ mod tests {
     #[test]
     fn test_multicall_dispatch() {
         {
-            let d_argv = vec!["/usr/bin/bootupd".to_string(), "daemon".to_string()];
+            let d_argv = vec![
+                "/usr/bin/bootupd".to_string(),
+                "generate-update-metadata".to_string(),
+            ];
             let cli = MultiCall::from_args(d_argv);
             match cli {
                 MultiCall::Ctl(cmd) => panic!("{:?}", cmd),
@@ -89,12 +92,15 @@ mod tests {
 
     #[test]
     fn test_verbosity() {
-        let default = MultiCall::from_args(vec!["bootupd".to_string(), "daemon".to_string()]);
+        let default = MultiCall::from_args(vec![
+            "bootupd".to_string(),
+            "generate-update-metadata".to_string(),
+        ]);
         assert_eq!(default.loglevel(), LevelFilter::Warn);
 
         let info = MultiCall::from_args(vec![
             "bootupd".to_string(),
-            "daemon".to_string(),
+            "generate-update-metadata".to_string(),
             "-v".to_string(),
         ]);
         assert_eq!(info.loglevel(), LevelFilter::Info);

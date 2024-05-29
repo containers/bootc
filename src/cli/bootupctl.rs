@@ -1,9 +1,22 @@
 use crate::bootupd;
-use crate::ipc::ClientToDaemonConnection;
-use crate::model::Status;
 use anyhow::Result;
 use clap::Parser;
 use log::LevelFilter;
+
+use std::os::unix::process::CommandExt;
+use std::process::Command;
+
+static SYSTEMD_ARGS_BOOTUPD: &[&str] = &[
+    "--unit",
+    "bootupd",
+    "--property",
+    "PrivateNetwork=yes",
+    "--property",
+    "ProtectHome=yes",
+    "--property",
+    "MountFlags=slave",
+    "--pipe",
+];
 
 /// `bootupctl` sub-commands.
 #[derive(Debug, Parser)]
@@ -87,10 +100,8 @@ impl CtlCommand {
 
     /// Runner for `status` verb.
     fn run_status(opts: StatusOpts) -> Result<()> {
-        let mut client = ClientToDaemonConnection::new();
-        client.connect()?;
-
-        let r: Status = client.send(&bootupd::ClientRequest::Status)?;
+        ensure_running_in_systemd()?;
+        let r = bootupd::status()?;
         if opts.json {
             let stdout = std::io::stdout();
             let mut stdout = stdout.lock();
@@ -101,38 +112,54 @@ impl CtlCommand {
             bootupd::print_status(&r)?;
         }
 
-        client.shutdown()?;
         Ok(())
     }
 
     /// Runner for `update` verb.
     fn run_update() -> Result<()> {
-        let mut client = ClientToDaemonConnection::new();
-        client.connect()?;
-
-        bootupd::client_run_update(&mut client)?;
-
-        client.shutdown()?;
-        Ok(())
+        ensure_running_in_systemd()?;
+        bootupd::client_run_update()
     }
 
     /// Runner for `update` verb.
     fn run_adopt_and_update() -> Result<()> {
-        let mut client = ClientToDaemonConnection::new();
-        client.connect()?;
-
-        bootupd::client_run_adopt_and_update(&mut client)?;
-
-        client.shutdown()?;
-        Ok(())
+        ensure_running_in_systemd()?;
+        bootupd::client_run_adopt_and_update()
     }
 
     /// Runner for `validate` verb.
     fn run_validate() -> Result<()> {
-        let mut client = ClientToDaemonConnection::new();
-        client.connect()?;
-        bootupd::client_run_validate(&mut client)?;
-        client.shutdown()?;
-        Ok(())
+        ensure_running_in_systemd()?;
+        bootupd::client_run_validate()
     }
+}
+
+/// Checks if the current process is (apparently at least)
+/// running under systemd.
+fn running_in_systemd() -> bool {
+    std::env::var_os("INVOCATION_ID").is_some()
+}
+
+/// Require root permission
+fn require_root_permission() -> Result<()> {
+    if !nix::unistd::Uid::effective().is_root() {
+        anyhow::bail!("This command requires root privileges")
+    }
+    Ok(())
+}
+
+/// Detect if we're running in systemd; if we're not, we re-exec ourselves via
+/// systemd-run. Then we can just directly run code in what is now the daemon.
+fn ensure_running_in_systemd() -> Result<()> {
+    require_root_permission()?;
+    let running_in_systemd = running_in_systemd();
+    if !running_in_systemd {
+        let r = Command::new("systemd-run")
+            .args(SYSTEMD_ARGS_BOOTUPD)
+            .args(std::env::args())
+            .exec();
+        // If we got here, it's always an error
+        return Err(r.into());
+    }
+    Ok(())
 }

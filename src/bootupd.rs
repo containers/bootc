@@ -1,30 +1,17 @@
 #[cfg(any(target_arch = "x86_64", target_arch = "powerpc64"))]
 use crate::bios;
+use crate::component;
 use crate::component::{Component, ValidationResult};
 use crate::coreos;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::efi;
 use crate::model::{ComponentStatus, ComponentUpdatable, ContentMetadata, SavedState, Status};
 use crate::util;
-use crate::{component, ipc};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::Path;
-
-/// A message sent from client to server
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) enum ClientRequest {
-    /// Update a component
-    Update { component: String },
-    /// Update a component via adoption
-    AdoptAndUpdate { component: String },
-    /// Validate a component
-    Validate { component: String },
-    /// Print the current state
-    Status,
-}
 
 pub(crate) enum ConfigMode {
     None,
@@ -408,8 +395,8 @@ pub(crate) fn print_status(status: &Status) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
-    let status: Status = c.send(&ClientRequest::Status)?;
+pub(crate) fn client_run_update() -> Result<()> {
+    let status: Status = status()?;
     if status.components.is_empty() && status.adoptable.is_empty() {
         println!("No components installed.");
         return Ok(());
@@ -420,9 +407,7 @@ pub(crate) fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result
             ComponentUpdatable::Upgradable => {}
             _ => continue,
         };
-        match c.send(&ClientRequest::Update {
-            component: name.to_string(),
-        })? {
+        match update(name)? {
             ComponentUpdateResult::AtLatestVersion => {
                 // Shouldn't happen unless we raced with another client
                 eprintln!(
@@ -450,9 +435,7 @@ pub(crate) fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result
     }
     for (name, adoptable) in status.adoptable.iter() {
         if adoptable.confident {
-            let r: ContentMetadata = c.send(&ClientRequest::AdoptAndUpdate {
-                component: name.to_string(),
-            })?;
+            let r: ContentMetadata = adopt_and_update(name)?;
             println!("Adopted and updated: {}: {}", name, r.version);
             updated = true;
         } else {
@@ -465,32 +448,28 @@ pub(crate) fn client_run_update(c: &mut ipc::ClientToDaemonConnection) -> Result
     Ok(())
 }
 
-pub(crate) fn client_run_adopt_and_update(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
-    let status: Status = c.send(&ClientRequest::Status)?;
+pub(crate) fn client_run_adopt_and_update() -> Result<()> {
+    let status: Status = status()?;
     if status.adoptable.is_empty() {
         println!("No components are adoptable.");
     } else {
         for (name, _) in status.adoptable.iter() {
-            let r: ContentMetadata = c.send(&ClientRequest::AdoptAndUpdate {
-                component: name.to_string(),
-            })?;
+            let r: ContentMetadata = adopt_and_update(name)?;
             println!("Adopted and updated: {}: {}", name, r.version);
         }
     }
     Ok(())
 }
 
-pub(crate) fn client_run_validate(c: &mut ipc::ClientToDaemonConnection) -> Result<()> {
-    let status: Status = c.send(&ClientRequest::Status)?;
+pub(crate) fn client_run_validate() -> Result<()> {
+    let status: Status = status()?;
     if status.components.is_empty() {
         println!("No components installed.");
         return Ok(());
     }
     let mut caught_validation_error = false;
     for (name, _) in status.components.iter() {
-        match c.send(&ClientRequest::Validate {
-            component: name.to_string(),
-        })? {
+        match validate(name)? {
             ValidationResult::Valid => {
                 println!("Validated: {}", name);
             }

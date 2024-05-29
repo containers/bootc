@@ -31,8 +31,6 @@ impl DCommand {
 /// CLI sub-commands.
 #[derive(Debug, Parser)]
 pub enum DVerb {
-    #[clap(name = "daemon", about = "Run service logic")]
-    Daemon,
     #[clap(name = "generate-update-metadata", about = "Generate metadata")]
     GenerateUpdateMetadata(GenerateOpts),
     #[clap(name = "install", about = "Install components")]
@@ -88,7 +86,6 @@ impl DCommand {
     /// Run CLI application.
     pub fn run(self) -> Result<()> {
         match self.cmd {
-            DVerb::Daemon => crate::daemon::run(),
             DVerb::Install(opts) => Self::run_install(opts),
             DVerb::GenerateUpdateMetadata(opts) => Self::run_generate_meta(opts),
         }
