@@ -2,7 +2,8 @@
 # Secrets (e.g. container pull secrets)
 
 To have `bootc` fetch updates from registry which requires authentication,
-you must include a pull secret in `/etc/ostree/auth.json`.
+you must include a pull secret in `/etc/ostree/auth.json` (or
+as of recent versions in `/usr/lib/ostree/auth.json`).
 
 Another common case is to also fetch container images via
 `podman` or equivalent.  There is a [pull request to add `/etc/containers/auth.json`](https://github.com/containers/image/pull/1746)
@@ -11,6 +12,13 @@ which would be shared by the two stacks by default.
 Regardless, injecting this data is a good example of a generic
 "secret".  The bootc project does not currently include one
 single opinionated mechanism for secrets.
+
+## Using a credential helper
+
+In order to use a credential helper as configured in `registries.conf`
+such as `credential-helpers = ["ecr-login"]`, you must currently
+also write a "no-op" authentication file with the contents `{}` (i.e. an
+empty JSON object, not an empty file) into the pull secret location.
 
 ## Embedding in container build
 
