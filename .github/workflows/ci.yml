@@ -49,25 +49,17 @@ jobs:
         run: mkdir -p target/man && cargo run --features=docgen -- man --directory target/man
       - name: Clippy (gate on correctness and suspicous)
         run: cargo clippy -- -D clippy::correctness -D clippy::suspicious
-  build-fedora:
+  fedora-container-tests:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
-    runs-on: ubuntu-latest
-    container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install deps
-        run: ./ci/installdeps.sh
-      - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: "build"
-      - name: Build
-        run: make test-bin-archive
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: bootc.tar.zst
-          path: target/bootc.tar.zst
+      - name: Build container (fedora)
+        run: sudo podman build --build-arg=base=quay.io/fedora/fedora-bootc:40 -t localhost/bootc -f hack/Containerfile . 
+      - name: Container integration
+        run: sudo podman run --rm localhost/bootc bootc internal-tests run-container-integration
+      - name: Privileged tests
+        run:  sudo podman run --rm --privileged -v /run/systemd:/run/systemd -v /:/run/host --pid=host localhost/bootc bootc internal-tests run-privileged-integration
   cargo-deny:
     runs-on: ubuntu-latest
     steps:
@@ -76,37 +68,6 @@ jobs:
       with:
         log-level: warn
         command: check bans sources licenses
-  privtest:
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
-    name: "Privileged testing"
-    needs: build-fedora
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Download
-        uses: actions/download-artifact@v4
-        with:
-          name: bootc.tar.zst
-      - name: Install
-        run: sudo tar -C / -xvf bootc.tar.zst
-      - name: Integration tests
-        run: sudo podman run --rm --privileged -v /run/systemd:/run/systemd -v /:/run/host -v /usr/bin/bootc:/usr/bin/bootc --pid=host quay.io/fedora/fedora-coreos:testing-devel bootc internal-tests run-privileged-integration
-  container-tests:
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
-    name: "Container testing"
-    needs: build-fedora
-    runs-on: ubuntu-latest
-    container: quay.io/centos-bootc/fedora-bootc:eln-1708320930
-    steps:
-      - name: Download
-        uses: actions/download-artifact@v4
-        with:
-          name: bootc.tar.zst
-      - name: Install
-        run: sudo tar -C / -xvf bootc.tar.zst
-      - name: Integration tests
-        run: bootc internal-tests run-container-integration
   install-tests:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
     name: "Test install"
