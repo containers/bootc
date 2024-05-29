@@ -84,6 +84,39 @@ impl Tristate {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ComposefsState {
+    Signed,
+    Tristate(Tristate),
+}
+
+impl Default for ComposefsState {
+    fn default() -> Self {
+        Self::Tristate(Tristate::default())
+    }
+}
+
+impl FromStr for ComposefsState {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let r = match s {
+            "signed" => Self::Signed,
+            o => Self::Tristate(Tristate::from_str(o)?),
+        };
+        Ok(r)
+    }
+}
+
+impl ComposefsState {
+    pub(crate) fn maybe_enabled(&self) -> bool {
+        match self {
+            ComposefsState::Signed => true,
+            ComposefsState::Tristate(t) => t.maybe_enabled(),
+        }
+    }
+}
+
 /// Query whether the config uses an overlayfs model (composefs or plain overlayfs).
 pub fn overlayfs_enabled_in_config(config: &glib::KeyFile) -> Result<bool> {
     let root_transient = config
@@ -91,7 +124,7 @@ pub fn overlayfs_enabled_in_config(config: &glib::KeyFile) -> Result<bool> {
         .unwrap_or_default();
     let composefs = config
         .optional_string("composefs", "enabled")?
-        .map(|s| Tristate::from_str(s.as_str()))
+        .map(|s| ComposefsState::from_str(s.as_str()))
         .transpose()
         .log_err_default()
         .unwrap_or_default();
@@ -109,6 +142,27 @@ fn test_tristate() {
     }
     for v in ["", "junk", "fal", "tr1"] {
         assert!(Tristate::from_str(v).is_err());
+    }
+}
+
+#[test]
+fn test_composefs_state() {
+    assert_eq!(
+        ComposefsState::from_str("signed").unwrap(),
+        ComposefsState::Signed
+    );
+    for v in ["yes", "true", "1"] {
+        assert_eq!(
+            ComposefsState::from_str(v).unwrap(),
+            ComposefsState::Tristate(Tristate::Enabled)
+        );
+    }
+    assert_eq!(Tristate::from_str("maybe").unwrap(), Tristate::Maybe);
+    for v in ["no", "false", "0"] {
+        assert_eq!(
+            ComposefsState::from_str(v).unwrap(),
+            ComposefsState::Tristate(Tristate::Disabled)
+        );
     }
 }
 
@@ -136,7 +190,8 @@ enabled = false
     let e0 = format!("{d0}\n[root]\ntransient = true");
     let e1 = format!("{d1}\n[composefs]\nenabled = true\n[other]\nsomekey = someval");
     let e2 = format!("{d1}\n[composefs]\nenabled = yes");
-    for v in [e0, e1, e2] {
+    let e3 = format!("{d1}\n[composefs]\nenabled = signed");
+    for v in [e0, e1, e2, e3] {
         let kf = glib::KeyFile::new();
         kf.load_from_data(&v, glib::KeyFileFlags::empty()).unwrap();
         assert_eq!(overlayfs_enabled_in_config(&kf).unwrap(), true);
