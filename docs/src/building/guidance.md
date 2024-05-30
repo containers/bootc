@@ -166,7 +166,7 @@ to `/var`:
 
 ```dockerfile
 RUN apt|dnf install examplepkg && \
-    mv /opt/examplepkg/logs && /var/log/examplepkg && \
+    mv /opt/examplepkg/logs /var/log/examplepkg && \
     ln -sr /opt/examplepkg/logs /var/log/examplepkg
 ```
 
