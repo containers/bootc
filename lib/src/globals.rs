@@ -1,35 +1,47 @@
-//! Global functions.
+//! Module containing access to global state.
 
 use super::Result;
+use camino::{Utf8Path, Utf8PathBuf};
+use cap_std_ext::cap_std::fs::Dir;
+use cap_std_ext::dirext::CapStdExtDirExt as _;
 use once_cell::sync::OnceCell;
 use ostree::glib;
 use std::fs::File;
-use std::path::{Path, PathBuf};
 
 struct ConfigPaths {
-    persistent: PathBuf,
-    runtime: PathBuf,
-    system: Option<PathBuf>,
+    persistent: Utf8PathBuf,
+    runtime: Utf8PathBuf,
+    system: Option<Utf8PathBuf>,
 }
 
 /// Get the runtime and persistent config directories.  In the system (root) case, these
 /// system(root) case:  /run/ostree           /etc/ostree        /usr/lib/ostree
 /// user(nonroot) case: /run/user/$uid/ostree ~/.config/ostree   <none>
-fn get_config_paths() -> &'static ConfigPaths {
-    static PATHS: OnceCell<ConfigPaths> = OnceCell::new();
-    PATHS.get_or_init(|| {
-        let mut r = if rustix::process::getuid() == rustix::process::Uid::ROOT {
-            ConfigPaths {
-                persistent: PathBuf::from("/etc"),
-                runtime: PathBuf::from("/run"),
-                system: PathBuf::from("/usr/lib").into(),
-            }
-        } else {
-            ConfigPaths {
-                persistent: glib::user_config_dir(),
-                runtime: glib::user_runtime_dir(),
-                system: None,
-            }
+fn get_config_paths(root: bool) -> &'static ConfigPaths {
+    if root {
+        static PATHS_ROOT: OnceCell<ConfigPaths> = OnceCell::new();
+        PATHS_ROOT.get_or_init(|| ConfigPaths::new("etc", "run", Some("usr/lib")))
+    } else {
+        static PATHS_USER: OnceCell<ConfigPaths> = OnceCell::new();
+        PATHS_USER.get_or_init(|| {
+            ConfigPaths::new(
+                Utf8PathBuf::try_from(glib::user_config_dir()).unwrap(),
+                Utf8PathBuf::try_from(glib::user_runtime_dir()).unwrap(),
+                None,
+            )
+        })
+    }
+}
+
+impl ConfigPaths {
+    fn new<P: AsRef<Utf8Path>>(persistent: P, runtime: P, system: Option<P>) -> Self {
+        fn relative_owned(p: &Utf8Path) -> Utf8PathBuf {
+            p.as_str().trim_start_matches('/').into()
+        }
+        let mut r = ConfigPaths {
+            persistent: relative_owned(persistent.as_ref()),
+            runtime: relative_owned(runtime.as_ref()),
+            system: system.as_ref().map(|s| relative_owned(s.as_ref())),
         };
         let path = "ostree";
         r.persistent.push(path);
@@ -38,26 +50,28 @@ fn get_config_paths() -> &'static ConfigPaths {
             system.push(path);
         }
         r
-    })
-}
+    }
 
-impl ConfigPaths {
     /// Return the path and an open fd for a config file, if it exists.
-    pub(crate) fn open_file(&self, p: impl AsRef<Path>) -> Result<Option<(PathBuf, File)>> {
+    pub(crate) fn open_file(
+        &self,
+        root: &Dir,
+        p: impl AsRef<Utf8Path>,
+    ) -> Result<Option<(Utf8PathBuf, File)>> {
         let p = p.as_ref();
         let mut runtime = self.runtime.clone();
         runtime.push(p);
-        if let Some(f) = crate::container_utils::open_optional(&runtime)? {
+        if let Some(f) = root.open_optional(&runtime)?.map(|f| f.into_std()) {
             return Ok(Some((runtime, f)));
         }
         let mut persistent = self.persistent.clone();
         persistent.push(p);
-        if let Some(f) = crate::container_utils::open_optional(&persistent)? {
+        if let Some(f) = root.open_optional(&persistent)?.map(|f| f.into_std()) {
             return Ok(Some((persistent, f)));
         }
         if let Some(mut system) = self.system.clone() {
             system.push(p);
-            if let Some(f) = crate::container_utils::open_optional(&system)? {
+            if let Some(f) = root.open_optional(&system)?.map(|f| f.into_std()) {
                 return Ok(Some((system, f)));
             }
         }
@@ -66,9 +80,56 @@ impl ConfigPaths {
 }
 
 /// Return the path to the global container authentication file, if it exists.
-pub(crate) fn get_global_authfile_path() -> Result<Option<PathBuf>> {
-    let paths = get_config_paths();
-    let r = paths.open_file("auth.json")?;
-    // TODO pass the file descriptor to the proxy, not a global path
-    Ok(r.map(|v| v.0))
+pub fn get_global_authfile(root: &Dir) -> Result<Option<(Utf8PathBuf, File)>> {
+    let am_uid0 = rustix::process::getuid() == rustix::process::Uid::ROOT;
+    get_global_authfile_impl(root, am_uid0)
+}
+
+/// Return the path to the global container authentication file, if it exists.
+fn get_global_authfile_impl(root: &Dir, am_uid0: bool) -> Result<Option<(Utf8PathBuf, File)>> {
+    let paths = get_config_paths(am_uid0);
+    paths.open_file(root, "auth.json")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+
+    use super::*;
+    use camino::Utf8PathBuf;
+    use cap_std_ext::{cap_std, cap_tempfile};
+
+    fn read_authfile(root: &Dir) -> Result<Option<(Utf8PathBuf, String)>> {
+        let r = get_global_authfile_impl(root, true)?;
+        if let Some((path, mut f)) = r {
+            let mut s = String::new();
+            f.read_to_string(&mut s)?;
+            Ok(Some((path.try_into()?, s)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn test_config_paths() -> Result<()> {
+        let root = &cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+        assert!(read_authfile(root).unwrap().is_none());
+        root.create_dir_all("etc/ostree")?;
+        root.write("etc/ostree/auth.json", "etc ostree auth")?;
+        let (p, authdata) = read_authfile(root).unwrap().unwrap();
+        assert_eq!(p, "etc/ostree/auth.json");
+        assert_eq!(authdata, "etc ostree auth");
+        root.create_dir_all("usr/lib/ostree")?;
+        root.write("usr/lib/ostree/auth.json", "usrlib ostree auth")?;
+        // We should see /etc content still
+        let (p, authdata) = read_authfile(root).unwrap().unwrap();
+        assert_eq!(p, "etc/ostree/auth.json");
+        assert_eq!(authdata, "etc ostree auth");
+        // Now remove the /etc content, unveiling the /usr content
+        root.remove_file("etc/ostree/auth.json")?;
+        let (p, authdata) = read_authfile(root).unwrap().unwrap();
+        assert_eq!(p, "usr/lib/ostree/auth.json");
+        assert_eq!(authdata, "usrlib ostree auth");
+        Ok(())
+    }
 }

@@ -26,6 +26,8 @@
 //! for this is [planned but not implemented](https://github.com/ostreedev/ostree-rs-ext/issues/12).
 
 use anyhow::anyhow;
+use cap_std_ext::cap_std;
+use cap_std_ext::cap_std::fs::Dir;
 use containers_image_proxy::oci_spec;
 use ostree::glib;
 use serde::Serialize;
@@ -423,7 +425,8 @@ pub fn merge_default_container_proxy_opts_with_isolation(
     let auth_specified =
         config.auth_anonymous || config.authfile.is_some() || config.auth_data.is_some();
     if !auth_specified {
-        config.authfile = crate::globals::get_global_authfile_path()?;
+        let root = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+        config.auth_data = crate::globals::get_global_authfile(root)?.map(|a| a.1);
         // If there's no authfile, then force on anonymous pulls to ensure
         // that the container stack doesn't try to find it in the standard
         // container paths.
