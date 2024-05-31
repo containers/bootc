@@ -52,6 +52,8 @@ const BOOT: &str = "boot";
 const RUN_BOOTC: &str = "/run/bootc";
 /// This is an ext4 special directory we need to ignore.
 const LOST_AND_FOUND: &str = "lost+found";
+/// The filename of the composefs EROFS superblock; TODO move this into ostree
+const OSTREE_COMPOSEFS_SUPER: &str = ".ostree.cfs";
 /// The mount path for selinux
 #[cfg(feature = "install")]
 const SELINUXFS: &str = "/sys/fs/selinux";
@@ -683,6 +685,13 @@ async fn initialize_ostree_root_from_self(
                 Some(deployment_root_devino),
             )
             .with_context(|| format!("Recursive SELinux relabeling of {d}"))?;
+        }
+
+        if let Some(cfs_super) = root.open_optional(OSTREE_COMPOSEFS_SUPER)? {
+            let label = crate::lsm::require_label(policy, "/usr".into(), 0o644)?;
+            crate::lsm::set_security_selinux(cfs_super.as_fd(), label.as_bytes())?;
+        } else {
+            tracing::warn!("Missing {OSTREE_COMPOSEFS_SUPER}; composefs is not enabled?");
         }
     }
 
