@@ -3,9 +3,6 @@ prefix ?= /usr
 all:
 	cargo build --release
     
-all-test:
-	cargo build --release --all-features
-
 install:
 	install -D -m 0755 -t $(DESTDIR)$(prefix)/bin target/release/bootc
 	install -d -m 0755 $(DESTDIR)$(prefix)/lib/systemd/system-generators/
@@ -22,11 +19,14 @@ install:
 	  done
 	install -D -m 0644 -t $(DESTDIR)/$(prefix)/lib/systemd/system systemd/*.service systemd/*.timer
 
+install-with-tests: install
+	install -D -m 0755 target/release/tests-integration $(DESTDIR)$(prefix)/bin/bootc-integration-tests 
+
 bin-archive: all
 	$(MAKE) install DESTDIR=tmp-install && tar --zstd -C tmp-install -cf target/bootc.tar.zst . && rm tmp-install -rf
 
-test-bin-archive: all-test
-	$(MAKE) install DESTDIR=tmp-install && tar --zstd -C tmp-install -cf target/bootc.tar.zst . && rm tmp-install -rf
+test-bin-archive: all
+	$(MAKE) install-with-tests DESTDIR=tmp-install && tar --zstd -C tmp-install -cf target/bootc.tar.zst . && rm tmp-install -rf
 
 install-kola-tests:
 	install -D -t $(DESTDIR)$(prefix)/lib/coreos-assembler/tests/kola/bootc tests/kolainst/*
