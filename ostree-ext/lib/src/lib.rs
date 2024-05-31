@@ -27,7 +27,7 @@ pub use ostree::gio::glib;
 type Result<T> = anyhow::Result<T>;
 
 // Import global functions.
-mod globals;
+pub mod globals;
 
 mod isolation;
 
