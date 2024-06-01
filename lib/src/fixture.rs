@@ -254,8 +254,10 @@ pub fn create_dirmeta(path: &Utf8Path, selinux: bool) -> glib::Variant {
 }
 
 /// Wraps [`create_dirmeta`] and commits it.
+#[context("Init dirmeta for {path}")]
 pub fn require_dirmeta(repo: &ostree::Repo, path: &Utf8Path, selinux: bool) -> Result<String> {
     let v = create_dirmeta(path, selinux);
+    ostree::validate_structureof_dirmeta(&v).context("Validating dirmeta")?;
     let r = repo.write_metadata(
         ostree::ObjectType::DirMeta,
         None,
@@ -454,6 +456,7 @@ impl Fixture {
         Ok(())
     }
 
+    #[context("Writing filedef {}", def.path.as_str())]
     pub fn write_filedef(&self, root: &ostree::MutableTree, def: &FileDef) -> Result<()> {
         let parent_path = def.path.parent();
         let parent = if let Some(parent_path) = parent_path {
@@ -472,15 +475,18 @@ impl Fixture {
         let xattrs = label.map(|v| v.new_xattrs());
         let xattrs = xattrs.as_ref();
         let checksum = match &def.ty {
-            FileDefType::Regular(contents) => self.srcrepo.write_regfile_inline(
-                None,
-                0,
-                0,
-                libc::S_IFREG | def.mode,
-                xattrs,
-                contents.as_bytes(),
-                gio::Cancellable::NONE,
-            )?,
+            FileDefType::Regular(contents) => self
+                .srcrepo
+                .write_regfile_inline(
+                    None,
+                    0,
+                    0,
+                    libc::S_IFREG | def.mode,
+                    xattrs,
+                    contents.as_bytes(),
+                    gio::Cancellable::NONE,
+                )
+                .context("Writing regfile inline")?,
             FileDefType::Symlink(target) => self.srcrepo.write_symlink(
                 None,
                 def.uid,
@@ -496,7 +502,9 @@ impl Fixture {
                 return Ok(());
             }
         };
-        parent.replace_file(name, checksum.as_str())?;
+        parent
+            .replace_file(name, checksum.as_str())
+            .context("Setting file")?;
         Ok(())
     }
 
