@@ -1,5 +1,5 @@
 use super::ImageReference;
-use crate::container::{ocidir, skopeo, DIFFID_LABEL};
+use crate::container::{skopeo, DIFFID_LABEL};
 use crate::container::{store as container_store, Transport};
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
