@@ -1,8 +1,7 @@
 //! APIs for creating container images from OSTree commits
 
-use super::ocidir::{Layer, OciDir};
-use super::{ocidir, OstreeImageReference, Transport, COMPONENT_SEPARATOR, CONTENT_ANNOTATION};
 use super::{ImageReference, SignatureSource, OSTREE_COMMIT_LABEL};
+use super::{OstreeImageReference, Transport, COMPONENT_SEPARATOR, CONTENT_ANNOTATION};
 use crate::chunking::{Chunk, Chunking, ObjectMetaSized};
 use crate::container::skopeo;
 use crate::tar as ostree_tar;
@@ -16,6 +15,7 @@ use flate2::Compression;
 use fn_error_context::context;
 use gio::glib;
 use oci_spec::image as oci_image;
+use ocidir::{Layer, OciDir};
 use ostree::gio;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};

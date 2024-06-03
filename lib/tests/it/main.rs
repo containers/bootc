@@ -10,10 +10,10 @@ use ostree_ext::container::{store, ManifestDiff};
 use ostree_ext::container::{
     Config, ExportOpts, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
+use ostree_ext::ostree_manual;
 use ostree_ext::prelude::{Cast, FileExt};
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{gio, glib};
-use ostree_ext::{ocidir, ostree_manual};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter};

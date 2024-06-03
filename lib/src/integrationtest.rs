@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::{container::ocidir, container_utils::is_ostree_container, ocidir::RawLayerWriter};
+use crate::container_utils::is_ostree_container;
 use anyhow::Result;
 use camino::Utf8Path;
 use cap_std::fs::Dir;
@@ -11,6 +11,7 @@ use containers_image_proxy::oci_spec;
 use fn_error_context::context;
 use gio::prelude::*;
 use oci_spec::image as oci_image;
+use ocidir::RawLayerWriter;
 use ostree::gio;
 use xshell::cmd;
 
