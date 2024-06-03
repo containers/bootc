@@ -62,6 +62,10 @@ bootc-install(8)
 
 :   Install the running container to a target
 
+bootc-container(8)
+
+:   Operations which can be executed as part of a container build
+
 bootc-help(8)
 
 :   Print this message or the help of the given subcommand(s)

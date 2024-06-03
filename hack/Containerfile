@@ -16,3 +16,4 @@ FROM $base
 COPY --from=build /out/bootc.tar.zst /tmp
 COPY --from=build /build/target/dev-rootfs/ /
 RUN tar -C / --zstd -xvf /tmp/bootc.tar.zst && rm -vf /tmp/*
+RUN bootc container lint

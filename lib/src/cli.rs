@@ -19,6 +19,7 @@ use std::os::unix::process::CommandExt;
 use std::process::Command;
 
 use crate::deploy::RequiredHostSpec;
+use crate::lints;
 use crate::spec::Host;
 use crate::spec::ImageReference;
 use crate::utils::sigpolicy_from_opts;
@@ -141,6 +142,14 @@ pub(crate) struct ManOpts {
     #[clap(long)]
     /// Output to this directory
     pub(crate) directory: Utf8PathBuf,
+}
+
+/// Subcommands which can be executed as part of a container build.
+#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
+pub(crate) enum ContainerOpts {
+    /// Perform relatively inexpensive static analysis checks as part of a container
+    /// build.
+    Lint,
 }
 
 /// Hidden, internal only options
@@ -292,6 +301,9 @@ pub(crate) enum Opt {
     #[clap(subcommand)]
     #[cfg(feature = "install")]
     Install(InstallOpts),
+    /// Operations which can be executed as part of a container build.
+    #[clap(subcommand)]
+    Container(ContainerOpts),
     /// Execute the given command in the host mount namespace
     #[cfg(feature = "install")]
     #[clap(hide = true)]
@@ -662,6 +674,19 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         Opt::Rollback(opts) => rollback(opts).await,
         Opt::Edit(opts) => edit(opts).await,
         Opt::UsrOverlay => usroverlay().await,
+        Opt::Container(opts) => match opts {
+            ContainerOpts::Lint => {
+                if !ostree_ext::container_utils::is_ostree_container()? {
+                    anyhow::bail!(
+                        "Not in a ostree container, this command only verifies ostree containers."
+                    );
+                }
+
+                let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+                lints::lint(&root)?;
+                Ok(())
+            }
+        },
         #[cfg(feature = "install")]
         Opt::Install(opts) => match opts {
             InstallOpts::ToDisk(opts) => crate::install::install_to_disk(opts).await,
