@@ -806,7 +806,7 @@ r usr/bin/bash bash-v0
     assert!(second.0.commit.is_none());
     assert_eq!(
         first.1,
-        "ostree export of commit cc1180f8431dc5bd69172d9a9ded36038dc9449f7c6c48e7686c894e483bfb8a"
+        "ostree export of commit fe4ba8bbd8f61a69ae53cde0dd53c637f26dfbc87717b2e71e061415d931361e"
     );
     assert_eq!(second.1, "8 components");
 
