@@ -170,7 +170,7 @@ m 0 0 1755
 d tmp
 "## };
 pub const CONTENTS_CHECKSUM_V0: &str =
-    "f8c5c1ad93339fd6e928aec7819de79ecec4ec8a4d0cb3565bb1d127fd7f56db";
+    "acc42fb5c796033f034941dc688643bf8beddfd9068d87165344d2b99906220a";
 // 1 for ostree commit, 2 for max frequency packages, 3 as empty layer
 pub const LAYERS_V0_LEN: usize = 3usize;
 pub const PKGS_V0_LEN: usize = 7usize;
@@ -229,8 +229,12 @@ impl SeLabel {
         }
     }
 
+    pub fn xattrs(&self) -> Vec<(&[u8], &[u8])> {
+        vec![(b"security.selinux\0", self.to_str().as_bytes())]
+    }
+
     pub fn new_xattrs(&self) -> glib::Variant {
-        vec![("security.selinux".as_bytes(), self.to_str().as_bytes())].to_variant()
+        self.xattrs().to_variant()
     }
 }
 
@@ -250,8 +254,10 @@ pub fn create_dirmeta(path: &Utf8Path, selinux: bool) -> glib::Variant {
 }
 
 /// Wraps [`create_dirmeta`] and commits it.
+#[context("Init dirmeta for {path}")]
 pub fn require_dirmeta(repo: &ostree::Repo, path: &Utf8Path, selinux: bool) -> Result<String> {
     let v = create_dirmeta(path, selinux);
+    ostree::validate_structureof_dirmeta(&v).context("Validating dirmeta")?;
     let r = repo.write_metadata(
         ostree::ObjectType::DirMeta,
         None,
@@ -450,6 +456,7 @@ impl Fixture {
         Ok(())
     }
 
+    #[context("Writing filedef {}", def.path.as_str())]
     pub fn write_filedef(&self, root: &ostree::MutableTree, def: &FileDef) -> Result<()> {
         let parent_path = def.path.parent();
         let parent = if let Some(parent_path) = parent_path {
@@ -468,15 +475,18 @@ impl Fixture {
         let xattrs = label.map(|v| v.new_xattrs());
         let xattrs = xattrs.as_ref();
         let checksum = match &def.ty {
-            FileDefType::Regular(contents) => self.srcrepo.write_regfile_inline(
-                None,
-                0,
-                0,
-                libc::S_IFREG | def.mode,
-                xattrs,
-                contents.as_bytes(),
-                gio::Cancellable::NONE,
-            )?,
+            FileDefType::Regular(contents) => self
+                .srcrepo
+                .write_regfile_inline(
+                    None,
+                    0,
+                    0,
+                    libc::S_IFREG | def.mode,
+                    xattrs,
+                    contents.as_bytes(),
+                    gio::Cancellable::NONE,
+                )
+                .context("Writing regfile inline")?,
             FileDefType::Symlink(target) => self.srcrepo.write_symlink(
                 None,
                 def.uid,
@@ -492,7 +502,9 @@ impl Fixture {
                 return Ok(());
             }
         };
-        parent.replace_file(name, checksum.as_str())?;
+        parent
+            .replace_file(name, checksum.as_str())
+            .context("Setting file")?;
         Ok(())
     }
 
