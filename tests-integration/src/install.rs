@@ -110,7 +110,7 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
             cmd!(sh, "sudo {BASE_ARGS...} {target_args...} {image} bootc install to-existing-root --acknowledge-destructive {generic_inst_args...}").run()?;
             let root = &Dir::open_ambient_dir("/ostree", cap_std::ambient_authority()).unwrap();
             let mut path = PathBuf::from(".");
-            crate::selinux::verify_selinux_recurse(root, &mut path, true)?;
+            crate::selinux::verify_selinux_recurse(root, &mut path, false)?;
             Ok(())
         }),
         Trial::test("without an install config", move || {
