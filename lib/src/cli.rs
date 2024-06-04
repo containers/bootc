@@ -170,28 +170,6 @@ impl InternalsOpts {
     const GENERATOR_BIN: &'static str = "bootc-systemd-generator";
 }
 
-/// Options for internal testing
-#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
-pub(crate) enum TestingOpts {
-    /// Execute integration tests that require a privileged container
-    RunPrivilegedIntegration {},
-    /// Execute integration tests that target a not-privileged ostree container
-    RunContainerIntegration {},
-    /// Block device setup for testing
-    PrepTestInstallFilesystem { blockdev: Utf8PathBuf },
-    /// e2e test of install to-filesystem
-    TestInstallFilesystem {
-        image: String,
-        blockdev: Utf8PathBuf,
-    },
-    #[clap(name = "verify-selinux")]
-    VerifySELinux {
-        root: String,
-        #[clap(long)]
-        warn: bool,
-    },
-}
-
 /// Deploy and transactionally in-place with bootable container images.
 ///
 /// The `bootc` project currently uses ostree-containers as a backend
@@ -314,10 +292,6 @@ pub(crate) enum Opt {
     #[clap(subcommand)]
     #[clap(hide = true)]
     Internals(InternalsOpts),
-    /// Internal integration testing helpers.
-    #[clap(hide(true), subcommand)]
-    #[cfg(feature = "internal-testing-api")]
-    InternalTests(TestingOpts),
     #[clap(hide(true))]
     #[cfg(feature = "docgen")]
     Man(ManOpts),
@@ -714,8 +688,6 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             }
             InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
         },
-        #[cfg(feature = "internal-testing-api")]
-        Opt::InternalTests(opts) => crate::privtests::run(opts).await,
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
     }

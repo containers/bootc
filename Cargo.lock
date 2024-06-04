@@ -2016,6 +2016,9 @@ dependencies = [
  "clap",
  "fn-error-context",
  "libtest-mimic",
+ "rustix",
+ "serde",
+ "serde_json",
  "tempfile",
  "xshell",
 ]

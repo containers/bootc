@@ -1,5 +1,5 @@
-use std::os::fd::AsRawFd;
 use std::path::Path;
+use std::{os::fd::AsRawFd, path::PathBuf};
 
 use anyhow::Result;
 use cap_std_ext::cap_std;
@@ -108,7 +108,9 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
             let sh = &xshell::Shell::new()?;
             reset_root(sh)?;
             cmd!(sh, "sudo {BASE_ARGS...} {target_args...} {image} bootc install to-existing-root --acknowledge-destructive {generic_inst_args...}").run()?;
-            cmd!(sh, "sudo podman run --rm --privileged --pid=host {target_args...} {image} bootc internal-tests verify-selinux /target/ostree --warn").run()?;
+            let root = &Dir::open_ambient_dir("/ostree", cap_std::ambient_authority()).unwrap();
+            let mut path = PathBuf::from(".");
+            crate::selinux::verify_selinux_recurse(root, &mut path, true)?;
             Ok(())
         }),
         Trial::test("without an install config", move || {

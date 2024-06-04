@@ -54,5 +54,4 @@ default = ["install"]
 install = []
 # Implementation detail of man page generation.
 docgen = ["clap_mangen"]
-# This feature should only be enabled in CI environments.
-internal-testing-api = ["xshell"]
+

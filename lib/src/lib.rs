@@ -30,9 +30,6 @@ mod status;
 mod task;
 mod utils;
 
-#[cfg(feature = "internal-testing-api")]
-mod privtests;
-
 #[cfg(feature = "install")]
 mod blockdev;
 #[cfg(feature = "install")]
