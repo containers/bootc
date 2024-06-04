@@ -17,7 +17,7 @@
 # Using bootc
 
 - [Upgrade and rollback](upgrades.md)
-- [Offline/disconnected updates](offline-updates.md)
+- [Accessing registries and offline updates](registries-and-offline.md)
 - [Booting local builds](booting-local-builds.md)
 - [`man bootc`](man/bootc.md)
 - [`man bootc-status`](man/bootc-status.md)
