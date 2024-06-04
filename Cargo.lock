@@ -394,17 +394,15 @@ dependencies = [
 
 [[package]]
 name = "containers-image-proxy"
-version = "0.5.8"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17da053ebe8d99edc9bfc5dcbdd74ec34e0657316ddcb6c6d4de6741fd4cac67"
+checksum = "450ba7a168d28a978bed898a3303bb387aaafabea982a956689129cdb821920f"
 dependencies = [
  "anyhow",
  "cap-std-ext",
  "fn-error-context",
  "futures-util",
- "libc",
  "oci-spec",
- "once_cell",
  "rustix",
  "semver",
  "serde",
@@ -449,9 +447,9 @@ dependencies = [
 
 [[package]]
 name = "darling"
-version = "0.14.4"
+version = "0.20.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b750cb3417fd1b327431a470f388520309479ab0bf5e323505daf0290cd3850"
+checksum = "54e36fcd13ed84ffdfda6f5be89b31287cbb80c439841fe69e04841435464391"
 dependencies = [
  "darling_core",
  "darling_macro",
@@ -459,58 +457,58 @@ dependencies = [
 
 [[package]]
 name = "darling_core"
-version = "0.14.4"
+version = "0.20.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "109c1ca6e6b7f82cc233a97004ea8ed7ca123a9af07a8230878fcfda9b158bf0"
+checksum = "9c2cf1c23a687a1feeb728783b993c4e1ad83d99f351801977dd809b48d0a70f"
 dependencies = [
  "fnv",
  "ident_case",
  "proc-macro2",
  "quote",
  "strsim 0.10.0",
- "syn 1.0.109",
+ "syn 2.0.48",
 ]
 
 [[package]]
 name = "darling_macro"
-version = "0.14.4"
+version = "0.20.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4aab4dbc9f7611d8b55048a3a16d2d010c2c8334e46304b40ac1cc14bf3b48e"
+checksum = "a668eda54683121533a393014d8692171709ff57a7d61f187b6e782719f8933f"
 dependencies = [
  "darling_core",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.48",
 ]
 
 [[package]]
 name = "derive_builder"
-version = "0.11.2"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d07adf7be193b71cc36b193d0f5fe60b918a3a9db4dad0449f57bcfd519704a3"
+checksum = "0350b5cb0331628a5916d6c5c0b72e97393b8b6b03b47a9284f4e7f5a405ffd7"
 dependencies = [
  "derive_builder_macro",
 ]
 
 [[package]]
 name = "derive_builder_core"
-version = "0.11.2"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f91d4cfa921f1c05904dc3c57b4a32c38aed3340cce209f3a6fd1478babafc4"
+checksum = "d48cda787f839151732d396ac69e3473923d54312c070ee21e9effcaa8ca0b1d"
 dependencies = [
  "darling",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.48",
 ]
 
 [[package]]
 name = "derive_builder_macro"
-version = "0.11.2"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f0314b72bed045f3a68671b3c86328386762c93f82d98c65c3cb5e5f573dd68"
+checksum = "206868b8242f27cecce124c19fd88157fbd0dd334df2587f36417bafbc85097b"
 dependencies = [
  "derive_builder_core",
- "syn 1.0.109",
+ "syn 2.0.48",
 ]
 
 [[package]]
@@ -848,9 +846,9 @@ dependencies = [
 
 [[package]]
 name = "gvariant"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f7a982b6b38ff2380ea1b1b480cb7f5b51dac917aceff2e16af0c207781e13a"
+checksum = "bd8ea59586b3b91a49369121fb626b8afaa094baef5ea5569adec2d679b5460e"
 dependencies = [
  "gvariant-macro",
  "memchr",
@@ -859,9 +857,9 @@ dependencies = [
 
 [[package]]
 name = "gvariant-macro"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9915719ccd7435a28103eea8dba78bcf35a25d5637c70273b47dbb49c6d2eb6d"
+checksum = "26d6c33b3796d2656c765308a4b70b5f3176123c82174b96db351aeef549b9f1"
 dependencies = [
  "syn 1.0.109",
 ]
@@ -1238,15 +1236,36 @@ dependencies = [
 
 [[package]]
 name = "oci-spec"
-version = "0.5.8"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98135224dd4faeb24c05a2fac911ed53ea6b09ecb09d7cada1cb79963ab2ee34"
+checksum = "e423c4f827362c0d8d8da4b1f571270f389ebde73bcd3240a3d23c6d6f61d0f0"
 dependencies = [
  "derive_builder",
  "getset",
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "ocidir"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c9e545ae89c695346b4581fa67d31085abd7354f93208142113f72221872391"
+dependencies = [
+ "anyhow",
+ "camino",
+ "cap-std-ext",
+ "chrono",
+ "flate2",
+ "fn-error-context",
+ "hex",
+ "oci-spec",
+ "olpc-cjson",
+ "openssl",
+ "serde",
+ "serde_json",
+ "tar",
 ]
 
 [[package]]
@@ -1323,9 +1342,9 @@ dependencies = [
 
 [[package]]
 name = "ostree-ext"
-version = "0.13.4"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55ff8b8f8ba4825c6df7c9611bc7cb6415f8db876e071aec90b1a8e523e7679f"
+checksum = "efefe3ceb2b4d769d0e3f6c9b50ae84646e26f0ce5f18252ef06434acf600099"
 dependencies = [
  "anyhow",
  "camino",
@@ -1342,6 +1361,7 @@ dependencies = [
  "io-lifetimes",
  "libc",
  "libsystemd",
+ "ocidir",
  "olpc-cjson",
  "once_cell",
  "openssl",
