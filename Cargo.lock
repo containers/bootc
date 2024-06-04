@@ -184,7 +184,6 @@ dependencies = [
  "liboverdrop",
  "libsystemd",
  "nix 0.28.0",
- "once_cell",
  "openssl",
  "ostree-ext",
  "regex",

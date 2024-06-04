@@ -4,7 +4,6 @@ use anyhow::{anyhow, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use nix::errno::Errno;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -13,6 +12,7 @@ use std::fs::File;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::process::Command;
+use std::sync::OnceLock;
 
 #[derive(Debug, Deserialize)]
 struct DevicesOutput {
@@ -185,9 +185,10 @@ pub(crate) fn reread_partition_table(file: &mut File, retry: bool) -> Result<()>
 /// Parse key-value pairs from lsblk --pairs.
 /// Newer versions of lsblk support JSON but the one in CentOS 7 doesn't.
 fn split_lsblk_line(line: &str) -> HashMap<String, String> {
-    static REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"([A-Z-_]+)="([^"]+)""#).unwrap());
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let regex = REGEX.get_or_init(|| Regex::new(r#"([A-Z-_]+)="([^"]+)""#).unwrap());
     let mut fields: HashMap<String, String> = HashMap::new();
-    for cap in REGEX.captures_iter(line) {
+    for cap in regex.captures_iter(line) {
         fields.insert(cap[1].to_string(), cap[2].to_string());
     }
     fields
