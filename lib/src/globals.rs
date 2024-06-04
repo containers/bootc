@@ -99,8 +99,8 @@ mod tests {
     use camino::Utf8PathBuf;
     use cap_std_ext::{cap_std, cap_tempfile};
 
-    fn read_authfile(root: &Dir) -> Result<Option<(Utf8PathBuf, String)>> {
-        let r = get_global_authfile_impl(root, true)?;
+    fn read_authfile(root: &Dir, am_uid0: bool) -> Result<Option<(Utf8PathBuf, String)>> {
+        let r = get_global_authfile_impl(root, am_uid0)?;
         if let Some((path, mut f)) = r {
             let mut s = String::new();
             f.read_to_string(&mut s)?;
@@ -113,23 +113,54 @@ mod tests {
     #[test]
     fn test_config_paths() -> Result<()> {
         let root = &cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
-        assert!(read_authfile(root).unwrap().is_none());
+        assert!(read_authfile(root, true).unwrap().is_none());
         root.create_dir_all("etc/ostree")?;
         root.write("etc/ostree/auth.json", "etc ostree auth")?;
-        let (p, authdata) = read_authfile(root).unwrap().unwrap();
+        let (p, authdata) = read_authfile(root, true).unwrap().unwrap();
         assert_eq!(p, "etc/ostree/auth.json");
         assert_eq!(authdata, "etc ostree auth");
         root.create_dir_all("usr/lib/ostree")?;
         root.write("usr/lib/ostree/auth.json", "usrlib ostree auth")?;
         // We should see /etc content still
-        let (p, authdata) = read_authfile(root).unwrap().unwrap();
+        let (p, authdata) = read_authfile(root, true).unwrap().unwrap();
         assert_eq!(p, "etc/ostree/auth.json");
         assert_eq!(authdata, "etc ostree auth");
         // Now remove the /etc content, unveiling the /usr content
         root.remove_file("etc/ostree/auth.json")?;
-        let (p, authdata) = read_authfile(root).unwrap().unwrap();
+        let (p, authdata) = read_authfile(root, true).unwrap().unwrap();
         assert_eq!(p, "usr/lib/ostree/auth.json");
         assert_eq!(authdata, "usrlib ostree auth");
+
+        // Non-root
+        let mut user_runtime_dir =
+            Utf8Path::from_path(glib::user_runtime_dir().strip_prefix("/").unwrap())
+                .unwrap()
+                .to_path_buf();
+        user_runtime_dir.push("ostree");
+        root.create_dir_all(&user_runtime_dir)?;
+        user_runtime_dir.push("auth.json");
+        root.write(&user_runtime_dir, "usr_runtime_dir ostree auth")?;
+
+        let mut user_config_dir =
+            Utf8Path::from_path(glib::user_config_dir().strip_prefix("/").unwrap())
+                .unwrap()
+                .to_path_buf();
+        user_config_dir.push("ostree");
+        root.create_dir_all(&user_config_dir)?;
+        user_config_dir.push("auth.json");
+        root.write(&user_config_dir, "usr_config_dir ostree auth")?;
+
+        // We should see runtime_dir content still
+        let (p, authdata) = read_authfile(root, false).unwrap().unwrap();
+        assert_eq!(p, user_runtime_dir);
+        assert_eq!(authdata, "usr_runtime_dir ostree auth");
+
+        // Now remove the runtime_dir content, unveiling the config_dir content
+        root.remove_file(&user_runtime_dir)?;
+        let (p, authdata) = read_authfile(root, false).unwrap().unwrap();
+        assert_eq!(p, user_config_dir);
+        assert_eq!(authdata, "usr_config_dir ostree auth");
+
         Ok(())
     }
 }
