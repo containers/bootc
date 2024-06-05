@@ -3,7 +3,6 @@
 //! Wrapper for podman which writes to a bootc-owned root.
 
 use std::os::unix::process::CommandExt;
-use std::path::Path;
 
 use anyhow::{anyhow, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -14,7 +13,6 @@ use serde::Deserialize;
 use tokio::process::Command;
 
 use crate::hostexec::run_in_host_mountns;
-use crate::ostree_authfile;
 use crate::spec::ImageReference;
 use crate::task::Task;
 use crate::utils::{cmd_in_root, newline_trim_vec_to_string};
@@ -63,14 +61,15 @@ pub(crate) async fn podman_pull(
     image: &ImageReference,
     quiet: bool,
 ) -> Result<String> {
-    let authfile = ostree_authfile::get_global_authfile_path()?;
+    let authfile =
+        ostree_ext::globals::get_global_authfile(rootfs)?.map(|(authfile, _fd)| authfile);
     let mut cmd = podman_in_root(rootfs)?;
     let image = OstreeImageReference::from(image.clone());
     let pull_spec_image = image.imgref.to_string();
     tracing::debug!("Pulling {pull_spec_image}");
     let child = cmd
         .args(["pull"])
-        .args(authfile.iter().flat_map(|v| [Path::new("--authfile"), v]))
+        .args(authfile.iter().flat_map(|v| ["--authfile", v.as_str()]))
         .args(quiet.then_some("--quiet"))
         .arg(&pull_spec_image)
         .stdout(std::process::Stdio::piped())
