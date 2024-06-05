@@ -12,6 +12,7 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 use fn_error_context::context;
 use openat_ext::OpenatDirExt;
+use os_release::OsRelease;
 use walkdir::WalkDir;
 use widestring::U16CString;
 
@@ -137,8 +138,14 @@ impl Efi {
             log::debug!("Not booted via EFI, skipping firmware update");
             return Ok(());
         }
-        clear_efi_current()?;
-        set_efi_current(device, espdir, vendordir)
+        // Read /etc/os-release
+        let release: OsRelease = OsRelease::new()?;
+        let product_name: &str = &release.name;
+        log::debug!("Get product name: {product_name}");
+        assert!(product_name.len() > 0);
+        // clear all the boot entries that match the target name
+        clear_efi_target(product_name)?;
+        create_efi_boot_entry(device, espdir, vendordir, product_name)
     }
 }
 
@@ -455,46 +462,71 @@ fn validate_esp(dir: &openat::Dir) -> Result<()> {
     Ok(())
 }
 
-#[context("Clearing current EFI boot entry")]
-pub(crate) fn clear_efi_current() -> Result<()> {
-    const BOOTCURRENT: &str = "BootCurrent";
-    if !crate::efi::is_efi_booted()? {
-        log::debug!("System is not booted via EFI");
-        return Ok(());
+#[derive(Debug, PartialEq)]
+struct BootEntry {
+    id: String,
+    name: String,
+}
+
+/// Parse boot entries from efibootmgr output
+fn parse_boot_entries(output: &str) -> Vec<BootEntry> {
+    let mut entries = Vec::new();
+
+    for line in output.lines().filter_map(|line| line.strip_prefix("Boot")) {
+        // Need to consider if output only has "Boot0000* UiApp", without additional info
+        if line.starts_with('0') {
+            let parts = if let Some((parts, _)) = line.split_once('\t') {
+                parts
+            } else {
+                line
+            };
+            if let Some((id, name)) = parts.split_once(' ') {
+                let id = id.trim_end_matches('*').to_string();
+                let name = name.trim().to_string();
+                entries.push(BootEntry { id, name });
+            }
+        }
     }
+    entries
+}
+
+#[context("Clearing EFI boot entries that match target {target}")]
+pub(crate) fn clear_efi_target(target: &str) -> Result<()> {
+    let target = target.to_lowercase();
     let output = Command::new(EFIBOOTMGR).output()?;
     if !output.status.success() {
         anyhow::bail!("Failed to invoke {EFIBOOTMGR}")
     }
+
     let output = String::from_utf8(output.stdout)?;
-    let current = if let Some(current) = output
-        .lines()
-        .filter_map(|l| l.split_once(':'))
-        .filter_map(|(k, v)| (k == BOOTCURRENT).then_some(v.trim()))
-        .next()
-    {
-        current
-    } else {
-        log::debug!("No EFI {BOOTCURRENT} found");
-        return Ok(());
-    };
-    log::debug!("EFI current: {current}");
-    let output = Command::new(EFIBOOTMGR)
-        .args(["-b", current, "-B"])
-        .output()?;
-    let st = output.status;
-    if !st.success() {
-        std::io::copy(
-            &mut std::io::Cursor::new(output.stderr),
-            &mut std::io::stderr().lock(),
-        )?;
-        anyhow::bail!("Failed to invoke {EFIBOOTMGR}: {st:?}");
+    let boot_entries = parse_boot_entries(&output);
+    for entry in boot_entries {
+        if entry.name.to_lowercase() == target {
+            log::debug!("Deleting matched target {:?}", entry);
+            let output = Command::new(EFIBOOTMGR)
+                .args(["-b", entry.id.as_str(), "-B"])
+                .output()?;
+            let st = output.status;
+            if !st.success() {
+                std::io::copy(
+                    &mut std::io::Cursor::new(output.stderr),
+                    &mut std::io::stderr().lock(),
+                )?;
+                anyhow::bail!("Failed to invoke {EFIBOOTMGR}: {st:?}");
+            }
+        }
     }
+
     anyhow::Ok(())
 }
 
 #[context("Adding new EFI boot entry")]
-pub(crate) fn set_efi_current(device: &str, espdir: &openat::Dir, vendordir: &str) -> Result<()> {
+pub(crate) fn create_efi_boot_entry(
+    device: &str,
+    espdir: &openat::Dir,
+    vendordir: &str,
+    target: &str,
+) -> Result<()> {
     let fsinfo = crate::filesystem::inspect_filesystem(espdir, ".")?;
     let source = fsinfo.source;
     let devname = source
@@ -509,6 +541,7 @@ pub(crate) fn set_efi_current(device: &str, espdir: &openat::Dir, vendordir: &st
         anyhow::bail!("Failed to find {SHIM}");
     }
     let loader = format!("\\EFI\\{}\\{SHIM}", vendordir);
+    log::debug!("Creating new EFI boot entry using '{target}'");
     let st = Command::new(EFIBOOTMGR)
         .args([
             "--create",
@@ -519,7 +552,7 @@ pub(crate) fn set_efi_current(device: &str, espdir: &openat::Dir, vendordir: &st
             "--loader",
             loader.as_str(),
             "--label",
-            vendordir,
+            target,
         ])
         .status()?;
     if !st.success() {
@@ -545,4 +578,81 @@ fn find_file_recursive<P: AsRef<Path>>(dir: P, target_file: &str) -> Result<Vec<
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_boot_entries() -> Result<()> {
+        let output = r"
+BootCurrent: 0003
+Timeout: 0 seconds
+BootOrder: 0003,0001,0000,0002
+Boot0000* UiApp	FvVol(7cb8bdc9-f8eb-4f34-aaea-3ee4af6516a1)/FvFile(462caa21-7614-4503-836e-8ab6f4662331)
+Boot0001* UEFI Misc Device	PciRoot(0x0)/Pci(0x3,0x0){auto_created_boot_option}
+Boot0002* EFI Internal Shell	FvVol(7cb8bdc9-f8eb-4f34-aaea-3ee4af6516a1)/FvFile(7c04a583-9e3e-4f1c-ad65-e05268d0b4d1)
+Boot0003* Fedora	HD(2,GPT,94ff4025-5276-4bec-adea-e98da271b64c,0x1000,0x3f800)/\EFI\fedora\shimx64.efi";
+        let entries = parse_boot_entries(output);
+        assert_eq!(
+            entries,
+            [
+                BootEntry {
+                    id: "0000".to_string(),
+                    name: "UiApp".to_string()
+                },
+                BootEntry {
+                    id: "0001".to_string(),
+                    name: "UEFI Misc Device".to_string()
+                },
+                BootEntry {
+                    id: "0002".to_string(),
+                    name: "EFI Internal Shell".to_string()
+                },
+                BootEntry {
+                    id: "0003".to_string(),
+                    name: "Fedora".to_string()
+                }
+            ]
+        );
+        let output = r"
+BootCurrent: 0003
+Timeout: 0 seconds
+BootOrder: 0003,0001,0000,0002";
+        let entries = parse_boot_entries(output);
+        assert_eq!(entries, []);
+
+        let output = r"
+BootCurrent: 0003
+Timeout: 0 seconds
+BootOrder: 0003,0001,0000,0002
+Boot0000* UiApp
+Boot0001* UEFI Misc Device
+Boot0002* EFI Internal Shell
+Boot0003* test";
+        let entries = parse_boot_entries(output);
+        assert_eq!(
+            entries,
+            [
+                BootEntry {
+                    id: "0000".to_string(),
+                    name: "UiApp".to_string()
+                },
+                BootEntry {
+                    id: "0001".to_string(),
+                    name: "UEFI Misc Device".to_string()
+                },
+                BootEntry {
+                    id: "0002".to_string(),
+                    name: "EFI Internal Shell".to_string()
+                },
+                BootEntry {
+                    id: "0003".to_string(),
+                    name: "test".to_string()
+                }
+            ]
+        );
+        Ok(())
+    }
 }
