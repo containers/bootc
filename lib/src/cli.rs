@@ -618,6 +618,8 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let target = ostree_container::OstreeImageReference { sigverify, imgref };
     let target = ImageReference::from(target);
 
+    let backend = opts.backend.unwrap_or_default();
+
     // If we're doing an in-place mutation, we shortcut most of the rest of the work here
     if opts.mutate_in_place {
         let deployid = {
@@ -625,7 +627,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
             let target = target.clone();
             let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
             tokio::task::spawn_blocking(move || {
-                crate::deploy::switch_origin_inplace(&root, &target)
+                crate::deploy::switch_origin_inplace(&root, &target, backend)
             })
             .await??
         };
@@ -643,7 +645,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let new_spec = {
         let mut new_spec = host.spec.clone();
         new_spec.image = Some(target.clone());
-        new_spec.backend = opts.backend.unwrap_or_default();
+        new_spec.backend = backend;
         new_spec
     };
 

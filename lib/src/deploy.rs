@@ -358,7 +358,7 @@ async fn deploy(
 }
 
 #[context("Generating origin")]
-fn origin_from_imageref(imgref: &ImageReference) -> Result<glib::KeyFile> {
+fn origin_from_imageref(imgref: &ImageReference, backend: Backend) -> Result<glib::KeyFile> {
     let origin = glib::KeyFile::new();
     let imgref = OstreeImageReference::from(imgref.clone());
     origin.set_string(
@@ -366,6 +366,9 @@ fn origin_from_imageref(imgref: &ImageReference) -> Result<glib::KeyFile> {
         ostree_container::deploy::ORIGIN_CONTAINER,
         imgref.to_string().as_str(),
     );
+    if backend == Backend::Container {
+        origin.set_string("bootc", "backend", "container");
+    }
     Ok(origin)
 }
 
@@ -379,7 +382,7 @@ pub(crate) async fn stage(
     opts: Option<ostree::SysrootDeployTreeOpts<'_>>,
 ) -> Result<()> {
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
-    let origin = origin_from_imageref(spec.image)?;
+    let origin = origin_from_imageref(spec.image, image.backend)?;
     crate::deploy::deploy(
         sysroot,
         merge_deployment.as_ref(),
@@ -479,9 +482,13 @@ fn find_newest_deployment_name(deploysdir: &Dir) -> Result<String> {
 }
 
 // Implementation of `bootc switch --in-place`
-pub(crate) fn switch_origin_inplace(root: &Dir, imgref: &ImageReference) -> Result<String> {
+pub(crate) fn switch_origin_inplace(
+    root: &Dir,
+    imgref: &ImageReference,
+    backend: Backend,
+) -> Result<String> {
     // First, just create the new origin file
-    let origin = origin_from_imageref(imgref)?;
+    let origin = origin_from_imageref(imgref, backend)?;
     let serialized_origin = origin.to_data();
 
     // Now, we can't rely on being officially booted (e.g. with the `ostree=` karg)
@@ -541,7 +548,7 @@ fn test_switch_inplace() -> Result<()> {
         signature: None,
     };
     {
-        let origin = origin_from_imageref(&orig_imgref)?;
+        let origin = origin_from_imageref(&orig_imgref, Backend::OstreeContainer)?;
         deploydir.atomic_write(
             format!("{target_deployment}.origin"),
             origin.to_data().as_bytes(),
@@ -554,7 +561,7 @@ fn test_switch_inplace() -> Result<()> {
         signature: None,
     };
 
-    let replaced = switch_origin_inplace(&td, &target_imgref).unwrap();
+    let replaced = switch_origin_inplace(&td, &target_imgref, Backend::OstreeContainer).unwrap();
     assert_eq!(replaced, target_deployment);
     Ok(())
 }
