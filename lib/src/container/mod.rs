@@ -427,10 +427,10 @@ pub fn merge_default_container_proxy_opts_with_isolation(
     if !auth_specified {
         let root = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
         config.auth_data = crate::globals::get_global_authfile(root)?.map(|a| a.1);
-        // If there's no authfile, then force on anonymous pulls to ensure
+        // If there's no auth data, then force on anonymous pulls to ensure
         // that the container stack doesn't try to find it in the standard
         // container paths.
-        if config.authfile.is_none() {
+        if config.auth_data.is_none() {
             config.auth_anonymous = true;
         }
     }
