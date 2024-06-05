@@ -12,7 +12,7 @@ function redprint {
 }
 
 greenprint "📥 Install required packages"
-dnf install -y cargo zstd git openssl-devel ostree-devel rpm-build mock podman skopeo jq
+dnf install -y cargo zstd git libzstd-devel openssl-devel ostree-devel rpm-build mock podman skopeo jq
 cargo install cargo-vendor-filterer
 
 greenprint "⛏ Build archive"

@@ -20,6 +20,7 @@ BuildRequires: zlib-devel
 BuildRequires: ostree-devel
 BuildRequires: openssl-devel
 BuildRequires: systemd-devel
+BuildRequires: libzstd-devel
 
 %description
 %{summary}
