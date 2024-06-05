@@ -12,3 +12,8 @@
   summary: bootc install to-disk and upgrade test
   test: ./image-install-upgrade.sh
   duration: 90m
+
+/bootc-kargs:
+  summary: bootc kargs test
+  test: ./bootc-kargs.sh
+  duration: 90m

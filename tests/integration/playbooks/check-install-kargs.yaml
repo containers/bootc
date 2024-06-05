@@ -1,0 +1,44 @@
+---
+- hosts: guest
+  become: false
+  vars:
+    bootc_image: ""
+    kargs: []
+    total_counter: "0"
+    failed_counter: "0"
+
+  tasks:
+    # current target host's IP address
+    - debug: var=ansible_all_ipv4_addresses
+    - debug: var=ansible_facts['distribution_version']
+    - debug: var=ansible_facts['distribution']
+    - debug: var=ansible_facts['architecture']
+
+    - name: grep for kargs
+      shell: cat /proc/cmdline | grep $item
+      with_items: "{{ kargs.split(',') }}"
+      register: kargs_check
+      # grep will exit with 1 when no results found. 
+      # This causes the task not to halt play.
+      ignore_errors: true
+
+    - name: check if kargs exist
+      block:
+        - assert:
+            that:
+              - kargs_check == true
+            fail_msg: install kargs not found
+            success_msg: install kargs found
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    - assert:
+        that:
+          - failed_counter == "0"
+        fail_msg: "Run {{ total_counter }} tests, but {{ failed_counter }} of them failed"
+        success_msg: "Totally {{ total_counter }} test passed"
