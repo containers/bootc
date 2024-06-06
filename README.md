@@ -2,7 +2,7 @@
 
 Transactional, in-place operating system updates using OCI/Docker container images.
 
-# Motivation
+## Motivation
 
 The original Docker container model of using "layers" to model
 applications has been extremely successful.  This project
@@ -15,11 +15,19 @@ which is used to boot.  At runtime on a target system, the base userspace is
 *not* itself running in a container by default.  For example, assuming
 systemd is in use, systemd acts as pid1 as usual - there's no "outer" process.
 
-# Status
+## Status
 
 NOTE: At the current time, bootc has not reached 1.0, and it is possible
 that some APIs and CLIs may change.
 
-# More information
+## Documentation
 
-See the [project documentation](https://containers.github.io/bootc/).
+See the [project documentation](https://containers.github.io/bootc/); there
+are also operating systems and distributions using bootc; here are some examples:
+
+- https://docs.fedoraproject.org/en-US/bootc/
+
+## Developing bootc
+
+Are you interested in working on bootc?  Great!  See our [HACKING.md](HACKING.md) guide.
+
