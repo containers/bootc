@@ -1,5 +1,9 @@
 prefix ?= /usr
 
+SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct)
+# https://reproducible-builds.org/docs/archives/
+TAR_REPRODUCIBLE = tar --mtime="@${SOURCE_DATE_EPOCH}" --sort=name --owner=0 --group=0 --numeric-owner --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime
+
 all:
 	cargo build --release
     
@@ -23,10 +27,10 @@ install-with-tests: install
 	install -D -m 0755 target/release/tests-integration $(DESTDIR)$(prefix)/bin/bootc-integration-tests 
 
 bin-archive: all
-	$(MAKE) install DESTDIR=tmp-install && tar --zstd -C tmp-install -cf target/bootc.tar.zst . && rm tmp-install -rf
+	$(MAKE) install DESTDIR=tmp-install && $(TAR_REPRODUCIBLE) --zstd -C tmp-install -cf target/bootc.tar.zst . && rm tmp-install -rf
 
 test-bin-archive: all
-	$(MAKE) install-with-tests DESTDIR=tmp-install && tar --zstd -C tmp-install -cf target/bootc.tar.zst . && rm tmp-install -rf
+	$(MAKE) install-with-tests DESTDIR=tmp-install && $(TAR_REPRODUCIBLE) --zstd -C tmp-install -cf target/bootc.tar.zst . && rm tmp-install -rf
 
 install-kola-tests:
 	install -D -t $(DESTDIR)$(prefix)/lib/coreos-assembler/tests/kola/bootc tests/kolainst/*
