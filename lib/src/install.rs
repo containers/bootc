@@ -1101,10 +1101,6 @@ async fn prepare_install(
     crate::cli::require_root()?;
     require_host_pidns()?;
 
-    if cfg!(target_arch = "s390x") {
-        anyhow::bail!("Installation is not supported on this architecture yet");
-    }
-
     let rootfs = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())
         .context("Opening /")?;
 
