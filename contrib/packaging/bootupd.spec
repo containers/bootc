@@ -29,8 +29,7 @@ BuildRequires: systemd-devel
 %license LICENSE
 %doc README.md
 %{_bindir}/bootupctl
-%{_libexecdir}/bootupd  
-%{_unitdir}/*
+%{_libexecdir}/bootupd
 %{_prefix}/lib/bootupd/grub2-static/
 
 %prep
