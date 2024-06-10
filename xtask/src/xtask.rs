@@ -23,6 +23,7 @@ const TASKS: &[(&str, fn(&Shell) -> Result<()>)] = &[
     ("package", package),
     ("package-srpm", package_srpm),
     ("custom-lints", custom_lints),
+    ("test-tmt", test_tmt),
 ];
 
 fn try_main() -> Result<()> {
@@ -139,6 +140,13 @@ fn man2markdown(sh: &Shell) -> Result<()> {
         )
         .run()?;
     }
+    Ok(())
+}
+
+#[context("test-integration")]
+fn test_tmt(sh: &Shell) -> Result<()> {
+    cmd!(sh, "cargo run -p tests-integration run-vm prepare-tmt").run()?;
+    cmd!(sh, "tmt run plans -n integration").run()?;
     Ok(())
 }
 

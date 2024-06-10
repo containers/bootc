@@ -10,6 +10,7 @@ use clap::Parser;
 mod container;
 mod hostpriv;
 mod install;
+mod runvm;
 mod selinux;
 
 #[derive(Debug, Parser)]
@@ -32,6 +33,8 @@ pub(crate) enum Opt {
         #[clap(flatten)]
         testargs: libtest_mimic::Arguments,
     },
+    #[clap(subcommand)]
+    RunVM(runvm::Opt),
     /// Extra helper utility to verify SELinux label presence
     #[clap(name = "verify-selinux")]
     VerifySELinux {
@@ -48,6 +51,7 @@ fn main() {
         Opt::InstallAlongside { image, testargs } => install::run_alongside(&image, testargs),
         Opt::HostPrivileged { image, testargs } => hostpriv::run_hostpriv(&image, testargs),
         Opt::Container { testargs } => container::run(testargs),
+        Opt::RunVM(opts) => runvm::run(opts),
         Opt::VerifySELinux { rootfs, warn } => {
             let root = &Dir::open_ambient_dir(&rootfs, cap_std::ambient_authority()).unwrap();
             let mut path = PathBuf::from(".");
