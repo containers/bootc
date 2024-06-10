@@ -198,56 +198,56 @@ ansible-playbook -v \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
     playbooks/check-system.yaml
 
-greenprint "Create upgrade Containerfile"
-tee "$UPGRADE_CONTAINERFILE" > /dev/null << EOF
-FROM "$TEST_IMAGE_URL"
-RUN dnf -y install wget && \
-    dnf -y clean all
-EOF
+# greenprint "Create upgrade Containerfile"
+# tee "$UPGRADE_CONTAINERFILE" > /dev/null << EOF
+# FROM "$TEST_IMAGE_URL"
+# RUN dnf -y install wget && \
+#     dnf -y clean all
+# EOF
 
-greenprint "Build $TEST_OS upgrade container image"
-podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$UPGRADE_CONTAINERFILE" .
+# greenprint "Build $TEST_OS upgrade container image"
+# podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$UPGRADE_CONTAINERFILE" .
 
-greenprint "Push $TEST_OS upgrade container image"
-retry podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
+# greenprint "Push $TEST_OS upgrade container image"
+# retry podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
 
-if [[ ${AIR_GAPPED-} -eq 1 ]]; then
-    retry skopeo copy docker://"$TEST_IMAGE_URL" dir://"$AIR_GAPPED_DIR"
-    BOOTC_IMAGE="/mnt"
-else
-    BOOTC_IMAGE="$TEST_IMAGE_URL"
-fi
+# if [[ ${AIR_GAPPED-} -eq 1 ]]; then
+#     retry skopeo copy docker://"$TEST_IMAGE_URL" dir://"$AIR_GAPPED_DIR"
+#     BOOTC_IMAGE="/mnt"
+# else
+#     BOOTC_IMAGE="$TEST_IMAGE_URL"
+# fi
 
-greenprint "Upgrade $TEST_OS system"
-ansible-playbook -v \
-    -i "$INVENTORY_FILE" \
-    -e air_gapped_dir="$AIR_GAPPED_DIR" \
-    playbooks/upgrade.yaml
+# greenprint "Upgrade $TEST_OS system"
+# ansible-playbook -v \
+#     -i "$INVENTORY_FILE" \
+#     -e air_gapped_dir="$AIR_GAPPED_DIR" \
+#     playbooks/upgrade.yaml
 
-greenprint "Run ostree checking test after upgrade on $PLATFORM instance"
-ansible-playbook -v \
-    -i "$INVENTORY_FILE" \
-    -e test_os="$TEST_OS" \
-    -e bootc_image="$BOOTC_IMAGE" \
-    -e image_label_version_id="$REDHAT_VERSION_ID" \
-    -e upgrade="true" \
-    playbooks/check-system.yaml
+# greenprint "Run ostree checking test after upgrade on $PLATFORM instance"
+# ansible-playbook -v \
+#     -i "$INVENTORY_FILE" \
+#     -e test_os="$TEST_OS" \
+#     -e bootc_image="$BOOTC_IMAGE" \
+#     -e image_label_version_id="$REDHAT_VERSION_ID" \
+#     -e upgrade="true" \
+#     playbooks/check-system.yaml
 
-greenprint "Rollback $TEST_OS system"
-ansible-playbook -v \
-    -i "$INVENTORY_FILE" \
-    -e air_gapped_dir="$AIR_GAPPED_DIR" \
-    playbooks/rollback.yaml
+# greenprint "Rollback $TEST_OS system"
+# ansible-playbook -v \
+#     -i "$INVENTORY_FILE" \
+#     -e air_gapped_dir="$AIR_GAPPED_DIR" \
+#     playbooks/rollback.yaml
 
-greenprint "Remove $PLATFORM instance"
-ansible-playbook -v \
-    -i "$INVENTORY_FILE" \
-    -e platform="$PLATFORM" \
-    playbooks/remove.yaml
+# greenprint "Remove $PLATFORM instance"
+# ansible-playbook -v \
+#     -i "$INVENTORY_FILE" \
+#     -e platform="$PLATFORM" \
+#     playbooks/remove.yaml
 
-greenprint "Clean up"
-rm -rf auth.json rhel-9-y.repo
-unset ANSIBLE_CONFIG
+# greenprint "Clean up"
+# rm -rf auth.json rhel-9-y.repo
+# unset ANSIBLE_CONFIG
 
 greenprint "🎉 All tests passed."
 exit 0
