@@ -4,6 +4,7 @@
   vars:
     bootc_image: ""
     upgrade: ""
+    kargs: ""
     total_counter: "0"
     failed_counter: "0"
 
@@ -451,6 +452,32 @@
             failed_counter: "{{ failed_counter | int + 1 }}"
       when: ansible_facts['distribution_version'] != "41"
       # workaround for issue https://gitlab.com/fedora/bootc/base-images/-/issues/10
+
+    # case: check karg
+    - name: grep for kargs
+      when: kargs != ''
+      shell: cat /proc/cmdline | grep $item
+      with_items: "{{ kargs.split(',') }}"
+      register: kargs_check
+      # grep will exit with 1 when no results found.
+      # This causes the task not to halt play.
+      ignore_errors: true
+    
+    - name: check if kargs exist
+      block:
+        - assert:
+            that:
+              - kargs_check is succeeded
+            fail_msg: install kargs not found
+            success_msg: install kargs found
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: karg != ''
 
     # case: check reboot times
     - name: check reboot times

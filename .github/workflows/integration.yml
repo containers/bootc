@@ -58,8 +58,8 @@ jobs:
       repo_url: ${{ fromJson(steps.pr-api.outputs.data).head.repo.html_url }}
 
   integration:
-    # needs: pr-info
-    # if: ${{ needs.pr-info.outputs.allowed_user == 'true' && !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
+    needs: pr-info
+    if: ${{ needs.pr-info.outputs.allowed_user == 'true' && !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
     continue-on-error: true
     strategy:
       matrix:

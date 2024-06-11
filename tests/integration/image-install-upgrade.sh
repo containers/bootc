@@ -82,7 +82,7 @@ esac
 
 sed "s/REPLACE_ME/${QUAY_SECRET}/g" files/auth.template | tee auth.json > /dev/null
 greenprint "Create $TEST_OS installation Containerfile"
-tee "$INSTALL_CONTAINERFILE" > /dev/null << EOF
+tee "$INSTALL_CONTAINERFILE" > /dev/null << REALEOF
 FROM "$TIER1_IMAGE_URL"
 $ADD_REPO
 COPY build/bootc-2*.${ARCH}.rpm .
@@ -91,7 +91,10 @@ RUN dnf -y update ./bootc-2*.${ARCH}.rpm && \
 RUN dnf -y install python3 cloud-init && \
     dnf -y clean all
 COPY auth.json /etc/ostree/auth.json
+RUN cat <<EOF >> /usr/lib/bootc/install/00-nosmt.toml
+kargs = ["mitigations=on"]
 EOF
+REALEOF
 
 greenprint "Check $TEST_OS installation Containerfile"
 cat "$INSTALL_CONTAINERFILE"
@@ -155,7 +158,7 @@ case "$IMAGE_TYPE" in
             -v /dev:/dev \
             -v .:/output \
             "$TEST_IMAGE_URL" \
-            bootc install to-disk --filesystem "$ROOTFS" --generic-image --via-loopback /output/disk.raw
+            bootc install to-disk --filesystem "$ROOTFS" --generic-image --via-loopback --karg=nosmt /output/disk.raw
 
         sudo qemu-img convert -f raw ./disk.raw -O qcow2 "/var/lib/libvirt/images/disk.qcow2"
         rm -f disk.raw
@@ -195,6 +198,7 @@ ansible-playbook -v \
     -e test_os="$TEST_OS" \
     -e bootc_image="$TEST_IMAGE_URL" \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
+    -e kargs="mitigations=on,nosmt" \
     playbooks/check-system.yaml
 
 greenprint "Create upgrade Containerfile"
