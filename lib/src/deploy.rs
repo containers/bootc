@@ -278,8 +278,10 @@ async fn deploy(
     stateroot: &str,
     image: &ImageState,
     origin: &glib::KeyFile,
+    opts: Option<ostree::SysrootDeployTreeOpts<'_>>,
 ) -> Result<()> {
     let stateroot = Some(stateroot);
+    let opts = opts.unwrap_or_default();
     // Copy to move into thread
     let cancellable = gio::Cancellable::NONE;
     let _new_deployment = sysroot.stage_tree_with_options(
@@ -287,7 +289,7 @@ async fn deploy(
         image.ostree_commit.as_str(),
         Some(origin),
         merge_deployment,
-        &Default::default(),
+        &opts,
         cancellable,
     )?;
     Ok(())
@@ -312,6 +314,7 @@ pub(crate) async fn stage(
     stateroot: &str,
     image: &ImageState,
     spec: &RequiredHostSpec<'_>,
+    opts: Option<ostree::SysrootDeployTreeOpts<'_>>,
 ) -> Result<()> {
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
     let origin = origin_from_imageref(spec.image)?;
@@ -321,6 +324,7 @@ pub(crate) async fn stage(
         stateroot,
         image,
         &origin,
+        opts,
     )
     .await?;
     crate::deploy::cleanup(sysroot).await?;
