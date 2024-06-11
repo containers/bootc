@@ -392,7 +392,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             .map_or(false, |b| b.incompatible)
     {
         return Err(anyhow::anyhow!(
-            "Booted deployment contains local rpm-ostree modifications; cannot upgrade via bootc"
+            "Booted deployment contains local rpm-ostree modifications; cannot upgrade via bootc. You can run `rpm-ostree reset` to undo the modifications."
         ));
     }
     let spec = RequiredHostSpec::from_spec(&host.spec)?;
