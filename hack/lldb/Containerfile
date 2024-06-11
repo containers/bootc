@@ -1,0 +1,18 @@
+FROM quay.io/centos-bootc/centos-bootc-dev:stream9
+
+COPY ./etc/sysctl.conf /etc/sysctl.conf
+COPY ./etc/systemd/system/lldb-server.service /etc/systemd/system/lldb-server.service
+COPY ./etc/sudoers.d/wheel-nopasswd /etc/sudoers.d
+ARG sshpubkey
+
+RUN dnf -y install lldb firewalld vim && \
+    firewall-offline-cmd --add-port 1025-65535/tcp && \
+    systemctl enable lldb-server.service && \
+
+    # add test user
+    if test -z "$sshpubkey"; then echo "must provide sshpubkey"; exit 1; fi; \
+    useradd -G wheel test && \
+    mkdir -m 0700 -p /home/test/.ssh && \
+    echo $sshpubkey > /home/test/.ssh/authorized_keys && \
+    chmod 0600 /home/test/.ssh/authorized_keys && \
+    chown -R test: /home/test

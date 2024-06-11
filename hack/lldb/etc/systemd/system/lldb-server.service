@@ -1,0 +1,13 @@
+[Unit]
+Description=LLDB Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+ExecStart=lldb-server platform --listen "*:1234" --server --min-gdbserver-port 31200 --max-gdbserver-port 31202
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

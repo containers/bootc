@@ -66,6 +66,23 @@ with the target container host) is to just run a webserver on the host, e.g.
 run `bootc usroverlay` once, and 
 `curl -L -o /usr/bin/bootc http://10.0.1.2:8080/target/release/bootc && restorecon /usr/bin/bootc`.
 
+### Debugging via lldb
+
+The `hack/lldb` directory contains an example of how to use lldb to debug bootc code.
+`hack/lldb/deploy.sh` can be used to build and deploy a bootc VM in libvirt with an lldb-server
+running as a systemd service. Depending on your editor, you can then connect to the lldb server
+to use an interactive debugger, and set up the editor to build and push the new binary to the VM.
+`hack/lldb/dap-example-vim.lua` is an example for neovim.
+
+The VM can be connected to via `ssh test@bootc-lldb` if you have [nss](https://libvirt.org/nss.html)
+enabled.
+
+For some bootc install commands, it's simpler to run the lldb-server in a container, e.g.
+
+```bash
+sudo podman run --pid=host --network=host --privileged --security-opt label=type:unconfined_t -v /var/lib/containers:/var/lib/containers -v /dev:/dev -v .:/output localhost/bootc-lldb lldb-server platform --listen "*:1234" --server
+```
+
 ## Running the tests
 
 First, you can run many unit tests with `cargo test`.
