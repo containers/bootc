@@ -10,3 +10,5 @@ t=$(mktemp --suffix .spec)
 curl -L -o ${t} https://src.fedoraproject.org/rpms/bootc/raw/rawhide/f/bootc.spec
 dnf -y builddep "${t}"
 rm -f "${t}"
+# Extra dependencies
+dnf -y install git-core
