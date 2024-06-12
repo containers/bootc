@@ -202,11 +202,14 @@ ansible-playbook -v \
     playbooks/check-system.yaml
 
 greenprint "Create upgrade Containerfile"
-tee "$UPGRADE_CONTAINERFILE" > /dev/null << EOF
+tee "$UPGRADE_CONTAINERFILE" > /dev/null << REALEOF
 FROM "$TEST_IMAGE_URL"
 RUN dnf -y install wget && \
     dnf -y clean all
+RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
+kargs = ["systemd.unified_cgroup_hierarchy=0"]
 EOF
+REALEOF
 
 greenprint "Build $TEST_OS upgrade container image"
 sudo podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$UPGRADE_CONTAINERFILE" .
@@ -225,6 +228,32 @@ ansible-playbook -v \
     -e bootc_image="$TEST_IMAGE_URL" \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
     -e upgrade="true" \
+    -e kargs="systemd.unified_cgroup_hierarchy=0" \
+    playbooks/check-system.yaml
+
+greenprint "Create second upgrade Containerfile to test kargs delta"
+tee "$UPGRADE_CONTAINERFILE" > /dev/null << REALEOF
+FROM "$TEST_IMAGE_URL"
+RUN dnf -y install wget && \
+    dnf -y clean all
+RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
+kargs = ["systemd.unified_cgroup_hierarchy=1"]
+EOF
+REALEOF
+
+greenprint "Upgrade $TEST_OS system"
+ansible-playbook -v \
+    -i "$INVENTORY_FILE" \
+    playbooks/upgrade.yaml
+
+greenprint "Run ostree checking test after upgrade on $PLATFORM instance"
+ansible-playbook -v \
+    -i "$INVENTORY_FILE" \
+    -e test_os="$TEST_OS" \
+    -e bootc_image="$TEST_IMAGE_URL" \
+    -e image_label_version_id="$REDHAT_VERSION_ID" \
+    -e upgrade="true" \
+    -e kargs="systemd.unified_cgroup_hierarchy=1" \
     playbooks/check-system.yaml
 
 greenprint "Rollback $TEST_OS system"

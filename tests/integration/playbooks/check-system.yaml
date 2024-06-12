@@ -455,13 +455,13 @@
 
     # case: check karg
     - name: grep for kargs
-      when: kargs != ''
       shell: cat /proc/cmdline | grep $item
       with_items: "{{ kargs.split(',') }}"
       register: kargs_check
       # grep will exit with 1 when no results found.
       # This causes the task not to halt play.
       ignore_errors: true
+      when: kargs != ''
     
     - name: check if kargs exist
       block:
@@ -477,7 +477,7 @@
         - name: failed count + 1
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
-      when: karg != ''
+      when: kargs != ''
 
     # case: check reboot times
     - name: check reboot times
