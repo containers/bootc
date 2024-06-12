@@ -92,6 +92,9 @@ RUN dnf -y install python3 cloud-init && \
     dnf -y clean all
 COPY auth.json /etc/ostree/auth.json
 RUN cat <<EOF >> /usr/lib/bootc/install/00-nosmt.toml
+[install.filesystem.root]
+type = "xfs"
+[install]
 kargs = ["mitigations=on"]
 EOF
 REALEOF
