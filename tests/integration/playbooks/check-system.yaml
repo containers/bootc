@@ -133,13 +133,13 @@
       shell: findmnt -r -o OPTIONS -n /sysroot | awk -F "," '{print $1}'
       register: result_sysroot_mount_status
 
-    - name: /sysroot should be mount with rw permission
+    - name: /sysroot should be mount with ro permission
       block:
         - assert:
             that:
-              - result_sysroot_mount_status.stdout == "rw"
-            fail_msg: "/sysroot is not mounted with rw permission"
-            success_msg: "/sysroot is mounted with rw permission"
+              - result_sysroot_mount_status.stdout == "ro"
+            fail_msg: "/sysroot is not mounted with ro permission"
+            success_msg: "/sysroot is mounted with ro permission"
       always:
         - set_fact:
             total_counter: "{{ total_counter | int + 1 }}"

@@ -305,7 +305,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     let host = if !Utf8Path::new("/run/ostree-booted").try_exists()? {
         Default::default()
     } else {
-        crate::cli::require_root()?;
+        crate::cli::prepare_for_write().await?;
         let sysroot = super::cli::get_locked_sysroot().await?;
         let booted_deployment = sysroot.booted_deployment();
         let (_deployments, host) = get_status(&sysroot, booted_deployment.as_ref())?;
