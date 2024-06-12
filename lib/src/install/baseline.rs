@@ -126,9 +126,11 @@ fn mkfs<'a>(
     label: &str,
     opts: impl IntoIterator<Item = &'a str>,
 ) -> Result<uuid::Uuid> {
+    let devinfo = crate::blockdev::list_dev(dev.into())?;
+    let size = devinfo.size.as_deref().unwrap_or("(unknown)");
     let u = uuid::Uuid::new_v4();
     let mut t = Task::new(
-        &format!("Creating {label} filesystem ({fs})"),
+        &format!("Creating {label} filesystem ({fs}) on device {dev} (size={size})"),
         format!("mkfs.{fs}"),
     );
     match fs {

@@ -28,6 +28,7 @@ pub(crate) struct Device {
     pub(crate) label: Option<String>,
     pub(crate) fstype: Option<String>,
     pub(crate) children: Option<Vec<Device>>,
+    pub(crate) size: Option<String>,
 }
 
 impl Device {
@@ -53,7 +54,7 @@ pub(crate) fn wipefs(dev: &Utf8Path) -> Result<()> {
 
 fn list_impl(dev: Option<&Utf8Path>) -> Result<Vec<Device>> {
     let o = Command::new("lsblk")
-        .args(["-J", "-o", "NAME,SERIAL,MODEL,LABEL,FSTYPE"])
+        .args(["-J", "-o", "NAME,SERIAL,MODEL,LABEL,FSTYPE,SIZE"])
         .args(dev)
         .output()?;
     if !o.status.success() {
