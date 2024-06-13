@@ -384,17 +384,26 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         crate::status::get_status_require_booted(sysroot)?;
     let imgref = host.spec.image.as_ref();
     // If there's no specified image, let's be nice and check if the booted system is using rpm-ostree
-    if imgref.is_none()
-        && host
+    if imgref.is_none() {
+        let booted_incompatible = host
             .status
             .booted
             .as_ref()
-            .map_or(false, |b| b.incompatible)
-    {
-        return Err(anyhow::anyhow!(
-            "Booted deployment contains local rpm-ostree modifications; cannot upgrade via bootc. You can run `rpm-ostree reset` to undo the modifications."
-        ));
+            .map_or(false, |b| b.incompatible);
+
+        let staged_incompatible = host
+            .status
+            .staged
+            .as_ref()
+            .map_or(false, |b| b.incompatible);
+
+        if booted_incompatible || staged_incompatible {
+            return Err(anyhow::anyhow!(
+                "Deployment contains local rpm-ostree modifications; cannot upgrade via bootc. You can run `rpm-ostree reset` to undo the modifications."
+            ));
+        }
     }
+
     let spec = RequiredHostSpec::from_spec(&host.spec)?;
     let booted_image = host
         .status
