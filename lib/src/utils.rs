@@ -108,7 +108,6 @@ where
     if pb.is_hidden() {
         print!("{}...", msg);
         std::io::stdout().flush().unwrap();
-    } else {
     }
     let r = f.await;
     if pb.is_hidden() {
