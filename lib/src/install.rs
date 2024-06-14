@@ -1442,13 +1442,17 @@ pub(crate) async fn install_to_filesystem(
         anyhow::bail!("Not a mountpoint: {root_path}");
     }
 
+    // Gather global state, destructuring the provided options.
+    // IMPORTANT: We might re-execute the current process in this function (for SELinux among other things)
+    // IMPORTANT: and hence anything that is done before MUST BE IDEMPOTENT.
+    // IMPORTANT: In practice, we should only be gathering information before this point,
+    // IMPORTANT: and not performing any mutations at all.
+    let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
+
     // Check to see if this happens to be the real host root
     if !fsopts.acknowledge_destructive {
         warn_on_host_root(&rootfs_fd)?;
     }
-
-    // Gather global state, destructuring the provided options
-    let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
 
     match fsopts.replace {
         Some(ReplaceMode::Wipe) => {
