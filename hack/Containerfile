@@ -17,10 +17,16 @@ RUN mkdir -p /build/target/dev-rootfs  # This can hold arbitrary extra content
 RUN --mount=type=cache,target=/build/target --mount=type=cache,target=/var/roothome make test-bin-archive && mkdir -p /out && cp target/bootc.tar.zst /out
 
 FROM $base
+# We support e.g. adding cloud-init
 ARG variant=
 COPY hack/provision-derived.sh /tmp
 RUN /tmp/provision-derived.sh "$variant" && rm -f /tmp/*.sh
+# Also copy in some default install configs we use for testing
+COPY hack/install-test-configs/* /usr/lib/bootc/install/
+# Inject our built code
 COPY --from=build /out/bootc.tar.zst /tmp
-COPY --from=build /build/target/dev-rootfs/ /
 RUN tar -C / --zstd -xvf /tmp/bootc.tar.zst && rm -vf /tmp/*
+# Also copy over arbitrary bits from the target root
+COPY --from=build /build/target/dev-rootfs/ /
+# Test our own linting
 RUN bootc container lint
