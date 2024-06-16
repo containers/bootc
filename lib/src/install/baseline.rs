@@ -401,19 +401,11 @@ pub(crate) fn install_create_rootfs(
         fstype: MountSpec::AUTO.into(),
         options: Some("ro".into()),
     });
-    let install_config_kargs = state
-        .install_config
-        .as_ref()
-        .and_then(|c| c.kargs.as_ref())
-        .into_iter()
-        .flatten()
-        .map(ToOwned::to_owned);
     let kargs = root_blockdev_kargs
         .into_iter()
         .flatten()
         .chain([rootarg, RW_KARG.to_string()].into_iter())
         .chain(bootarg)
-        .chain(install_config_kargs)
         .collect::<Vec<_>>();
 
     mount::mount(&rootdev, &rootfs)?;

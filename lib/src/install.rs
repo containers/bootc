@@ -642,10 +642,18 @@ async fn initialize_ostree_root_from_self(
         imgref: src_imageref,
     };
 
+    let install_config_kargs = state
+        .install_config
+        .as_ref()
+        .and_then(|c| c.kargs.as_ref())
+        .into_iter()
+        .flatten()
+        .map(|s| s.as_str());
     let kargs = root_setup
         .kargs
         .iter()
         .map(|v| v.as_str())
+        .chain(install_config_kargs)
         .chain(state.config_opts.karg.iter().flatten().map(|v| v.as_str()))
         .collect::<Vec<_>>();
     let mut options = ostree_container::deploy::DeployOpts::default();

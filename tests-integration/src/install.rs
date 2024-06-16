@@ -88,9 +88,16 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
                 std::fs::write(&tmp_keys, b"ssh-ed25519 ABC0123 testcase@example.com")?;
                 cmd!(sh, "sudo {BASE_ARGS...} {target_args...} -v {tmp_keys}:/test_authorized_keys {image} bootc install to-filesystem {generic_inst_args...} --acknowledge-destructive --karg=foo=bar --replace=alongside --root-ssh-authorized-keys=/test_authorized_keys /target").run()?;
 
+                // Test kargs injected via CLI
                 cmd!(
                     sh,
                     "sudo /bin/sh -c 'grep foo=bar /boot/loader/entries/*.conf'"
+                )
+                .run()?;
+                // And kargs we added into our default container image
+                cmd!(
+                    sh,
+                    "sudo /bin/sh -c 'grep localtestkarg=somevalue /boot/loader/entries/*.conf'"
                 )
                 .run()?;
                 let deployment = &find_deployment_root()?;
