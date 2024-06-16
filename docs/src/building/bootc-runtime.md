@@ -5,11 +5,16 @@ Fundamentally, `bootc` reuses the [OCI image format](https://github.com/opencont
 as a way to transport serialized filesystem trees with included metadata such as a `version`
 label, etc.
 
-However, `bootc` generally ignores the [Container configuration](https://github.com/opencontainers/image-spec/blob/main/config.md)
-section at runtime today.
+A bootc container operates in two basic modes.  First, when invoked by a container run time such as `podman` or `docker` (typically as part of a build process), the bootc container behaves exactly the same as any other container. For example, although there is a kernel embedded in the container image, it is not executed - the host kernel is used.  There's no additional mount namespaces, etc.  Ultimately, the container runtime is in full control here.
 
-Container runtimes like `podman` and `docker` of course *will* interpret this metadata
-when running a bootc container image as a container.
+The second, and most important mode of operation is when a bootc container is installed to a physical or virtual machine.  Here, bootc is in control; the container runtime used to build is no longer relevant.  However, it's *very* important to understand that bootc's role is quite limited:
+
+- On boot, there is code in the initramfs to do a "chroot" equivalent into the target filesystem root
+- On upgrade, bootc will fetch new content, but this will not affect the running root
+
+Crucially, besides setting up some mounts, bootc itself does not act as any kind of "container runtime".  It does not set up pid or other namespace, does not change cgroups, etc.  That remains the role of other code (typically systemd).  `bootc` is not a persistent daemon by default; it does not impose any runtime overhead.
+
+Another example of this: While one can add [Container configuration](https://github.com/opencontainers/image-spec/blob/main/config.md) metadata, `bootc` generally ignores that at runtime today.
 
 ## Labels
 

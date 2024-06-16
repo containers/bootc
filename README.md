@@ -12,8 +12,9 @@ for base operating system updates.
 
 The container image includes a Linux kernel (in e.g. `/usr/lib/modules`),
 which is used to boot.  At runtime on a target system, the base userspace is
-*not* itself running in a container by default.  For example, assuming
+*not* itself running in a "container" by default. For example, assuming
 systemd is in use, systemd acts as pid1 as usual - there's no "outer" process.
+More about this in the docs; see below.
 
 ## Status
 
