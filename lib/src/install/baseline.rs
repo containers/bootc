@@ -170,6 +170,8 @@ pub(crate) fn install_create_rootfs(
     // Verify that the target is empty (if not already wiped in particular, but it's
     // also good to verify that the wipe worked)
     let device = crate::blockdev::list_dev(&opts.device)?;
+    // Canonicalize devpath
+    let devpath: Utf8PathBuf = device.path().into();
 
     // Handle wiping any existing data
     if opts.wipe {
@@ -193,20 +195,6 @@ pub(crate) fn install_create_rootfs(
     if mntdir.exists() {
         std::fs::remove_dir_all(&mntdir)?;
     }
-    let devdir = mntdir.join("dev");
-    std::fs::create_dir_all(&devdir)?;
-    Task::new("Mounting devtmpfs", "mount")
-        .args(["devtmpfs", "-t", "devtmpfs", devdir.as_str()])
-        .quiet()
-        .run()?;
-
-    // Now at this point, our /dev is a stale snapshot because we don't have udev running.
-    // So from hereon after, we prefix devices with our temporary devtmpfs mount.
-    let reldevice = opts
-        .device
-        .strip_prefix("/dev/")
-        .context("Absolute device path in /dev/ required")?;
-    let device = devdir.join(reldevice);
 
     // Use the install configuration to find the block setup, if we have one
     let block_setup = if let Some(config) = state.install_config.as_ref() {
@@ -245,7 +233,7 @@ pub(crate) fn install_create_rootfs(
     // sgdisk is too verbose
     sgdisk.cmd.stdout(Stdio::null());
     sgdisk.cmd.arg("-Z");
-    sgdisk.cmd.arg(&device);
+    sgdisk.cmd.arg(device.path());
     sgdisk.cmd.args(["-U", "R"]);
     #[allow(unused_assignments)]
     if cfg!(target_arch = "x86_64") {
@@ -316,27 +304,28 @@ pub(crate) fn install_create_rootfs(
     {
         let mut f = std::fs::OpenOptions::new()
             .write(true)
-            .open(&device)
-            .with_context(|| format!("opening {device}"))?;
+            .open(&devpath)
+            .with_context(|| format!("opening {devpath}"))?;
         crate::blockdev::reread_partition_table(&mut f, true)
             .context("Rereading partition table")?;
     }
 
+    // Full udev sync; it'd obviously be better to await just the devices
+    // we're targeting, but this is a simple coarse hammer.
     crate::blockdev::udev_settle()?;
 
     // Now inspect the partitioned device again so we can find the names of the child devices.
-    let device_partitions = crate::blockdev::list_dev(&device)?
+    let device_partitions = crate::blockdev::list_dev(&devpath)?
         .children
         .ok_or_else(|| anyhow::anyhow!("Failed to find children after partitioning"))?;
     // Given a partition number, return the path to its device.
     let findpart = |idx: u32| -> Result<String> {
         // checked_sub is here because our partition numbers start at 1, but the vec starts at 0
-        let devname = device_partitions
+        let devpath = device_partitions
             .get(idx.checked_sub(1).unwrap() as usize)
             .ok_or_else(|| anyhow::anyhow!("Missing partition for index {idx}"))?
-            .name
-            .as_str();
-        Ok(devdir.join(devname).to_string())
+            .path();
+        Ok(devpath)
     };
 
     let base_rootdev = findpart(rootpn)?;
@@ -448,7 +437,7 @@ pub(crate) fn install_create_rootfs(
     };
     Ok(RootSetup {
         luks_device,
-        device,
+        device: devpath,
         rootfs,
         rootfs_fd,
         rootfs_uuid: Some(root_uuid.to_string()),
