@@ -161,7 +161,6 @@ pub(crate) struct InstallConfigOpts {
     pub(crate) generic_image: bool,
 }
 
-/// Perform an installation to a block device.
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct InstallToDiskOpts {
     #[clap(flatten)]
@@ -244,7 +243,6 @@ pub(crate) struct InstallTargetFilesystemOpts {
     pub(crate) skip_finalize: bool,
 }
 
-/// Perform an installation to a mounted filesystem.
 #[derive(Debug, Clone, clap::Parser, PartialEq, Eq)]
 pub(crate) struct InstallToFilesystemOpts {
     #[clap(flatten)]
@@ -260,7 +258,6 @@ pub(crate) struct InstallToFilesystemOpts {
     pub(crate) config_opts: InstallConfigOpts,
 }
 
-/// Perform an installation to the host root filesystem.
 #[derive(Debug, Clone, clap::Parser, PartialEq, Eq)]
 pub(crate) struct InstallToExistingRootOpts {
     /// Configure how existing data is treated.

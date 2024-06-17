@@ -10,13 +10,16 @@ checks as part of a container build
 # DESCRIPTION
 
 Perform relatively inexpensive static analysis checks as part of a
-container build
+container build.
+
+This is intended to be invoked via e.g. \`RUN bootc container lint\` as
+part of a build process; it will error if any problems are detected.
 
 # OPTIONS
 
 **-h**, **\--help**
 
-:   Print help
+:   Print help (see a summary with -h)
 
 # VERSION
 

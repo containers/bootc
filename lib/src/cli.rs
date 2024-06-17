@@ -118,18 +118,37 @@ pub(crate) struct StatusOpts {
     pub(crate) booted: bool,
 }
 
-/// Options for internal testing
 #[cfg(feature = "install")]
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub(crate) enum InstallOpts {
-    /// Install to the target block device
+    /// Install to the target block device.
+    ///
+    /// This command must be invoked inside of the container, which will be
+    /// installed. The container must be run in `--privileged` mode, and hence
+    /// will be able to see all block devices on the system.
+    ///
+    /// The default storage layout uses the root filesystem type configured
+    /// in the container image, alongside any required system partitions such as
+    /// the EFI system partition. Use `install to-filesystem` for anything more
+    /// complex such as RAID, LVM, LUKS etc.
     ToDisk(crate::install::InstallToDiskOpts),
-    /// Install to the target filesystem
+    /// Install to an externally created filesystem structure.
+    ///
+    /// In this variant of installation, the root filesystem alongside any necessary
+    /// platform partitions (such as the EFI system partition) are prepared and mounted by an
+    /// external tool or script. The root filesystem is currently expected to be empty
+    /// by default.
     ToFilesystem(crate::install::InstallToFilesystemOpts),
+    /// Install to the host root filesystem.
+    ///
+    /// This is a variant of `install to-filesystem` that is designed to install "alongside"
+    /// the running host root filesystem. Currently, the host root filesystem's `/boot` partition
+    /// will be wiped, but the content of the existing root will otherwise be retained, and will
+    /// need to be cleaned up if desired when rebooted into the new root.
     ToExistingRoot(crate::install::InstallToExistingRootOpts),
     /// Output JSON to stdout that contains the merged installation configuration
     /// as it may be relevant to calling processes using `install to-filesystem`
-    /// that want to honor e.g. `root-fs-type`.
+    /// that in particular want to discover the desired root filesystem type from the container image.
     ///
     /// At the current time, the only output key is `root-fs-type` which is a string-valued
     /// filesystem name suitable for passing to `mkfs.$type`.
@@ -149,6 +168,9 @@ pub(crate) struct ManOpts {
 pub(crate) enum ContainerOpts {
     /// Perform relatively inexpensive static analysis checks as part of a container
     /// build.
+    ///
+    /// This is intended to be invoked via e.g. `RUN bootc container lint` as part
+    /// of a build process; it will error if any problems are detected.
     Lint,
 }
 
