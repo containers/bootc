@@ -103,7 +103,7 @@ files are often bound to the operating system binaries in `/usr`.
 
 But `/var` has arbitrarily large data (system logs, databases, etc.).  It would
 also not be expected to be rolled back if the operating system state is rolled
-back.  A simple exmaple is that an `apt|dnf downgrade postgresql` should not
+back.  A simple example is that an `apt|dnf downgrade postgresql` should not
 affect the physical database in general in `/var/lib/postgres`.  Similarly,
 a bootc update or rollback should not affect this application data.
 
