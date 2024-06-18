@@ -1,0 +1,29 @@
+provision:
+  hardware:
+    cpu:
+      processors: ">= 2"
+    memory: ">= 6 GB"
+    virtualization:
+      is-supported: true
+prepare:
+  - how: install
+    package:
+      - cargo
+      - zstd
+      - git
+      - libzstd-devel
+      - openssl-devel
+      - ostree-devel
+      - make
+      - jq
+      - podman
+      - skopeo
+      - tmt+provision-virtual
+  - how: shell
+    script: systemctl start libvirtd
+execute:
+  how: tmt
+discover:
+  how: fmf
+  test:
+    - /build-tmt/build-image
