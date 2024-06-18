@@ -14,7 +14,7 @@ Integration test includes two scenarios, `RPM build` and `bootc install/upgrade`
     podman run --rm --privileged -v ./:/workdir:z -e TEST_OS=$TEST_OS -e ARCH=$ARCH -e RHEL_REGISTRY_URL=$RHEL_REGISTRY_URL -e DOWNLOAD_NODE=$DOWNLOAD_NODE --workdir /workdir quay.io/fedora/fedora:40 ./tests/integration/mockbuild.sh
 ```
 
-#### Run Integartion Test
+#### Run Integration Test
 
 Run on a shared test infrastructure using the [`testing farm`](https://docs.testing-farm.io/Testing%20Farm/0.1/cli.html) tool. For example, running on AWS.
 

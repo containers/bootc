@@ -32,8 +32,8 @@ bin-archive: all
 test-bin-archive: all
 	$(MAKE) install-with-tests DESTDIR=tmp-install && $(TAR_REPRODUCIBLE) --zstd -C tmp-install -cf target/bootc.tar.zst . && rm tmp-install -rf
 
-install-kola-tests:
-	install -D -t $(DESTDIR)$(prefix)/lib/coreos-assembler/tests/kola/bootc tests/kolainst/*
+test-tmt:
+	cargo xtask test-tmt
 
 validate:
 	cargo fmt
