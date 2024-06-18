@@ -64,11 +64,10 @@ fn run_bib(sh: &Shell, cimage: &str, tmpdir: &Utf8Path, diskpath: &Utf8Path) -> 
     println!("{cimage} digest={digest}");
     if diskpath.try_exists()? {
         let mut buf = [0u8; 2048];
-        if rustix::fs::getxattr(diskpath.as_std_path(), IMAGEID_XATTR, &mut buf)
+        if let Ok(n) = rustix::fs::getxattr(diskpath.as_std_path(), IMAGEID_XATTR, &mut buf)
             .context("Reading xattr")
-            .is_ok()
         {
-            let buf = String::from_utf8_lossy(&buf);
+            let buf = String::from_utf8_lossy(&buf[0..n]);
             if &*buf == digest.as_str() {
                 println!("Existing disk {diskpath} matches container digest {digest}");
                 return Ok(());
@@ -142,9 +141,10 @@ pub(crate) fn run(opt: Opt) -> Result<()> {
             let testimage = if let Some(i) = testimage.take() {
                 i
             } else {
+                let source_date_epoch = cmd!(&ctx.sh, "git log -1 --pretty=%ct").read()?;
                 cmd!(
                     &ctx.sh,
-                    "podman build --build-arg=variant=tmt -t {TEST_IMAGE} -f hack/Containerfile ."
+                    "podman build --timestamp={source_date_epoch} --build-arg=variant=tmt -t {TEST_IMAGE} -f hack/Containerfile ."
                 )
                 .run()?;
                 TEST_IMAGE.to_string()
