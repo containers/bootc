@@ -1,6 +1,7 @@
 # NAME
 
-bootc-install-to-filesystem - Install to the target filesystem
+bootc-install-to-filesystem - Install to an externally created
+filesystem structure
 
 # SYNOPSIS
 
@@ -16,7 +17,12 @@ bootc-install-to-filesystem - Install to the target filesystem
 
 # DESCRIPTION
 
-Install to the target filesystem
+Install to an externally created filesystem structure.
+
+In this variant of installation, the root filesystem alongside any
+necessary platform partitions (such as the EFI system partition) are
+prepared and mounted by an external tool or script. The root filesystem
+is currently expected to be empty by default.
 
 # OPTIONS
 
@@ -75,7 +81,8 @@ previous paragraph. See skopeo(1) for accepted formats.
 
 **\--target-transport**=*TARGET_TRANSPORT* \[default: registry\]
 
-:   The transport; e.g. oci, oci-archive, containers-storage. Defaults to \`registry\`
+:   The transport; e.g. oci, oci-archive, containers-storage. Defaults
+    to \`registry\`
 
 **\--target-imgref**=*TARGET_IMGREF*
 

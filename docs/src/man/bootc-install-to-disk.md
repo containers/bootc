@@ -14,7 +14,16 @@ bootc-install-to-disk - Install to the target block device
 
 # DESCRIPTION
 
-Install to the target block device
+Install to the target block device.
+
+This command must be invoked inside of the container, which will be
+installed. The container must be run in \`\--privileged\` mode, and
+hence will be able to see all block devices on the system.
+
+The default storage layout uses the root filesystem type configured in
+the container image, alongside any required system partitions such as
+the EFI system partition. Use \`install to-filesystem\` for anything
+more complex such as RAID, LVM, LUKS etc.
 
 # OPTIONS
 
@@ -58,7 +67,8 @@ previous paragraph. See skopeo(1) for accepted formats.
 
 **\--target-transport**=*TARGET_TRANSPORT* \[default: registry\]
 
-:   The transport; e.g. oci, oci-archive, containers-storage. Defaults to \`registry\`
+:   The transport; e.g. oci, oci-archive, containers-storage. Defaults
+    to \`registry\`
 
 **\--target-imgref**=*TARGET_IMGREF*
 

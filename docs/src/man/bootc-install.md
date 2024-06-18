@@ -42,11 +42,11 @@ bootc-install-to-disk(8)
 
 bootc-install-to-filesystem(8)
 
-:   Install to the target filesystem
+:   Install to an externally created filesystem structure
 
 bootc-install-to-existing-root(8)
 
-:   Perform an installation to the host root filesystem
+:   Install to the host root filesystem
 
 bootc-install-print-configuration(8)
 

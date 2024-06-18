@@ -1,7 +1,6 @@
 # NAME
 
-bootc-install-to-existing-root - Perform an installation to the host
-root filesystem
+bootc-install-to-existing-root - Install to the host root filesystem
 
 # SYNOPSIS
 
@@ -16,7 +15,13 @@ root filesystem
 
 # DESCRIPTION
 
-Perform an installation to the host root filesystem
+Install to the host root filesystem.
+
+This is a variant of \`install to-filesystem\` that is designed to
+install \"alongside\" the running host root filesystem. Currently, the
+host root filesystems \`/boot\` partition will be wiped, but the content
+of the existing root will otherwise be retained, and will need to be
+cleaned up if desired when rebooted into the new root.
 
 # OPTIONS
 
@@ -48,7 +53,8 @@ previous paragraph. See skopeo(1) for accepted formats.
 
 **\--target-transport**=*TARGET_TRANSPORT* \[default: registry\]
 
-:   The transport; e.g. oci, oci-archive, containers-storage. Defaults to \`registry\`
+:   The transport; e.g. oci, oci-archive, containers-storage. Defaults
+    to \`registry\`
 
 **\--target-imgref**=*TARGET_IMGREF*
 
