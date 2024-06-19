@@ -455,7 +455,7 @@
 
     # case: check karg
     - name: grep for kargs
-      shell: cat /proc/cmdline | grep $item
+      shell: cat /proc/cmdline | grep {{item}}
       with_items: "{{ kargs.split(',') }}"
       register: kargs_check
       # grep will exit with 1 when no results found.
