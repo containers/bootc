@@ -8,14 +8,6 @@ provision:
 prepare:
   - how: install
     package:
-      - cargo
-      - zstd
-      - git
-      - libzstd-devel
-      - openssl-devel
-      - ostree-devel
-      - make
-      - jq
       - podman
       - skopeo
       - tmt+provision-virtual
