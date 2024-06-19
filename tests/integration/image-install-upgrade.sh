@@ -91,7 +91,7 @@ RUN dnf -y update ./bootc-2*.${ARCH}.rpm && \
 RUN dnf -y install python3 cloud-init && \
     dnf -y clean all
 COPY auth.json /etc/ostree/auth.json
-RUN cat <<EOF >> /usr/lib/bootc/install/00-nosmt.toml
+RUN cat <<EOF >> /usr/lib/bootc/install/00-mitigations.toml
 [install.filesystem.root]
 type = "xfs"
 [install]
@@ -161,7 +161,7 @@ case "$IMAGE_TYPE" in
             -v /dev:/dev \
             -v .:/output \
             "$TEST_IMAGE_URL" \
-            bootc install to-disk --filesystem "$ROOTFS" --generic-image --via-loopback --karg=nosmt /output/disk.raw
+            bootc install to-disk --filesystem "$ROOTFS" --generic-image --via-loopback /output/disk.raw
 
         sudo qemu-img convert -f raw ./disk.raw -O qcow2 "/var/lib/libvirt/images/disk.qcow2"
         rm -f disk.raw
