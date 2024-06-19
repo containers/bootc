@@ -27,7 +27,9 @@ accepted!
   While this isn't specific to bootc, you will find the experience of working on Rust
   is greatly aided with use of e.g. [rust-analyzer](https://github.com/rust-lang/rust-analyzer/).
 - An installation of [podman-bootc](https://github.com/containers/podman-bootc-cli)
-  which note on Linux requires that you set up "podman machine".
+  which note on Linux requires that you set up "podman machine". This document
+  assumes you have the environment variable `CONTAINER_CONNECTION` set to your
+  podman machine's name.
 
 ## Ensure you're familiar with a bootc system
 
