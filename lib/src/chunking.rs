@@ -30,7 +30,10 @@ pub(crate) const MAX_CHUNKS: u32 = 64;
 /// we will just drop down to one.
 const MIN_CHUNKED_LAYERS: u32 = 4;
 
+/// A convenient alias for a reference-counted, immutable string.
 type RcStr = Rc<str>;
+/// Maps from a checksum to its size and file names (multiple in the case of
+/// hard links).
 pub(crate) type ChunkMapping = BTreeMap<RcStr, (u64, Vec<Utf8PathBuf>)>;
 // TODO type PackageSet = HashSet<RcStr>;
 
