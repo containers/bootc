@@ -7,17 +7,20 @@
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use anyhow::{bail, Context, Result};
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+use camino::{Utf8Path, Utf8PathBuf};
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use openat_ext::OpenatDirExt;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use openssl::hash::{Hasher, MessageDigest};
+use rustix::fd::BorrowedFd;
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Display;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use std::os::unix::io::AsRawFd;
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-use std::path::Path;
+use std::os::unix::process::CommandExt;
+use std::process::Command;
 
 /// The prefix we apply to our temporary files.
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -231,7 +234,7 @@ impl FileTree {
     }
 }
 
-// Recursively remove all files in the directory that start with our TMP_PREFIX
+// Recursively remove all files/dirs in the directory that start with our TMP_PREFIX
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn cleanup_tmp(dir: &openat::Dir) -> Result<()> {
     for entry in dir.list_dir(".")? {
@@ -245,8 +248,13 @@ fn cleanup_tmp(dir: &openat::Dir) -> Result<()> {
 
         match dir.get_file_type(&entry)? {
             openat::SimpleType::Dir => {
-                let child = dir.sub_dir(name)?;
-                cleanup_tmp(&child)?;
+                if name.starts_with(TMP_PREFIX) {
+                    dir.remove_all(name)?;
+                    continue;
+                } else {
+                    let child = dir.sub_dir(name)?;
+                    cleanup_tmp(&child)?;
+                }
             }
             openat::SimpleType::File => {
                 if name.starts_with(TMP_PREFIX) {
@@ -272,7 +280,6 @@ pub(crate) struct ApplyUpdateOptions {
 // Let's just fork off a helper process for now.
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(crate) fn syncfs(d: &openat::Dir) -> Result<()> {
-    use rustix::fd::BorrowedFd;
     use rustix::fs::{Mode, OFlags};
     let d = unsafe { BorrowedFd::borrow_raw(d.as_raw_fd()) };
     let oflags = OFlags::RDONLY | OFlags::CLOEXEC | OFlags::DIRECTORY;
@@ -280,12 +287,37 @@ pub(crate) fn syncfs(d: &openat::Dir) -> Result<()> {
     rustix::fs::syncfs(d).map_err(Into::into)
 }
 
+/// Copy from src to dst at root dir
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-fn tmpname_for_path<P: AsRef<Path>>(path: P) -> std::path::PathBuf {
-    let path = path.as_ref();
-    let mut buf = path.file_name().expect("filename").to_os_string();
-    buf.push(TMP_PREFIX);
-    path.with_file_name(buf)
+fn copy_dir(root: &openat::Dir, src: &str, dst: &str) -> Result<()> {
+    let rootfd = unsafe { BorrowedFd::borrow_raw(root.as_raw_fd()) };
+    let r = unsafe {
+        Command::new("cp")
+            .args(["-a"])
+            .arg(src)
+            .arg(dst)
+            .pre_exec(move || rustix::process::fchdir(rootfd).map_err(Into::into))
+            .status()?
+    };
+    if !r.success() {
+        anyhow::bail!("Failed to copy {src} to {dst}");
+    }
+    log::debug!("Copy {src} to {dst}");
+    Ok(())
+}
+
+/// Get first sub dir and tmp sub dir for the path
+/// "fedora/foo/bar" -> ("fedora", ".btmp.fedora")
+/// "foo" -> ("foo", ".btmp.foo")
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn get_first_dir(path: &Utf8Path) -> Result<(&Utf8Path, String)> {
+    let first = path
+        .iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Invalid path: {path}"))?;
+    let mut tmp = first.to_owned();
+    tmp.insert_str(0, TMP_PREFIX);
+    Ok((first.into(), tmp))
 }
 
 /// Given two directories, apply a diff generated from srcdir to destdir
@@ -302,41 +334,83 @@ pub(crate) fn apply_diff(
     let opts = opts.unwrap_or(&default_opts);
     cleanup_tmp(destdir).context("cleaning up temporary files")?;
 
-    // Write new and changed files
-    for pathstr in diff.additions.iter().chain(diff.changes.iter()) {
-        let path = Path::new(pathstr);
-        if let Some(parent) = path.parent() {
-            destdir.ensure_dir_all(parent, DEFAULT_FILE_MODE)?;
+    let mut updates = HashMap::new();
+    // Handle removals in temp dir, or remove directly if file not in dir
+    if !opts.skip_removals {
+        for pathstr in diff.removals.iter() {
+            let path = Utf8Path::new(pathstr);
+            let (first_dir, first_dir_tmp) = get_first_dir(path)?;
+            let path_tmp;
+            if first_dir != path {
+                path_tmp = Utf8Path::new(&first_dir_tmp).join(path.strip_prefix(&first_dir)?);
+                // copy to temp dir and remember
+                if !destdir.exists(&first_dir_tmp)? {
+                    copy_dir(destdir, first_dir.as_str(), &first_dir_tmp)?;
+                    updates.insert(first_dir, first_dir_tmp);
+                }
+            } else {
+                path_tmp = path.to_path_buf();
+            }
+            destdir
+                .remove_file(path_tmp.as_std_path())
+                .with_context(|| format!("removing {:?}", path_tmp))?;
         }
-        let destp = tmpname_for_path(path);
-        srcdir
-            .copy_file_at(path, destdir, destp.as_path())
-            .with_context(|| format!("writing {}", &pathstr))?;
     }
-    // Ensure all of the new files are written persistently to disk
+    // Write changed or new files to temp dir or temp file
+    for pathstr in diff.changes.iter().chain(diff.additions.iter()) {
+        let path = Utf8Path::new(pathstr);
+        let (first_dir, first_dir_tmp) = get_first_dir(path)?;
+        let mut path_tmp = Utf8PathBuf::from(&first_dir_tmp);
+        if first_dir != path {
+            if !destdir.exists(&first_dir_tmp)? && destdir.exists(first_dir.as_std_path())? {
+                // copy to temp dir if not exists
+                copy_dir(destdir, first_dir.as_str(), &first_dir_tmp)?;
+            }
+            path_tmp = path_tmp.join(path.strip_prefix(&first_dir)?);
+            // ensure new additions dir exists
+            if let Some(parent) = path_tmp.parent() {
+                destdir.ensure_dir_all(parent.as_std_path(), DEFAULT_FILE_MODE)?;
+            }
+            // remove changed file before copying
+            destdir
+                .remove_file_optional(path_tmp.as_std_path())
+                .with_context(|| format!("removing {path_tmp} before copying"))?;
+        }
+        updates.insert(first_dir, first_dir_tmp);
+        srcdir
+            .copy_file_at(path.as_std_path(), destdir, path_tmp.as_std_path())
+            .with_context(|| format!("copying {:?} to {:?}", path, path_tmp))?;
+    }
+
+    // do local exchange or rename
+    for (dst, tmp) in updates.iter() {
+        let dst = dst.as_std_path();
+        log::trace!("doing local exchange for {} and {:?}", tmp, dst);
+        if destdir.exists(dst)? {
+            destdir
+                .local_exchange(tmp, dst)
+                .with_context(|| format!("exchange for {} and {:?}", tmp, dst))?;
+        } else {
+            destdir
+                .local_rename(tmp, dst)
+                .with_context(|| format!("rename for {} and {:?}", tmp, dst))?;
+        }
+    }
+    // Ensure all of the updates & changes are written persistently to disk
     if !opts.skip_sync {
         syncfs(destdir)?;
     }
-    // Now move them all into place (TODO track interruption)
-    for path in diff.additions.iter().chain(diff.changes.iter()) {
-        let pathtmp = tmpname_for_path(path);
-        destdir
-            .local_rename(&pathtmp, path)
-            .with_context(|| format!("renaming {path}"))?;
-    }
-    if !opts.skip_removals {
-        for path in diff.removals.iter() {
-            destdir
-                .remove_file_optional(path)
-                .with_context(|| format!("removing {path}"))?;
-        }
+
+    // finally remove the temp dir
+    for (_, tmp) in updates.iter() {
+        log::trace!("cleanup: {}", tmp);
+        destdir.remove_all(tmp).context("clean up temp")?;
     }
     // A second full filesystem sync to narrow any races rather than
     // waiting for writeback to kick in.
     if !opts.skip_sync {
         syncfs(destdir)?;
     }
-
     Ok(())
 }
 
@@ -345,6 +419,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::io::Write;
+    use std::path::Path;
 
     fn run_diff(a: &openat::Dir, b: &openat::Dir) -> Result<FileTreeDiff> {
         let ta = FileTree::new_from_dir(a)?;
@@ -506,6 +581,131 @@ mod tests {
             "newgrub data"
         );
         assert!(!a.join(relp).join("shim.x64").exists());
+        Ok(())
+    }
+    #[test]
+    fn test_get_first_dir() -> Result<()> {
+        // test path
+        let path = Utf8Path::new("foo/subdir/bar");
+        let (tp, tp_tmp) = get_first_dir(path)?;
+        assert_eq!(tp, Utf8Path::new("foo"));
+        assert_eq!(tp_tmp, ".btmp.foo");
+        // test file
+        let path = Utf8Path::new("testfile");
+        let (tp, tp_tmp) = get_first_dir(path)?;
+        assert_eq!(tp, Utf8Path::new("testfile"));
+        assert_eq!(tp_tmp, ".btmp.testfile");
+        Ok(())
+    }
+    #[test]
+    fn test_cleanup_tmp() -> Result<()> {
+        let tmpd = tempfile::tempdir()?;
+        let p = tmpd.path();
+        let pa = p.join("a/.btmp.a");
+        let pb = p.join(".btmp.b/b");
+        std::fs::create_dir_all(&pa)?;
+        std::fs::create_dir_all(&pb)?;
+        let dp = openat::Dir::open(p)?;
+        {
+            let mut buf = dp.write_file("a/foo", 0o644)?;
+            buf.write_all("foocontents".as_bytes())?;
+            let mut buf = dp.write_file("a/.btmp.foo", 0o644)?;
+            buf.write_all("foocontents".as_bytes())?;
+            let mut buf = dp.write_file(".btmp.b/foo", 0o644)?;
+            buf.write_all("foocontents".as_bytes())?;
+        }
+        assert!(dp.exists("a/.btmp.a")?);
+        assert!(dp.exists("a/foo")?);
+        assert!(dp.exists("a/.btmp.foo")?);
+        assert!(dp.exists("a/.btmp.a")?);
+        assert!(dp.exists(".btmp.b/b")?);
+        assert!(dp.exists(".btmp.b/foo")?);
+        cleanup_tmp(&dp)?;
+        assert!(!dp.exists("a/.btmp.a")?);
+        assert!(dp.exists("a/foo")?);
+        assert!(!dp.exists("a/.btmp.foo")?);
+        assert!(!dp.exists(".btmp.b")?);
+        Ok(())
+    }
+    #[test]
+    fn test_apply_with_file() -> Result<()> {
+        let tmpd = tempfile::tempdir()?;
+        let p = tmpd.path();
+        let pa = p.join("a");
+        let pb = p.join("b");
+        std::fs::create_dir(&pa)?;
+        std::fs::create_dir(&pb)?;
+        let a = openat::Dir::open(&pa)?;
+        let b = openat::Dir::open(&pb)?;
+        a.create_dir("foo", 0o755)?;
+        a.create_dir("bar", 0o755)?;
+        let foo = Path::new("foo/bar");
+        let bar = Path::new("bar/foo");
+        let testfile = "testfile";
+        {
+            let mut buf = a.write_file(foo, 0o644)?;
+            buf.write_all("foocontents".as_bytes())?;
+            let mut buf = a.write_file(bar, 0o644)?;
+            buf.write_all("barcontents".as_bytes())?;
+            let mut buf = a.write_file(testfile, 0o644)?;
+            buf.write_all("testfilecontents".as_bytes())?;
+        }
+
+        let diff = run_diff(&a, &b)?;
+        assert_eq!(diff.count(), 3);
+        b.create_dir("foo", 0o755)?;
+        {
+            let mut buf = b.write_file(foo, 0o644)?;
+            buf.write_all("foocontents".as_bytes())?;
+        }
+        let b_btime_foo = fs::metadata(pb.join(foo))?.created()?;
+
+        {
+            let diff = run_diff(&b, &a)?;
+            assert_eq!(diff.count(), 2);
+            apply_diff(&a, &b, &diff, None).context("test additional files")?;
+            assert_eq!(
+                String::from_utf8(std::fs::read(pb.join(testfile))?)?,
+                "testfilecontents"
+            );
+            assert_eq!(
+                String::from_utf8(std::fs::read(pb.join(bar))?)?,
+                "barcontents"
+            );
+            // creation time is not changed for unchanged file
+            let b_btime_foo_new = fs::metadata(pb.join(foo))?.created()?;
+            assert_eq!(b_btime_foo_new, b_btime_foo);
+        }
+        {
+            fs::write(pa.join(testfile), "newtestfile")?;
+            fs::write(pa.join(bar), "newbar")?;
+            let diff = run_diff(&b, &a)?;
+            assert_eq!(diff.count(), 2);
+            apply_diff(&a, &b, &diff, None).context("test changed files")?;
+            assert_eq!(
+                String::from_utf8(std::fs::read(pb.join(testfile))?)?,
+                "newtestfile"
+            );
+            assert_eq!(String::from_utf8(std::fs::read(pb.join(bar))?)?, "newbar");
+            // creation time is not changed for unchanged file
+            let b_btime_foo_new = fs::metadata(pb.join(foo))?.created()?;
+            assert_eq!(b_btime_foo_new, b_btime_foo);
+        }
+        {
+            a.remove_file(testfile)?;
+            a.remove_file(bar)?;
+            let diff = run_diff(&b, &a)?;
+            assert_eq!(diff.count(), 2);
+            apply_diff(&a, &b, &diff, None).context("test removed files")?;
+            assert_eq!(b.exists(testfile)?, false);
+            assert_eq!(b.exists(bar)?, false);
+            let diff = run_diff(&b, &a)?;
+            assert_eq!(diff.count(), 0);
+            // creation time is not changed for unchanged file
+            let b_btime_foo_new = fs::metadata(pb.join(foo))?.created()?;
+            assert_eq!(b_btime_foo_new, b_btime_foo);
+        }
+
         Ok(())
     }
 }
