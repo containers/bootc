@@ -324,7 +324,7 @@ pub(crate) enum Opt {
 /// TODO use https://github.com/ostreedev/ostree/pull/2779 once
 /// we can depend on a new enough ostree
 #[context("Ensuring mountns")]
-pub(crate) async fn ensure_self_unshared_mount_namespace() -> Result<()> {
+pub(crate) fn ensure_self_unshared_mount_namespace() -> Result<()> {
     let uid = rustix::process::getuid();
     if !uid.is_root() {
         tracing::debug!("Not root, assuming no need to unshare");
@@ -354,6 +354,7 @@ pub(crate) async fn ensure_self_unshared_mount_namespace() -> Result<()> {
 /// TODO drain this and the above into SysrootLock
 #[context("Acquiring sysroot")]
 pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootLock> {
+    prepare_for_write()?;
     let sysroot = ostree::Sysroot::new_default();
     sysroot.set_mount_namespace_in_use();
     let sysroot = ostree_ext::sysroot::SysrootLock::new_from_sysroot(&sysroot).await?;
@@ -375,8 +376,21 @@ pub(crate) fn require_root() -> Result<()> {
 }
 
 /// A few process changes that need to be made for writing.
+/// IMPORTANT: This may end up re-executing the current process,
+/// so anything that happens before this should be idempotent.
 #[context("Preparing for write")]
-pub(crate) async fn prepare_for_write() -> Result<()> {
+fn prepare_for_write() -> Result<()> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    // This is intending to give "at most once" semantics to this
+    // function. We should never invoke this from multiple threads
+    // at the same time, but verifying "on main thread" is messy.
+    // Yes, using SeqCst is likely overkill, but there is nothing perf
+    // sensitive about this.
+    static ENTERED: AtomicBool = AtomicBool::new(false);
+    if ENTERED.load(Ordering::SeqCst) {
+        return Ok(());
+    }
     if ostree_ext::container_utils::is_ostree_container()? {
         anyhow::bail!(
             "Detected container (ostree base); this command requires a booted host system."
@@ -389,17 +403,17 @@ pub(crate) async fn prepare_for_write() -> Result<()> {
         anyhow::bail!("This command requires an ostree-booted host system");
     }
     crate::cli::require_root()?;
-    ensure_self_unshared_mount_namespace().await?;
+    ensure_self_unshared_mount_namespace()?;
     if crate::lsm::selinux_enabled()? && !crate::lsm::selinux_ensure_install()? {
         tracing::warn!("Do not have install_t capabilities");
     }
+    ENTERED.store(true, Ordering::SeqCst);
     Ok(())
 }
 
 /// Implementation of the `bootc upgrade` CLI command.
 #[context("Upgrading")]
 async fn upgrade(opts: UpgradeOpts) -> Result<()> {
-    prepare_for_write().await?;
     let sysroot = &get_locked_sysroot().await?;
     let repo = &sysroot.repo();
     let (booted_deployment, _deployments, host) =
@@ -539,7 +553,6 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
         return Ok(());
     }
 
-    prepare_for_write().await?;
     let cancellable = gio::Cancellable::NONE;
 
     let sysroot = &get_locked_sysroot().await?;
@@ -585,7 +598,6 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
 /// Implementation of the `bootc rollback` CLI command.
 #[context("Rollback")]
 async fn rollback(_opts: RollbackOpts) -> Result<()> {
-    prepare_for_write().await?;
     let sysroot = &get_locked_sysroot().await?;
     crate::deploy::rollback(sysroot).await
 }
@@ -593,7 +605,6 @@ async fn rollback(_opts: RollbackOpts) -> Result<()> {
 /// Implementation of the `bootc edit` CLI command.
 #[context("Editing spec")]
 async fn edit(opts: EditOpts) -> Result<()> {
-    prepare_for_write().await?;
     let sysroot = &get_locked_sysroot().await?;
     let (booted_deployment, _deployments, host) =
         crate::status::get_status_require_booted(sysroot)?;
