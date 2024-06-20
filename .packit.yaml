@@ -1,0 +1,9 @@
+---
+jobs:
+  - job: tests
+    trigger: pull_request
+    targets:
+      - fedora-40-x86_64
+    tmt_plan: /build
+    skip_build: true
+    identifier: tmt-integration-test
