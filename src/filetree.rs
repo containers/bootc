@@ -17,8 +17,6 @@ use std::fmt::Display;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use std::os::unix::io::AsRawFd;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-use std::os::unix::process::CommandExt;
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use std::path::Path;
 
 /// The prefix we apply to our temporary files.
@@ -274,20 +272,12 @@ pub(crate) struct ApplyUpdateOptions {
 // Let's just fork off a helper process for now.
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(crate) fn syncfs(d: &openat::Dir) -> Result<()> {
-    let d = d.sub_dir(".").expect("subdir");
-    let mut c = std::process::Command::new("sync");
-    let c = c.args(["-f", "."]);
-    unsafe {
-        c.pre_exec(move || {
-            nix::unistd::fchdir(d.as_raw_fd()).expect("fchdir");
-            Ok(())
-        })
-    };
-    let r = c.status().context("syncfs failed")?;
-    if !r.success() {
-        bail!("syncfs failed");
-    }
-    Ok(())
+    use rustix::fd::BorrowedFd;
+    use rustix::fs::{Mode, OFlags};
+    let d = unsafe { BorrowedFd::borrow_raw(d.as_raw_fd()) };
+    let oflags = OFlags::RDONLY | OFlags::CLOEXEC | OFlags::DIRECTORY;
+    let d = rustix::fs::openat(d, ".", oflags, Mode::empty())?;
+    rustix::fs::syncfs(d).map_err(Into::into)
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

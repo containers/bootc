@@ -5,6 +5,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 use fn_error_context::context;
+use rustix::fd::BorrowedFd;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
@@ -24,12 +25,12 @@ pub(crate) struct Findmnt {
 
 #[context("Inspecting filesystem {path:?}")]
 pub(crate) fn inspect_filesystem(root: &openat::Dir, path: &str) -> Result<Filesystem> {
-    let rootfd = root.as_raw_fd();
+    let rootfd = unsafe { BorrowedFd::borrow_raw(root.as_raw_fd()) };
     // SAFETY: This is unsafe just for the pre_exec, when we port to cap-std we can use cap-std-ext
     let o = unsafe {
         Command::new("findmnt")
             .args(["-J", "-v", "--output=SOURCE,FSTYPE,OPTIONS,UUID", path])
-            .pre_exec(move || nix::unistd::fchdir(rootfd).map_err(Into::into))
+            .pre_exec(move || rustix::process::fchdir(rootfd).map_err(Into::into))
             .output()?
     };
     let st = o.status;

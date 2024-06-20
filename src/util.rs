@@ -67,10 +67,9 @@ pub(crate) fn filenames(dir: &openat::Dir) -> Result<HashSet<String>> {
 }
 
 pub(crate) fn ensure_writable_mount<P: AsRef<Path>>(p: P) -> Result<()> {
-    use nix::sys::statvfs;
     let p = p.as_ref();
-    let stat = statvfs::statvfs(p)?;
-    if !stat.flags().contains(statvfs::FsFlags::ST_RDONLY) {
+    let stat = rustix::fs::statvfs(p)?;
+    if !stat.f_flag.contains(rustix::fs::StatVfsMountFlags::RDONLY) {
         return Ok(());
     }
     let status = std::process::Command::new("mount")
