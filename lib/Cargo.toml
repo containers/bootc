@@ -16,7 +16,7 @@ anstream = "0.6.13"
 anstyle = "1.0.6"
 anyhow = "1.0.82"
 camino = { version = "1.1.6", features = ["serde1"] }
-ostree-ext = { version = "0.14.0"  }
+ostree-ext = { version = "0.14.0" }
 chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version= "4.5.4", features = ["derive","cargo"] }
 clap_mangen = { version = "0.2.20", optional = true }

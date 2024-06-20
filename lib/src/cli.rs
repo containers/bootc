@@ -17,6 +17,7 @@ use fn_error_context::context;
 use ostree::gio;
 use ostree_container::store::PrepareResult;
 use ostree_ext::container as ostree_container;
+use ostree_ext::container::Transport;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
 
@@ -191,6 +192,59 @@ pub(crate) enum ContainerOpts {
     Lint,
 }
 
+/// Subcommands which operate on images.
+#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
+pub(crate) enum ImageOpts {
+    /// List fetched images stored in the bootc storage.
+    ///
+    /// Note that these are distinct from images stored via e.g. `podman`.
+    List,
+    /// Copy a container image from the bootc storage to a target.
+    ///
+    /// ## Copying the booted container image to containers-storage: (podman)
+    ///
+    /// The source and target are both optional; if both are left unspecified,
+    /// via a simple invocation of `bootc image push`, then the default is to
+    /// push the currently booted image to `containers-storage` (as used by podman, etc.)
+    /// and tagged with the image name `localhost/bootc`,
+    ///
+    /// ## Copying the booted container image to a remote registry
+    ///
+    /// Aside from the special case above, default transport is `registry`. This
+    /// means that an invocation of
+    ///
+    /// `bootc image push --target quay.io/example/someimage:latest` will push the
+    /// booted container image to the target registry. This will be done via an
+    /// invocation equivalent to `skopeo copy`, and hence the defaults for that apply.
+    /// For example, the default registry authentication file applies.
+    ///
+    /// ## Copying a non-default container image
+    ///
+    /// It is also possible to copy an image other than the currently booted one by
+    /// specifying `--source`.
+    ///
+    /// ## Pulling images
+    ///
+    /// At the current time there is no explicit support for pulling images other than indirectly
+    /// via e.g. `bootc switch` or `bootc upgrade`.
+    Push {
+        /// The transport; e.g. oci, oci-archive, containers-storage.  Defaults to `registry`.
+        ///
+        /// For more information, see `man containers-transports`.
+        #[clap(long, default_value = "registry")]
+        transport: String,
+
+        #[clap(long)]
+        /// The source image; if not specified, the booted image will be used.
+        source: Option<String>,
+
+        #[clap(long)]
+        /// The destination; if not specified, then the default is to push to `containers-storage:localhost/bootc`;
+        /// this will make the image accessible via e.g. `podman run localhost/bootc` and for builds.
+        target: Option<String>,
+    },
+}
+
 /// Hidden, internal only options
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub(crate) enum InternalsOpts {
@@ -321,6 +375,12 @@ pub(crate) enum Opt {
     /// Operations which can be executed as part of a container build.
     #[clap(subcommand)]
     Container(ContainerOpts),
+    /// Operations on container images
+    ///
+    /// Stability: This interface is not declared stable and may change or be removed
+    /// at any point in the future.
+    #[clap(subcommand, hide = true)]
+    Image(ImageOpts),
     /// Execute the given command in the host mount namespace
     #[cfg(feature = "install")]
     #[clap(hide = true)]
@@ -730,6 +790,17 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
 
                 lints::lint(root)?;
                 Ok(())
+            }
+        },
+        Opt::Image(opts) => match opts {
+            ImageOpts::List => crate::image::list_entrypoint().await,
+            ImageOpts::Push {
+                transport,
+                source,
+                target,
+            } => {
+                let transport = Transport::try_from(transport.as_str())?;
+                crate::image::push_entrypoint(transport, source.as_deref(), target.as_deref()).await
             }
         },
         #[cfg(feature = "install")]

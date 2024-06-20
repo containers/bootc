@@ -20,6 +20,7 @@
 pub mod cli;
 pub(crate) mod deploy;
 pub(crate) mod generator;
+mod image;
 pub(crate) mod journal;
 pub(crate) mod kargs;
 mod lints;
