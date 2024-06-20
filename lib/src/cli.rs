@@ -700,8 +700,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     );
                 }
 
-                let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-                lints::lint(&root)?;
+                lints::lint(root)?;
                 Ok(())
             }
         },
