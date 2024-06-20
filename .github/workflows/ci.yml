@@ -19,26 +19,11 @@ env:
 
 jobs:
   c9s-bootc-e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      # We use docker to build because it updates to the latest, whereas right now ubuntu-latest
-      # has podman and buildah from ~2021 (insane!)
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
       - uses: actions/checkout@v3
-      - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: "build-c9s"
-      - name: Build and export to Docker
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ci/Containerfile.c9s
-          load: true
-          tags: localhost/bootupd:latest
-      - name: Copy to podman
-        run: sudo skopeo copy docker-daemon:localhost/bootupd:latest containers-storage:localhost/bootupd:latest
+      - name: build
+        run: sudo podman build -t localhost/bootupd:latest -f ci/Containerfile.c9s .
       - name: bootc install to disk
         run: |
           set -xeuo pipefail
@@ -60,7 +45,7 @@ jobs:
         run: |
           set -xeuo pipefail
           sudo podman run --rm -ti --privileged -v /:/target --pid=host --security-opt label=disable \
-            -v /var/lib/containers:/var/lib/containers \
+            -v /dev:/dev -v /var/lib/containers:/var/lib/containers \
             localhost/bootupd:latest bootc install to-filesystem --skip-fetch-check \
             --disable-selinux --replace=alongside /target
           # Verify we injected static configs
