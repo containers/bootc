@@ -19,3 +19,7 @@ discover:
   how: fmf
   test:
     - /build-tmt/build-image
+finish:
+  how: shell
+  script:
+    - cp -r /var/tmp/tmt/run-001 $TMT_PLAN_DATA
