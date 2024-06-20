@@ -13,6 +13,7 @@ use anyhow::{bail, Context, Result};
 use fn_error_context::context;
 use openat_ext::OpenatDirExt;
 use os_release::OsRelease;
+use rustix::fd::BorrowedFd;
 use walkdir::WalkDir;
 use widestring::U16CString;
 
@@ -82,9 +83,9 @@ impl Efi {
             if !mnt.exists() {
                 continue;
             }
-            let st = nix::sys::statfs::statfs(&mnt)
-                .with_context(|| format!("statfs failed for {mnt:?}"))?;
-            if st.filesystem_type() != nix::sys::statfs::MSDOS_SUPER_MAGIC {
+            let st =
+                rustix::fs::statfs(&mnt).with_context(|| format!("statfs failed for {mnt:?}"))?;
+            if st.f_type != libc::MSDOS_SUPER_MAGIC {
                 continue;
             }
             log::debug!("Reusing existing {mnt:?}");
@@ -454,10 +455,13 @@ impl Drop for Efi {
 }
 
 fn validate_esp(dir: &openat::Dir) -> Result<()> {
-    let stat = nix::sys::statfs::fstatfs(dir)?;
-    let fstype = stat.filesystem_type();
-    if fstype != nix::sys::statfs::MSDOS_SUPER_MAGIC {
-        bail!("EFI mount is not a msdos filesystem, but is {:?}", fstype);
+    let dir = unsafe { BorrowedFd::borrow_raw(dir.as_raw_fd()) };
+    let stat = rustix::fs::fstatfs(&dir)?;
+    if stat.f_type != libc::MSDOS_SUPER_MAGIC {
+        bail!(
+            "EFI mount is not a msdos filesystem, but is {:?}",
+            stat.f_type
+        );
     };
     Ok(())
 }

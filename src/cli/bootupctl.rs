@@ -142,7 +142,7 @@ fn running_in_systemd() -> bool {
 
 /// Require root permission
 fn require_root_permission() -> Result<()> {
-    if !nix::unistd::Uid::effective().is_root() {
+    if !rustix::process::getuid().is_root() {
         anyhow::bail!("This command requires root privileges")
     }
     Ok(())
