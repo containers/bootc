@@ -1,3 +1,6 @@
 .cosa
 target
 !target/dev-rootfs
+# These directories don't contribute to our container build
+docs/
+plans/
