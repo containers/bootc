@@ -246,7 +246,6 @@ pub(crate) fn install_create_rootfs(
     sgdisk.cmd.arg("-Z");
     sgdisk.cmd.arg(device.path());
     sgdisk.cmd.args(["-U", "R"]);
-    #[allow(unused_assignments)]
     if cfg!(target_arch = "x86_64") {
         // BIOS-BOOT
         partno += 1;
@@ -258,15 +257,7 @@ pub(crate) fn install_create_rootfs(
             Some("21686148-6449-6E6F-744E-656564454649"),
         );
     } else if cfg!(target_arch = "aarch64") {
-        // reserved
-        partno += 1;
-        sgdisk_partition(
-            &mut sgdisk.cmd,
-            partno,
-            "0:+1M",
-            "reserved",
-            Some("8DA63339-0007-60C0-C436-083AC8230908"),
-        );
+        // Only UEFI here for now
     } else {
         anyhow::bail!("Unsupported architecture: {}", std::env::consts::ARCH);
     }
