@@ -25,7 +25,7 @@ olpc-cjson = "0.1.1"
 clap = { version= "4.2", features = ["derive"] }
 clap_mangen = { version = "0.2", optional = true }
 cap-std-ext = "4.0"
-flate2 = { features = ["zlib"], default_features = false, version = "1.0.20" }
+flate2 = { features = ["zlib"], default-features = false, version = "1.0.20" }
 fn-error-context = "0.2.0"
 futures-util = "0.3.13"
 gvariant = "0.5.0"
