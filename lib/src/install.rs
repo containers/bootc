@@ -51,8 +51,6 @@ use crate::store::Storage;
 use crate::task::Task;
 use crate::utils::sigpolicy_from_opts;
 
-/// The default "stateroot" or "osname"; see https://github.com/ostreedev/ostree/issues/2794
-const STATEROOT_DEFAULT: &str = "default";
 /// The toplevel boot directory
 const BOOT: &str = "boot";
 /// Directory for transient runtime state
@@ -171,6 +169,10 @@ pub(crate) struct InstallConfigOpts {
     #[clap(long, hide = true)]
     #[serde(default)]
     pub(crate) skip_bound_images: bool,
+
+    /// The stateroot name to use. Defaults to `default`.
+    #[clap(long)]
+    pub(crate) stateroot: Option<String>,
 }
 
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize, PartialEq, Eq)]
@@ -567,8 +569,12 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
     // Another implementation: https://github.com/coreos/coreos-assembler/blob/3cd3307904593b3a131b81567b13a4d0b6fe7c90/src/create_disk.sh#L295
     crate::lsm::ensure_dir_labeled(rootfs_dir, "", Some("/".into()), 0o755.into(), sepolicy)?;
 
-    // TODO: make configurable?
-    let stateroot = STATEROOT_DEFAULT;
+    let stateroot = state
+        .config_opts
+        .stateroot
+        .as_deref()
+        .unwrap_or(ostree_ext::container::deploy::STATEROOT_DEFAULT);
+
     Task::new_and_run(
         "Initializing ostree layout",
         "ostree",
@@ -638,7 +644,11 @@ async fn install_container(
 ) -> Result<(ostree::Deployment, InstallAleph)> {
     let sepolicy = state.load_policy()?;
     let sepolicy = sepolicy.as_ref();
-    let stateroot = STATEROOT_DEFAULT;
+    let stateroot = state
+        .config_opts
+        .stateroot
+        .as_deref()
+        .unwrap_or(ostree_ext::container::deploy::STATEROOT_DEFAULT);
 
     let container_rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
 
@@ -1099,7 +1109,9 @@ pub(crate) fn setup_sys_mount(fstype: &str, fspath: &str) -> Result<()> {
     Task::new(format!("Mounting {fstype} {fspath}"), "mount")
         .args(["-t", fstype, fstype, fspath])
         .quiet()
-        .run()
+        .run()?;
+
+    Ok(())
 }
 
 /// Verify that we can load the manifest of the target image
