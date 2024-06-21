@@ -29,10 +29,8 @@ use super::RW_KARG;
 use crate::mount;
 use crate::task::Task;
 
-pub(crate) const BOOTPN: u32 = 3;
 // This ensures we end up under 512 to be small-sized.
 pub(crate) const BOOTPN_SIZE_MB: u32 = 510;
-pub(crate) const EFIPN: u32 = 2;
 pub(crate) const EFIPN_SIZE_MB: u32 = 512;
 
 #[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -240,6 +238,8 @@ pub(crate) fn install_create_rootfs(
     let bootfs = mntdir.join("boot");
     std::fs::create_dir_all(bootfs)?;
 
+    let mut partno = 0;
+
     // Run sgdisk to create partitions.
     let mut sgdisk = Task::new("Initializing partitions", "sgdisk");
     // sgdisk is too verbose
@@ -250,18 +250,20 @@ pub(crate) fn install_create_rootfs(
     #[allow(unused_assignments)]
     if cfg!(target_arch = "x86_64") {
         // BIOS-BOOT
+        partno += 1;
         sgdisk_partition(
             &mut sgdisk.cmd,
-            1,
+            partno,
             "0:+1M",
             "BIOS-BOOT",
             Some("21686148-6449-6E6F-744E-656564454649"),
         );
     } else if cfg!(target_arch = "aarch64") {
         // reserved
+        partno += 1;
         sgdisk_partition(
             &mut sgdisk.cmd,
-            1,
+            partno,
             "0:+1M",
             "reserved",
             Some("8DA63339-0007-60C0-C436-083AC8230908"),
@@ -271,14 +273,15 @@ pub(crate) fn install_create_rootfs(
     }
 
     let esp_partno = if super::ARCH_USES_EFI {
+        partno += 1;
         sgdisk_partition(
             &mut sgdisk.cmd,
-            EFIPN,
+            partno,
             format!("0:+{EFIPN_SIZE_MB}M"),
             "EFI-SYSTEM",
             Some("C12A7328-F81F-11D2-BA4B-00A0C93EC93B"),
         );
-        Some(EFIPN)
+        Some(partno)
     } else {
         None
     };
@@ -286,9 +289,7 @@ pub(crate) fn install_create_rootfs(
     // Initialize the /boot filesystem.  Note that in the future, we may match
     // what systemd/uapi-group encourages and make /boot be FAT32 as well, as
     // it would aid systemd-boot.
-    let use_xbootldr = block_setup.requires_bootpart();
-    let mut partno = EFIPN;
-    if use_xbootldr {
+    let boot_partno = if block_setup.requires_bootpart() {
         partno += 1;
         sgdisk_partition(
             &mut sgdisk.cmd,
@@ -297,8 +298,11 @@ pub(crate) fn install_create_rootfs(
             "boot",
             None,
         );
-    }
-    let rootpn = if use_xbootldr { BOOTPN + 1 } else { EFIPN + 1 };
+        Some(partno)
+    } else {
+        None
+    };
+    let rootpn = partno + 1;
     let root_size = root_size
         .map(|v| Cow::Owned(format!("0:{v}M")))
         .unwrap_or_else(|| Cow::Borrowed("0:0"));
@@ -379,8 +383,8 @@ pub(crate) fn install_create_rootfs(
     };
 
     // Initialize the /boot filesystem
-    let bootdev = if use_xbootldr {
-        Some(findpart(BOOTPN)?)
+    let bootdev = if let Some(bootpn) = boot_partno {
+        Some(findpart(bootpn)?)
     } else {
         None
     };
