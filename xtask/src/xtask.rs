@@ -146,6 +146,8 @@ fn man2markdown(sh: &Shell) -> Result<()> {
 #[context("test-integration")]
 fn test_tmt(sh: &Shell) -> Result<()> {
     cmd!(sh, "cargo run -p tests-integration run-vm prepare-tmt").run()?;
+    // cc https://pagure.io/testcloud/pull-request/174
+    cmd!(sh, "rm -vf /var/tmp/tmt/testcloud/images/disk.qcow2").run()?;
     cmd!(sh, "tmt run plans -n integration-run").run()?;
     Ok(())
 }
