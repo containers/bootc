@@ -44,8 +44,6 @@ use crate::mount::Filesystem;
 use crate::task::Task;
 use crate::utils::sigpolicy_from_opts;
 
-/// The default "stateroot" or "osname"; see https://github.com/ostreedev/ostree/issues/2794
-const STATEROOT_DEFAULT: &str = "default";
 /// The toplevel boot directory
 const BOOT: &str = "boot";
 /// Directory for transient runtime state
@@ -159,6 +157,18 @@ pub(crate) struct InstallConfigOpts {
     #[clap(long)]
     #[serde(default)]
     pub(crate) generic_image: bool,
+
+    /// The stateroot name to use. Defaults to `default`.
+    #[clap(long, default_value = ostree_ext::container::deploy::STATEROOT_DEFAULT, hide = true)]
+    #[serde(default = "default_stateroot")]
+    pub(crate) stateroot: String,
+}
+
+// TODO: Is this necessary? Added so that the install_opts_serializable test passes, because that
+// test is doing deserialization, but will users ever really do deserialization themselves, and if
+// yes, should we help them by providing a default value?
+fn default_stateroot() -> String {
+    ostree_ext::container::deploy::STATEROOT_DEFAULT.to_string()
 }
 
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize, PartialEq, Eq)]
@@ -546,8 +556,7 @@ async fn initialize_ostree_root_from_self(
     // Another implementation: https://github.com/coreos/coreos-assembler/blob/3cd3307904593b3a131b81567b13a4d0b6fe7c90/src/create_disk.sh#L295
     crate::lsm::ensure_dir_labeled(rootfs_dir, "", Some("/".into()), 0o755.into(), sepolicy)?;
 
-    // TODO: make configurable?
-    let stateroot = STATEROOT_DEFAULT;
+    let stateroot = &state.config_opts.stateroot;
     Task::new_and_run(
         "Initializing ostree layout",
         "ostree",
