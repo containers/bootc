@@ -19,6 +19,7 @@ use fn_error_context::context;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{Marker, Structure};
 use io_lifetimes::AsFd;
+use ocidir::cap_std::fs::{DirBuilder, DirBuilderExt as _};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::borrow::Cow;
@@ -28,6 +29,7 @@ use std::ops::Add;
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::sync::Arc;
+use tempfile::TempDir;
 
 const OSTREE_GPG_HOME: &[u8] = include_bytes!("fixtures/ostree-gpg-test-home.tar.gz");
 const TEST_GPG_KEYID_1: &str = "7FCA23D8472CDAFA";
@@ -840,5 +842,24 @@ impl Fixture {
         .await
         .context("exporting")?;
         Ok((imgref, digest))
+    }
+
+    // Generate a directory with some test contents
+    #[context("Generating temp content")]
+    pub fn generate_test_derived_oci(
+        &self,
+        derived_path: impl AsRef<Utf8Path>,
+        tag: Option<&str>,
+    ) -> Result<()> {
+        let temproot = TempDir::new_in(&self.path)?;
+        let temprootd = Dir::open_ambient_dir(&temproot, cap_std::ambient_authority())?;
+        let mut db = DirBuilder::new();
+        db.mode(0o755);
+        db.recursive(true);
+        temprootd.create_dir_with("usr/bin", &db)?;
+        temprootd.write("usr/bin/newderivedfile", "newderivedfile v0")?;
+        temprootd.write("usr/bin/newderivedfile3", "newderivedfile3 v0")?;
+        crate::integrationtest::generate_derived_oci(derived_path, temproot, tag)?;
+        Ok(())
     }
 }
