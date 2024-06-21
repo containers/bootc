@@ -330,6 +330,7 @@ async fn build_impl(
             dest,
             authfile.as_deref(),
             Some((std::sync::Arc::new(tempdir.try_clone()?.into()), target_fd)),
+            false,
         )
         .await?;
         Some(digest)
