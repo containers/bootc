@@ -67,10 +67,14 @@ pub(crate) async fn copy(
     dest: &ImageReference,
     authfile: Option<&Path>,
     add_fd: Option<(std::sync::Arc<OwnedFd>, i32)>,
+    progress: bool,
 ) -> Result<String> {
     let digestfile = tempfile::NamedTempFile::new()?;
     let mut cmd = new_cmd();
-    cmd.stdout(std::process::Stdio::null()).arg("copy");
+    cmd.arg("copy");
+    if !progress {
+        cmd.stdout(std::process::Stdio::null());
+    }
     cmd.arg("--digestfile");
     cmd.arg(digestfile.path());
     if let Some((add_fd, n)) = add_fd {
