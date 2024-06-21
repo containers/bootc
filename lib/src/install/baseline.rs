@@ -210,7 +210,16 @@ pub(crate) fn install_create_rootfs(
         // and we need to error out.
         anyhow::bail!("No install configuration found, and no filesystem specified")
     };
-    println!("Using block setup: {block_setup}");
+    let serial = device.serial.as_deref().unwrap_or("<unknown>");
+    let model = device.model.as_deref().unwrap_or("<unknown>");
+    let size = device
+        .size
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Missing size for blockdev"))?;
+    println!("Block setup: {block_setup}");
+    println!("       Size: {size}",);
+    println!("     Serial: {serial}");
+    println!("      Model: {model}");
 
     let root_size = opts
         .root_size
