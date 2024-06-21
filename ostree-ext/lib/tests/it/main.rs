@@ -10,9 +10,9 @@ use ostree_ext::container::{store, ManifestDiff};
 use ostree_ext::container::{
     Config, ExportOpts, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
-use ostree_ext::ostree_manual;
 use ostree_ext::prelude::{Cast, FileExt};
 use ostree_ext::tar::TarImportOptions;
+use ostree_ext::{fixture, ostree_manual};
 use ostree_ext::{gio, glib};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -597,6 +597,99 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
             .context("importing")?;
         assert_eq!(import.ostree_commit, testrev.as_str());
     }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_export_as_container_nonderived() -> Result<()> {
+    let fixture = Fixture::new_v1()?;
+    // Export into an OCI directory
+    let src_imgref = fixture.export_container().await.unwrap().0;
+
+    let initimport = fixture.must_import(&src_imgref).await?;
+    let initimport_ls = fixture::ostree_ls(fixture.destrepo(), &initimport.merge_commit).unwrap();
+
+    let exported_ocidir_name = "exported.ocidir";
+    let dest = ImageReference {
+        transport: Transport::OciDir,
+        name: format!("{}:exported-test", fixture.path.join(exported_ocidir_name)),
+    };
+    fixture.dir.create_dir(exported_ocidir_name)?;
+    let ocidir = ocidir::OciDir::ensure(&fixture.dir.open_dir(exported_ocidir_name)?)?;
+    let exported = store::export(fixture.destrepo(), &src_imgref, &dest, None)
+        .await
+        .unwrap();
+    let (new_manifest, desc) = ocidir.read_manifest_and_descriptor()?;
+    assert_eq!(desc.digest(), exported.as_str());
+    assert_eq!(new_manifest.layers().len(), fixture::LAYERS_V0_LEN);
+
+    // Reset the destrepo
+    fixture.clear_destrepo()?;
+    // Clear out the original source
+    std::fs::remove_dir_all(src_imgref.name.as_str())?;
+
+    let reimported = fixture.must_import(&dest).await?;
+    let reimport_ls = fixture::ostree_ls(fixture.destrepo(), &reimported.merge_commit).unwrap();
+    similar_asserts::assert_eq!(initimport_ls, reimport_ls);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_export_as_container_derived() -> Result<()> {
+    let fixture = Fixture::new_v1()?;
+    // Export into an OCI directory
+    let src_imgref = fixture.export_container().await.unwrap().0;
+    // Add a derived layer
+    let derived_tag = "derived";
+    // Build a derived image
+    let srcpath = src_imgref.name.as_str();
+    let temproot = &fixture.path.join("temproot");
+    || -> Result<_> {
+        std::fs::create_dir(temproot)?;
+        let temprootd = Dir::open_ambient_dir(temproot, cap_std::ambient_authority())?;
+        let mut db = DirBuilder::new();
+        db.mode(0o755);
+        db.recursive(true);
+        temprootd.create_dir_with("usr/bin", &db)?;
+        temprootd.write("usr/bin/newderivedfile", "newderivedfile v0")?;
+        temprootd.write("usr/bin/newderivedfile3", "newderivedfile3 v0")?;
+        Ok(())
+    }()
+    .context("generating temp content")?;
+    ostree_ext::integrationtest::generate_derived_oci(srcpath, temproot, Some(derived_tag))?;
+    let derived_imgref = ImageReference {
+        transport: src_imgref.transport.clone(),
+        name: format!("{}:{derived_tag}", src_imgref.name.as_str()),
+    };
+
+    // The first import into destrepo of the derived OCI
+    let initimport = fixture.must_import(&derived_imgref).await?;
+    let initimport_ls = fixture::ostree_ls(fixture.destrepo(), &initimport.merge_commit).unwrap();
+    // Export it
+    let exported_ocidir_name = "exported.ocidir";
+    let dest = ImageReference {
+        transport: Transport::OciDir,
+        name: format!("{}:exported-test", fixture.path.join(exported_ocidir_name)),
+    };
+    fixture.dir.create_dir(exported_ocidir_name)?;
+    let ocidir = ocidir::OciDir::ensure(&fixture.dir.open_dir(exported_ocidir_name)?)?;
+    let exported = store::export(fixture.destrepo(), &derived_imgref, &dest, None)
+        .await
+        .unwrap();
+
+    let (new_manifest, desc) = ocidir.read_manifest_and_descriptor()?;
+    assert_eq!(desc.digest(), exported.as_str());
+    assert_eq!(new_manifest.layers().len(), fixture::LAYERS_V0_LEN + 1);
+
+    // Reset the destrepo
+    fixture.clear_destrepo()?;
+    // Clear out the original source
+    std::fs::remove_dir_all(srcpath)?;
+
+    let reimported = fixture.must_import(&dest).await?;
+    let reimport_ls = fixture::ostree_ls(fixture.destrepo(), &reimported.merge_commit).unwrap();
+    similar_asserts::assert_eq!(initimport_ls, reimport_ls);
 
     Ok(())
 }

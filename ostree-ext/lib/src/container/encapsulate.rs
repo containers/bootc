@@ -102,7 +102,7 @@ fn export_chunks(
 /// Write an ostree commit to an OCI blob
 #[context("Writing ostree root to blob")]
 #[allow(clippy::too_many_arguments)]
-fn export_chunked(
+pub(crate) fn export_chunked(
     repo: &ostree::Repo,
     commit: &str,
     ociw: &mut OciDir,
