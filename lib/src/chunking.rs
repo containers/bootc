@@ -30,7 +30,10 @@ pub(crate) const MAX_CHUNKS: u32 = 64;
 /// we will just drop down to one.
 const MIN_CHUNKED_LAYERS: u32 = 4;
 
-type RcStr = Rc<str>;
+/// A convenient alias for a reference-counted, immutable string.
+pub(crate) type RcStr = Rc<str>;
+/// Maps from a checksum to its size and file names (multiple in the case of
+/// hard links).
 pub(crate) type ChunkMapping = BTreeMap<RcStr, (u64, Vec<Utf8PathBuf>)>;
 // TODO type PackageSet = HashSet<RcStr>;
 
@@ -212,7 +215,7 @@ impl Chunk {
         }
     }
 
-    fn move_obj(&mut self, dest: &mut Self, checksum: &str) -> bool {
+    pub(crate) fn move_obj(&mut self, dest: &mut Self, checksum: &str) -> bool {
         // In most cases, we expect the object to exist in the source.  However, it's
         // conveneient here to simply ignore objects which were already moved into
         // a chunk.
