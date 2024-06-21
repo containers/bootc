@@ -1221,6 +1221,8 @@ pub struct ExportToOCIOpts {
     pub skip_compression: bool,
     /// Path to Docker-formatted authentication file.
     pub authfile: Option<std::path::PathBuf>,
+    /// Output progress to stdout
+    pub progress_to_stdout: bool,
 }
 
 /// The way we store "chunk" layers in ostree is by writing a commit
@@ -1358,6 +1360,7 @@ pub async fn export(
     dest_imgref: &ImageReference,
     opts: Option<ExportToOCIOpts>,
 ) -> Result<String> {
+    let opts = opts.unwrap_or_default();
     let target_oci = dest_imgref.transport == Transport::OciDir;
     let tempdir = if !target_oci {
         let vartmp = cap_std::fs::Dir::open_ambient_dir("/var/tmp", cap_std::ambient_authority())?;
@@ -1365,12 +1368,12 @@ pub async fn export(
         // Always skip compression when making a temporary copy
         let opts = ExportToOCIOpts {
             skip_compression: true,
+            progress_to_stdout: opts.progress_to_stdout,
             ..Default::default()
         };
         export_to_oci(repo, src_imgref, &td, None, opts)?;
         td
     } else {
-        let opts = opts.unwrap_or_default();
         let (path, tag) = parse_oci_path_and_tag(dest_imgref.name.as_str());
         tracing::debug!("using OCI path={path} tag={tag:?}");
         let path = Dir::open_ambient_dir(path, cap_std::ambient_authority())
@@ -1384,12 +1387,13 @@ pub async fn export(
         transport: Transport::OciDir,
         name: format!("/proc/self/fd/{target_fd}"),
     };
-    let authfile = opts.as_ref().and_then(|o| o.authfile.as_deref());
+    let authfile = opts.authfile.as_deref();
     skopeo::copy(
         &tempoci,
         dest_imgref,
         authfile,
         Some((std::sync::Arc::new(tempdir.try_clone()?.into()), target_fd)),
+        opts.progress_to_stdout,
     )
     .await
 }
