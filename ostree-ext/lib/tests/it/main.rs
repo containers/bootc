@@ -644,20 +644,7 @@ async fn test_export_as_container_derived() -> Result<()> {
     let derived_tag = "derived";
     // Build a derived image
     let srcpath = src_imgref.name.as_str();
-    let temproot = &fixture.path.join("temproot");
-    || -> Result<_> {
-        std::fs::create_dir(temproot)?;
-        let temprootd = Dir::open_ambient_dir(temproot, cap_std::ambient_authority())?;
-        let mut db = DirBuilder::new();
-        db.mode(0o755);
-        db.recursive(true);
-        temprootd.create_dir_with("usr/bin", &db)?;
-        temprootd.write("usr/bin/newderivedfile", "newderivedfile v0")?;
-        temprootd.write("usr/bin/newderivedfile3", "newderivedfile3 v0")?;
-        Ok(())
-    }()
-    .context("generating temp content")?;
-    ostree_ext::integrationtest::generate_derived_oci(srcpath, temproot, Some(derived_tag))?;
+    fixture.generate_test_derived_oci(srcpath, Some(&derived_tag))?;
     let derived_imgref = ImageReference {
         transport: src_imgref.transport.clone(),
         name: format!("{}:{derived_tag}", src_imgref.name.as_str()),
@@ -917,21 +904,8 @@ r usr/bin/bash bash-v0
 
     // Build a derived image
     let srcpath = imgref.imgref.name.as_str();
-    let temproot = &fixture.path.join("temproot");
-    || -> Result<_> {
-        std::fs::create_dir(temproot)?;
-        let temprootd = Dir::open_ambient_dir(temproot, cap_std::ambient_authority())?;
-        let mut db = DirBuilder::new();
-        db.mode(0o755);
-        db.recursive(true);
-        temprootd.create_dir_with("usr/bin", &db)?;
-        temprootd.write("usr/bin/newderivedfile", "newderivedfile v0")?;
-        temprootd.write("usr/bin/newderivedfile3", "newderivedfile3 v0")?;
-        Ok(())
-    }()
-    .context("generating temp content")?;
     let derived_tag = "derived";
-    ostree_ext::integrationtest::generate_derived_oci(srcpath, temproot, Some(derived_tag))?;
+    fixture.generate_test_derived_oci(srcpath, Some(&derived_tag))?;
 
     let derived_imgref = OstreeImageReference {
         sigverify: SignatureSource::ContainerPolicyAllowInsecure,

@@ -33,7 +33,7 @@ pub(crate) fn detectenv() -> Result<&'static str> {
 #[context("Generating derived oci")]
 pub fn generate_derived_oci(
     src: impl AsRef<Utf8Path>,
-    dir: impl AsRef<Utf8Path>,
+    dir: impl AsRef<Path>,
     tag: Option<&str>,
 ) -> Result<()> {
     generate_derived_oci_from_tar(
@@ -41,7 +41,7 @@ pub fn generate_derived_oci(
         move |w| {
             let dir = dir.as_ref();
             let mut layer_tar = tar::Builder::new(w);
-            layer_tar.append_dir_all("./", dir.as_std_path())?;
+            layer_tar.append_dir_all("./", dir)?;
             layer_tar.finish()?;
             Ok(())
         },
