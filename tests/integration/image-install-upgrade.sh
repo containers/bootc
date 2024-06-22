@@ -150,6 +150,7 @@ case "$IMAGE_TYPE" in
             --privileged \
             --pid=host \
             --security-opt label=type:unconfined_t \
+            -v /dev:/dev \
             -v /var/lib/containers:/var/lib/containers \
             -v /dev:/dev \
             -v .:/output \
