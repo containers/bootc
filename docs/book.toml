@@ -12,3 +12,4 @@ command = "mdbook-mermaid"
 additional-js = ["mermaid.min.js", "mermaid-init.js"]
 
 [output.linkcheck]
+optional = true
