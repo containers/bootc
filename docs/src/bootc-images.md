@@ -114,7 +114,7 @@ the labels for files in derived layers by using e.g.
 RUN semanage fcontext -a -t httpd_sys_content_t "/web(/.*)?"
 ```
 
-(This command will write to `/etc/selinux/policy/$policy/`)
+(This command will write to `/etc/selinux/$policy/policy/`.)
 
 It will *never* work to do e.g.:
 
