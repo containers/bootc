@@ -18,8 +18,10 @@ In the future, this functionality will be exposed and used by `bootc`.
 ## /sysroot mount
 
 When booted, the physical root will be available at `/sysroot` as a
-read-only mount point.  This is a key aspect of how `bootc upgrade` operates:
-it fetches the updated container image and writes new files to `/sysroot/ostree`.
+read-only mount point and the logical root `/` will be a bind mount
+pointing to a deployment directory under `/sysroot/ostree`.  This is a
+key aspect of how `bootc upgrade` operates: it fetches the updated
+container image and writes new files to `/sysroot/ostree`.
 
 Beyond that and debugging/introspection, there are few use cases for tooling to
 operate on the physical root.
