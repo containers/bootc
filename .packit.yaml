@@ -5,6 +5,6 @@ jobs:
     targets:
       - fedora-40-x86_64
       - fedora-40-aarch64
-    tmt_plan: /build
+    tmt_plan: /integration-build
     skip_build: true
-    identifier: tmt-integration-test
+    identifier: integration-test
