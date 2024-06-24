@@ -38,6 +38,7 @@ test-tmt:
 validate:
 	cargo fmt
 	cargo clippy
+	ruff check
 .PHONY: validate
 
 vendor:
