@@ -52,7 +52,8 @@ bootc-install-print-configuration(8)
 
 :   Output JSON to stdout that contains the merged installation
     configuration as it may be relevant to calling processes using
-    \`install to-filesystem\` that want to honor e.g. \`root-fs-type\`
+    \`install to-filesystem\` that in particular want to discover the
+    desired root filesystem type from the container image
 
 bootc-install-help(8)
 
@@ -60,4 +61,4 @@ bootc-install-help(8)
 
 # VERSION
 
-v0.1.11
+v0.1.12

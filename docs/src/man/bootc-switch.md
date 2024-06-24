@@ -61,4 +61,4 @@ includes a default policy which requires signatures.
 
 # VERSION
 
-v0.1.11
+v0.1.12
