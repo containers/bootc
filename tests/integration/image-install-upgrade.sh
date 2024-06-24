@@ -95,7 +95,7 @@ RUN cat <<EOF >> /usr/lib/bootc/install/00-mitigations.toml
 [install.filesystem.root]
 type = "xfs"
 [install]
-kargs = ["mitigations=on"]
+kargs = ["mitigations=on", "nosmt"]
 EOF
 REALEOF
 
