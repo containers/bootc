@@ -1,0 +1,3 @@
+summary: build bootc and build qcow2 image
+test: cd .. && dnf -y builddep bootc && make test-tmt
+duration: 30m

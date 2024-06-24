@@ -18,7 +18,7 @@ execute:
 discover:
   how: fmf
   test:
-    - /build-tmt/build-image
+    - /build-image
 finish:
   how: shell
   script:
