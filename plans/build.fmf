@@ -22,4 +22,6 @@ discover:
 finish:
   how: shell
   script:
-    - cp -r /var/tmp/tmt/run-001 $TMT_PLAN_DATA
+    # move tmt test log to tmt plan data folder
+    # the tmt integration test log can be archived in testing farm artifacts
+    - cp -r /var/tmp/tmt/run-001 $TMT_PLAN_DATA/test-tmt-log
