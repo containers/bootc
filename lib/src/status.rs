@@ -316,7 +316,15 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     // Filter to just the serializable status structures.
     let out = std::io::stdout();
     let mut out = out.lock();
-    if opts.json {
+
+
+
+    if opts.pretty {
+    
+        if let Some(&host.status.booted)
+
+        println!("Current deployment image: {:?}", &host.status.booted.unwrap().image.unwrap().image.image);
+    } else if opts.json {
         serde_json::to_writer(&mut out, &host).context("Writing to stdout")?;
     } else {
         serde_yaml::to_writer(&mut out, &host).context("Writing to stdout")?;
@@ -324,6 +332,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
 
     Ok(())
 }
+
 
 #[test]
 fn test_convert_signatures() {
