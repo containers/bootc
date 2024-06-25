@@ -31,13 +31,14 @@ is currently expected to be empty by default.
 :   Source device specification for the root filesystem. For example,
     UUID=2e9f4241-229b-4202-8429-62d2302382e1
 
+If not provided, the UUID of the target filesystem will be used.
+
 **\--boot-mount-spec**=*BOOT_MOUNT_SPEC*
 
 :   Mount specification for the /boot filesystem.
 
-At the current time, a separate /boot is required. This restriction will
-be lifted in future versions. If not specified, the filesystem UUID will
-be used.
+This is optional. If \`/boot\` is detected as a mounted partition, then
+its UUID will be used.
 
 **\--replace**=*REPLACE*
 
@@ -156,4 +157,4 @@ mounting. To override this, use \`\--root-mount-spec\`.
 
 # VERSION
 
-v0.1.11
+v0.1.12

@@ -33,4 +33,4 @@ The exact API format is not currently declared stable.
 
 # VERSION
 
-v0.1.11
+v0.1.12
