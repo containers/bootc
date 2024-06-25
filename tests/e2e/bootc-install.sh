@@ -1,6 +1,9 @@
 #!/bin/bash
 set -exuo pipefail
 
+# Debug PACKIT_COPR_PROJECT and PACKIT_COPR_RPMS
+echo "$PACKIT_COPR_PROJECT and $PACKIT_COPR_RPMS"
+
 source ./shared_lib.sh
 dump_runner
 deploy_libvirt_network
@@ -92,9 +95,6 @@ podman ps -a
 # Test image URL
 TEST_IMAGE_NAME="bootc-workflow-test"
 TEST_IMAGE_URL="${REGISTRY_IP}:${REGISTRY_PORT}/${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}"
-
-# just for debugging
-cp -r build "$TEMPDIR"
 
 # Configure continerfile
 greenprint "Create $TEST_OS installation Containerfile"
