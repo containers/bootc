@@ -1,5 +1,22 @@
 ---
+specfile_path: contrib/packaging/bootc.spec
+
+files_to_sync:
+  - contrib/packaging/bootc.spec
+  - .packit.yaml
+
+upstream_package_name: bootc
+downstream_package_name: bootc
+
 jobs:
+  - job: copr_build
+    trigger: pull_request
+    targets:
+      - centos-stream-9-x86_64
+      - centos-stream-9-aarch64
+      - fedora-40-x86_64
+      - fedora-40-aarch64
+
   - job: tests
     trigger: pull_request
     targets:
@@ -8,3 +25,23 @@ jobs:
     tmt_plan: /integration-build
     skip_build: true
     identifier: integration-test
+
+  - job: tests
+    trigger: pull_request
+    targets:
+      - centos-stream-9-x86_64
+      - centos-stream-9-aarch64
+      - fedora-40-x86_64
+      - fedora-40-aarch64
+    tmt_plan: /to-existing-root
+    identifier: e2e-test-to-existing-root
+
+  - job: tests
+    trigger: pull_request
+    targets:
+      - centos-stream-9-x86_64
+      - centos-stream-9-aarch64
+      - fedora-40-x86_64
+      - fedora-40-aarch64
+    tmt_plan: /to-disk
+    identifier: e2e-test-to-disk
