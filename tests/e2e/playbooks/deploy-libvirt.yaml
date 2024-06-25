@@ -7,16 +7,14 @@
     ssh_key_pub: ""
     ssh_user: "cloud-user"
     inventory_file: ""
-    download_node: "{{ lookup('env', 'DOWNLOAD_NODE') | default('', true) }}"
     instance_name: "bootc-{{ test_os }}"
     image_path: "/var/lib/libvirt/images"
-    bib: "false"
-    bib_firmware: ""
+    download_image: "true"
+    air_gapped_dir: ""
+    firmware: ""
     boot_args: ""
     os_variant:
       centos-stream-9: centos-stream9
-      rhel-9-5: rhel9-unknown
-      rhel-9-4: rhel9-unknown
       fedora-40: fedora-unknown
       fedora-41: fedora-unknown
 
@@ -39,30 +37,10 @@
 
         - set_fact:
             download_image_name: "{{ out.stdout }}"
-            rhel_guest_image_fname: "{{ instance_name }}.qcow2"
+            guest_image_fname: "{{ instance_name }}.qcow2"
       when:
         - "'centos' in test_os"
-        - bib == "false"
-
-    - name: Get rhel-guest-image filename
-      block:
-        - name: Get version from test_os
-          shell: echo {{ test_os }} | sed 's/rhel-//;s/-/\./'
-          register: result_os_version
-
-        - set_fact:
-            test_os_dot_version: "{{ result_os_version.stdout }}"
-
-        - name: Get rhel-guest-image filename
-          shell: curl -s http://{{ download_node }}/rhel-9/nightly/RHEL-9/latest-RHEL-{{ test_os_dot_version }}.0/compose/BaseOS/{{ arch }}/images/ | grep -oP '(?<=href=")rhel-guest-image-[^"]+.qcow2(?=")'
-          register: out
-
-        - set_fact:
-            download_image_name: "{{ out.stdout }}"
-            rhel_guest_image_fname: "{{ instance_name }}.qcow2"
-      when:
-        - "'rhel' in test_os"
-        - bib == "false"
+        - download_image == "true"
 
     - name: Get Fedora-Cloud-Base-Generic 40 image filename
       block:
@@ -72,10 +50,10 @@
 
         - set_fact:
             download_image_name: "{{ out.stdout }}"
-            rhel_guest_image_fname: "{{ instance_name }}.qcow2"
+            guest_image_fname: "{{ instance_name }}.qcow2"
       when:
         - test_os == "fedora-40"
-        - bib == "false"
+        - download_image == "true"
 
     - name: Get Fedora-Cloud-Base-Generic 41 image filename
       block:
@@ -85,58 +63,44 @@
 
         - set_fact:
             download_image_name: "{{ out.stdout }}"
-            rhel_guest_image_fname: "{{ instance_name }}.qcow2"
+            guest_image_fname: "{{ instance_name }}.qcow2"
       when:
         - test_os == "fedora-41"
-        - bib == "false"
+        - download_image == "true"
 
     - name: Download CentOS-Stream-GenericCloud image
       get_url:
         url: "https://composes.stream.centos.org/production/latest-CentOS-Stream/compose/BaseOS/{{ arch }}/images/{{ download_image_name }}"
-        dest: "{{ image_path }}/{{ rhel_guest_image_fname }}"
+        dest: "{{ image_path }}/{{ guest_image_fname }}"
         validate_certs: false
       become: true
       when:
         - "'centos' in test_os"
-        - bib == "false"
-
-    - name: Download rhel-guest-image
-      get_url:
-        url: "http://{{ download_node }}/rhel-9/nightly/RHEL-9/latest-RHEL-{{ test_os_dot_version }}.0/compose/BaseOS/{{ arch }}/images/{{ download_image_name }}"
-        dest: "{{ image_path }}/{{ rhel_guest_image_fname }}"
-        validate_certs: false
-      become: true
-      when:
-        - "'rhel' in test_os"
-        - bib == "false"
+        - download_image == "true"
 
     - name: Download Fedora-Cloud-Base-Generic 40
       get_url:
         url: "https://dl.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/{{ arch }}/images/{{ download_image_name }}"
-        dest: "{{ image_path }}/{{ rhel_guest_image_fname }}"
+        dest: "{{ image_path }}/{{ guest_image_fname }}"
         validate_certs: false
       become: true
       when:
         - test_os == "fedora-40"
-        - bib == "false"
+        - download_image == "true"
 
     - name: Download Fedora-Cloud-Base-Generic 41
       get_url:
         url: "https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Cloud/{{ arch }}/images/{{ download_image_name }}"
-        dest: "{{ image_path }}/{{ rhel_guest_image_fname }}"
+        dest: "{{ image_path }}/{{ guest_image_fname }}"
         validate_certs: false
       become: true
       when:
         - test_os == "fedora-41"
-        - bib == "false"
+        - download_image == "true"
 
     - set_fact:
-        rhel_guest_image_fname: "disk.qcow2"
-      when: bib == "true"
-
-    - name: Start libvirtd service
-      command: systemctl start libvirtd.service
-      become: true
+        guest_image_fname: "disk.qcow2"
+      when: download_image == "false"
 
     - name: Generate user-data and meta-data
       template:
@@ -220,20 +184,4 @@
         section: guest
         option: guest ansible_host
         value: "{{ instance_ip }}"
-        no_extra_spaces: true
-
-    - name: Write random number to inventory file
-      community.general.ini_file:
-        path: "{{ inventory_file }}"
-        section: cloud:vars
-        option: rhel_guest_image_fname
-        value: "{{ rhel_guest_image_fname }}"
-        no_extra_spaces: true
-
-    - name: Write instance name to inventory file
-      community.general.ini_file:
-        path: "{{ inventory_file }}"
-        section: cloud:vars
-        option: instance_name
-        value: "{{ instance_name }}"
         no_extra_spaces: true

@@ -1,0 +1,14 @@
+#cloud-config
+users:
+  - default
+  - name: {{ ssh_user }}
+    groups: wheel
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+    ssh_authorized_keys:
+      - {{ lookup('ansible.builtin.file', ssh_key_pub) }}
+power_state:
+  delay: now
+  mode: poweroff
+  message: Cloud Init Finalized - Shutting down machine
+  timeout: 30
