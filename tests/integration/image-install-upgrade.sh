@@ -91,6 +91,7 @@ RUN dnf -y update ./bootc-2*.${ARCH}.rpm && \
 RUN dnf -y install python3 cloud-init && \
     dnf -y clean all
 COPY auth.json /etc/ostree/auth.json
+RUN mkdir -p /usr/lib/bootc/kargs.d
 RUN cat <<EOF >> /usr/lib/bootc/install/00-mitigations.toml
 [install.filesystem.root]
 type = "xfs"
@@ -209,6 +210,7 @@ tee "$UPGRADE_CONTAINERFILE" > /dev/null << REALEOF
 FROM "$TEST_IMAGE_URL"
 RUN dnf -y install wget && \
     dnf -y clean all
+RUN mkdir -p /usr/lib/bootc/kargs.d
 RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
 kargs = ["systemd.unified_cgroup_hierarchy=0"]
 EOF
