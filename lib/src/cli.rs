@@ -88,6 +88,9 @@ pub(crate) struct SwitchOpts {
 
     /// Target image to use for the next boot.
     pub(crate) target: String,
+
+    #[clap(long)]
+    pub(crate) stateroot: Option<String>,
 }
 
 /// Options controlling rollback
@@ -586,7 +589,9 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
         }
     }
 
-    let stateroot = booted_deployment.osname();
+    let osname = booted_deployment.osname();
+    let stateroot = opts.stateroot.as_deref().unwrap_or_else(|| osname.as_str());
+
     let mut opts = ostree::SysrootDeployTreeOpts::default();
     let kargs: Vec<&str> = kargs.iter().map(|s| s.as_str()).collect();
     opts.override_kernel_argv = Some(kargs.as_slice());
