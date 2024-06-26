@@ -77,7 +77,7 @@ sudo cp "${TEMPDIR}/domain.crt" "/etc/pki/ca-trust/source/anchors/${REGISTRY_IP}
 sudo update-ca-trust
 
 greenprint "Deploy local registry"
-podman run \
+sudo podman run \
     -d \
     --name registry \
     --replace \
@@ -87,7 +87,7 @@ podman run \
     -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt \
     -e REGISTRY_HTTP_TLS_KEY=/certs/domain.key \
     quay.io/bootc-test/registry:2.8.3
-podman ps -a
+sudo podman ps -a
 
 # Test image URL
 TEST_IMAGE_NAME="bootc-workflow-test"
@@ -136,10 +136,10 @@ cat "$INSTALL_CONTAINERFILE"
 
 # Build test bootc image and push to local registry
 greenprint "Build $TEST_OS installation container image"
-podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$INSTALL_CONTAINERFILE" "$TEMPDIR"
+sudo podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$INSTALL_CONTAINERFILE" "$TEMPDIR"
 
 greenprint "Push $TEST_OS installation container image"
-retry podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
+retry sudo podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
 
 # Prepare Ansible inventory file and ansible.cfg
 greenprint "Prepare inventory file"
@@ -251,10 +251,10 @@ EOF
 
 # Build upgrade container image and push to locay registry
 greenprint "Build $TEST_OS upgrade container image"
-podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$UPGRADE_CONTAINERFILE" .
+sudo podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$UPGRADE_CONTAINERFILE" .
 
 greenprint "Push $TEST_OS upgrade container image"
-retry podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
+retry sudo podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
 
 # Copy upgrade image to local folder for bootc switch test
 if [[ "$AIR_GAPPED_DIR" != "" ]]; then
