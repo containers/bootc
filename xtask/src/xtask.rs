@@ -22,6 +22,7 @@ const TASKS: &[(&str, fn(&Shell) -> Result<()>)] = &[
     ("man2markdown", man2markdown),
     ("package", package),
     ("package-srpm", package_srpm),
+    ("spec", spec),
     ("custom-lints", custom_lints),
     ("test-tmt", test_tmt),
 ];
@@ -241,6 +242,41 @@ fn impl_package(sh: &Shell) -> Result<Package> {
 fn package(sh: &Shell) -> Result<()> {
     let p = impl_package(sh)?.srcpath;
     println!("Generated: {p}");
+    Ok(())
+}
+
+fn update_spec(sh: &Shell) -> Result<Utf8PathBuf> {
+    let p = Utf8Path::new("target");
+    let pkg = impl_package(sh)?;
+    let srcpath = pkg.srcpath.file_name().unwrap();
+    let v = pkg.version;
+    let src_vendorpath = pkg.vendorpath.file_name().unwrap();
+    {
+        let specin = File::open(format!("contrib/packaging/{NAME}.spec"))
+            .map(BufReader::new)
+            .context("Opening spec")?;
+        let mut o = File::create(p.join(format!("{NAME}.spec"))).map(BufWriter::new)?;
+        for line in specin.lines() {
+            let line = line?;
+            if line.starts_with("Version:") {
+                writeln!(o, "# Replaced by cargo xtask spec")?;
+                writeln!(o, "Version: {v}")?;
+            } else if line.starts_with("Source0") {
+                writeln!(o, "Source0: {srcpath}")?;
+            } else if line.starts_with("Source1") {
+                writeln!(o, "Source1: {src_vendorpath}")?;
+            } else {
+                writeln!(o, "{}", line)?;
+            }
+        }
+    }
+    let spec_path = p.join(format!("{NAME}.spec"));
+    Ok(spec_path)
+}
+
+fn spec(sh: &Shell) -> Result<()> {
+    let s = update_spec(sh)?;
+    println!("Generated: {s}");
     Ok(())
 }
 
