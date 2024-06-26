@@ -258,6 +258,16 @@ pub(crate) fn install_create_rootfs(
         );
     } else if cfg!(target_arch = "aarch64") {
         // Only UEFI here for now
+    } else if cfg!(target_arch = "powerpc64") {
+        // PowerPC-PReP-boot
+        partno += 1;
+        sgdisk_partition(
+            &mut sgdisk.cmd,
+            partno,
+            "0:+4M",
+            "PowerPC-PReP-boot",
+            Some("9E1A2D38-C612-4316-AA26-8B49521E5A8B"),
+        );
     } else {
         anyhow::bail!("Unsupported architecture: {}", std::env::consts::ARCH);
     }
