@@ -1,5 +1,6 @@
 #[cfg(feature = "install")]
 use std::io::Write;
+use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
@@ -17,7 +18,6 @@ use gvariant::{aligned_bytes::TryAsAligned, Marker, Structure};
 use ostree_ext::gio;
 use ostree_ext::ostree;
 use rustix::fd::AsFd;
-use std::os::fd::AsRawFd;
 
 /// The mount path for selinux
 #[cfg(feature = "install")]

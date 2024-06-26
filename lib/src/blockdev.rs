@@ -1,11 +1,3 @@
-use crate::install::run_in_host_mountns;
-use crate::task::Task;
-use anyhow::{anyhow, Context, Result};
-use camino::{Utf8Path, Utf8PathBuf};
-use fn_error_context::context;
-use nix::errno::Errno;
-use regex::Regex;
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
@@ -13,6 +5,16 @@ use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::process::Command;
 use std::sync::OnceLock;
+
+use anyhow::{anyhow, Context, Result};
+use camino::{Utf8Path, Utf8PathBuf};
+use fn_error_context::context;
+use nix::errno::Errno;
+use regex::Regex;
+use serde::Deserialize;
+
+use crate::install::run_in_host_mountns;
+use crate::task::Task;
 
 #[derive(Debug, Deserialize)]
 struct DevicesOutput {

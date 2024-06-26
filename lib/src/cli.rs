@@ -2,6 +2,11 @@
 //!
 //! Command line tool to manage bootable ostree-based containers.
 
+use std::ffi::OsString;
+use std::io::Seek;
+use std::os::unix::process::CommandExt;
+use std::process::Command;
+
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use cap_std_ext::cap_std;
@@ -13,10 +18,6 @@ use ostree_container::store::PrepareResult;
 use ostree_ext::container as ostree_container;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
-use std::ffi::OsString;
-use std::io::Seek;
-use std::os::unix::process::CommandExt;
-use std::process::Command;
 
 use crate::deploy::RequiredHostSpec;
 use crate::lints;

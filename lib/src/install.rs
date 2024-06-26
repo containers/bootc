@@ -28,14 +28,13 @@ use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtDirExt;
 use chrono::prelude::*;
 use clap::ValueEnum;
-use ostree_ext::oci_spec;
-use rustix::fs::{FileTypeExt, MetadataExt as _};
-
 use fn_error_context::context;
 use ostree::gio;
 use ostree_ext::container as ostree_container;
+use ostree_ext::oci_spec;
 use ostree_ext::ostree;
 use ostree_ext::prelude::Cast;
+use rustix::fs::{FileTypeExt, MetadataExt as _};
 use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
