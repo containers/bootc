@@ -1,7 +1,5 @@
 use std::collections::VecDeque;
 
-use crate::spec::{BootEntry, BootOrder, Host, HostSpec, HostStatus, HostType, ImageStatus};
-use crate::spec::{ImageReference, ImageSignature};
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use fn_error_context::context;
@@ -13,6 +11,9 @@ use ostree_ext::oci_spec;
 use ostree_ext::oci_spec::image::ImageConfiguration;
 use ostree_ext::ostree;
 use ostree_ext::sysroot::SysrootLock;
+
+use crate::spec::{BootEntry, BootOrder, Host, HostSpec, HostStatus, HostType, ImageStatus};
+use crate::spec::{ImageReference, ImageSignature};
 
 impl From<ostree_container::SignatureSource> for ImageSignature {
     fn from(sig: ostree_container::SignatureSource) -> Self {

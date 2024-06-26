@@ -1,15 +1,14 @@
 use anyhow::Ok;
 use anyhow::Result;
-
-use crate::deploy::ImageState;
 use ostree::gio;
 use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::prelude::Cast;
 use ostree_ext::prelude::FileEnumeratorExt;
 use ostree_ext::prelude::FileExt;
-
 use serde::Deserialize;
+
+use crate::deploy::ImageState;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
