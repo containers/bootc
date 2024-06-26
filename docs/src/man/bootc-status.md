@@ -4,7 +4,7 @@ bootc-status - Display status
 
 # SYNOPSIS
 
-**bootc status** \[**\--json**\] \[**\--booted**\]
+**bootc status** \[**\--format**\] \[**\--booted**\]
 \[**-h**\|**\--help**\]
 
 # DESCRIPTION
@@ -19,9 +19,16 @@ The exact API format is not currently declared stable.
 
 # OPTIONS
 
-**\--json**
+**\--format**=*FORMAT*
 
-:   Output in JSON format
+:   The output format\
+
+\
+*Possible values:*
+
+> -   yaml: Output in YAML format
+>
+> -   json: Output in JSON format
 
 **\--booted**
 

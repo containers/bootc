@@ -12,6 +12,7 @@ use ostree_ext::oci_spec::image::ImageConfiguration;
 use ostree_ext::ostree;
 use ostree_ext::sysroot::SysrootLock;
 
+use crate::cli::OutputFormat;
 use crate::spec::{BootEntry, BootOrder, Host, HostSpec, HostStatus, HostType, ImageStatus};
 use crate::spec::{ImageReference, ImageSignature};
 
@@ -317,11 +318,18 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     // Filter to just the serializable status structures.
     let out = std::io::stdout();
     let mut out = out.lock();
-    if opts.json {
-        serde_json::to_writer(&mut out, &host).context("Writing to stdout")?;
-    } else {
-        serde_yaml::to_writer(&mut out, &host).context("Writing to stdout")?;
+    let format = opts.format.unwrap_or_else(|| {
+        if opts.json {
+            OutputFormat::JSON
+        } else {
+            OutputFormat::YAML
+        }
+    });
+    match format {
+        OutputFormat::JSON => serde_json::to_writer(&mut out, &host).map_err(anyhow::Error::new),
+        OutputFormat::YAML => serde_yaml::to_writer(&mut out, &host).map_err(anyhow::Error::new),
     }
+    .context("Writing to stdout")?;
 
     Ok(())
 }

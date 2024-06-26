@@ -12,6 +12,7 @@ use camino::Utf8PathBuf;
 use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::Dir;
 use clap::Parser;
+use clap::ValueEnum;
 use fn_error_context::context;
 use ostree::gio;
 use ostree_container::store::PrepareResult;
@@ -107,12 +108,27 @@ pub(crate) struct EditOpts {
     pub(crate) quiet: bool,
 }
 
+#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
+#[clap(rename_all = "lowercase")]
+pub(crate) enum OutputFormat {
+    /// Output in YAML format.
+    YAML,
+    /// Output in JSON format.
+    JSON,
+}
+
 /// Perform an status operation
 #[derive(Debug, Parser, PartialEq, Eq)]
 pub(crate) struct StatusOpts {
     /// Output in JSON format.
-    #[clap(long)]
+    ///
+    /// Superceded by the `format` option.
+    #[clap(long, hide = true)]
     pub(crate) json: bool,
+
+    /// The output format.
+    #[clap(long)]
+    pub(crate) format: Option<OutputFormat>,
 
     /// Only display status for the booted deployment.
     #[clap(long)]
@@ -773,6 +789,7 @@ fn test_parse_opts() {
         Opt::parse_including_static(["bootc", "status"]),
         Opt::Status(StatusOpts {
             json: false,
+            format: None,
             booted: false
         })
     ));
