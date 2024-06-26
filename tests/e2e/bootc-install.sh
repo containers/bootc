@@ -1,9 +1,6 @@
 #!/bin/bash
 set -exuo pipefail
 
-# Debug PACKIT_COPR_PROJECT and PACKIT_COPR_RPMS
-echo "$PACKIT_COPR_PROJECT and $PACKIT_COPR_RPMS"
-
 source ./shared_lib.sh
 dump_runner
 deploy_libvirt_network
@@ -96,14 +93,19 @@ podman ps -a
 TEST_IMAGE_NAME="bootc-workflow-test"
 TEST_IMAGE_URL="${REGISTRY_IP}:${REGISTRY_PORT}/${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}"
 
+# Debug PACKIT_COPR_PROJECT and PACKIT_COPR_RPMS
+echo "$PACKIT_COPR_PROJECT and $PACKIT_COPR_RPMS"
+
+# Generate bootc copr repo file
+sed "s|REPLACE_COPR_PROJECT|${PACKIT_COPR_PROJECT}|; s|REPLACE_TEST_OS|${TEST_OS}|" files/bootc.repo.template | tee "${TEMPDIR}"/bootc.repo > /dev/null
+
 # Configure continerfile
 greenprint "Create $TEST_OS installation Containerfile"
 tee "$INSTALL_CONTAINERFILE" > /dev/null << EOF
 FROM "$TIER1_IMAGE_URL"
-COPY build/bootc-2*.${ARCH}.rpm .
+COPY bootc.repo /etc/yum.repos.d/
 COPY domain.crt /etc/pki/ca-trust/source/anchors/
-RUN dnf -y update ./bootc-2*.${ARCH}.rpm && \
-    rm -f ./bootc-2*.${ARCH}.rpm && \
+RUN dnf -y update bootc && \
     update-ca-trust
 EOF
 
