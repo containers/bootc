@@ -35,21 +35,21 @@ else
     FIRMWARE="uefi"
 fi
 
-case "$TEST_OS" in
-    "centos-stream-9")
+# Get OS data.
+source /etc/os-release
+
+case ""${ID}-${VERSION_ID}"" in
+    "centos-9")
+        TEST_OS="centos-stream-9"
         TIER1_IMAGE_URL="quay.io/centos-bootc/centos-bootc-dev:stream9"
         SSH_USER="cloud-user"
         REDHAT_VERSION_ID="9"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
         ;;
-    "fedora"*)
-        if [[ "$TEST_OS" == "fedora-40" ]]; then
-            TIER1_IMAGE_URL="quay.io/fedora/fedora-bootc:40"
-            REDHAT_VERSION_ID="40"
-        else
-            TIER1_IMAGE_URL="quay.io/fedora/fedora-bootc:41"
-            REDHAT_VERSION_ID="41"
-        fi
+    "fedora-"*)
+        TEST_OS="fedora-${VERSION_ID}"
+        TIER1_IMAGE_URL="quay.io/fedora/fedora-bootc:${VERSION_ID}"
+        REDHAT_VERSION_ID="${VERSION_ID}"
         SSH_USER="fedora"
         BOOT_ARGS="uefi"
         ;;
