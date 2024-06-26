@@ -247,6 +247,11 @@ kargs = ["systemd.unified_cgroup_hierarchy=1"]
 EOF
 REALEOF
 
+greenprint "Build $TEST_OS upgrade container image"
+sudo podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$UPGRADE_CONTAINERFILE" .
+greenprint "Push $TEST_OS upgrade container image"
+sudo podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
+
 greenprint "Upgrade $TEST_OS system"
 ansible-playbook -v \
     -i "$INVENTORY_FILE" \
