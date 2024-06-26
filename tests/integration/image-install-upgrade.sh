@@ -208,6 +208,8 @@ ansible-playbook -v \
 greenprint "Create upgrade Containerfile"
 tee "$UPGRADE_CONTAINERFILE" > /dev/null << REALEOF
 FROM "$TEST_IMAGE_URL"
+RUN dnf -y install wget && \
+    dnf -y clean all
 RUN mkdir -p /usr/lib/bootc/kargs.d
 RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
 kargs = ["systemd.unified_cgroup_hierarchy=0"]
@@ -237,8 +239,6 @@ ansible-playbook -v \
 greenprint "Create second upgrade Containerfile to test kargs delta"
 tee "$UPGRADE_CONTAINERFILE" > /dev/null << REALEOF
 FROM "$TEST_IMAGE_URL"
-RUN dnf -y install wget && \
-    dnf -y clean all
 RUN mkdir -p /usr/lib/bootc/kargs.d
 RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
 kargs = ["systemd.unified_cgroup_hierarchy=1"]
