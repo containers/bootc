@@ -206,11 +206,11 @@ ansible-playbook -v \
     playbooks/check-system.yaml
 
 greenprint "Create upgrade Containerfile"
-tee "$UPGRADE_CONTAINERFILE" > /dev/null << REALEOF
+tee "$UPGRADE_CONTAINERFILE" > /dev/null << EOF
 FROM "$TEST_IMAGE_URL"
 RUN dnf -y install wget && \
     dnf -y clean all
-REALEOF
+EOF
 
 greenprint "Build $TEST_OS upgrade container image"
 sudo podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$UPGRADE_CONTAINERFILE" .
@@ -229,7 +229,6 @@ ansible-playbook -v \
     -e bootc_image="$TEST_IMAGE_URL" \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
     -e upgrade="true" \
-    -e kargs="systemd.unified_cgroup_hierarchy=0" \
     playbooks/check-system.yaml
 
 greenprint "Rollback $TEST_OS system"
