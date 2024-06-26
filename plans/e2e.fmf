@@ -1,7 +1,7 @@
 discover:
   how: fmf
   test: e2e
-adjust+:
+adjust:
   - when: arch == x86_64 or arch == aarch64
     provision:
       hardware:
