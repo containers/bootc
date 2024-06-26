@@ -5,8 +5,35 @@ files_to_sync:
   - contrib/packaging/bootc.spec
   - .packit.yaml
 
+upstream_tag_template: v{version}
+
 upstream_package_name: bootc
 downstream_package_name: bootc
+
+srpm_build_deps:
+  - cargo
+  - git
+  - zstd
+  - libzstd-devel
+  - ostree-devel
+  - openssl-devel
+
+actions:
+  create-archive:
+    - bash -c "sed -i \"s/0.1/${PACKIT_PROJECT_VERSION}/\" contrib/packaging/bootc.spec"
+    - bash -c "mkdir -p target/man"
+    - bash -c "cargo run --features=docgen -- man --directory target/man"
+    - bash -c "git archive --format=tar --prefix=bootc-${PACKIT_PROJECT_VERSION}/ HEAD > contrib/packaging/${PACKIT_PROJECT_NAME_VERSION}.tar"
+    - bash -c "tar -r -C target -f contrib/packaging/${PACKIT_PROJECT_NAME_VERSION}.tar man"
+    - bash -c "cargo install cargo-vendor-filterer"
+    - bash -c "cargo vendor-filterer --prefix=vendor --format=tar contrib/packaging/${PACKIT_PROJECT_NAME_VERSION}-vendor.tar"
+    - bash -c "cat contrib/packaging/bootc.spec"
+    - bash -c "ls -1 contrib/packaging/${PACKIT_PROJECT_NAME_VERSION}.tar"
+  fix-spec-file:
+    - bash -c "echo $PACKIT_RPMSPEC_RELEASE $PACKIT_PROJECT_VERSION $PACKIT_PROJECT_COMMIT $PACKIT_PROJECT_ARCHIVE"
+    - bash -c "sed -i \"s/https.*}.tar.zstd/${PACKIT_PROJECT_NAME_VERSION}.tar/\" contrib/packaging/bootc.spec"
+    - bash -c "sed -i \"s/https.*}-vendor.tar.zstd/${PACKIT_PROJECT_NAME_VERSION}-vendor.tar/\" contrib/packaging/bootc.spec"
+    - bash -c "cat contrib/packaging/bootc.spec"
 
 jobs:
   - job: copr_build
