@@ -97,7 +97,12 @@ TEST_IMAGE_URL="${REGISTRY_IP}:${REGISTRY_PORT}/${TEST_IMAGE_NAME}:${QUAY_REPO_T
 echo "$PACKIT_COPR_PROJECT and $PACKIT_COPR_RPMS"
 
 # Generate bootc copr repo file
-sed "s|REPLACE_COPR_PROJECT|${PACKIT_COPR_PROJECT}|; s|REPLACE_TEST_OS|${TEST_OS}|" files/bootc.repo.template | tee "${TEMPDIR}"/bootc.repo > /dev/null
+if [[ "$VERSION_ID" == 41 ]]; then
+    REPLACE_TEST_OS="rawhide"
+else
+    REPLACE_TEST_OS="$TEST_OS"
+fi
+sed "s|REPLACE_COPR_PROJECT|${PACKIT_COPR_PROJECT}|; s|REPLACE_TEST_OS|${REPLACE_TEST_OS}|" files/bootc.repo.template | tee "${TEMPDIR}"/bootc.repo > /dev/null
 
 # Configure continerfile
 greenprint "Create $TEST_OS installation Containerfile"
