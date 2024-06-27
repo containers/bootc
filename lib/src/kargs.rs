@@ -143,19 +143,15 @@ pub(crate) fn get_kargs(
 /// vector of kernel arguments. Architecture matching is performed using
 /// `sys_arch`.
 fn parse_kargs_toml(contents: &str, sys_arch: &str) -> Result<Vec<String>> {
-    let mut de: Config = toml::from_str(contents)?;
-    let mut parsed_kargs: Vec<String> = vec![];
+    let de: Config = toml::from_str(contents)?;
     // if arch specified, apply kargs only if the arch matches
     // if arch not specified, apply kargs unconditionally
-    match de.match_architectures {
-        None => parsed_kargs = de.kargs,
-        Some(match_architectures) => {
-            if match_architectures.iter().any(|s| s == sys_arch) {
-                parsed_kargs.append(&mut de.kargs);
-            }
-        }
-    }
-    Ok(parsed_kargs)
+    let matched = de
+        .match_architectures
+        .map(|arches| arches.iter().any(|s| s == sys_arch))
+        .unwrap_or(true);
+    let r = if matched { de.kargs } else { Vec::new() };
+    Ok(r)
 }
 
 #[test]
