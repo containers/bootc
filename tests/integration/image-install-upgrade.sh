@@ -243,7 +243,7 @@ RUN dnf -y install wget && \
     dnf -y clean all
 RUN mkdir -p /usr/lib/bootc/kargs.d
 RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
-kargs = ["systemd.unified_cgroup_hierarchy=0","console=ttyS0"]
+kargs = ["systemd.unified_cgroup_hierarchy=0","console=ttyS0","panic=0"]
 EOF
 REALEOF
 
@@ -264,7 +264,7 @@ ansible-playbook -v \
     -e bootc_image="$TEST_IMAGE_URL" \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
     -e upgrade="true" \
-    -e kargs="systemd.unified_cgroup_hierarchy=0,console=ttyS0" \
+    -e kargs="systemd.unified_cgroup_hierarchy=0,console=ttyS0,panic=0" \
     playbooks/check-system.yaml
 
 greenprint "Create second upgrade Containerfile to test kargs delta"
@@ -274,7 +274,7 @@ RUN dnf -y install wget && \
     dnf -y clean all
 RUN mkdir -p /usr/lib/bootc/kargs.d
 RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
-kargs = ["systemd.unified_cgroup_hierarchy=1","console=ttyS"]
+kargs = ["systemd.unified_cgroup_hierarchy=1","console=ttyS","panic=0"]
 EOF
 REALEOF
 
@@ -295,7 +295,7 @@ ansible-playbook -v \
     -e bootc_image="$TEST_IMAGE_URL" \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
     -e upgrade="true" \
-    -e kargs="systemd.unified_cgroup_hierarchy=1,console=ttyS" \
+    -e kargs="systemd.unified_cgroup_hierarchy=1,console=ttyS,panic=0" \
     playbooks/check-system.yaml
 
 greenprint "Terminate $PLATFORM instance and deregister AMI"
