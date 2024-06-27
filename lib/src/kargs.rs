@@ -154,79 +154,84 @@ fn parse_kargs_toml(contents: &str, sys_arch: &str) -> Result<Vec<String>> {
     Ok(r)
 }
 
-#[test]
-/// Verify that kargs are only applied to supported architectures
-fn test_arch() {
-    // no arch specified, kargs ensure that kargs are applied unconditionally
-    let sys_arch = "x86_64";
-    let file_content = r##"kargs = ["console=tty0", "nosmt"]"##.to_string();
-    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
-    assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
-    let sys_arch = "aarch64";
-    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
-    assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    // one arch matches and one doesn't, ensure that kargs are only applied for the matching arch
-    let sys_arch = "aarch64";
-    let file_content = r##"kargs = ["console=tty0", "nosmt"]
+    #[test]
+    /// Verify that kargs are only applied to supported architectures
+    fn test_arch() {
+        // no arch specified, kargs ensure that kargs are applied unconditionally
+        let sys_arch = "x86_64";
+        let file_content = r##"kargs = ["console=tty0", "nosmt"]"##.to_string();
+        let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
+        assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
+        let sys_arch = "aarch64";
+        let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
+        assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
+
+        // one arch matches and one doesn't, ensure that kargs are only applied for the matching arch
+        let sys_arch = "aarch64";
+        let file_content = r##"kargs = ["console=tty0", "nosmt"]
 match-architectures = ["x86_64"]
 "##
-    .to_string();
-    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
-    assert_eq!(parsed_kargs, [] as [String; 0]);
-    let file_content = r##"kargs = ["console=tty0", "nosmt"]
+        .to_string();
+        let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
+        assert_eq!(parsed_kargs, [] as [String; 0]);
+        let file_content = r##"kargs = ["console=tty0", "nosmt"]
 match-architectures = ["aarch64"]
 "##
-    .to_string();
-    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
-    assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
+        .to_string();
+        let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
+        assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
 
-    // multiple arch specified, ensure that kargs are applied to both archs
-    let sys_arch = "x86_64";
-    let file_content = r##"kargs = ["console=tty0", "nosmt"]
+        // multiple arch specified, ensure that kargs are applied to both archs
+        let sys_arch = "x86_64";
+        let file_content = r##"kargs = ["console=tty0", "nosmt"]
 match-architectures = ["x86_64", "aarch64"]
 "##
-    .to_string();
-    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
-    assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
-    std::env::set_var("ARCH", "aarch64");
-    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
-    assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
-}
+        .to_string();
+        let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
+        assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
+        std::env::set_var("ARCH", "aarch64");
+        let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
+        assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
+    }
 
-#[test]
-/// Verify some error cases
-fn test_invalid() {
-    let test_invalid_extra = r#"kargs = ["console=tty0", "nosmt"]\nfoo=bar"#;
-    assert!(parse_kargs_toml(test_invalid_extra, "x86_64").is_err());
+    #[test]
+    /// Verify some error cases
+    fn test_invalid() {
+        let test_invalid_extra = r#"kargs = ["console=tty0", "nosmt"]\nfoo=bar"#;
+        assert!(parse_kargs_toml(test_invalid_extra, "x86_64").is_err());
 
-    let test_missing = r#"foo=bar"#;
-    assert!(parse_kargs_toml(test_missing, "x86_64").is_err());
-}
+        let test_missing = r#"foo=bar"#;
+        assert!(parse_kargs_toml(test_missing, "x86_64").is_err());
+    }
 
-#[test]
-fn test_get_kargs_in_root() -> Result<()> {
-    let td = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+    #[test]
+    fn test_get_kargs_in_root() -> Result<()> {
+        let td = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
 
-    // No directory
-    assert_eq!(get_kargs_in_root(&td, "x86_64").unwrap().len(), 0);
-    // Empty directory
-    td.create_dir_all("usr/lib/bootc/kargs.d")?;
-    assert_eq!(get_kargs_in_root(&td, "x86_64").unwrap().len(), 0);
-    // Non-toml file
-    td.write("usr/lib/bootc/kargs.d/somegarbage", "garbage")?;
-    assert_eq!(get_kargs_in_root(&td, "x86_64").unwrap().len(), 0);
-    td.write(
-        "usr/lib/bootc/kargs.d/01-foo.toml",
-        r##"kargs = ["console=tty0", "nosmt"]"##,
-    )?;
-    td.write(
-        "usr/lib/bootc/kargs.d/02-bar.toml",
-        r##"kargs = ["console=ttyS1"]"##,
-    )?;
+        // No directory
+        assert_eq!(get_kargs_in_root(&td, "x86_64").unwrap().len(), 0);
+        // Empty directory
+        td.create_dir_all("usr/lib/bootc/kargs.d")?;
+        assert_eq!(get_kargs_in_root(&td, "x86_64").unwrap().len(), 0);
+        // Non-toml file
+        td.write("usr/lib/bootc/kargs.d/somegarbage", "garbage")?;
+        assert_eq!(get_kargs_in_root(&td, "x86_64").unwrap().len(), 0);
+        td.write(
+            "usr/lib/bootc/kargs.d/01-foo.toml",
+            r##"kargs = ["console=tty0", "nosmt"]"##,
+        )?;
+        td.write(
+            "usr/lib/bootc/kargs.d/02-bar.toml",
+            r##"kargs = ["console=ttyS1"]"##,
+        )?;
 
-    let args = get_kargs_in_root(&td, "x86_64").unwrap();
-    similar_asserts::assert_eq!(args, ["console=tty0", "nosmt", "console=ttyS1"]);
+        let args = get_kargs_in_root(&td, "x86_64").unwrap();
+        similar_asserts::assert_eq!(args, ["console=tty0", "nosmt", "console=ttyS1"]);
 
-    Ok(())
+        Ok(())
+    }
 }
