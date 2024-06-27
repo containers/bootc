@@ -72,7 +72,7 @@ pub(crate) fn get_kargs(
 
     // Get the kargs in kargs.d of the booted system
     let root = &cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-    let mut existing_kargs: Vec<String> = get_kargs_in_root(root, sys_arch)?;
+    let existing_kargs: Vec<String> = get_kargs_in_root(root, sys_arch)?;
 
     // Get the kargs in kargs.d of the pending image
     let mut remote_kargs: Vec<String> = vec![];
@@ -83,7 +83,7 @@ pub(crate) fn get_kargs(
         .expect("downcast");
     if !fetched_tree.query_exists(cancellable) {
         // if the kargs.d directory does not exist in the fetched image, return the existing kargs
-        kargs.append(&mut existing_kargs);
+        kargs.extend(existing_kargs);
         return Ok(kargs);
     }
     let queryattrs = "standard::name,standard::type";
