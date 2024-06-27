@@ -1,4 +1,8 @@
 use anyhow::{Context, Result};
+use camino::Utf8Path;
+use cap_std_ext::cap_std;
+use cap_std_ext::cap_std::fs::Dir;
+use cap_std_ext::dirext::CapStdExtDirExt;
 use ostree::gio;
 use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
@@ -14,6 +18,35 @@ use crate::deploy::ImageState;
 struct Config {
     kargs: Vec<String>,
     match_architectures: Option<Vec<String>>,
+}
+
+/// Load and parse all bootc kargs.d files in the specified root, returning
+/// a combined list.
+fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> {
+    // If the directory doesn't exist, that's OK.
+    let d = if let Some(d) = d.open_dir_optional("usr/lib/bootc/kargs.d")? {
+        d
+    } else {
+        return Ok(Default::default());
+    };
+    let mut ret = Vec::new();
+    // Read all the entries
+    let mut entries = d.entries()?.collect::<std::io::Result<Vec<_>>>()?;
+    // cc https://github.com/rust-lang/rust/issues/85573 re the allocation-per-comparison here
+    entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    for ent in entries {
+        let name = ent.file_name();
+        let name = name
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid non-UTF8 filename: {name:?}"))?;
+        if !matches!(Utf8Path::new(name).extension(), Some("toml")) {
+            continue;
+        }
+        let buf = d.read_to_string(name)?;
+        let kargs = parse_kargs_toml(&buf, sys_arch).with_context(|| format!("Parsing {name}"))?;
+        ret.extend(kargs)
+    }
+    Ok(ret)
 }
 
 /// Compute the kernel arguments for the new deployment. This starts from the booted
@@ -38,14 +71,8 @@ pub(crate) fn get_kargs(
     };
 
     // Get the kargs in kargs.d of the booted system
-    let mut existing_kargs: Vec<String> = vec![];
-    let fragments = liboverdrop::scan(&["/usr/lib"], "bootc/kargs.d", &["toml"], true);
-    for (name, path) in fragments {
-        let s = std::fs::read_to_string(&path)?;
-        let mut parsed_kargs =
-            parse_kargs_toml(&s, &sys_arch).with_context(|| format!("Parsing {name:?}"))?;
-        existing_kargs.append(&mut parsed_kargs);
-    }
+    let root = &cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+    let mut existing_kargs: Vec<String> = get_kargs_in_root(root, &sys_arch)?;
 
     // Get the kargs in kargs.d of the pending image
     let mut remote_kargs: Vec<String> = vec![];
@@ -178,4 +205,31 @@ fn test_invalid() {
 
     let test_missing = r#"foo=bar"#;
     assert!(parse_kargs_toml(test_missing, "x86_64").is_err());
+}
+
+#[test]
+fn test_get_kargs_in_root() -> Result<()> {
+    let td = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+
+    // No directory
+    assert_eq!(get_kargs_in_root(&td, "x86_64").unwrap().len(), 0);
+    // Empty directory
+    td.create_dir_all("usr/lib/bootc/kargs.d")?;
+    assert_eq!(get_kargs_in_root(&td, "x86_64").unwrap().len(), 0);
+    // Non-toml file
+    td.write("usr/lib/bootc/kargs.d/somegarbage", "garbage")?;
+    assert_eq!(get_kargs_in_root(&td, "x86_64").unwrap().len(), 0);
+    td.write(
+        "usr/lib/bootc/kargs.d/01-foo.toml",
+        r##"kargs = ["console=tty0", "nosmt"]"##,
+    )?;
+    td.write(
+        "usr/lib/bootc/kargs.d/02-bar.toml",
+        r##"kargs = ["console=ttyS1"]"##,
+    )?;
+
+    let args = get_kargs_in_root(&td, "x86_64").unwrap();
+    similar_asserts::assert_eq!(args, ["console=tty0", "nosmt", "console=ttyS1"]);
+
+    Ok(())
 }
