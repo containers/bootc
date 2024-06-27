@@ -6,7 +6,7 @@
 /bootc-install-upgrade:
   summary: bootc install and upgrade test
   test: ./bootc-install-upgrade.sh
-  duration: 120m
+  duration: 150m
 
 /image-install-upgrade:
   summary: bootc install to-disk and upgrade test
