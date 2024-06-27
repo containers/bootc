@@ -22,12 +22,10 @@ pub(crate) async fn list_entrypoint() -> Result<()> {
     Ok(())
 }
 
+/// Implementation of `bootc image push-to-storage`.
 #[context("Pushing image")]
-pub(crate) async fn push_entrypoint(
-    transport: Transport,
-    source: Option<&str>,
-    target: Option<&str>,
-) -> Result<()> {
+pub(crate) async fn push_entrypoint(source: Option<&str>, target: Option<&str>) -> Result<()> {
+    let transport = Transport::ContainerStorage;
     let sysroot = crate::cli::get_locked_sysroot().await?;
 
     let repo = &sysroot.repo();

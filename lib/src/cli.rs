@@ -199,24 +199,12 @@ pub(crate) enum ImageOpts {
     ///
     /// Note that these are distinct from images stored via e.g. `podman`.
     List,
-    /// Copy a container image from the bootc storage to a target.
-    ///
-    /// ## Copying the booted container image to containers-storage: (podman)
+    /// Copy a container image from the bootc storage to `containers-storage:`.
     ///
     /// The source and target are both optional; if both are left unspecified,
-    /// via a simple invocation of `bootc image push`, then the default is to
+    /// via a simple invocation of `bootc image copy-to-storage`, then the default is to
     /// push the currently booted image to `containers-storage` (as used by podman, etc.)
     /// and tagged with the image name `localhost/bootc`,
-    ///
-    /// ## Copying the booted container image to a remote registry
-    ///
-    /// Aside from the special case above, default transport is `registry`. This
-    /// means that an invocation of
-    ///
-    /// `bootc image push --target quay.io/example/someimage:latest` will push the
-    /// booted container image to the target registry. This will be done via an
-    /// invocation equivalent to `skopeo copy`, and hence the defaults for that apply.
-    /// For example, the default registry authentication file applies.
     ///
     /// ## Copying a non-default container image
     ///
@@ -227,13 +215,7 @@ pub(crate) enum ImageOpts {
     ///
     /// At the current time there is no explicit support for pulling images other than indirectly
     /// via e.g. `bootc switch` or `bootc upgrade`.
-    Push {
-        /// The transport; e.g. oci, oci-archive, containers-storage.  Defaults to `registry`.
-        ///
-        /// For more information, see `man containers-transports`.
-        #[clap(long, default_value = "registry")]
-        transport: String,
-
+    CopyToStorage {
         #[clap(long)]
         /// The source image; if not specified, the booted image will be used.
         source: Option<String>,
@@ -794,13 +776,8 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         },
         Opt::Image(opts) => match opts {
             ImageOpts::List => crate::image::list_entrypoint().await,
-            ImageOpts::Push {
-                transport,
-                source,
-                target,
-            } => {
-                let transport = Transport::try_from(transport.as_str())?;
-                crate::image::push_entrypoint(transport, source.as_deref(), target.as_deref()).await
+            ImageOpts::CopyToStorage { source, target } => {
+                crate::image::push_entrypoint(source.as_deref(), target.as_deref()).await
             }
         },
         #[cfg(feature = "install")]

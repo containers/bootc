@@ -1,5 +1,5 @@
 # This test does:
-# bootc image push
+# bootc image copy-to-storage
 # podman build <from that image>
 # bootc switch <to the local image>
 # <verify booted state>
@@ -32,7 +32,7 @@ def initial_build [] {
     cd $td
 
     do --ignore-errors { podman image rm localhost/bootc o+e>| ignore }
-    bootc image push
+    bootc image copy-to-storage
     let img = podman image inspect localhost/bootc | from json
 
     mkdir usr/lib/bootc/kargs.d
