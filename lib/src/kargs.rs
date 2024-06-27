@@ -64,9 +64,8 @@ pub(crate) fn get_kargs(
     // Get the running kargs of the booted system
     if let Some(bootconfig) = ostree::Deployment::bootconfig(booted_deployment) {
         if let Some(options) = ostree::BootconfigParser::get(&bootconfig, "options") {
-            let options: Vec<&str> = options.split_whitespace().collect();
-            let mut options: Vec<String> = options.into_iter().map(|s| s.to_string()).collect();
-            kargs.append(&mut options);
+            let options = options.split_whitespace().map(|s| s.to_owned());
+            kargs.extend(options);
         }
     };
 
