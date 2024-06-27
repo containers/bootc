@@ -74,17 +74,19 @@ pub(crate) fn get_kargs(
     let existing_kargs: Vec<String> = get_kargs_in_root(root, sys_arch)?;
 
     // Get the kargs in kargs.d of the pending image
-    let mut remote_kargs: Vec<String> = vec![];
     let (fetched_tree, _) = repo.read_commit(fetched.ostree_commit.as_str(), cancellable)?;
     let fetched_tree = fetched_tree.resolve_relative_path("/usr/lib/bootc/kargs.d");
     let fetched_tree = fetched_tree
         .downcast::<ostree::RepoFile>()
         .expect("downcast");
+    // A special case: if there's no kargs.d directory in the pending (fetched) image,
+    // then we can just use the combined current kargs + kargs from booted
     if !fetched_tree.query_exists(cancellable) {
-        // if the kargs.d directory does not exist in the fetched image, return the existing kargs
         kargs.extend(existing_kargs);
         return Ok(kargs);
     }
+
+    let mut remote_kargs: Vec<String> = vec![];
     let queryattrs = "standard::name,standard::type";
     let queryflags = gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS;
     let fetched_iter = fetched_tree.enumerate_children(queryattrs, queryflags, cancellable)?;
