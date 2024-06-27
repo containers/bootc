@@ -1,5 +1,4 @@
-use anyhow::Ok;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ostree::gio;
 use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
@@ -41,9 +40,10 @@ pub(crate) fn get_kargs(
     // Get the kargs in kargs.d of the booted system
     let mut existing_kargs: Vec<String> = vec![];
     let fragments = liboverdrop::scan(&["/usr/lib"], "bootc/kargs.d", &["toml"], true);
-    for (_name, path) in fragments {
+    for (name, path) in fragments {
         let s = std::fs::read_to_string(&path)?;
-        let mut parsed_kargs = parse_file(s.clone(), sys_arch.clone())?;
+        let mut parsed_kargs =
+            parse_kargs_toml(&s, &sys_arch).with_context(|| format!("Parsing {name:?}"))?;
         existing_kargs.append(&mut parsed_kargs);
     }
 
@@ -79,7 +79,8 @@ pub(crate) fn get_kargs(
                 let mut reader =
                     ostree_ext::prelude::InputStreamExtManual::into_read(file_content.unwrap());
                 let s = std::io::read_to_string(&mut reader)?;
-                let mut parsed_kargs = parse_file(s.clone(), sys_arch.clone())?;
+                let mut parsed_kargs =
+                    parse_kargs_toml(&s, &sys_arch).with_context(|| format!("Parsing {name}"))?;
                 remote_kargs.append(&mut parsed_kargs);
             }
         }
@@ -110,15 +111,18 @@ pub(crate) fn get_kargs(
     Ok(kargs)
 }
 
-pub fn parse_file(file_content: String, sys_arch: String) -> Result<Vec<String>> {
-    let mut de: Config = toml::from_str(&file_content)?;
+/// This parses a bootc kargs.d toml file, returning the resulting
+/// vector of kernel arguments. Architecture matching is performed using
+/// `sys_arch`.
+fn parse_kargs_toml(contents: &str, sys_arch: &str) -> Result<Vec<String>> {
+    let mut de: Config = toml::from_str(contents)?;
     let mut parsed_kargs: Vec<String> = vec![];
     // if arch specified, apply kargs only if the arch matches
     // if arch not specified, apply kargs unconditionally
     match de.match_architectures {
         None => parsed_kargs = de.kargs,
         Some(match_architectures) => {
-            if match_architectures.contains(&sys_arch) {
+            if match_architectures.iter().any(|s| s == sys_arch) {
                 parsed_kargs.append(&mut de.kargs);
             }
         }
@@ -132,10 +136,10 @@ fn test_arch() {
     // no arch specified, kargs ensure that kargs are applied unconditionally
     let sys_arch = "x86_64".to_string();
     let file_content = r##"kargs = ["console=tty0", "nosmt"]"##.to_string();
-    let parsed_kargs = parse_file(file_content.clone(), sys_arch.clone()).unwrap();
+    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
     assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
     let sys_arch = "aarch64".to_string();
-    let parsed_kargs = parse_file(file_content.clone(), sys_arch.clone()).unwrap();
+    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
     assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
 
     // one arch matches and one doesn't, ensure that kargs are only applied for the matching arch
@@ -144,13 +148,13 @@ fn test_arch() {
 match-architectures = ["x86_64"]
 "##
     .to_string();
-    let parsed_kargs = parse_file(file_content.clone(), sys_arch.clone()).unwrap();
+    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
     assert_eq!(parsed_kargs, [] as [String; 0]);
     let file_content = r##"kargs = ["console=tty0", "nosmt"]
 match-architectures = ["aarch64"]
 "##
     .to_string();
-    let parsed_kargs = parse_file(file_content.clone(), sys_arch.clone()).unwrap();
+    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
     assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
 
     // multiple arch specified, ensure that kargs are applied to both archs
@@ -159,9 +163,9 @@ match-architectures = ["aarch64"]
 match-architectures = ["x86_64", "aarch64"]
 "##
     .to_string();
-    let parsed_kargs = parse_file(file_content.clone(), sys_arch.clone()).unwrap();
+    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
     assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
     std::env::set_var("ARCH", "aarch64");
-    let parsed_kargs = parse_file(file_content.clone(), sys_arch.clone()).unwrap();
+    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
     assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
 }
