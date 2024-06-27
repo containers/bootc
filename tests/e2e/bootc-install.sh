@@ -98,7 +98,7 @@ echo "$PACKIT_COPR_PROJECT and $PACKIT_COPR_RPMS"
 
 # Generate bootc copr repo file
 if [[ "$VERSION_ID" == 41 ]]; then
-    REPLACE_TEST_OS="rawhide"
+    REPLACE_TEST_OS="${ID}-rawhide"
 else
     REPLACE_TEST_OS="$TEST_OS"
 fi
