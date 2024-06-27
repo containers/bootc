@@ -59,7 +59,7 @@ pub(crate) fn get_kargs(
 ) -> Result<Vec<String>> {
     let cancellable = gio::Cancellable::NONE;
     let mut kargs: Vec<String> = vec![];
-    let sys_arch = std::env::consts::ARCH.to_string();
+    let sys_arch = std::env::consts::ARCH;
 
     // Get the running kargs of the booted system
     if let Some(bootconfig) = ostree::Deployment::bootconfig(booted_deployment) {
@@ -72,7 +72,7 @@ pub(crate) fn get_kargs(
 
     // Get the kargs in kargs.d of the booted system
     let root = &cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-    let mut existing_kargs: Vec<String> = get_kargs_in_root(root, &sys_arch)?;
+    let mut existing_kargs: Vec<String> = get_kargs_in_root(root, sys_arch)?;
 
     // Get the kargs in kargs.d of the pending image
     let mut remote_kargs: Vec<String> = vec![];
@@ -107,7 +107,7 @@ pub(crate) fn get_kargs(
                     ostree_ext::prelude::InputStreamExtManual::into_read(file_content.unwrap());
                 let s = std::io::read_to_string(&mut reader)?;
                 let mut parsed_kargs =
-                    parse_kargs_toml(&s, &sys_arch).with_context(|| format!("Parsing {name}"))?;
+                    parse_kargs_toml(&s, sys_arch).with_context(|| format!("Parsing {name}"))?;
                 remote_kargs.append(&mut parsed_kargs);
             }
         }
@@ -161,39 +161,39 @@ fn parse_kargs_toml(contents: &str, sys_arch: &str) -> Result<Vec<String>> {
 /// Verify that kargs are only applied to supported architectures
 fn test_arch() {
     // no arch specified, kargs ensure that kargs are applied unconditionally
-    let sys_arch = "x86_64".to_string();
+    let sys_arch = "x86_64";
     let file_content = r##"kargs = ["console=tty0", "nosmt"]"##.to_string();
-    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
+    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
     assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
-    let sys_arch = "aarch64".to_string();
-    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
+    let sys_arch = "aarch64";
+    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
     assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
 
     // one arch matches and one doesn't, ensure that kargs are only applied for the matching arch
-    let sys_arch = "aarch64".to_string();
+    let sys_arch = "aarch64";
     let file_content = r##"kargs = ["console=tty0", "nosmt"]
 match-architectures = ["x86_64"]
 "##
     .to_string();
-    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
+    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
     assert_eq!(parsed_kargs, [] as [String; 0]);
     let file_content = r##"kargs = ["console=tty0", "nosmt"]
 match-architectures = ["aarch64"]
 "##
     .to_string();
-    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
+    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
     assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
 
     // multiple arch specified, ensure that kargs are applied to both archs
-    let sys_arch = "x86_64".to_string();
+    let sys_arch = "x86_64";
     let file_content = r##"kargs = ["console=tty0", "nosmt"]
 match-architectures = ["x86_64", "aarch64"]
 "##
     .to_string();
-    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
+    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
     assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
     std::env::set_var("ARCH", "aarch64");
-    let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
+    let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
     assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
 }
 
