@@ -37,12 +37,16 @@ jobs:
     targets:
       - centos-stream-9-x86_64
       - centos-stream-9-aarch64
+      - centos-stream-9-ppc64le
       - centos-stream-10-aarch64
       - centos-stream-10-x86_64
+      - centos-stream-10-ppc64le
       - fedora-40-x86_64
       - fedora-40-aarch64
+      - fedora-40-ppc64le
       - fedora-rawhide-x86_64
       - fedora-rawhide-aarch64
+      - fedora-rawhide-ppc64le
       - rhel-9-x86_64
       - rhel-9-aarch64
 
