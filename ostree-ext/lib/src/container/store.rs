@@ -705,7 +705,7 @@ impl ImageImporter {
                     .await?;
             }
             let (blob, driver) = fetch_layer_decompress(
-                &mut self.proxy,
+                &self.proxy,
                 &self.proxy_img,
                 &import.manifest,
                 &layer.layer,
