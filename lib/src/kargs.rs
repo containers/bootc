@@ -169,3 +169,13 @@ match-architectures = ["x86_64", "aarch64"]
     let parsed_kargs = parse_kargs_toml(&file_content, &sys_arch).unwrap();
     assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
 }
+
+#[test]
+/// Verify some error cases
+fn test_invalid() {
+    let test_invalid_extra = r#"kargs = ["console=tty0", "nosmt"]\nfoo=bar"#;
+    assert!(parse_kargs_toml(test_invalid_extra, "x86_64").is_err());
+
+    let test_missing = r#"foo=bar"#;
+    assert!(parse_kargs_toml(test_missing, "x86_64").is_err());
+}
