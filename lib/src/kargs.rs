@@ -49,6 +49,43 @@ fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> {
     Ok(ret)
 }
 
+/// Load kargs.d files from the target ostree commit root
+fn get_kargs_from_ostree(
+    repo: &ostree::Repo,
+    fetched_tree: &ostree::RepoFile,
+    sys_arch: &str,
+) -> Result<Vec<String>> {
+    let cancellable = gio::Cancellable::NONE;
+    let queryattrs = "standard::name,standard::type";
+    let queryflags = gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS;
+    let fetched_iter = fetched_tree.enumerate_children(queryattrs, queryflags, cancellable)?;
+    let mut ret = Vec::new();
+    while let Some(fetched_info) = fetched_iter.next_file(cancellable)? {
+        // only read and parse the file if it is a toml file
+        let name = fetched_info.name();
+        if let Some(name) = name.to_str() {
+            if name.ends_with(".toml") {
+                let fetched_child = fetched_iter.child(&fetched_info);
+                let fetched_child = fetched_child
+                    .downcast::<ostree::RepoFile>()
+                    .expect("downcast");
+                fetched_child.ensure_resolved()?;
+                let fetched_contents_checksum = fetched_child.checksum();
+                let f =
+                    ostree::Repo::load_file(repo, fetched_contents_checksum.as_str(), cancellable)?;
+                let file_content = f.0;
+                let mut reader =
+                    ostree_ext::prelude::InputStreamExtManual::into_read(file_content.unwrap());
+                let s = std::io::read_to_string(&mut reader)?;
+                let parsed_kargs =
+                    parse_kargs_toml(&s, sys_arch).with_context(|| format!("Parsing {name}"))?;
+                ret.extend(parsed_kargs);
+            }
+        }
+    }
+    Ok(ret)
+}
+
 /// Compute the kernel arguments for the new deployment. This starts from the booted
 /// karg, but applies the diff between the bootc karg files in /usr/lib/bootc/kargs.d
 /// between the booted deployment and the new one.
@@ -86,33 +123,7 @@ pub(crate) fn get_kargs(
         return Ok(kargs);
     }
 
-    let mut remote_kargs: Vec<String> = vec![];
-    let queryattrs = "standard::name,standard::type";
-    let queryflags = gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS;
-    let fetched_iter = fetched_tree.enumerate_children(queryattrs, queryflags, cancellable)?;
-    while let Some(fetched_info) = fetched_iter.next_file(cancellable)? {
-        // only read and parse the file if it is a toml file
-        let name = fetched_info.name();
-        if let Some(name) = name.to_str() {
-            if name.ends_with(".toml") {
-                let fetched_child = fetched_iter.child(&fetched_info);
-                let fetched_child = fetched_child
-                    .downcast::<ostree::RepoFile>()
-                    .expect("downcast");
-                fetched_child.ensure_resolved()?;
-                let fetched_contents_checksum = fetched_child.checksum();
-                let f =
-                    ostree::Repo::load_file(repo, fetched_contents_checksum.as_str(), cancellable)?;
-                let file_content = f.0;
-                let mut reader =
-                    ostree_ext::prelude::InputStreamExtManual::into_read(file_content.unwrap());
-                let s = std::io::read_to_string(&mut reader)?;
-                let mut parsed_kargs =
-                    parse_kargs_toml(&s, sys_arch).with_context(|| format!("Parsing {name}"))?;
-                remote_kargs.append(&mut parsed_kargs);
-            }
-        }
-    }
+    let remote_kargs = get_kargs_from_ostree(repo, &fetched_tree, sys_arch)?;
 
     // get the diff between the existing and remote kargs
     let mut added_kargs: Vec<String> = remote_kargs
@@ -156,6 +167,9 @@ fn parse_kargs_toml(contents: &str, sys_arch: &str) -> Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
+    use fn_error_context::context;
+    use rustix::fd::{AsFd, AsRawFd};
+
     use super::*;
 
     #[test]
@@ -208,6 +222,20 @@ match-architectures = ["x86_64", "aarch64"]
         assert!(parse_kargs_toml(test_missing, "x86_64").is_err());
     }
 
+    #[context("writing test kargs")]
+    fn write_test_kargs(td: &Dir) -> Result<()> {
+        td.write(
+            "usr/lib/bootc/kargs.d/01-foo.toml",
+            r##"kargs = ["console=tty0", "nosmt"]"##,
+        )?;
+        td.write(
+            "usr/lib/bootc/kargs.d/02-bar.toml",
+            r##"kargs = ["console=ttyS1"]"##,
+        )?;
+
+        Ok(())
+    }
+
     #[test]
     fn test_get_kargs_in_root() -> Result<()> {
         let td = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
@@ -220,16 +248,81 @@ match-architectures = ["x86_64", "aarch64"]
         // Non-toml file
         td.write("usr/lib/bootc/kargs.d/somegarbage", "garbage")?;
         assert_eq!(get_kargs_in_root(&td, "x86_64").unwrap().len(), 0);
-        td.write(
-            "usr/lib/bootc/kargs.d/01-foo.toml",
-            r##"kargs = ["console=tty0", "nosmt"]"##,
-        )?;
-        td.write(
-            "usr/lib/bootc/kargs.d/02-bar.toml",
-            r##"kargs = ["console=ttyS1"]"##,
-        )?;
+
+        write_test_kargs(&td)?;
 
         let args = get_kargs_in_root(&td, "x86_64").unwrap();
+        similar_asserts::assert_eq!(args, ["console=tty0", "nosmt", "console=ttyS1"]);
+
+        Ok(())
+    }
+
+    #[context("ostree commit")]
+    fn ostree_commit(
+        repo: &ostree::Repo,
+        d: &Dir,
+        path: &Utf8Path,
+        ostree_ref: &str,
+    ) -> Result<()> {
+        let cancellable = gio::Cancellable::NONE;
+        let txn = repo.auto_transaction(cancellable)?;
+
+        let mt = ostree::MutableTree::new();
+        repo.write_dfd_to_mtree(d.as_fd().as_raw_fd(), path.as_str(), &mt, None, cancellable)
+            .context("Writing merged filesystem to mtree")?;
+
+        let merged_root = repo
+            .write_mtree(&mt, cancellable)
+            .context("Writing mtree")?;
+        let merged_root = merged_root.downcast::<ostree::RepoFile>().unwrap();
+        let merged_commit = repo
+            .write_commit(None, None, None, None, &merged_root, cancellable)
+            .context("Writing commit")?;
+        repo.transaction_set_ref(None, &ostree_ref, Some(merged_commit.as_str()));
+        txn.commit(cancellable)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_kargs_in_ostree() -> Result<()> {
+        let cancellable = gio::Cancellable::NONE;
+        let td = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+
+        td.create_dir("repo")?;
+        let repo = &ostree::Repo::create_at(
+            td.as_fd().as_raw_fd(),
+            "repo",
+            ostree::RepoMode::Bare,
+            None,
+            gio::Cancellable::NONE,
+        )?;
+
+        td.create_dir("rootfs")?;
+        let test_rootfs = &td.open_dir("rootfs")?;
+
+        ostree_commit(repo, &test_rootfs, ".".into(), "testref")?;
+        // Helper closure to read the kargs
+        let get_kargs = |sys_arch: &str| -> Result<Vec<String>> {
+            let rootfs = repo.read_commit("testref", cancellable)?.0;
+            let rootfs = rootfs.downcast_ref::<ostree::RepoFile>().unwrap();
+            let fetched_tree = rootfs.resolve_relative_path("/usr/lib/bootc/kargs.d");
+            let fetched_tree = fetched_tree
+                .downcast::<ostree::RepoFile>()
+                .expect("downcast");
+            if !fetched_tree.query_exists(cancellable) {
+                return Ok(Default::default());
+            }
+            get_kargs_from_ostree(repo, &fetched_tree, sys_arch)
+        };
+
+        // rootfs is empty
+        assert_eq!(get_kargs("x86_64").unwrap().len(), 0);
+
+        test_rootfs.create_dir_all("usr/lib/bootc/kargs.d")?;
+        write_test_kargs(&test_rootfs).unwrap();
+        ostree_commit(repo, &test_rootfs, ".".into(), "testref")?;
+
+        let args = get_kargs("x86_64").unwrap();
         similar_asserts::assert_eq!(args, ["console=tty0", "nosmt", "console=ttyS1"]);
 
         Ok(())
