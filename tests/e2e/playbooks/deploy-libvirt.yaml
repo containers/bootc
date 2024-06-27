@@ -3,7 +3,6 @@
   become: false
   vars:
     test_os: ""
-    arch: "{{ lookup('env', 'ARCH') | default('x86_64', true) }}"
     ssh_key_pub: ""
     ssh_user: "cloud-user"
     inventory_file: ""
@@ -19,6 +18,9 @@
       fedora-41: fedora-unknown
 
   tasks:
+    - set_fact:
+        arch: "{{ ansible_facts['architecture'] }}"
+
     - name: Get temp folder
       command: dirname "{{ inventory_file }}"
       register: result_temp_folder
