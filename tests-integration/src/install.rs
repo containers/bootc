@@ -100,6 +100,11 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
                     "sudo /bin/sh -c 'grep localtestkarg=somevalue /boot/loader/entries/*.conf'"
                 )
                 .run()?;
+                cmd!(
+                    sh,
+                    "sudo /bin/sh -c 'grep testing-kargsd=3 /boot/loader/entries/*.conf'"
+                )
+                .run()?;
                 let deployment = &find_deployment_root()?;
                 let cwd = sh.push_dir(format!("/proc/self/fd/{}", deployment.as_raw_fd()));
                 cmd!(
