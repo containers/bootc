@@ -24,6 +24,13 @@ struct Config {
     match_architectures: Option<Vec<String>>,
 }
 
+impl Config {
+    /// Return true if the filename is one we should parse.
+    fn filename_matches(name: &str) -> bool {
+        matches!(Utf8Path::new(name).extension(), Some("toml"))
+    }
+}
+
 /// Load and parse all bootc kargs.d files in the specified root, returning
 /// a combined list.
 fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> {
@@ -43,7 +50,7 @@ fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> {
         let name = name
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid non-UTF8 filename: {name:?}"))?;
-        if !matches!(Utf8Path::new(name).extension(), Some("toml")) {
+        if !Config::filename_matches(name) {
             continue;
         }
         let buf = d.read_to_string(name)?;
@@ -72,9 +79,10 @@ fn get_kargs_from_ostree(
         } else {
             continue;
         };
-        if !name.ends_with(".toml") {
+        if !Config::filename_matches(name) {
             continue;
         }
+
         let fetched_child = fetched_iter.child(&fetched_info);
         let fetched_child = fetched_child
             .downcast::<ostree::RepoFile>()
