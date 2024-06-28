@@ -95,9 +95,7 @@ fn manpages(sh: &Shell) -> Result<()> {
     for ent in std::fs::read_dir(extradir)? {
         let ent = ent?;
         let srcpath = ent.path();
-        let extension = if let Some(extension) = srcpath.extension() {
-            extension
-        } else {
+        let Some(extension) = srcpath.extension() else {
             continue;
         };
         if extension != "md" {
@@ -302,9 +300,7 @@ fn impl_srpm(sh: &Shell) -> Result<Utf8PathBuf> {
     for e in std::fs::read_dir(td)? {
         let e = e?;
         let n = e.file_name();
-        let n = if let Some(n) = n.to_str() {
-            n
-        } else {
+        let Some(n) = n.to_str() else {
             continue;
         };
         if n.ends_with(".src.rpm") {

@@ -35,9 +35,7 @@ pub(crate) fn get_container_execution_info(rootfs: &Dir) -> Result<ContainerExec
     for line in f.lines() {
         let line = line?;
         let line = line.trim();
-        let (k, v) = if let Some(v) = line.split_once('=') {
-            v
-        } else {
+        let Some((k, v)) = line.split_once('=') else {
             continue;
         };
         // Assuming there's no quotes here

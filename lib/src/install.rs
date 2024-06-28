@@ -1570,9 +1570,7 @@ pub(crate) async fn install_to_filesystem(
         loop {
             tracing::debug!("Finding parents for {dev}");
             let mut parents = crate::blockdev::find_parent_devices(&dev)?.into_iter();
-            let parent = if let Some(f) = parents.next() {
-                f
-            } else {
+            let Some(parent) = parents.next() else {
                 break;
             };
             if let Some(next) = parents.next() {
