@@ -13,10 +13,14 @@ use serde::Deserialize;
 
 use crate::deploy::ImageState;
 
+/// The kargs.d configuration file.
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
+    /// Ordered list of kernel arguments.
     kargs: Vec<String>,
+    /// Optional list of architectures (using the Rust naming conventions);
+    /// if present and the current architecture doesn't match, the file is skipped.
     match_architectures: Option<Vec<String>>,
 }
 
@@ -126,6 +130,7 @@ pub(crate) fn get_kargs(
         return Ok(kargs);
     }
 
+    // Fetch the kernel arguments from the new root
     let remote_kargs = get_kargs_from_ostree(repo, &fetched_tree, sys_arch)?;
 
     // get the diff between the existing and remote kargs
