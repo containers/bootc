@@ -310,6 +310,8 @@ pub(crate) struct State {
     pub(crate) install_config: Option<config::InstallConfiguration>,
     /// The parsed contents of the authorized_keys (not the file path)
     pub(crate) root_ssh_authorized_keys: Option<String>,
+    /// The root filesystem of the running container
+    pub(crate) container_root: Dir,
 }
 
 impl State {
@@ -320,8 +322,7 @@ impl State {
             return Ok(None);
         }
         // We always use the physical container root to bootstrap policy
-        let rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-        let r = ostree::SePolicy::new_at(rootfs.as_raw_fd(), gio::Cancellable::NONE)?;
+        let r = ostree::SePolicy::new_at(self.container_root.as_raw_fd(), gio::Cancellable::NONE)?;
         let csum = r
             .csum()
             .ok_or_else(|| anyhow::anyhow!("SELinux enabled, but no policy found in root"))?;
@@ -449,7 +450,10 @@ impl SourceInfo {
     // Inspect container information and convert it to an ostree image reference
     // that pulls from containers-storage.
     #[context("Gathering source info from container env")]
-    pub(crate) fn from_container(container_info: &ContainerExecutionInfo) -> Result<Self> {
+    pub(crate) fn from_container(
+        root: &Dir,
+        container_info: &ContainerExecutionInfo,
+    ) -> Result<Self> {
         if !container_info.engine.starts_with("podman") {
             anyhow::bail!("Currently this command only supports being executed via podman");
         }
@@ -463,7 +467,6 @@ impl SourceInfo {
         tracing::debug!("Finding digest for image ID {}", container_info.imageid);
         let digest = crate::podman::imageid_to_digest(&container_info.imageid)?;
 
-        let root = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
         let have_host_container_storage = Utf8Path::new(crate::podman::CONTAINER_STORAGE)
             .try_exists()?
             && ostree_ext::mountutil::is_mountpoint(
@@ -483,19 +486,26 @@ impl SourceInfo {
             require_skopeo_with_containers_storage()?;
         }
 
-        Self::new(imageref, Some(digest), true, have_host_container_storage)
+        Self::new(
+            imageref,
+            Some(digest),
+            root,
+            true,
+            have_host_container_storage,
+        )
     }
 
     #[context("Creating source info from a given imageref")]
-    pub(crate) fn from_imageref(imageref: &str) -> Result<Self> {
+    pub(crate) fn from_imageref(imageref: &str, root: &Dir) -> Result<Self> {
         let imageref = ostree_container::ImageReference::try_from(imageref)?;
-        Self::new(imageref, None, false, false)
+        Self::new(imageref, None, root, false, false)
     }
 
     /// Construct a new source information structure
     fn new(
         imageref: ostree_container::ImageReference,
         digest: Option<String>,
+        root: &Dir,
         in_host_mountns: bool,
         have_host_container_storage: bool,
     ) -> Result<Self> {
@@ -504,7 +514,6 @@ impl SourceInfo {
             .args(["--repo=/ostree/repo", "rev-parse", "--single"])
             .quiet()
             .read()?;
-        let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
         let repo = ostree::Repo::open_at_dir(root.as_fd(), "ostree/repo")?;
         let root = repo
             .read_commit(commit.trim(), cancellable)
@@ -1097,9 +1106,9 @@ async fn prepare_install(
             };
             tracing::trace!("Read container engine info {:?}", container_info);
 
-            SourceInfo::from_container(&container_info)?
+            SourceInfo::from_container(&rootfs, &container_info)?
         }
-        Some(source) => SourceInfo::from_imageref(&source)?,
+        Some(source) => SourceInfo::from_imageref(&source, &rootfs)?,
     };
 
     // Parse the target CLI image reference options and create the *target* image
@@ -1177,6 +1186,7 @@ async fn prepare_install(
         target_imgref,
         install_config,
         root_ssh_authorized_keys,
+        container_root: rootfs,
     });
 
     Ok(state)
