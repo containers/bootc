@@ -538,6 +538,8 @@ async fn initialize_ostree_root_from_self(
     let sepolicy = state.load_policy()?;
     let sepolicy = sepolicy.as_ref();
 
+    let container_rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+
     // Load a fd for the mounted target physical root
     let rootfs_dir = &root_setup.rootfs_fd;
     let rootfs = root_setup.rootfs.as_path();
@@ -640,6 +642,11 @@ async fn initialize_ostree_root_from_self(
         imgref: src_imageref,
     };
 
+    // Load the kargs from the /usr/lib/bootc/kargs.d from the running root,
+    // which should be the same as the filesystem we'll deploy.
+    let kargsd = crate::kargs::get_kargs_in_root(container_rootfs, std::env::consts::ARCH)?;
+    let kargsd = kargsd.iter().map(|s| s.as_str());
+
     let install_config_kargs = state
         .install_config
         .as_ref()
@@ -647,11 +654,17 @@ async fn initialize_ostree_root_from_self(
         .into_iter()
         .flatten()
         .map(|s| s.as_str());
+    // Final kargs, in order:
+    // - root filesystem kargs
+    // - install config kargs
+    // - kargs.d from container image
+    // - args specified on the CLI
     let kargs = root_setup
         .kargs
         .iter()
         .map(|v| v.as_str())
         .chain(install_config_kargs)
+        .chain(kargsd)
         .chain(state.config_opts.karg.iter().flatten().map(|v| v.as_str()))
         .collect::<Vec<_>>();
     let mut options = ostree_container::deploy::DeployOpts::default();

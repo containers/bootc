@@ -23,6 +23,8 @@ COPY hack/provision-derived.sh /tmp
 RUN /tmp/provision-derived.sh "$variant" && rm -f /tmp/*.sh
 # Also copy in some default install configs we use for testing
 COPY hack/install-test-configs/* /usr/lib/bootc/install/
+# And some test kargs
+COPY hack/test-kargs /usr/lib/bootc/kargs.d/
 # Inject our built code
 COPY --from=build /out/bootc.tar.zst /tmp
 RUN tar -C / --zstd -xvf /tmp/bootc.tar.zst && rm -vrf /tmp/*

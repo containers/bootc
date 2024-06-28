@@ -22,7 +22,7 @@ struct Config {
 
 /// Load and parse all bootc kargs.d files in the specified root, returning
 /// a combined list.
-fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> {
+pub(crate) fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> {
     // If the directory doesn't exist, that's OK.
     let d = if let Some(d) = d.open_dir_optional("usr/lib/bootc/kargs.d")? {
         d
