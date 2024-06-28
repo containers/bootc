@@ -44,7 +44,7 @@ pub(crate) fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> 
     // Read all the entries
     let mut entries = d.entries()?.collect::<std::io::Result<Vec<_>>>()?;
     // cc https://github.com/rust-lang/rust/issues/85573 re the allocation-per-comparison here
-    entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    entries.sort_by_key(|a| a.file_name());
     for ent in entries {
         let name = ent.file_name();
         let name = name

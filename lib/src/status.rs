@@ -318,16 +318,15 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     // Filter to just the serializable status structures.
     let out = std::io::stdout();
     let mut out = out.lock();
-    let format = opts.format.unwrap_or_else(|| {
-        if opts.json {
-            OutputFormat::JSON
-        } else {
-            OutputFormat::YAML
-        }
-    });
+    let legacy_opt = if opts.json {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Yaml
+    };
+    let format = opts.format.unwrap_or(legacy_opt);
     match format {
-        OutputFormat::JSON => serde_json::to_writer(&mut out, &host).map_err(anyhow::Error::new),
-        OutputFormat::YAML => serde_yaml::to_writer(&mut out, &host).map_err(anyhow::Error::new),
+        OutputFormat::Json => serde_json::to_writer(&mut out, &host).map_err(anyhow::Error::new),
+        OutputFormat::Yaml => serde_yaml::to_writer(&mut out, &host).map_err(anyhow::Error::new),
     }
     .context("Writing to stdout")?;
 
