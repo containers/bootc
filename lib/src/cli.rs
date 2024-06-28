@@ -19,16 +19,20 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::process::Command;
 use tokio::sync::mpsc::Receiver;
 
+use crate::chunking::{ObjectMetaSized, ObjectSourceMetaSized};
 use crate::commit::container_commit;
 use crate::container::store::{ExportToOCIOpts, ImportProgress, LayerProgress, PreparedImport};
 use crate::container::{self as ostree_container, ManifestDiff};
 use crate::container::{Config, ImageReference, OstreeImageReference};
+use crate::objectsource::ObjectSourceMeta;
 use crate::sysroot::SysrootLock;
 use ostree_container::store::{ImageImporter, PrepareResult};
+use serde::{Deserialize, Serialize};
 
 /// Parse an [`OstreeImageReference`] from a CLI arguemnt.
 pub fn parse_imgref(s: &str) -> Result<OstreeImageReference> {
@@ -165,6 +169,10 @@ pub(crate) enum ContainerOpts {
         /// Compress at the fastest level (e.g. gzip level 1)
         #[clap(long)]
         compression_fast: bool,
+
+        /// Path to a JSON-formatted content meta object.
+        #[clap(long)]
+        contentmeta: Option<Utf8PathBuf>,
     },
 
     /// Perform build-time checking and canonicalization.
@@ -699,6 +707,15 @@ async fn container_import(
     Ok(())
 }
 
+/// Grouping of metadata about an object.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct RawMeta {
+    /// ContentId to layer annotation
+    pub layers: BTreeMap<String, String>,
+    /// OSTree hash to layer ContentId
+    pub mapping: BTreeMap<String, String>,
+}
+
 /// Export a container image with an encapsulated ostree commit.
 #[allow(clippy::too_many_arguments)]
 async fn container_export(
@@ -712,6 +729,7 @@ async fn container_export(
     container_config: Option<Utf8PathBuf>,
     cmd: Option<Vec<String>>,
     compression_fast: bool,
+    contentmeta: Option<Utf8PathBuf>,
 ) -> Result<()> {
     let config = Config {
         labels: Some(labels),
@@ -722,12 +740,54 @@ async fn container_export(
     } else {
         None
     };
+    let contentmeta = if let Some(contentmeta) = contentmeta {
+        let raw: Option<RawMeta> =
+            serde_json::from_reader(File::open(contentmeta).map(BufReader::new)?)?;
+        if let Some(raw) = raw {
+            Some(ObjectMetaSized {
+                map: raw
+                    .mapping
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into()))
+                    .collect(),
+                sizes: raw
+                    .layers
+                    .into_iter()
+                    .map(|(k, v)| ObjectSourceMetaSized {
+                        meta: ObjectSourceMeta {
+                            identifier: k.clone().into(),
+                            name: v.into(),
+                            srcid: k.clone().into(),
+                            change_frequency: if k == "unpackaged" { std::u32::MAX } else { 1 },
+                            change_time_offset: 1,
+                        },
+                        size: 1,
+                    })
+                    .collect(),
+            })
+        } else {
+            anyhow::bail!("Content metadata must be a JSON object")
+        }
+    } else {
+        None
+    };
+
+    // Use enough layers so that each package ends in its own layer
+    // while respecting the layer ordering.
+    let max_layers = if let Some(contentmeta) = &contentmeta {
+        NonZeroU32::new(contentmeta.sizes.len().try_into().unwrap())
+    } else {
+        None
+    };
+
     let opts = crate::container::ExportOpts {
         copy_meta_keys,
         copy_meta_opt_keys,
         container_config,
         authfile,
         skip_compression: compression_fast, // TODO rename this in the struct at the next semver break
+        contentmeta: contentmeta.as_ref(),
+        max_layers,
         ..Default::default()
     };
     let pushed = crate::container::encapsulate(repo, rev, &config, Some(opts), imgref).await?;
@@ -958,6 +1018,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 config,
                 cmd,
                 compression_fast,
+                contentmeta,
             } => {
                 let labels: Result<BTreeMap<_, _>> = labels
                     .into_iter()
@@ -980,6 +1041,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     config,
                     cmd,
                     compression_fast,
+                    contentmeta,
                 )
                 .await
             }
