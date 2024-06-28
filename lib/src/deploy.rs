@@ -401,9 +401,7 @@ fn find_newest_deployment_name(deploysdir: &Dir) -> Result<String> {
             continue;
         }
         let name = ent.file_name();
-        let name = if let Some(name) = name.to_str() {
-            name
-        } else {
+        let Some(name) = name.to_str() else {
             continue;
         };
         dirs.push((name.to_owned(), ent.metadata()?.mtime()));

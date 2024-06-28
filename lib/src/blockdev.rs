@@ -122,9 +122,7 @@ impl LoopbackDevice {
     // Shared backend for our `close` and `drop` implementations.
     fn impl_close(&mut self) -> Result<()> {
         // SAFETY: This is the only place we take the option
-        let dev = if let Some(dev) = self.dev.take() {
-            dev
-        } else {
+        let Some(dev) = self.dev.take() else {
             tracing::trace!("loopback device already deallocated");
             return Ok(());
         };

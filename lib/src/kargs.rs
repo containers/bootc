@@ -35,9 +35,7 @@ impl Config {
 /// a combined list.
 pub(crate) fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> {
     // If the directory doesn't exist, that's OK.
-    let d = if let Some(d) = d.open_dir_optional("usr/lib/bootc/kargs.d")? {
-        d
-    } else {
+    let Some(d) = d.open_dir_optional("usr/lib/bootc/kargs.d")? else {
         return Ok(Default::default());
     };
     let mut ret = Vec::new();
@@ -74,9 +72,7 @@ fn get_kargs_from_ostree(
     while let Some(fetched_info) = fetched_iter.next_file(cancellable)? {
         // only read and parse the file if it is a toml file
         let name = fetched_info.name();
-        let name = if let Some(name) = name.to_str() {
-            name
-        } else {
+        let Some(name) = name.to_str() else {
             continue;
         };
         if !Config::filename_matches(name) {
