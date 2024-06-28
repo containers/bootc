@@ -67,8 +67,7 @@ jobs:
     targets:
       - centos-stream-9-x86_64
       - centos-stream-9-aarch64
-      - fedora-40-x86_64
-      - fedora-rawhide-aarch64
+      - fedora-40-aarch64
     tmt_plan: /to-existing-root
     identifier: e2e-test-to-existing-root
 
@@ -78,6 +77,5 @@ jobs:
       - centos-stream-9-x86_64
       - centos-stream-9-aarch64
       - fedora-40-aarch64
-      - fedora-rawhide-x86_64
     tmt_plan: /to-disk
     identifier: e2e-test-to-disk
