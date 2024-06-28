@@ -17,7 +17,6 @@ use fn_error_context::context;
 use ostree::gio;
 use ostree_container::store::PrepareResult;
 use ostree_ext::container as ostree_container;
-use ostree_ext::container::Transport;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
 
@@ -113,9 +112,9 @@ pub(crate) struct EditOpts {
 #[clap(rename_all = "lowercase")]
 pub(crate) enum OutputFormat {
     /// Output in YAML format.
-    YAML,
+    Yaml,
     /// Output in JSON format.
-    JSON,
+    Json,
 }
 
 /// Perform an status operation
