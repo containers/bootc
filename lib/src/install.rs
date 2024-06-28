@@ -573,15 +573,9 @@ async fn initialize_ostree_root_from_self(
         crate::lsm::ensure_dir_labeled(rootfs_dir, "boot", None, 0o755.into(), sepolicy)?;
     }
 
-    // Default to avoiding grub2-mkconfig etc., but we need to use zipl on s390x.
-    // TODO: Lower this logic into ostree proper.
-    let bootloader = if cfg!(target_arch = "s390x") {
-        "zipl"
-    } else {
-        "none"
-    };
     for (k, v) in [
-        ("sysroot.bootloader", bootloader),
+        // Default to avoiding grub2-mkconfig etc.
+        ("sysroot.bootloader", "none"),
         // Always flip this one on because we need to support alongside installs
         // to systems without a separate boot partition.
         ("sysroot.bootprefix", "true"),
@@ -1239,12 +1233,17 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
             })
             .context("Writing aleph version")?;
     }
+    if cfg!(target_arch = "s390x") {
+        // TODO: Integrate s390x support into install_via_bootupd
+        crate::bootloader::install_via_zipl(&rootfs.device_info, boot_uuid)?;
+    } else {
+        crate::bootloader::install_via_bootupd(
+            &rootfs.device_info,
+            &rootfs.rootfs,
+            &state.config_opts,
+        )?;
+    }
 
-    crate::bootloader::install_via_bootupd(
-        &rootfs.device_info,
-        &rootfs.rootfs,
-        &state.config_opts,
-    )?;
     tracing::debug!("Installed bootloader");
 
     // Finalize mounted filesystems
