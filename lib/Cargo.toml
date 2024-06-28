@@ -46,6 +46,9 @@ toml = "0.8.12"
 xshell = { version = "0.2.6", optional = true }
 uuid = { version = "1.8.0", features = ["v4"] }
 
+[dev-dependencies]
+similar-asserts = { version = "1.5.0" }
+
 [features]
 default = ["install"]
 # This feature enables `bootc install`.  Disable if you always want to use an external installer.

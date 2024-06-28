@@ -25,7 +25,7 @@ RUN /tmp/provision-derived.sh "$variant" && rm -f /tmp/*.sh
 COPY hack/install-test-configs/* /usr/lib/bootc/install/
 # Inject our built code
 COPY --from=build /out/bootc.tar.zst /tmp
-RUN tar -C / --zstd -xvf /tmp/bootc.tar.zst && rm -vf /tmp/*
+RUN tar -C / --zstd -xvf /tmp/bootc.tar.zst && rm -vrf /tmp/*
 # Also copy over arbitrary bits from the target root
 COPY --from=build /build/target/dev-rootfs/ /
 # Test our own linting
