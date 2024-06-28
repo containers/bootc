@@ -534,7 +534,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             }
         }
     } else {
-        let fetched = crate::deploy::pull(sysroot, imgref, opts.quiet).await?;
+        let fetched = crate::deploy::pull(repo, imgref, opts.quiet).await?;
         let kargs = crate::kargs::get_kargs(repo, &booted_deployment, fetched.as_ref())?;
         let staged_digest = staged_image.as_ref().map(|s| s.image_digest.as_str());
         let fetched_digest = fetched.manifest_digest.as_str();
@@ -631,7 +631,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     }
     let new_spec = RequiredHostSpec::from_spec(&new_spec)?;
 
-    let fetched = crate::deploy::pull(sysroot, &target, opts.quiet).await?;
+    let fetched = crate::deploy::pull(repo, &target, opts.quiet).await?;
     let kargs = crate::kargs::get_kargs(repo, &booted_deployment, fetched.as_ref())?;
 
     if !opts.retain {
@@ -665,6 +665,8 @@ async fn rollback(_opts: RollbackOpts) -> Result<()> {
 #[context("Editing spec")]
 async fn edit(opts: EditOpts) -> Result<()> {
     let sysroot = &get_locked_sysroot().await?;
+    let repo = &sysroot.repo();
+
     let (booted_deployment, _deployments, host) =
         crate::status::get_status_require_booted(sysroot)?;
     let new_host: Host = if let Some(filename) = opts.filename {
@@ -691,8 +693,7 @@ async fn edit(opts: EditOpts) -> Result<()> {
         return crate::deploy::rollback(sysroot).await;
     }
 
-    let fetched = crate::deploy::pull(sysroot, new_spec.image, opts.quiet).await?;
-    let repo = &sysroot.repo();
+    let fetched = crate::deploy::pull(repo, new_spec.image, opts.quiet).await?;
     let kargs = crate::kargs::get_kargs(repo, &booted_deployment, fetched.as_ref())?;
 
     // TODO gc old layers here
