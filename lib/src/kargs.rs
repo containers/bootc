@@ -63,25 +63,28 @@ fn get_kargs_from_ostree(
     while let Some(fetched_info) = fetched_iter.next_file(cancellable)? {
         // only read and parse the file if it is a toml file
         let name = fetched_info.name();
-        if let Some(name) = name.to_str() {
-            if name.ends_with(".toml") {
-                let fetched_child = fetched_iter.child(&fetched_info);
-                let fetched_child = fetched_child
-                    .downcast::<ostree::RepoFile>()
-                    .expect("downcast");
-                fetched_child.ensure_resolved()?;
-                let fetched_contents_checksum = fetched_child.checksum();
-                let f =
-                    ostree::Repo::load_file(repo, fetched_contents_checksum.as_str(), cancellable)?;
-                let file_content = f.0;
-                let mut reader =
-                    ostree_ext::prelude::InputStreamExtManual::into_read(file_content.unwrap());
-                let s = std::io::read_to_string(&mut reader)?;
-                let parsed_kargs =
-                    parse_kargs_toml(&s, sys_arch).with_context(|| format!("Parsing {name}"))?;
-                ret.extend(parsed_kargs);
-            }
+        let name = if let Some(name) = name.to_str() {
+            name
+        } else {
+            continue;
+        };
+        if !name.ends_with(".toml") {
+            continue;
         }
+        let fetched_child = fetched_iter.child(&fetched_info);
+        let fetched_child = fetched_child
+            .downcast::<ostree::RepoFile>()
+            .expect("downcast");
+        fetched_child.ensure_resolved()?;
+        let fetched_contents_checksum = fetched_child.checksum();
+        let f = ostree::Repo::load_file(repo, fetched_contents_checksum.as_str(), cancellable)?;
+        let file_content = f.0;
+        let mut reader =
+            ostree_ext::prelude::InputStreamExtManual::into_read(file_content.unwrap());
+        let s = std::io::read_to_string(&mut reader)?;
+        let parsed_kargs =
+            parse_kargs_toml(&s, sys_arch).with_context(|| format!("Parsing {name}"))?;
+        ret.extend(parsed_kargs);
     }
     Ok(ret)
 }
