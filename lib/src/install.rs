@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 use self::baseline::InstallBlockDeviceOpts;
 use crate::containerenv::ContainerExecutionInfo;
 use crate::mount::Filesystem;
+use crate::spec::ImageReference;
 use crate::task::Task;
 use crate::utils::sigpolicy_from_opts;
 
@@ -650,6 +651,12 @@ async fn initialize_ostree_root_from_self(
         sigverify: ostree_container::SignatureSource::ContainerPolicyAllowInsecure,
         imgref: src_imageref,
     };
+
+    // Pull the container image into the target root filesystem.
+    {
+        let spec_imgref = ImageReference::from(src_imageref.clone());
+        crate::deploy::pull(&sysroot.repo(), &spec_imgref, false).await?;
+    }
 
     // Load the kargs from the /usr/lib/bootc/kargs.d from the running root,
     // which should be the same as the filesystem we'll deploy.

@@ -164,11 +164,10 @@ async fn handle_layer_progress_print(
 /// Wrapper for pulling a container image, wiring up status output.
 #[context("Pulling")]
 pub(crate) async fn pull(
-    sysroot: &SysrootLock,
+    repo: &ostree::Repo,
     imgref: &ImageReference,
     quiet: bool,
 ) -> Result<Box<ImageState>> {
-    let repo = &sysroot.repo();
     let ostree_imgref = &OstreeImageReference::from(imgref.clone());
     let mut imp = new_importer(repo, ostree_imgref).await?;
     let prep = match imp.prepare().await? {
