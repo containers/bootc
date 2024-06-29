@@ -652,10 +652,14 @@ async fn initialize_ostree_root_from_self(
         imgref: src_imageref,
     };
 
-    // Pull the container image into the target root filesystem.
+    // Pull the container image into the target root filesystem. Since this is
+    // an install path, we don't need to fsync() individual layers.
     {
         let spec_imgref = ImageReference::from(src_imageref.clone());
-        crate::deploy::pull(&sysroot.repo(), &spec_imgref, false).await?;
+        let repo = &sysroot.repo();
+        repo.set_disable_fsync(true);
+        crate::deploy::pull(repo, &spec_imgref, false).await?;
+        repo.set_disable_fsync(false);
     }
 
     // Load the kargs from the /usr/lib/bootc/kargs.d from the running root,
