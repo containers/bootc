@@ -18,6 +18,7 @@ use cap_std_ext::{cap_std, cap_tempfile};
 use fn_error_context::context;
 use ostree::gio;
 use ostree::prelude::FileExt;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufWriter, Seek, Write};
 use std::path::Path;
@@ -49,9 +50,19 @@ pub(crate) fn copy_entry(
     // api as the header api does not handle long paths:
     // https://github.com/alexcrichton/tar-rs/issues/192
     match entry.header().entry_type() {
-        tar::EntryType::Link | tar::EntryType::Symlink => {
+        tar::EntryType::Symlink => {
             let target = entry.link_name()?.ok_or_else(|| anyhow!("Invalid link"))?;
-            dest.append_link(&mut header, path, target)
+            // Sanity check UTF-8 here too.
+            let target: &Utf8Path = (&*target).try_into()?;
+            dest.append_link(&mut header, path, &*target)
+        }
+        tar::EntryType::Link => {
+            let target = entry.link_name()?.ok_or_else(|| anyhow!("Invalid link"))?;
+            let target: &Utf8Path = (&*target).try_into()?;
+            // We need to also normalize the target in order to handle hardlinked files in /etc
+            // where we remap /etc to /usr/etc.
+            let target = remap_etc_path(target);
+            dest.append_link(&mut header, path, &*target)
         }
         _ => dest.append_data(&mut header, path, entry),
     }
@@ -117,6 +128,34 @@ enum NormalizedPathResult<'a> {
 pub(crate) struct TarImportConfig {
     allow_nonusr: bool,
     remap_factory_var: bool,
+}
+
+// If a path starts with /etc or ./etc or etc, remap it to be usr/etc.
+fn remap_etc_path(path: &Utf8Path) -> Cow<Utf8Path> {
+    let mut components = path.components();
+    let Some(prefix) = components.next() else {
+        return Cow::Borrowed(path);
+    };
+    let (prefix, first) = if matches!(prefix, Utf8Component::CurDir | Utf8Component::RootDir) {
+        let Some(next) = components.next() else {
+            return Cow::Borrowed(path);
+        };
+        (Some(prefix), next)
+    } else {
+        (None, prefix)
+    };
+    if first.as_str() == "etc" {
+        let usr = Utf8Component::Normal("usr");
+        Cow::Owned(
+            prefix
+                .into_iter()
+                .chain([usr, first])
+                .chain(components)
+                .collect(),
+        )
+    } else {
+        Cow::Borrowed(path)
+    }
 }
 
 fn normalize_validate_path<'a>(
@@ -437,6 +476,25 @@ pub async fn write_tar(
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn test_remap_etc() {
+        // These shouldn't change. Test etcc to verify we're not doing string matching.
+        let unchanged = ["", "foo", "/etcc/foo", "../etc/baz"];
+        for x in unchanged {
+            similar_asserts::assert_eq!(x, remap_etc_path(x.into()).as_str());
+        }
+        // Verify all 3 forms of "./etc", "/etc" and "etc", and also test usage of
+        // ".."" (should be unchanged) and "//" (will be normalized).
+        for (p, expected) in [
+            ("/etc/foo/../bar/baz", "/usr/etc/foo/../bar/baz"),
+            ("etc/foo//bar", "usr/etc/foo/bar"),
+            ("./etc/foo", "./usr/etc/foo"),
+            ("etc", "usr/etc"),
+        ] {
+            similar_asserts::assert_eq!(remap_etc_path(p.into()).as_str(), expected);
+        }
+    }
 
     #[test]
     fn test_normalize_path() {
