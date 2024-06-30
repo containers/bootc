@@ -12,6 +12,7 @@ use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtDirExt;
 use clap::{Parser, Subcommand};
 use fn_error_context::context;
+use indexmap::IndexMap;
 use io_lifetimes::AsFd;
 use ostree::{gio, glib};
 use std::borrow::Cow;
@@ -713,9 +714,9 @@ pub struct RawMeta {
     /// Top level labels, to be prefixed to the ones with --label
     pub labels: Option<BTreeMap<String, String>>,
     /// ContentId to layer annotation
-    pub layers: BTreeMap<String, String>,
+    pub layers: IndexMap<String, String>,
     /// OSTree hash to layer ContentId
-    pub mapping: BTreeMap<String, String>,
+    pub mapping: IndexMap<String, String>,
 }
 
 /// Export a container image with an encapsulated ostree commit.
