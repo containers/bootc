@@ -710,6 +710,8 @@ async fn container_import(
 /// Grouping of metadata about an object.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct RawMeta {
+    /// Top level labels, to be prefixed to the ones with --label
+    pub labels: Option<BTreeMap<String, String>>,
     /// ContentId to layer annotation
     pub layers: BTreeMap<String, String>,
     /// OSTree hash to layer ContentId
@@ -731,20 +733,19 @@ async fn container_export(
     compression_fast: bool,
     contentmeta: Option<Utf8PathBuf>,
 ) -> Result<()> {
-    let config = Config {
-        labels: Some(labels),
-        cmd,
-    };
     let container_config = if let Some(container_config) = container_config {
         serde_json::from_reader(File::open(container_config).map(BufReader::new)?)?
     } else {
         None
     };
-    let contentmeta = if let Some(contentmeta) = contentmeta {
+
+    let mut contentmeta_data = None;
+    let mut labels = labels.clone();
+    if let Some(contentmeta) = contentmeta {
         let raw: Option<RawMeta> =
             serde_json::from_reader(File::open(contentmeta).map(BufReader::new)?)?;
         if let Some(raw) = raw {
-            Some(ObjectMetaSized {
+            contentmeta_data = Some(ObjectMetaSized {
                 map: raw
                     .mapping
                     .into_iter()
@@ -764,20 +765,27 @@ async fn container_export(
                         size: 1,
                     })
                     .collect(),
-            })
+            });
+            // Allow --label to override labels from the content metadata
+            if let Some(raw_labels) = raw.labels {
+                labels = raw_labels.into_iter().chain(labels.into_iter()).collect();
+            };
         } else {
             anyhow::bail!("Content metadata must be a JSON object")
         }
+    }
+
+    // Use enough layers so that each package ends in its own layer
+    // while respecting the layer ordering.
+    let max_layers = if let Some(contentmeta_data) = &contentmeta_data {
+        NonZeroU32::new(contentmeta_data.sizes.len().try_into().unwrap())
     } else {
         None
     };
 
-    // Use enough layers so that each package ends in its own layer
-    // while respecting the layer ordering.
-    let max_layers = if let Some(contentmeta) = &contentmeta {
-        NonZeroU32::new(contentmeta.sizes.len().try_into().unwrap())
-    } else {
-        None
+    let config = Config {
+        labels: Some(labels),
+        cmd,
     };
 
     let opts = crate::container::ExportOpts {
@@ -786,7 +794,7 @@ async fn container_export(
         container_config,
         authfile,
         skip_compression: compression_fast, // TODO rename this in the struct at the next semver break
-        contentmeta: contentmeta.as_ref(),
+        contentmeta: contentmeta_data.as_ref(),
         max_layers,
         ..Default::default()
     };
