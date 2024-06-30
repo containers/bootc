@@ -19,6 +19,7 @@ use camino::Utf8PathBuf;
 use containers_image_proxy::oci_spec;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{Marker, Structure};
+use indexmap::IndexMap;
 use ostree::{gio, glib};
 use serde::{Deserialize, Serialize};
 
@@ -308,7 +309,7 @@ impl Chunking {
         }
 
         // Reverses `contentmeta.map` i.e. contentid -> Vec<checksum>
-        let mut rmap = BTreeMap::<ContentID, Vec<&String>>::new();
+        let mut rmap = IndexMap::<ContentID, Vec<&String>>::new();
         for (checksum, contentid) in meta.map.iter() {
             rmap.entry(Rc::clone(contentid)).or_default().push(checksum);
         }
