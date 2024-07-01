@@ -118,28 +118,25 @@ But out of conservatism currently today for e.g. Fedora CoreOS, bootupd is disab
 by default.  On the other hand, if your OS update mechanism isn't transactional,
 then you may want to enable bootupd by default.
 
-- Why is bootupd a daemon?
+- Is bootupd a daemon?
 
-It's not, really.  The name was intended to be "bootloader-upDater"
-not "bootloader-updater-Daemon"; the choice of a "d" suffix is
-in retrospect probably too confusing.
+It was never a daemon. The name was intended to be "bootloader-upDater" not
+"bootloader-updater-Daemon". The choice of a "d" suffix is in retrospect
+probably too confusing.
 
-At a technical level, yes there is a socket-activated systemd service
-which will spawn a `bootupd.service`.  However - the service will
-*very quickly* auto exit.  There's nothing long-running, so it's
-not really a daemon.
+bootupd used to have an internally-facing `bootupd.service` and
+`bootupd.socket` systemd units that acted as a locking mechanism. The service
+would *very quickly* auto exit. There was nothing long-running, so it was not
+really a daemon.
 
-The rationale behind this design is:
+bootupd now uses `systemd-run` instead to guarantee the following:
 
-- Using a systemd service provides a robust natural "locking"
-  mechanism.
-- Using a systemd service ensures that critical logging metadata
-  always consistently ends up in the systemd journal, not e.g.
-  a transient client SSH connection.
-- systemd services can easily have sandboxing applied, and
-  while bootupd is obviously privileged we can still make use
-  of some of this.
-- Ultimately, we do probably want a non-CLI API (whether that's
-  DBus or Cap'n Proto or varlink or something else).  Having
-  a socket (without a defined stable API) is preparatory work for that.
+- It provides a robust natural "locking" mechanism.
+- It ensures that critical logging metadata always consistently ends up in the
+  systemd journal, not e.g.  a transient client SSH connection.
+- It benefits from the sandboxing options available for systemd units, and
+  while bootupd is obviously privileged we can still make use of some of this.
+- If we want a non-CLI API (whether that's DBus or Cap'n Proto or varlink or
+  something else), we will create an independent daemon with a stable API for
+  this specific need.
 
