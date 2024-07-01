@@ -711,6 +711,8 @@ async fn container_import(
 /// Grouping of metadata about an object.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct RawMeta {
+    /// When the image was created. Sync it with the io.container.image.created label.
+    pub created: Option<String>,
     /// Top level labels, to be prefixed to the ones with --label
     pub labels: Option<BTreeMap<String, String>>,
     /// ContentId to layer annotation
@@ -741,11 +743,14 @@ async fn container_export(
     };
 
     let mut contentmeta_data = None;
+    let mut created = None;
     let mut labels = labels.clone();
     if let Some(contentmeta) = contentmeta {
         let raw: Option<RawMeta> =
             serde_json::from_reader(File::open(contentmeta).map(BufReader::new)?)?;
         if let Some(raw) = raw {
+            created = raw.created;
+
             contentmeta_data = Some(ObjectMetaSized {
                 map: raw
                     .mapping
@@ -797,6 +802,7 @@ async fn container_export(
         skip_compression: compression_fast, // TODO rename this in the struct at the next semver break
         contentmeta: contentmeta_data.as_ref(),
         max_layers,
+        created,
         ..Default::default()
     };
     let pushed = crate::container::encapsulate(repo, rev, &config, Some(opts), imgref).await?;

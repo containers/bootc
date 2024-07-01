@@ -186,9 +186,12 @@ fn build_oci(
 
     let mut ctrcfg = opts.container_config.clone().unwrap_or_default();
     let mut imgcfg = oci_image::ImageConfiguration::default();
-    imgcfg.set_created(Some(
-        commit_timestamp.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-    ));
+
+    let created_at = opts
+        .created
+        .clone()
+        .unwrap_or_else(|| commit_timestamp.format("%Y-%m-%dT%H:%M:%SZ").to_string());
+    imgcfg.set_created(Some(created_at));
     let mut labels = HashMap::new();
 
     commit_meta_to_labels(
@@ -262,7 +265,10 @@ fn build_oci(
     }
 
     imgcfg.set_annotations(Some(labels.clone()));
-    ctrcfg.labels_mut().get_or_insert_with(Default::default).extend(labels);
+    ctrcfg
+        .labels_mut()
+        .get_or_insert_with(Default::default)
+        .extend(labels);
     imgcfg.set_config(Some(ctrcfg));
     let ctrcfg = writer.write_config(imgcfg)?;
     manifest.set_config(ctrcfg);
@@ -377,6 +383,8 @@ pub struct ExportOpts<'m, 'o> {
     /// Metadata mapping between objects and their owning component/package;
     /// used to optimize packing.
     pub contentmeta: Option<&'o ObjectMetaSized>,
+    /// Sets the created tag in the image manifest.
+    pub created: Option<String>,
 }
 
 impl<'m, 'o> ExportOpts<'m, 'o> {
