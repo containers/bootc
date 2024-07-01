@@ -27,6 +27,7 @@ See the [project documentation](https://containers.github.io/bootc/); there
 are also operating systems and distributions using bootc; here are some examples:
 
 - https://docs.fedoraproject.org/en-US/bootc/
+- https://www.heliumos.org/
 
 ## Developing bootc
 
