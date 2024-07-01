@@ -254,8 +254,6 @@ pub(crate) fn install_create_rootfs(
             "BIOS-BOOT",
             Some("21686148-6449-6E6F-744E-656564454649"),
         );
-    } else if cfg!(target_arch = "aarch64") {
-        // Only UEFI here for now
     } else if cfg!(target_arch = "powerpc64") {
         // PowerPC-PReP-boot
         partno += 1;
@@ -266,6 +264,8 @@ pub(crate) fn install_create_rootfs(
             crate::bootloader::PREPBOOT_LABEL,
             Some(crate::bootloader::PREPBOOT_GUID),
         );
+    } else if cfg!(any(target_arch = "aarch64", target_arch = "s390x")) {
+        // No bootloader partition is necessary
     } else {
         anyhow::bail!("Unsupported architecture: {}", std::env::consts::ARCH);
     }
