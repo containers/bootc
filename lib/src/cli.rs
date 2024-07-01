@@ -130,6 +130,13 @@ pub(crate) struct StatusOpts {
     #[clap(long)]
     pub(crate) format: Option<OutputFormat>,
 
+    /// The desired format version. There is currently one supported
+    /// version, which is version `0`. Pass this option to explicitly
+    /// request it; it is possible that multiple versions will be
+    /// supported in the future.
+    #[clap(long)]
+    pub(crate) format_version: Option<u32>,
+
     /// Only display status for the booted deployment.
     #[clap(long)]
     pub(crate) booted: bool,
@@ -837,7 +844,15 @@ fn test_parse_opts() {
         Opt::Status(StatusOpts {
             json: false,
             format: None,
+            format_version: None,
             booted: false
+        })
+    ));
+    assert!(matches!(
+        Opt::parse_including_static(["bootc", "status", "--format-version=0"]),
+        Opt::Status(StatusOpts {
+            format_version: Some(0),
+            ..
         })
     ));
 }
