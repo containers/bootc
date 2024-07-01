@@ -192,13 +192,13 @@ fn build_oci(
         .clone()
         .unwrap_or_else(|| commit_timestamp.format("%Y-%m-%dT%H:%M:%SZ").to_string());
     imgcfg.set_created(Some(created_at));
-    let labels = ctrcfg.labels_mut().get_or_insert_with(Default::default);
+    let mut labels = HashMap::new();
 
     commit_meta_to_labels(
         &commit_meta,
         opts.copy_meta_keys.iter().map(|k| k.as_str()),
         opts.copy_meta_opt_keys.iter().map(|k| k.as_str()),
-        labels,
+        &mut labels,
     )?;
 
     let mut manifest = ocidir::new_empty_manifest().build().unwrap();
@@ -247,7 +247,7 @@ fn build_oci(
         writer,
         &mut manifest,
         &mut imgcfg,
-        labels,
+        &mut labels,
         chunking,
         &opts,
         &description,
@@ -264,9 +264,14 @@ fn build_oci(
         ctrcfg.set_cmd(Some(cmd.clone()));
     }
 
+    ctrcfg
+        .labels_mut()
+        .get_or_insert_with(Default::default)
+        .extend(labels.clone());
     imgcfg.set_config(Some(ctrcfg));
     let ctrcfg = writer.write_config(imgcfg)?;
     manifest.set_config(ctrcfg);
+    manifest.set_annotations(Some(labels));
     let platform = oci_image::Platform::default();
     if let Some(tag) = tag {
         writer.insert_manifest(manifest, Some(tag), platform)?;
