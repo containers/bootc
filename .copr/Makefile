@@ -1,5 +1,5 @@
 srpm:
-	dnf -y install dnf-utils
+	dnf -y install dnf-utils git
 	dnf -y builddep bootc
 	# similar to https://github.com/actions/checkout/issues/760, but for COPR
 	git config --global --add safe.directory '*'
