@@ -779,7 +779,7 @@ async fn container_export(
     // Use enough layers so that each package ends in its own layer
     // while respecting the layer ordering.
     let max_layers = if let Some(contentmeta_data) = &contentmeta_data {
-        NonZeroU32::new(contentmeta_data.sizes.len().try_into().unwrap())
+        NonZeroU32::new((contentmeta_data.sizes.len() + 1).try_into().unwrap())
     } else {
         None
     };
