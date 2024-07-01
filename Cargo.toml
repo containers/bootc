@@ -17,3 +17,6 @@ debug = true
 codegen-units = 1
 inherits = "release"
 lto = "yes"
+
+[patch.crates-io]
+oci-spec = { git = "https://github.com/antheas/oci-spec-rs.git" }
