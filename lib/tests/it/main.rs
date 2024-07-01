@@ -1058,6 +1058,98 @@ async fn test_container_var_content() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_container_etc_hardlinked() -> Result<()> {
+    let fixture = Fixture::new_v1()?;
+
+    let imgref = fixture.export_container().await.unwrap().0;
+    let imgref = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref,
+    };
+
+    // Build a derived image
+    let derived_path = &fixture.path.join("derived.oci");
+    let srcpath = imgref.imgref.name.as_str();
+    oci_clone(srcpath, derived_path).await.unwrap();
+    ostree_ext::integrationtest::generate_derived_oci_from_tar(
+        derived_path,
+        |w| {
+            let mut layer_tar = tar::Builder::new(w);
+            // Create a simple hardlinked file /etc/foo and /etc/bar in the tar stream, which
+            // needs usr/etc processing.
+            let mut h = tar::Header::new_gnu();
+            h.set_uid(0);
+            h.set_gid(0);
+            h.set_size(0);
+            h.set_mode(0o755);
+            h.set_entry_type(tar::EntryType::Directory);
+            layer_tar.append_data(&mut h.clone(), "etc", &mut std::io::empty())?;
+            let testdata = "hardlinked test data";
+            h.set_mode(0o644);
+            h.set_size(testdata.len().try_into().unwrap());
+            h.set_entry_type(tar::EntryType::Regular);
+            layer_tar.append_data(
+                &mut h.clone(),
+                "etc/foo",
+                std::io::Cursor::new(testdata.as_bytes()),
+            )?;
+            h.set_entry_type(tar::EntryType::Link);
+            h.set_size(0);
+            layer_tar.append_link(&mut h.clone(), "etc/bar", "etc/foo")?;
+
+            // Another case where we have /etc/dnf.conf and a hardlinked /ostree/repo/objects
+            // link into it - in this case we should ignore the hardlinked one.
+            let testdata = "hardlinked into object store";
+            h.set_mode(0o644);
+            h.set_mtime(42);
+            h.set_size(testdata.len().try_into().unwrap());
+            h.set_entry_type(tar::EntryType::Regular);
+            layer_tar.append_data(
+                &mut h.clone(),
+                "etc/dnf.conf",
+                std::io::Cursor::new(testdata.as_bytes()),
+            )?;
+            h.set_entry_type(tar::EntryType::Link);
+            h.set_mtime(42);
+            h.set_size(0);
+            layer_tar.append_link(&mut h.clone(), "sysroot/ostree/repo/objects/45/7279b28b541ca20358bec8487c81baac6a3d5ed3cea019aee675137fab53cb.file", "etc/dnf.conf")?;
+            layer_tar.finish()?;
+            Ok(())
+        },
+        None,
+    )?;
+
+    let derived_imgref = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: ImageReference {
+            transport: Transport::OciDir,
+            name: derived_path.to_string(),
+        },
+    };
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &derived_imgref, Default::default()).await?;
+    imp.set_ostree_version(2023, 11);
+    let prep = match imp.prepare().await.unwrap() {
+        store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        store::PrepareResult::Ready(r) => r,
+    };
+    let import = imp.import(prep).await.unwrap();
+    let r = fixture
+        .destrepo()
+        .read_commit(import.get_commit(), gio::Cancellable::NONE)?
+        .0;
+    let foo = r.resolve_relative_path("usr/etc/foo");
+    let foo = foo.downcast_ref::<ostree::RepoFile>().unwrap();
+    foo.ensure_resolved()?;
+    let bar = r.resolve_relative_path("usr/etc/bar");
+    let bar = bar.downcast_ref::<ostree::RepoFile>().unwrap();
+    bar.ensure_resolved()?;
+    assert_eq!(foo.checksum(), bar.checksum());
+
+    Ok(())
+}
+
 /// Copy an OCI directory.
 async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Result<()> {
     let src = src.as_ref();
