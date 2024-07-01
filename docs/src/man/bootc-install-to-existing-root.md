@@ -130,4 +130,4 @@ firmware will be skipped
 
 # VERSION
 
-v0.1.12
+v0.1.13

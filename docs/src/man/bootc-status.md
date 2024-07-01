@@ -4,8 +4,8 @@ bootc-status - Display status
 
 # SYNOPSIS
 
-**bootc status** \[**\--format**\] \[**\--booted**\]
-\[**-h**\|**\--help**\]
+**bootc status** \[**\--format**\] \[**\--format-version**\]
+\[**\--booted**\] \[**-h**\|**\--help**\]
 
 # DESCRIPTION
 
@@ -30,6 +30,13 @@ The exact API format is not currently declared stable.
 >
 > -   json: Output in JSON format
 
+**\--format-version**=*FORMAT_VERSION*
+
+:   The desired format version. There is currently one supported
+    version, which is version \`0\`. Pass this option to explicitly
+    request it; it is possible that multiple versions will be supported
+    in the future
+
 **\--booted**
 
 :   Only display status for the booted deployment
@@ -40,4 +47,4 @@ The exact API format is not currently declared stable.
 
 # VERSION
 
-v0.1.12
+v0.1.13
