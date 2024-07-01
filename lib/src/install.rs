@@ -1204,6 +1204,22 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
                 anyhow::Ok(())
             })
             .context("Writing aleph version")?;
+
+        // TODO: add code to run quadlet/systemd against the bootc-bound-image directory
+        // let bound = query_bound_state(&inst.deployment)?;
+        // bound.print();
+        // if !bound.is_empty() {
+        //     println!();
+        //     Task::new("Mounting deployment /var", "mount")
+        //         .args(["--bind", ".", "/var"])
+        //         .cwd(&inst.var)?
+        //         .run()?;
+        //     // podman needs this
+        //     Task::new("Initializing /var/tmp", "systemd-tmpfiles")
+        //         .args(["--create", "--boot", "--prefix=/var/tmp"])
+        //         .verbose()
+        //         .run()?;
+        //     crate::deploy::fetch_bound_state(&bound).await?;
     }
 
     crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, &state.config_opts)?;

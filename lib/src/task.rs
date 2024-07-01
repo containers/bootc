@@ -1,7 +1,5 @@
 use std::{
-    ffi::OsStr,
-    io::{Seek, Write},
-    process::{Command, Stdio},
+    ffi::OsStr, io::{Seek, Write}, process::{Command, Stdio}
 };
 
 use anyhow::{Context, Result};
@@ -73,6 +71,11 @@ impl Task {
     // Do not print stdout/stderr, unless the command fails
     pub(crate) fn quiet_output(mut self) -> Self {
         self.quiet_output = true;
+        self
+    }
+
+    pub(crate) fn env(mut self, k: &str, v: &str) -> Self {
+        self.cmd.env(k, v);
         self
     }
 
