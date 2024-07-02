@@ -304,6 +304,10 @@ pub(crate) fn get_status(
 /// Implementation of the `bootc status` CLI command.
 #[context("Status")]
 pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
+    match opts.format_version.unwrap_or_default() {
+        0 => {}
+        o => anyhow::bail!("Unsupported format version: {o}"),
+    };
     let host = if !Utf8Path::new("/run/ostree-booted").try_exists()? {
         Default::default()
     } else {
