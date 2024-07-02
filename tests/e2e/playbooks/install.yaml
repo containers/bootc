@@ -3,8 +3,8 @@
   become: false
   vars:
     test_os: ""
-    platform: "{{ lookup('env', 'PLATFORM') | default('aws', true) }}"
     test_image_url: ""
+    test_case: ""
 
   tasks:
     - name: check bios or uefi
@@ -27,61 +27,25 @@
 
     # installing SELinux-enabled targets from SELinux-disabled hosts
     # https://github.com/containers/bootc/issues/419
+    # only run on to-existing-root case
     - name: disable selinux for libvirt only
       command: setenforce 0
       become: true
       ignore_errors: true
       when:
-        - platform == "libvirt"
-
-    - name: Install podman
-      dnf:
-        name:
-          - podman
-        state: present
-      become: true
-      when: ('rhel' not in test_os and test_os != 'fedora-41') or (platform != 'aws' and test_os != 'fedora-41')
-
-    - name: Install podman from internal
-      dnf:
-        disablerepo: "*"
-        enablerepo: "rhel-9y-*"
-        name:
-          - podman
-        state: present
-      become: true
-      when:
-        - "'rhel' in test_os"
-        - platform == "aws"
+        - test_case == "to-existing-root"
 
     # ansible dnf5 module needs python3-libdnf5
-    - name: Install podman on fedora-41(dnf5)
+    - name: Install podman dnf and dnf5
       command: dnf -y install podman
       become: true
-      when: test_os == 'fedora-41'
-
-    - name: Auth for RHEL private image
-      command:
-        podman login \
-        -u "{{ lookup('env', 'QUAY_USERNAME') }}" \
-        -p "{{ lookup('env', 'QUAY_PASSWORD') }}" \
-        quay.io
-      no_log: true
-      become: true
-
-    - name: Pull image
-      command: "podman pull {{ test_image_url }}"
-      become: true
-      retries: 3
-      delay: 10
-      register: result
-      until: result is successful
 
     - name: Install image
       command:
         "podman run \
          --rm \
          --privileged \
+         --tls-verify=false \
          --pid=host \
          -v /dev:/dev \
          -v /:/target \
