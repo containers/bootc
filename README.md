@@ -31,5 +31,5 @@ are also operating systems and distributions using bootc; here are some examples
 
 ## Developing bootc
 
-Are you interested in working on bootc?  Great!  See our [HACKING.md](HACKING.md) guide.
+Are you interested in working on bootc?  Great!  See our [CONTRIBUTING.md](CONTRIBUTING.md) guide.
 
