@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use anyhow::{Context, Result};
 use camino::Utf8Path;
+use clap::ValueEnum;
 use fn_error_context::context;
 use ostree::glib;
 use ostree_container::OstreeImageReference;
@@ -13,7 +14,11 @@ use ostree_ext::ostree;
 use ostree_ext::sysroot::SysrootLock;
 
 use crate::cli::OutputFormat;
-use crate::spec::{BootEntry, BootOrder, Host, HostSpec, HostStatus, HostType, ImageStatus};
+use crate::deploy::ImageState;
+use crate::podman;
+use crate::spec::{
+    Backend, BootEntry, BootOrder, Host, HostSpec, HostStatus, HostType, ImageStatus,
+};
 use crate::spec::{ImageReference, ImageSignature};
 
 impl From<ostree_container::SignatureSource> for ImageSignature {
@@ -109,6 +114,16 @@ pub(crate) fn try_deserialize_timestamp(t: &str) -> Option<chrono::DateTime<chro
     }
 }
 
+pub(crate) fn get_image_backend(origin: &glib::KeyFile) -> Result<Backend> {
+    let r = origin
+        .optional_string("bootc", "backend")?
+        .map(|v| Backend::from_str(&v, true))
+        .transpose()
+        .map_err(anyhow::Error::msg)?
+        .unwrap_or_default();
+    Ok(r)
+}
+
 pub(crate) fn labels_of_config(
     config: &oci_spec::image::ImageConfiguration,
 ) -> Option<&std::collections::HashMap<String, String>> {
@@ -140,41 +155,62 @@ pub(crate) fn create_imagestatus(
 
 /// Given an OSTree deployment, parse out metadata into our spec.
 #[context("Reading deployment metadata")]
-fn boot_entry_from_deployment(
+async fn boot_entry_from_deployment(
     sysroot: &SysrootLock,
     deployment: &ostree::Deployment,
 ) -> Result<BootEntry> {
     let repo = &sysroot.repo();
-    let (image, cached_update, incompatible) = if let Some(origin) = deployment.origin().as_ref() {
-        let incompatible = crate::utils::origin_has_rpmostree_stuff(origin);
-        let (image, cached) = if incompatible {
-            // If there are local changes, we can't represent it as a bootc compatible image.
-            (None, None)
-        } else if let Some(image) = get_image_origin(origin)? {
-            let image = ImageReference::from(image);
-            let csum = deployment.csum();
-            let imgstate = ostree_container::store::query_image_commit(repo, &csum)?;
-            let cached = imgstate.cached_update.map(|cached| {
-                create_imagestatus(image.clone(), &cached.manifest_digest, &cached.config)
-            });
-            let imagestatus =
-                create_imagestatus(image, &imgstate.manifest_digest, &imgstate.configuration);
-            // We found a container-image based deployment
-            (Some(imagestatus), cached)
+    let (image, cached_update, incompatible, backend) =
+        if let Some(origin) = deployment.origin().as_ref() {
+            let incompatible = crate::utils::origin_has_rpmostree_stuff(origin);
+            let backend = get_image_backend(origin)?;
+            let (image, cached) = if incompatible {
+                // If there are local changes, we can't represent it as a bootc compatible image.
+                (None, None)
+            } else if let Some(image) = get_image_origin(origin)? {
+                let image = ImageReference::from(image);
+                let csum = deployment.csum();
+                let imgstate = match backend {
+                    Backend::Container => {
+                        // TODO: encapsulate this better
+                        let rootfs = &cap_std_ext::cap_std::fs::Dir::reopen_dir(
+                            &crate::utils::sysroot_fd_borrowed(sysroot),
+                        )?;
+                        ImageState::from(podman::podman_inspect(rootfs, &image.image).await?)
+                    }
+                    Backend::OstreeContainer => {
+                        ImageState::from(*ostree_container::store::query_image_commit(repo, &csum)?)
+                    }
+                };
+                //let cached = imgstate.cached_update.map(|cached| {
+                //    create_imagestatus(image.clone(), &cached.manifest_digest, &cached.config)
+                //});
+                let cached = None;
+
+                (
+                    Some(ImageStatus {
+                        image,
+                        version: imgstate.version,
+                        timestamp: imgstate.created,
+                        image_digest: imgstate.manifest_digest,
+                    }),
+                    cached,
+                )
+            } else {
+                // The deployment isn't using a container image
+                (None, None)
+            };
+            (image, cached, incompatible, backend)
         } else {
-            // The deployment isn't using a container image
-            (None, None)
+            // The deployment has no origin at all (this generally shouldn't happen)
+            (None, None, false, Default::default())
         };
-        (image, cached, incompatible)
-    } else {
-        // The deployment has no origin at all (this generally shouldn't happen)
-        (None, None, false)
-    };
     let r = BootEntry {
         image,
         cached_update,
         incompatible,
         pinned: deployment.is_pinned(),
+        backend,
         ostree: Some(crate::spec::BootEntryOstree {
             checksum: deployment.csum().into(),
             // SAFETY: The deployserial is really unsigned
@@ -202,18 +238,18 @@ impl BootEntry {
 }
 
 /// A variant of [`get_status`] that requires a booted deployment.
-pub(crate) fn get_status_require_booted(
+pub(crate) async fn get_status_require_booted(
     sysroot: &SysrootLock,
 ) -> Result<(ostree::Deployment, Deployments, Host)> {
     let booted_deployment = sysroot.require_booted_deployment()?;
-    let (deployments, host) = get_status(sysroot, Some(&booted_deployment))?;
+    let (deployments, host) = get_status(sysroot, Some(&booted_deployment)).await?;
     Ok((booted_deployment, deployments, host))
 }
 
 /// Gather the ostree deployment objects, but also extract metadata from them into
 /// a more native Rust structure.
 #[context("Computing status")]
-pub(crate) fn get_status(
+pub(crate) async fn get_status(
     sysroot: &SysrootLock,
     booted_deployment: Option<&ostree::Deployment>,
 ) -> Result<(Deployments, Host)> {
@@ -252,30 +288,46 @@ pub(crate) fn get_status(
         other,
     };
 
-    let staged = deployments
-        .staged
-        .as_ref()
-        .map(|d| boot_entry_from_deployment(sysroot, d))
-        .transpose()
-        .context("Staged deployment")?;
-    let booted = booted_deployment
-        .as_ref()
-        .map(|d| boot_entry_from_deployment(sysroot, d))
-        .transpose()
-        .context("Booted deployment")?;
-    let rollback = deployments
-        .rollback
-        .as_ref()
-        .map(|d| boot_entry_from_deployment(sysroot, d))
-        .transpose()
-        .context("Rollback deployment")?;
+    let staged = if let Some(d) = deployments.staged.as_ref() {
+        Some(
+            boot_entry_from_deployment(sysroot, d)
+                .await
+                .context("Staged deployment")?,
+        )
+    } else {
+        None
+    };
+
+    let booted = if let Some(d) = booted_deployment {
+        Some(
+            boot_entry_from_deployment(sysroot, d)
+                .await
+                .context("Booted deployment")?,
+        )
+    } else {
+        None
+    };
+
+    let rollback = if let Some(d) = deployments.rollback.as_ref() {
+        Some(
+            boot_entry_from_deployment(sysroot, d)
+                .await
+                .context("Rollback deployment")?,
+        )
+    } else {
+        None
+    };
+
     let spec = staged
         .as_ref()
         .or(booted.as_ref())
-        .and_then(|entry| entry.image.as_ref())
-        .map(|img| HostSpec {
-            image: Some(img.image.clone()),
-            boot_order,
+        .and_then(|entry| {
+            let image = entry.image.as_ref();
+            image.map(|image| HostSpec {
+                image: Some(image.image.clone()),
+                backend: entry.backend,
+                boot_order,
+            })
         })
         .unwrap_or_default();
 
@@ -313,7 +365,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     } else {
         let sysroot = super::cli::get_locked_sysroot().await?;
         let booted_deployment = sysroot.booted_deployment();
-        let (_deployments, host) = get_status(&sysroot, booted_deployment.as_ref())?;
+        let (_deployments, host) = get_status(&sysroot, booted_deployment.as_ref()).await?;
         host
     };
 

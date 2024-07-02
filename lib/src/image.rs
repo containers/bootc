@@ -47,7 +47,7 @@ pub(crate) async fn push_entrypoint(source: Option<&str>, target: Option<&str>) 
     let source = if let Some(source) = source {
         ImageReference::try_from(source).context("Parsing source image")?
     } else {
-        let status = crate::status::get_status_require_booted(&sysroot)?;
+        let status = crate::status::get_status_require_booted(&sysroot).await?;
         // SAFETY: We know it's booted
         let booted = status.2.status.booted.unwrap();
         let booted_image = booted.image.unwrap().image;

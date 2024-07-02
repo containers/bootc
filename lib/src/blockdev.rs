@@ -13,7 +13,7 @@ use nix::errno::Errno;
 use regex::Regex;
 use serde::Deserialize;
 
-use crate::install::run_in_host_mountns;
+use crate::hostexec::run_in_host_mountns;
 use crate::task::Task;
 
 #[derive(Debug, Deserialize)]

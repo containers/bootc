@@ -12,9 +12,7 @@ pub(crate) mod osconfig;
 
 use std::io::Write;
 use std::os::fd::AsFd;
-use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,6 +37,7 @@ use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
 use crate::containerenv::ContainerExecutionInfo;
+use crate::hostexec::run_in_host_mountns;
 use crate::mount::Filesystem;
 use crate::task::Task;
 use crate::utils::sigpolicy_from_opts;
@@ -753,35 +752,6 @@ async fn initialize_ostree_root_from_self(
     };
 
     Ok(aleph)
-}
-
-/// Run a command in the host mount namespace
-pub(crate) fn run_in_host_mountns(cmd: &str) -> Command {
-    let mut c = Command::new("/proc/self/exe");
-    c.args(["exec-in-host-mount-namespace", cmd]);
-    c
-}
-
-#[context("Re-exec in host mountns")]
-pub(crate) fn exec_in_host_mountns(args: &[std::ffi::OsString]) -> Result<()> {
-    let (cmd, args) = args
-        .split_first()
-        .ok_or_else(|| anyhow::anyhow!("Missing command"))?;
-    tracing::trace!("{cmd:?} {args:?}");
-    let pid1mountns = std::fs::File::open("/proc/1/ns/mnt").context("open pid1 mountns")?;
-    nix::sched::setns(pid1mountns.as_fd(), nix::sched::CloneFlags::CLONE_NEWNS).context("setns")?;
-    rustix::process::chdir("/").context("chdir")?;
-    // Work around supermin doing chroot() and not pivot_root
-    // https://github.com/libguestfs/supermin/blob/5230e2c3cd07e82bd6431e871e239f7056bf25ad/init/init.c#L288
-    if !Utf8Path::new("/usr").try_exists().context("/usr")?
-        && Utf8Path::new("/root/usr")
-            .try_exists()
-            .context("/root/usr")?
-    {
-        tracing::debug!("Using supermin workaround");
-        rustix::process::chroot("/root").context("chroot")?;
-    }
-    Err(Command::new(cmd).args(args).exec()).context("exec")?
 }
 
 #[context("Querying skopeo version")]
