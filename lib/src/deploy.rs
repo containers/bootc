@@ -278,20 +278,21 @@ async fn deploy(
     image: &ImageState,
     origin: &glib::KeyFile,
     opts: Option<ostree::SysrootDeployTreeOpts<'_>>,
-) -> Result<()> {
+) -> Result<Deployment> {
     let stateroot = Some(stateroot);
     let opts = opts.unwrap_or_default();
     // Copy to move into thread
     let cancellable = gio::Cancellable::NONE;
-    let _new_deployment = sysroot.stage_tree_with_options(
-        stateroot,
-        image.ostree_commit.as_str(),
-        Some(origin),
-        merge_deployment,
-        &opts,
-        cancellable,
-    )?;
-    Ok(())
+    return sysroot
+        .stage_tree_with_options(
+            stateroot,
+            image.ostree_commit.as_str(),
+            Some(origin),
+            merge_deployment,
+            &opts,
+            cancellable,
+        )
+        .map_err(Into::into);
 }
 
 #[context("Generating origin")]
@@ -317,7 +318,7 @@ pub(crate) async fn stage(
 ) -> Result<()> {
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
     let origin = origin_from_imageref(spec.image)?;
-    crate::deploy::deploy(
+    let deployment = crate::deploy::deploy(
         sysroot,
         merge_deployment.as_ref(),
         stateroot,
@@ -326,6 +327,11 @@ pub(crate) async fn stage(
         opts,
     )
     .await?;
+
+    //TODO: does this need to be mutable?
+    let mut bound_image_manager = crate::boundimage::BoundImageManager::new(&deployment, sysroot)?;
+    bound_image_manager.run()?;
+
     crate::deploy::cleanup(sysroot).await?;
     println!("Queued for next boot: {:#}", spec.image);
     if let Some(version) = image.version.as_deref() {
