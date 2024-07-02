@@ -263,7 +263,7 @@ fn new_async_decompressor(
 
 /// A wrapper for [`get_blob`] which fetches a layer and decompresses it.
 pub(crate) async fn fetch_layer_decompress<'a>(
-    proxy: &'a mut ImageProxy,
+    proxy: &'a ImageProxy,
     img: &OpenedImage,
     manifest: &oci_image::ImageManifest,
     layer: &'a oci_image::Descriptor,
