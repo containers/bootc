@@ -2,6 +2,8 @@
 //!
 //! This module implements `bootc container lint`.
 
+use std::env::consts::ARCH;
+
 use anyhow::Result;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
@@ -13,7 +15,7 @@ use fn_error_context::context;
 /// if it does not exist error.
 #[context("Linting")]
 pub(crate) fn lint(root: &Dir) -> Result<()> {
-    let lints = [check_var_run, check_kernel];
+    let lints = [check_var_run, check_kernel, check_parse_kargs];
     for lint in lints {
         lint(&root)?;
     }
@@ -27,6 +29,12 @@ fn check_var_run(root: &Dir) -> Result<()> {
             anyhow::bail!("Not a symlink: var/run");
         }
     }
+    Ok(())
+}
+
+/// Validate that we can parse the /usr/lib/bootc/kargs.d files.
+fn check_parse_kargs(root: &Dir) -> Result<()> {
+    let _args = crate::kargs::get_kargs_in_root(root, ARCH)?;
     Ok(())
 }
 
@@ -68,5 +76,15 @@ fn test_kernel_lint() -> Result<()> {
     root.remove_dir_all("usr/lib/modules/5.7.2")?;
     // Now we should pass again
     check_kernel(root).unwrap();
+    Ok(())
+}
+
+#[test]
+fn test_kargs() -> Result<()> {
+    let root = &fixture()?;
+    check_parse_kargs(root).unwrap();
+    root.create_dir_all("usr/lib/bootc")?;
+    root.write("usr/lib/bootc/kargs.d", "not a directory")?;
+    assert!(check_parse_kargs(root).is_err());
     Ok(())
 }
