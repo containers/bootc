@@ -215,6 +215,7 @@ FROM "$TEST_IMAGE_URL"
 RUN dnf -y install wget && \
     dnf -y clean all
 RUN mkdir -p /usr/lib/bootc/kargs.d
+RUN rm /usr/lib/bootc/kargs.d/01-console.toml
 RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
 kargs = ["systemd.unified_cgroup_hierarchy=1","console=ttyS","panic=0"]
 EOF
