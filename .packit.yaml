@@ -1,5 +1,55 @@
 ---
+specfile_path: contrib/packaging/bootc.spec
+
+files_to_sync:
+  - contrib/packaging/bootc.spec
+  - .packit.yaml
+
+upstream_tag_template: v{version}
+
+upstream_package_name: bootc
+downstream_package_name: bootc
+
+srpm_build_deps:
+  - cargo
+  - git
+  - zstd
+  - libzstd-devel
+  - ostree-devel
+  - openssl-devel
+
+actions:
+  # The last setp here is required by Packit to return the archive name
+  # https://packit.dev/docs/configuration/actions#create-archive
+  create-archive:
+    - bash -c "cargo install cargo-vendor-filterer"
+    - bash -c "cargo xtask spec"
+    - bash -c "cat target/bootc.spec"
+    - bash -c "cp target/bootc* contrib/packaging/"
+    - bash -c "ls -1 target/bootc*.tar.zstd | grep -v 'vendor'"
+  # Do nothing with spec file. Two steps here are for debugging
+  fix-spec-file:
+    - bash -c "cat contrib/packaging/bootc.spec"
+    - bash -c "ls -al contrib/packaging/"
+
 jobs:
+  # Only add CS10 and RHEL-9 RPM build test
+  # But no e2e test on CS10 and RHEL-9
+  - job: copr_build
+    trigger: pull_request
+    targets:
+      - centos-stream-9-x86_64
+      - centos-stream-9-aarch64
+      - centos-stream-9-ppc64le
+      - fedora-40-x86_64
+      - fedora-40-aarch64
+      - fedora-40-ppc64le
+      - fedora-rawhide-x86_64
+      - fedora-rawhide-aarch64
+      - fedora-rawhide-ppc64le
+      - rhel-9-x86_64
+      - rhel-9-aarch64
+
   - job: tests
     trigger: pull_request
     targets:
@@ -8,3 +58,21 @@ jobs:
     tmt_plan: /integration-build
     skip_build: true
     identifier: integration-test
+
+  - job: tests
+    trigger: pull_request
+    targets:
+      - centos-stream-9-x86_64
+      - centos-stream-9-aarch64
+      - fedora-40-x86_64
+    tmt_plan: /to-existing-root
+    identifier: e2e-test-to-existing-root
+
+  - job: tests
+    trigger: pull_request
+    targets:
+      - centos-stream-9-x86_64
+      - centos-stream-9-aarch64
+      - fedora-40-aarch64
+    tmt_plan: /to-disk
+    identifier: e2e-test-to-disk

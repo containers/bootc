@@ -1,7 +1,0 @@
-{
-  "auths": {
-    "quay.io": {
-      "auth": "REPLACE_ME"
-    }
-  }
-}
