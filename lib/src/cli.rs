@@ -90,6 +90,10 @@ pub(crate) struct SwitchOpts {
 
     /// Target image to use for the next boot.
     pub(crate) target: String,
+
+    /// The storage backend
+    #[clap(long, hide = true)]
+    pub(crate) backend: Option<crate::spec::Backend>,
 }
 
 /// Options controlling rollback
@@ -251,6 +255,14 @@ impl InternalsOpts {
     const GENERATOR_BIN: &'static str = "bootc-systemd-generator";
 }
 
+#[derive(Debug, clap::Parser, PartialEq, Eq)]
+pub(crate) struct InternalPodmanOpts {
+    #[clap(long, value_parser, default_value = "/")]
+    root: Utf8PathBuf,
+    #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<std::ffi::OsString>,
+}
+
 /// Deploy and transactionally in-place with bootable container images.
 ///
 /// The `bootc` project currently uses ostree-containers as a backend
@@ -379,6 +391,9 @@ pub(crate) enum Opt {
     #[clap(subcommand)]
     #[clap(hide = true)]
     Internals(InternalsOpts),
+    /// Execute podman in our internal configuration
+    #[clap(hide = true)]
+    InternalPodman(InternalPodmanOpts),
     #[clap(hide(true))]
     #[cfg(feature = "docgen")]
     Man(ManOpts),
@@ -482,7 +497,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     let sysroot = &get_locked_sysroot().await?;
     let repo = &sysroot.repo();
     let (booted_deployment, _deployments, host) =
-        crate::status::get_status_require_booted(sysroot)?;
+        crate::status::get_status_require_booted(sysroot).await?;
     let imgref = host.spec.image.as_ref();
     // If there's no specified image, let's be nice and check if the booted system is using rpm-ostree
     if imgref.is_none() {
@@ -540,7 +555,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             }
         }
     } else {
-        let fetched = crate::deploy::pull(sysroot, imgref, opts.quiet).await?;
+        let fetched = crate::deploy::pull(sysroot, spec.backend, imgref, opts.quiet).await?;
         let kargs = crate::kargs::get_kargs(repo, &booted_deployment, fetched.as_ref())?;
         let staged_digest = staged_image.as_ref().map(|s| s.image_digest.as_str());
         let fetched_digest = fetched.manifest_digest.as_str();
@@ -603,6 +618,8 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let target = ostree_container::OstreeImageReference { sigverify, imgref };
     let target = ImageReference::from(target);
 
+    let backend = opts.backend.unwrap_or_default();
+
     // If we're doing an in-place mutation, we shortcut most of the rest of the work here
     if opts.mutate_in_place {
         let deployid = {
@@ -610,7 +627,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
             let target = target.clone();
             let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
             tokio::task::spawn_blocking(move || {
-                crate::deploy::switch_origin_inplace(&root, &target)
+                crate::deploy::switch_origin_inplace(&root, &target, backend)
             })
             .await??
         };
@@ -623,11 +640,12 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let sysroot = &get_locked_sysroot().await?;
     let repo = &sysroot.repo();
     let (booted_deployment, _deployments, host) =
-        crate::status::get_status_require_booted(sysroot)?;
+        crate::status::get_status_require_booted(sysroot).await?;
 
     let new_spec = {
         let mut new_spec = host.spec.clone();
         new_spec.image = Some(target.clone());
+        new_spec.backend = backend;
         new_spec
     };
 
@@ -637,7 +655,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     }
     let new_spec = RequiredHostSpec::from_spec(&new_spec)?;
 
-    let fetched = crate::deploy::pull(sysroot, &target, opts.quiet).await?;
+    let fetched = crate::deploy::pull(sysroot, new_spec.backend, &target, opts.quiet).await?;
     let kargs = crate::kargs::get_kargs(repo, &booted_deployment, fetched.as_ref())?;
 
     if !opts.retain {
@@ -672,7 +690,7 @@ async fn rollback(_opts: RollbackOpts) -> Result<()> {
 async fn edit(opts: EditOpts) -> Result<()> {
     let sysroot = &get_locked_sysroot().await?;
     let (booted_deployment, _deployments, host) =
-        crate::status::get_status_require_booted(sysroot)?;
+        crate::status::get_status_require_booted(sysroot).await?;
     let new_host: Host = if let Some(filename) = opts.filename {
         let mut r = std::io::BufReader::new(std::fs::File::open(filename)?);
         serde_yaml::from_reader(&mut r)?
@@ -697,7 +715,8 @@ async fn edit(opts: EditOpts) -> Result<()> {
         return crate::deploy::rollback(sysroot).await;
     }
 
-    let fetched = crate::deploy::pull(sysroot, new_spec.image, opts.quiet).await?;
+    let fetched =
+        crate::deploy::pull(sysroot, new_spec.backend, new_spec.image, opts.quiet).await?;
     let repo = &sysroot.repo();
     let kargs = crate::kargs::get_kargs(repo, &booted_deployment, fetched.as_ref())?;
 
@@ -799,7 +818,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         },
         #[cfg(feature = "install")]
         Opt::ExecInHostMountNamespace { args } => {
-            crate::install::exec_in_host_mountns(args.as_slice())
+            crate::hostexec::exec_in_host_mountns(args.as_slice())
         }
         Opt::Status(opts) => super::status::status(opts).await,
         Opt::Internals(opts) => match opts {
@@ -813,6 +832,12 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             }
             InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
         },
+        Opt::InternalPodman(args) => {
+            prepare_for_write()?;
+            // This also remounts writable
+            let _sysroot = get_locked_sysroot().await?;
+            crate::podman::exec(args.root.as_path(), args.args.as_slice())
+        }
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
     }
