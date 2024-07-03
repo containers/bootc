@@ -80,7 +80,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@v2
+        uses: sclorg/testing-farm-as-github-action@v3
         with:
           compose: Fedora-40
           api_key: ${{ secrets.TF_API_KEY }}
