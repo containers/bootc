@@ -136,9 +136,13 @@ a subdirectory of `/opt` such as `/opt/examplepkg`.
 See [building images](building/guidance.md) for recommendations on how to build
 container images and adjust the filesystem for cases like this.
 
+However, for some use cases, it may be easier to allow some level of mutability.
+There are two options for this, each with separate trade-offs: transient roots
+and state overlays.
+
 #### Enabling transient root
 
-However, some use cases may find it easier to enable a fully transient writable rootfs by default.
+This feature enables a fully transient writable rootfs by default.
 To do this, set the
 
 ```toml
@@ -146,5 +150,21 @@ To do this, set the
 transient = true
 ```
 
-option in `prepare-root.conf`.  In particular this will allow software to write (transiently) to `/opt`,
-with symlinks to `/var` for content that should persist.
+option in `prepare-root.conf`.  In particular this will allow software to
+write (transiently, i.e. until the next reboot) to all top-level directories,
+including `/usr` and `/opt`, with symlinks to `/var` for content that should
+persist.
+
+#### Enabling state overlays
+
+This feature enables a writable overlay on top of `/opt` (or really, any
+toplevel or subdirectory baked into the image that is normally read-only).
+Changes persist across reboots but during updates, new files from the container
+image override any locally modified version. All other files persist.
+
+To enable this feature, simply instantiate the `ostree-state-overlay@.service`
+unit template on the target path. For example, for `/opt`:
+
+```
+RUN systemctl enable ostree-state-overlay@opt.service
+```
