@@ -260,6 +260,7 @@ version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19eb8e3d71996828751c1ed3908a439639752ac6bdc874e41469ef7fc15fbd7f"
 dependencies = [
+ "camino",
  "cap-primitives",
  "io-extras",
  "io-lifetimes",
@@ -283,6 +284,7 @@ version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53880047c3f37cd64947775f0526795498d614182603a718c792616b762ce777"
 dependencies = [
+ "camino",
  "cap-std",
  "rand",
  "rustix",

@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use cap_std_ext::cap_std::fs::Dir;
+use cap_std_ext::cap_std::fs_utf8::Dir as DirUtf8;
 use cap_std_ext::dirext::CapStdExtDirExt;
+use cap_std_ext::dirext::CapStdExtDirExtUtf8;
 use ostree::gio;
 use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
@@ -35,23 +37,16 @@ impl Config {
 /// a combined list.
 pub(crate) fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> {
     // If the directory doesn't exist, that's OK.
-    let Some(d) = d.open_dir_optional("usr/lib/bootc/kargs.d")? else {
+    let Some(d) = d
+        .open_dir_optional("usr/lib/bootc/kargs.d")?
+        .map(DirUtf8::from_cap_std)
+    else {
         return Ok(Default::default());
     };
     let mut ret = Vec::new();
-    // Read all the entries
-    let mut entries = d.entries()?.collect::<std::io::Result<Vec<_>>>()?;
-    // cc https://github.com/rust-lang/rust/issues/85573 re the allocation-per-comparison here
-    entries.sort_by_key(|a| a.file_name());
-    for ent in entries {
-        let name = ent.file_name();
-        let name = name
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("Invalid non-UTF8 filename: {name:?}"))?;
-        if !Config::filename_matches(name) {
-            continue;
-        }
-        let buf = d.read_to_string(name)?;
+    let entries = d.filenames_filtered_sorted(|_, name| Config::filename_matches(name))?;
+    for name in entries {
+        let buf = d.read_to_string(&name)?;
         let kargs = parse_kargs_toml(&buf, sys_arch).with_context(|| format!("Parsing {name}"))?;
         ret.extend(kargs)
     }
