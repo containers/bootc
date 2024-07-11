@@ -107,7 +107,7 @@ pub(crate) fn get_kargs(
 ) -> Result<Vec<String>> {
     let cancellable = gio::Cancellable::NONE;
     let repo = &sysroot.repo();
-    let mut kargs: Vec<String> = vec![];
+    let mut kargs = vec![];
     let sys_arch = std::env::consts::ARCH;
 
     // Get the kargs used for the merge in the bootloader config
@@ -120,7 +120,7 @@ pub(crate) fn get_kargs(
 
     // Get the kargs in kargs.d of the merge
     let merge_root = &crate::utils::deployment_fd(sysroot, merge_deployment)?;
-    let existing_kargs: Vec<String> = get_kargs_in_root(merge_root, sys_arch)?;
+    let existing_kargs = get_kargs_in_root(merge_root, sys_arch)?;
 
     // Get the kargs in kargs.d of the pending image
     let (fetched_tree, _) = repo.read_commit(fetched.ostree_commit.as_str(), cancellable)?;
@@ -139,16 +139,16 @@ pub(crate) fn get_kargs(
     let remote_kargs = get_kargs_from_ostree(repo, &fetched_tree, sys_arch)?;
 
     // get the diff between the existing and remote kargs
-    let mut added_kargs: Vec<String> = remote_kargs
+    let mut added_kargs = remote_kargs
         .clone()
         .into_iter()
         .filter(|item| !existing_kargs.contains(item))
-        .collect();
-    let removed_kargs: Vec<String> = existing_kargs
+        .collect::<Vec<_>>();
+    let removed_kargs = existing_kargs
         .clone()
         .into_iter()
         .filter(|item| !remote_kargs.contains(item))
-        .collect();
+        .collect::<Vec<_>>();
 
     tracing::debug!(
         "kargs: added={:?} removed={:?}",
