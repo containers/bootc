@@ -278,20 +278,21 @@ async fn deploy(
     image: &ImageState,
     origin: &glib::KeyFile,
     opts: Option<ostree::SysrootDeployTreeOpts<'_>>,
-) -> Result<()> {
+) -> Result<Deployment> {
     let stateroot = Some(stateroot);
     let opts = opts.unwrap_or_default();
     // Copy to move into thread
     let cancellable = gio::Cancellable::NONE;
-    let _new_deployment = sysroot.stage_tree_with_options(
-        stateroot,
-        image.ostree_commit.as_str(),
-        Some(origin),
-        merge_deployment,
-        &opts,
-        cancellable,
-    )?;
-    Ok(())
+    return sysroot
+        .stage_tree_with_options(
+            stateroot,
+            image.ostree_commit.as_str(),
+            Some(origin),
+            merge_deployment,
+            &opts,
+            cancellable,
+        )
+        .map_err(Into::into);
 }
 
 #[context("Generating origin")]
