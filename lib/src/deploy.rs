@@ -335,11 +335,7 @@ async fn deploy(
     // is a distinct minor issue, but not super important as right now the install path
     // doesn't use this API).
     let override_kargs = if let Some(deployment) = merge_deployment {
-        Some(crate::kargs::get_kargs(
-            &sysroot.repo(),
-            &deployment,
-            image,
-        )?)
+        Some(crate::kargs::get_kargs(sysroot, &deployment, image)?)
     } else {
         None
     };

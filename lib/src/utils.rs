@@ -1,9 +1,11 @@
 use std::future::Future;
 use std::io::Write;
+use std::os::fd::BorrowedFd;
 use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use cap_std_ext::cap_std::fs::Dir;
 use ostree::glib;
 use ostree_ext::container::SignatureSource;
 use ostree_ext::ostree;
@@ -19,6 +21,24 @@ pub(crate) fn origin_has_rpmostree_stuff(kf: &glib::KeyFile) -> bool {
         }
     }
     false
+}
+
+// Access the file descriptor for a sysroot
+#[allow(unsafe_code)]
+pub(crate) fn sysroot_fd(sysroot: &ostree::Sysroot) -> BorrowedFd {
+    unsafe { BorrowedFd::borrow_raw(sysroot.fd()) }
+}
+
+// Return a cap-std `Dir` type for a deployment.
+// TODO: in the future this should perhaps actually mount via composefs
+#[allow(unsafe_code)]
+pub(crate) fn deployment_fd(
+    sysroot: &ostree::Sysroot,
+    deployment: &ostree::Deployment,
+) -> Result<Dir> {
+    let sysroot_dir = &Dir::reopen_dir(&sysroot_fd(sysroot))?;
+    let dirpath = sysroot.deployment_dirpath(deployment);
+    sysroot_dir.open_dir(&dirpath).map_err(Into::into)
 }
 
 /// Given an mount option string list like foo,bar=baz,something=else,ro parse it and find
