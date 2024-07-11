@@ -195,6 +195,7 @@ dependencies = [
  "serde_yaml",
  "similar-asserts",
  "tempfile",
+ "tini",
  "tokio",
  "tokio-util",
  "toml",
@@ -2036,6 +2037,12 @@ checksum = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
 dependencies = [
  "num_cpus",
 ]
+
+[[package]]
+name = "tini"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e004df4c5f0805eb5f55883204a514cfa43a6d924741be29e871753a53d5565a"
 
 [[package]]
 name = "tinyvec"
