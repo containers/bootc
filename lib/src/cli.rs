@@ -541,7 +541,6 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         }
     } else {
         let fetched = crate::deploy::pull(repo, imgref, opts.quiet).await?;
-        let kargs = crate::kargs::get_kargs(repo, &booted_deployment, fetched.as_ref())?;
         let staged_digest = staged_image.as_ref().map(|s| s.image_digest.as_str());
         let fetched_digest = fetched.manifest_digest.as_str();
         tracing::debug!("staged: {staged_digest:?}");
@@ -563,10 +562,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             println!("No update available.")
         } else {
             let osname = booted_deployment.osname();
-            let mut opts = ostree::SysrootDeployTreeOpts::default();
-            let kargs: Vec<&str> = kargs.iter().map(|s| s.as_str()).collect();
-            opts.override_kernel_argv = Some(kargs.as_slice());
-            crate::deploy::stage(sysroot, &osname, &fetched, &spec, Some(opts)).await?;
+            crate::deploy::stage(sysroot, &osname, &fetched, &spec).await?;
             changed = true;
             if let Some(prev) = booted_image.as_ref() {
                 if let Some(fetched_manifest) = fetched.get_manifest(repo)? {
@@ -638,7 +634,6 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let new_spec = RequiredHostSpec::from_spec(&new_spec)?;
 
     let fetched = crate::deploy::pull(repo, &target, opts.quiet).await?;
-    let kargs = crate::kargs::get_kargs(repo, &booted_deployment, fetched.as_ref())?;
 
     if !opts.retain {
         // By default, we prune the previous ostree ref so it will go away after later upgrades
@@ -652,10 +647,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     }
 
     let stateroot = booted_deployment.osname();
-    let mut opts = ostree::SysrootDeployTreeOpts::default();
-    let kargs: Vec<&str> = kargs.iter().map(|s| s.as_str()).collect();
-    opts.override_kernel_argv = Some(kargs.as_slice());
-    crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec, Some(opts)).await?;
+    crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec).await?;
 
     Ok(())
 }
@@ -700,15 +692,11 @@ async fn edit(opts: EditOpts) -> Result<()> {
     }
 
     let fetched = crate::deploy::pull(repo, new_spec.image, opts.quiet).await?;
-    let kargs = crate::kargs::get_kargs(repo, &booted_deployment, fetched.as_ref())?;
 
     // TODO gc old layers here
 
     let stateroot = booted_deployment.osname();
-    let mut opts = ostree::SysrootDeployTreeOpts::default();
-    let kargs: Vec<&str> = kargs.iter().map(|s| s.as_str()).collect();
-    opts.override_kernel_argv = Some(kargs.as_slice());
-    crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec, Some(opts)).await?;
+    crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec).await?;
 
     Ok(())
 }
