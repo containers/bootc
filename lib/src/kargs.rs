@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use camino::Utf8Path;
-use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::Dir;
 use cap_std_ext::dirext::CapStdExtDirExt;
 use ostree::gio;
@@ -9,6 +8,7 @@ use ostree_ext::ostree::Deployment;
 use ostree_ext::prelude::Cast;
 use ostree_ext::prelude::FileEnumeratorExt;
 use ostree_ext::prelude::FileExt;
+use ostree_ext::sysroot::SysrootLock;
 use serde::Deserialize;
 
 use crate::deploy::ImageState;
@@ -101,25 +101,26 @@ fn get_kargs_from_ostree(
 /// karg, but applies the diff between the bootc karg files in /usr/lib/bootc/kargs.d
 /// between the booted deployment and the new one.
 pub(crate) fn get_kargs(
-    repo: &ostree::Repo,
-    booted_deployment: &Deployment,
+    sysroot: &SysrootLock,
+    merge_deployment: &Deployment,
     fetched: &ImageState,
 ) -> Result<Vec<String>> {
     let cancellable = gio::Cancellable::NONE;
-    let mut kargs: Vec<String> = vec![];
+    let repo = &sysroot.repo();
+    let mut kargs = vec![];
     let sys_arch = std::env::consts::ARCH;
 
-    // Get the running kargs of the booted system
-    if let Some(bootconfig) = ostree::Deployment::bootconfig(booted_deployment) {
+    // Get the kargs used for the merge in the bootloader config
+    if let Some(bootconfig) = ostree::Deployment::bootconfig(merge_deployment) {
         if let Some(options) = ostree::BootconfigParser::get(&bootconfig, "options") {
             let options = options.split_whitespace().map(|s| s.to_owned());
             kargs.extend(options);
         }
     };
 
-    // Get the kargs in kargs.d of the booted system
-    let root = &cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-    let existing_kargs: Vec<String> = get_kargs_in_root(root, sys_arch)?;
+    // Get the kargs in kargs.d of the merge
+    let merge_root = &crate::utils::deployment_fd(sysroot, merge_deployment)?;
+    let existing_kargs = get_kargs_in_root(merge_root, sys_arch)?;
 
     // Get the kargs in kargs.d of the pending image
     let (fetched_tree, _) = repo.read_commit(fetched.ostree_commit.as_str(), cancellable)?;
@@ -138,16 +139,16 @@ pub(crate) fn get_kargs(
     let remote_kargs = get_kargs_from_ostree(repo, &fetched_tree, sys_arch)?;
 
     // get the diff between the existing and remote kargs
-    let mut added_kargs: Vec<String> = remote_kargs
+    let mut added_kargs = remote_kargs
         .clone()
         .into_iter()
         .filter(|item| !existing_kargs.contains(item))
-        .collect();
-    let removed_kargs: Vec<String> = existing_kargs
+        .collect::<Vec<_>>();
+    let removed_kargs = existing_kargs
         .clone()
         .into_iter()
         .filter(|item| !remote_kargs.contains(item))
-        .collect();
+        .collect::<Vec<_>>();
 
     tracing::debug!(
         "kargs: added={:?} removed={:?}",
@@ -179,6 +180,7 @@ fn parse_kargs_toml(contents: &str, sys_arch: &str) -> Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
+    use cap_std_ext::cap_std;
     use fn_error_context::context;
     use rustix::fd::{AsFd, AsRawFd};
 

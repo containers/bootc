@@ -327,10 +327,26 @@ async fn deploy(
     stateroot: &str,
     image: &ImageState,
     origin: &glib::KeyFile,
-    opts: Option<ostree::SysrootDeployTreeOpts<'_>>,
 ) -> Result<Deployment> {
     let stateroot = Some(stateroot);
-    let opts = opts.unwrap_or_default();
+    let mut opts = ostree::SysrootDeployTreeOpts::default();
+    // Compute the kernel argument overrides. In practice today this API is always expecting
+    // a merge deployment. The kargs code also always looks at the booted root (which
+    // is a distinct minor issue, but not super important as right now the install path
+    // doesn't use this API).
+    let override_kargs = if let Some(deployment) = merge_deployment {
+        Some(crate::kargs::get_kargs(sysroot, &deployment, image)?)
+    } else {
+        None
+    };
+    // Because the C API expects a Vec<&str>, we need to generate a new Vec<>
+    // that borrows.
+    let override_kargs = override_kargs
+        .as_deref()
+        .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+    if let Some(kargs) = override_kargs.as_deref() {
+        opts.override_kernel_argv = Some(&kargs);
+    }
     // Copy to move into thread
     let cancellable = gio::Cancellable::NONE;
     return sysroot
@@ -364,7 +380,6 @@ pub(crate) async fn stage(
     stateroot: &str,
     image: &ImageState,
     spec: &RequiredHostSpec<'_>,
-    opts: Option<ostree::SysrootDeployTreeOpts<'_>>,
 ) -> Result<()> {
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
     let origin = origin_from_imageref(spec.image)?;
@@ -374,7 +389,6 @@ pub(crate) async fn stage(
         stateroot,
         image,
         &origin,
-        opts,
     )
     .await?;
     crate::deploy::cleanup(sysroot).await?;
