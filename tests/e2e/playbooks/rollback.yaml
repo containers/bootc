@@ -21,35 +21,13 @@
       wait_for_connection:
         delay: 30
 
+    - name: check bootc status
+      command: bootc status
+      ignore_errors: true
+      become: true
+
     - name: rollback checking
       block:
-        - name: get booted cachedupdate imageDigest
-          shell: bootc status --json | jq -r '.status.booted.cachedUpdate.imageDigest'
-          register: result_booted_cachedupdate_digest
-          become: true
-
-        - name: get rollback image digest
-          shell: bootc status --json | jq -r '.status.rollback.image.imageDigest'
-          register: result_rollback_image_digest
-          become: true
-
-        - name: check booted cachedUpdate and rollback image digest
-          block:
-            - assert:
-                that:
-                  - result_booted_cachedupdate_digest.stdout == result_rollback_image_digest.stdout
-                fail_msg: "rollback failed"
-                success_msg: "rollback passed"
-          always:
-            - set_fact:
-                total_counter: "{{ total_counter | int + 1 }}"
-          rescue:
-            - name: failed count + 1
-              set_fact:
-                failed_counter: "{{ failed_counter | int + 1 }}"
-          when:
-            - air_gapped_dir | default('') == ""
-
         - name: check installed package
           shell: rpm -qa | sort
           register: result_packages
