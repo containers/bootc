@@ -51,6 +51,39 @@ impl Device {
     pub(crate) fn has_children(&self) -> bool {
         self.children.as_ref().map_or(false, |v| !v.is_empty())
     }
+
+    // The "start" parameter was only added in a version of util-linux that's only
+    // in Fedora 40 as of this writing.
+    fn backfill_start(&mut self) -> Result<()> {
+        let Some(majmin) = self.maj_min.as_deref() else {
+            // This shouldn't happen
+            return Ok(());
+        };
+        let sysfs_start_path = format!("/sys/dev/block/{majmin}/start");
+        if Utf8Path::new(&sysfs_start_path).try_exists()? {
+            let start = std::fs::read_to_string(&sysfs_start_path)
+                .with_context(|| format!("Reading {sysfs_start_path}"))?;
+            tracing::debug!("backfilled start to {start}");
+            self.start = Some(
+                start
+                    .trim()
+                    .parse()
+                    .context("Parsing sysfs start property")?,
+            );
+        }
+        Ok(())
+    }
+
+    /// Older versions of util-linux may be missing some properties. Backfill them if they're missing.
+    pub(crate) fn backfill_missing(&mut self) -> Result<()> {
+        // Add new properties to backfill here
+        self.backfill_start()?;
+        // And recurse to child devices
+        for child in self.children.iter_mut().flatten() {
+            child.backfill_missing()?;
+        }
+        Ok(())
+    }
 }
 
 #[context("Failed to wipe {dev}")]
@@ -70,7 +103,10 @@ fn list_impl(dev: Option<&Utf8Path>) -> Result<Vec<Device>> {
     if !o.status.success() {
         return Err(anyhow::anyhow!("Failed to list block devices"));
     }
-    let devs: DevicesOutput = serde_json::from_reader(&*o.stdout)?;
+    let mut devs: DevicesOutput = serde_json::from_reader(&*o.stdout)?;
+    for dev in devs.blockdevices.iter_mut() {
+        dev.backfill_missing()?;
+    }
     Ok(devs.blockdevices)
 }
 
