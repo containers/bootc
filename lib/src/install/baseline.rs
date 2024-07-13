@@ -439,9 +439,10 @@ pub(crate) fn install_create_rootfs(
         BlockSetup::Direct => None,
         BlockSetup::Tpm2Luks => Some(luks_name.to_string()),
     };
+    let device_info = crate::blockdev::list_dev(&devpath)?;
     Ok(RootSetup {
         luks_device,
-        device: devpath,
+        device_info,
         rootfs,
         rootfs_fd,
         rootfs_uuid: Some(root_uuid.to_string()),
