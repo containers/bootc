@@ -27,10 +27,18 @@ pub(crate) struct Device {
     pub(crate) name: String,
     pub(crate) serial: Option<String>,
     pub(crate) model: Option<String>,
-    pub(crate) label: Option<String>,
-    pub(crate) fstype: Option<String>,
+    pub(crate) partlabel: Option<String>,
     pub(crate) children: Option<Vec<Device>>,
     pub(crate) size: Option<String>,
+    #[serde(rename = "maj:min")]
+    pub(crate) maj_min: Option<String>,
+    // NOTE this one is not available on older util-linux, and
+    // will also not exist for whole blockdevs (as opposed to partitions).
+    pub(crate) start: Option<u64>,
+
+    // Filesystem-related properties
+    pub(crate) label: Option<String>,
+    pub(crate) fstype: Option<String>,
 }
 
 impl Device {
@@ -56,7 +64,7 @@ pub(crate) fn wipefs(dev: &Utf8Path) -> Result<()> {
 
 fn list_impl(dev: Option<&Utf8Path>) -> Result<Vec<Device>> {
     let o = Command::new("lsblk")
-        .args(["-J", "-o", "NAME,SERIAL,MODEL,LABEL,FSTYPE,SIZE"])
+        .args(["-J", "-O"])
         .args(dev)
         .output()?;
     if !o.status.success() {
