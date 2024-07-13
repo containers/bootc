@@ -125,7 +125,7 @@ fn mkfs<'a>(
     opts: impl IntoIterator<Item = &'a str>,
 ) -> Result<uuid::Uuid> {
     let devinfo = crate::blockdev::list_dev(dev.into())?;
-    let size = devinfo.size.as_deref().unwrap_or("(unknown)");
+    let size = ostree_ext::glib::format_size(devinfo.size);
     let u = uuid::Uuid::new_v4();
     let mut t = Task::new(
         &format!("Creating {label} filesystem ({fs}) on device {dev} (size={size})"),
@@ -210,12 +210,8 @@ pub(crate) fn install_create_rootfs(
     };
     let serial = device.serial.as_deref().unwrap_or("<unknown>");
     let model = device.model.as_deref().unwrap_or("<unknown>");
-    let size = device
-        .size
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("Missing size for blockdev"))?;
     println!("Block setup: {block_setup}");
-    println!("       Size: {size}",);
+    println!("       Size: {}", device.size);
     println!("     Serial: {serial}");
     println!("      Model: {model}");
 

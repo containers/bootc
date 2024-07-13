@@ -29,7 +29,7 @@ pub(crate) struct Device {
     pub(crate) model: Option<String>,
     pub(crate) partlabel: Option<String>,
     pub(crate) children: Option<Vec<Device>>,
-    pub(crate) size: Option<String>,
+    pub(crate) size: u64,
     #[serde(rename = "maj:min")]
     pub(crate) maj_min: Option<String>,
     // NOTE this one is not available on older util-linux, and
@@ -97,7 +97,7 @@ pub(crate) fn wipefs(dev: &Utf8Path) -> Result<()> {
 
 fn list_impl(dev: Option<&Utf8Path>) -> Result<Vec<Device>> {
     let o = Command::new("lsblk")
-        .args(["-J", "-O"])
+        .args(["-J", "-b", "-O"])
         .args(dev)
         .output()?;
     if !o.status.success() {
