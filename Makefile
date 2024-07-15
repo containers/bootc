@@ -35,9 +35,13 @@ test-bin-archive: all
 test-tmt:
 	cargo xtask test-tmt
 
-validate:
-	cargo fmt
-	cargo clippy
+# Checks extra rust things (formatting and select clippy lints)
+validate-rust:
+	cargo fmt -- --check -l
+	cargo clippy -- -D clippy::correctness -D clippy::suspicious
+.PHONY: validate-rust
+
+validate: validate-rust
 	ruff check
 .PHONY: validate
 
