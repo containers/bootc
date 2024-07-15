@@ -17,6 +17,7 @@
 #![allow(clippy::needless_borrow)]
 #![allow(clippy::needless_borrows_for_generic_args)]
 
+mod boundimage;
 pub mod cli;
 pub(crate) mod deploy;
 pub(crate) mod generator;

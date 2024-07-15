@@ -383,7 +383,7 @@ pub(crate) async fn stage(
 ) -> Result<()> {
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
     let origin = origin_from_imageref(spec.image)?;
-    crate::deploy::deploy(
+    let deployment = crate::deploy::deploy(
         sysroot,
         merge_deployment.as_ref(),
         stateroot,
@@ -391,6 +391,9 @@ pub(crate) async fn stage(
         &origin,
     )
     .await?;
+
+    crate::boundimage::pull_bound_images(sysroot, &deployment)?;
+
     crate::deploy::cleanup(sysroot).await?;
     println!("Queued for next boot: {:#}", spec.image);
     if let Some(version) = image.version.as_deref() {
