@@ -31,7 +31,6 @@ def initial_build [] {
     let td = mktemp -d
     cd $td
 
-    do --ignore-errors { podman image rm localhost/bootc o+e>| ignore }
     bootc image copy-to-storage
     let img = podman image inspect localhost/bootc | from json
 
