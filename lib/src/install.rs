@@ -823,7 +823,7 @@ fn require_skopeo_with_containers_storage() -> Result<()> {
 
 pub(crate) struct RootSetup {
     luks_device: Option<String>,
-    device: Utf8PathBuf,
+    device_info: crate::blockdev::Device,
     rootfs: Utf8PathBuf,
     rootfs_fd: Dir,
     rootfs_uuid: Option<String>,
@@ -1240,7 +1240,11 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
             .context("Writing aleph version")?;
     }
 
-    crate::bootloader::install_via_bootupd(&rootfs.device, &rootfs.rootfs, &state.config_opts)?;
+    crate::bootloader::install_via_bootupd(
+        &rootfs.device_info,
+        &rootfs.rootfs,
+        &state.config_opts,
+    )?;
     tracing::debug!("Installed bootloader");
 
     // Finalize mounted filesystems
@@ -1594,6 +1598,7 @@ pub(crate) async fn install_to_filesystem(
         dev
     };
     tracing::debug!("Backing device: {backing_device}");
+    let device_info = crate::blockdev::list_dev(Utf8Path::new(&backing_device))?;
 
     let rootarg = format!("root={}", root_info.mount_spec);
     let mut boot = if let Some(spec) = fsopts.boot_mount_spec {
@@ -1622,7 +1627,7 @@ pub(crate) async fn install_to_filesystem(
         matches!(fsopts.replace, Some(ReplaceMode::Alongside)) || fsopts.skip_finalize;
     let mut rootfs = RootSetup {
         luks_device: None,
-        device: backing_device.into(),
+        device_info,
         rootfs: fsopts.root_path,
         rootfs_fd,
         rootfs_uuid: inspect.uuid.clone(),
