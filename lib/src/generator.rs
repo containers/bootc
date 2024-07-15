@@ -129,21 +129,21 @@ fn test_generator_fstab() -> Result<()> {
 
 #[test]
 fn test_generator_fstab_idempotent() -> Result<()> {
-    let anaconda_fstab = "\n\
-#\n\
-# /etc/fstab\n\
-# Created by anaconda on Tue Mar 19 12:24:29 2024\n\
-#\n\
-# Accessible filesystems, by reference, are maintained under '/dev/disk/'.\n\
-# See man pages fstab(5), findfs(8), mount(8) and/or blkid(8) for more info.\n\
-#\n\
-# After editing this file, run 'systemctl daemon-reload' to update systemd\n\
-# units generated from this file.\n\
-#\n\
-# Updated by bootc-fstab-edit.service\n\
-UUID=715be2b7-c458-49f2-acec-b2fdb53d9089 /                       xfs     ro              0 0\n\
-UUID=341c4712-54e8-4839-8020-d94073b1dc8b /boot                   xfs     defaults        0 0\n\
-";
+    let anaconda_fstab = indoc::indoc! { "
+#
+# /etc/fstab
+# Created by anaconda on Tue Mar 19 12:24:29 2024
+#
+# Accessible filesystems, by reference, are maintained under '/dev/disk/'.
+# See man pages fstab(5), findfs(8), mount(8) and/or blkid(8) for more info.
+#
+# After editing this file, run 'systemctl daemon-reload' to update systemd
+# units generated from this file.
+#
+# Updated by bootc-fstab-edit.service
+UUID=715be2b7-c458-49f2-acec-b2fdb53d9089 /                       xfs     ro              0 0
+UUID=341c4712-54e8-4839-8020-d94073b1dc8b /boot                   xfs     defaults        0 0
+" };
     let tempdir = fixture()?;
     let unit_dir = &tempdir.open_dir("run/systemd/system")?;
 
