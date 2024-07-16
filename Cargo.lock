@@ -1365,9 +1365,9 @@ dependencies = [
 
 [[package]]
 name = "ostree-ext"
-version = "0.14.3"
+version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9689a3fb70327b864ba7d0ef68950cf79579ea62169bec600d56c82a87717bf"
+checksum = "502954dd77e19df256429bb830e1d2c4e8d89cf60a33368b856417e7f633e87d"
 dependencies = [
  "anyhow",
  "camino",
