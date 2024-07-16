@@ -2,7 +2,7 @@ use anyhow::Result;
 use camino::Utf8Path;
 use fn_error_context::context;
 
-use crate::blockdev::Device;
+use crate::blockdev::PartitionTable;
 use crate::task::Task;
 
 /// The name of the mountpoint for efi (as a subdirectory of /boot, or at the toplevel)
@@ -10,7 +10,7 @@ pub(crate) const EFI_DIR: &str = "efi";
 
 #[context("Installing bootloader")]
 pub(crate) fn install_via_bootupd(
-    device: &Device,
+    device: &PartitionTable,
     rootfs: &Utf8Path,
     configopts: &crate::install::InstallConfigOpts,
 ) -> Result<()> {

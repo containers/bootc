@@ -823,7 +823,7 @@ fn require_skopeo_with_containers_storage() -> Result<()> {
 
 pub(crate) struct RootSetup {
     luks_device: Option<String>,
-    device_info: crate::blockdev::Device,
+    device_info: crate::blockdev::PartitionTable,
     rootfs: Utf8PathBuf,
     rootfs_fd: Dir,
     rootfs_uuid: Option<String>,
@@ -1598,7 +1598,7 @@ pub(crate) async fn install_to_filesystem(
         dev
     };
     tracing::debug!("Backing device: {backing_device}");
-    let device_info = crate::blockdev::list_dev(Utf8Path::new(&backing_device))?;
+    let device_info = crate::blockdev::partitions_of(Utf8Path::new(&backing_device))?;
 
     let rootarg = format!("root={}", root_info.mount_spec);
     let mut boot = if let Some(spec) = fsopts.boot_mount_spec {
