@@ -7,10 +7,6 @@ use fn_error_context::context;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
 use rustix::fd::BorrowedFd;
-use rustix::fs::{OFlags, ResolveFlags};
-use std::fs::File;
-use std::io::Read;
-use std::os::unix::io::AsFd;
 
 const BOUND_IMAGE_DIR: &str = "usr/lib/bootc-experimental/bound-images.d";
 
@@ -37,6 +33,9 @@ fn parse_spec_dir(root: &Dir, spec_dir: &str) -> Result<Vec<BoundImage>> {
     let Some(bound_images_dir) = root.open_dir_optional(spec_dir)? else {
         return Ok(Default::default());
     };
+    // And open a view of the dir that uses RESOLVE_IN_ROOT so we
+    // handle absolute symlinks.
+    let absroot = &root.open_dir_rooted_ext(".")?;
 
     let mut bound_images = Vec::new();
 
@@ -59,19 +58,7 @@ fn parse_spec_dir(root: &Dir, spec_dir: &str) -> Result<Vec<BoundImage>> {
 
         //parse the file contents
         let path = Utf8Path::new(spec_dir).join(file_name);
-        let mut file: File = rustix::fs::openat2(
-            root.as_fd(),
-            path.as_std_path(),
-            OFlags::CLOEXEC | OFlags::RDONLY,
-            rustix::fs::Mode::empty(),
-            ResolveFlags::IN_ROOT,
-        )
-        .context("Unable to openat")?
-        .into();
-
-        let mut file_contents = String::new();
-        file.read_to_string(&mut file_contents)
-            .context("Unable to read file contents")?;
+        let file_contents = absroot.read_to_string(&path)?;
 
         let file_ini = tini::Ini::from_string(&file_contents).context("Parse to ini")?;
         let file_extension = Utf8Path::new(file_name).extension();
