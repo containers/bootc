@@ -20,7 +20,7 @@ ostree-ext = { version = "0.14.0" }
 chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version= "4.5.4", features = ["derive","cargo"] }
 clap_mangen = { version = "0.2.20", optional = true }
-cap-std-ext = "4"
+cap-std-ext = { version = "4.0.1", features = ["fs_utf8"] }
 hex = "^0.4.3"
 fn-error-context = "0.2.1"
 gvariant = "0.5.0"
