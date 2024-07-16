@@ -26,6 +26,7 @@ pub(crate) mod metadata;
 mod reboot;
 mod reexec;
 mod status;
+mod store;
 mod task;
 mod utils;
 

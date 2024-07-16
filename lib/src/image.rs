@@ -26,7 +26,7 @@ pub(crate) async fn list_entrypoint() -> Result<()> {
 #[context("Pushing image")]
 pub(crate) async fn push_entrypoint(source: Option<&str>, target: Option<&str>) -> Result<()> {
     let transport = Transport::ContainerStorage;
-    let sysroot = crate::cli::get_locked_sysroot().await?;
+    let sysroot = crate::cli::get_storage().await?;
 
     let repo = &sysroot.repo();
 

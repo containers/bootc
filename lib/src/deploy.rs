@@ -22,6 +22,7 @@ use ostree_ext::sysroot::SysrootLock;
 use crate::spec::ImageReference;
 use crate::spec::{BootOrder, HostSpec};
 use crate::status::labels_of_config;
+use crate::store::Storage;
 
 // TODO use https://github.com/ostreedev/ostree-rs-ext/pull/493/commits/afc1837ff383681b947de30c0cefc70080a4f87a
 const BASE_IMAGE_PREFIX: &str = "ostree/container/baseimage/bootc";
@@ -405,7 +406,7 @@ pub(crate) async fn stage(
 }
 
 /// Implementation of rollback functionality
-pub(crate) async fn rollback(sysroot: &SysrootLock) -> Result<()> {
+pub(crate) async fn rollback(sysroot: &Storage) -> Result<()> {
     const ROLLBACK_JOURNAL_ID: &str = "26f3b1eb24464d12aa5e7b544a6b5468";
     let repo = &sysroot.repo();
     let (booted_deployment, deployments, host) = crate::status::get_status_require_booted(sysroot)?;
