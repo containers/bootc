@@ -48,7 +48,7 @@ jobs:
       - name: Manpage generation
         run: mkdir -p target/man && cargo run --features=docgen -- man --directory target/man
       - name: Clippy (gate on correctness and suspicous)
-        run: cargo clippy -- -D clippy::correctness -D clippy::suspicious
+        run: make validate-rust
   fedora-container-tests:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
     runs-on: ubuntu-24.04

@@ -85,6 +85,11 @@ For some bootc install commands, it's simpler to run the lldb-server in a contai
 sudo podman run --pid=host --network=host --privileged --security-opt label=type:unconfined_t -v /var/lib/containers:/var/lib/containers -v /dev:/dev -v .:/output localhost/bootc-lldb lldb-server platform --listen "*:1234" --server
 ```
 
+## Code linting
+
+The `make validate` target runs checks locally that we gate on
+in CI, currently around `cargo fmt` and `cargo clippy`.
+
 ## Running the tests
 
 First, you can run many unit tests with `cargo test`.
