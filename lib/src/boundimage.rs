@@ -139,29 +139,37 @@ struct BoundImage {
 
 impl BoundImage {
     fn new(image: String, auth_file: Option<String>) -> Result<BoundImage> {
-        validate_spec_value(&image).context("Invalid image value")?;
+        let image = parse_spec_value(&image).context("Invalid image value")?;
 
-        if let Some(auth_file) = &auth_file {
-            validate_spec_value(auth_file).context("Invalid auth_file value")?;
-        }
+        let auth_file = if let Some(auth_file) = &auth_file {
+            Some(parse_spec_value(auth_file).context("Invalid auth_file value")?)
+        } else {
+            None
+        };
 
         Ok(BoundImage { image, auth_file })
     }
 }
 
-fn validate_spec_value(value: &String) -> Result<()> {
-    let mut number_of_percents = 0;
-    for char in value.chars() {
-        if char == '%' {
-            number_of_percents += 1;
-        } else if number_of_percents % 2 != 0 {
-            anyhow::bail!("Systemd specifiers are not supported by bound bootc images: {value}");
-        } else {
-            number_of_percents = 0;
+fn parse_spec_value(value: &str) -> Result<String> {
+    let mut it = value.chars();
+    let mut ret = String::new();
+    while let Some(c) = it.next() {
+        if c != '%' {
+            ret.push(c);
+            continue;
+        }
+        let c = it.next().ok_or_else(|| anyhow::anyhow!("Unterminated %"))?;
+        match c {
+            '%' => {
+                ret.push('%');
+            }
+            _ => {
+                anyhow::bail!("Systemd specifiers are not supported by bound bootc images: {value}")
+            }
         }
     }
-
-    Ok(())
+    Ok(ret)
 }
 
 #[cfg(test)]
@@ -229,22 +237,59 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_spec_value() -> Result<()> {
-        //should not return an error with no % characters
-        let value = String::from("[Image]\nImage=quay.io/foo/foo:latest");
-        validate_spec_value(&value).unwrap();
+    fn test_parse_spec_value() -> Result<()> {
+        //should parse string with no % characters
+        let value = String::from("quay.io/foo/foo:latest");
+        assert_eq!(parse_spec_value(&value).unwrap(), value);
+
+        //should parse string with % followed by another %
+        let value = String::from("quay.io/foo/%%foo:latest");
+        assert_eq!(parse_spec_value(&value).unwrap(), "quay.io/foo/%foo:latest");
+
+        //should parse string with multiple separate %%
+        let value = String::from("quay.io/foo/%%foo:%%latest");
+        assert_eq!(
+            parse_spec_value(&value).unwrap(),
+            "quay.io/foo/%foo:%latest"
+        );
+
+        //should parse the string with %% at the start or end
+        let value = String::from("%%quay.io/foo/foo:latest%%");
+        assert_eq!(
+            parse_spec_value(&value).unwrap(),
+            "%quay.io/foo/foo:latest%"
+        );
+
+        //should not return an error with multiple %% in a row
+        let value = String::from("quay.io/foo/%%%%foo:latest");
+        assert_eq!(
+            parse_spec_value(&value).unwrap(),
+            "quay.io/foo/%%foo:latest"
+        );
 
         //should return error when % is NOT followed by another %
-        let value = String::from("[Image]\nImage=quay.io/foo/%foo:latest");
-        assert!(validate_spec_value(&value).is_err());
+        let value = String::from("quay.io/foo/%foo:latest");
+        assert!(parse_spec_value(&value).is_err());
 
-        //should not return an error when % is followed by another %
-        let value = String::from("[Image]\nImage=quay.io/foo/%%foo:latest");
-        validate_spec_value(&value).unwrap();
+        //should return an error when %% is followed by a specifier
+        let value = String::from("quay.io/foo/%%%foo:latest");
+        assert!(parse_spec_value(&value).is_err());
 
-        //should not return an error when %% is followed by a specifier
-        let value = String::from("[Image]\nImage=quay.io/foo/%%%foo:latest");
-        assert!(validate_spec_value(&value).is_err());
+        //should return an error when there are two specifiers
+        let value = String::from("quay.io/foo/%f%ooo:latest");
+        assert!(parse_spec_value(&value).is_err());
+
+        //should return an error with a specifier at the start
+        let value = String::from("%fquay.io/foo/foo:latest");
+        assert!(parse_spec_value(&value).is_err());
+
+        //should return an error with a specifier at the end
+        let value = String::from("quay.io/foo/foo:latest%f");
+        assert!(parse_spec_value(&value).is_err());
+
+        //should return an error with a single % at the end
+        let value = String::from("quay.io/foo/foo:latest%");
+        assert!(parse_spec_value(&value).is_err());
 
         Ok(())
     }
