@@ -11,16 +11,16 @@ name = "tests-integration"
 path = "src/tests-integration.rs"
 
 [dependencies]
-anyhow = "1.0.82"
-camino = "1.1.6"
-cap-std-ext = "4"
-clap = { version= "4.5.4", features = ["derive","cargo"] }
-fn-error-context = "0.2.1"
+anyhow = { workspace = true }
+camino = { workspace = true }
+cap-std-ext = { workspace = true }
+clap = { workspace = true, features = ["derive","cargo"] }
+fn-error-context = { workspace = true }
 indoc = "2.0.5"
 libtest-mimic = "0.7.3"
 oci-spec = "0.6.5"
 rustix = { "version" = "0.38.34", features = ["thread", "fs", "system", "process"] }
-serde = { features = ["derive"], version = "1.0.199" }
-serde_json = "1.0.116"
-tempfile = "3.10.1"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
 xshell = { version = "0.2.6" }

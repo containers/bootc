@@ -14,18 +14,18 @@ include = ["/src", "LICENSE-APACHE", "LICENSE-MIT"]
 [dependencies]
 anstream = "0.6.13"
 anstyle = "1.0.6"
-anyhow = "1.0.82"
-camino = { version = "1.1.6", features = ["serde1"] }
+anyhow = { workspace = true }
+camino = { workspace = true, features = ["serde1"] }
 ostree-ext = { version = "0.14.0" }
-chrono = { version = "0.4.38", features = ["serde"] }
-clap = { version= "4.5.4", features = ["derive","cargo"] }
+chrono = { workspace = true, features = ["serde"] }
+clap = { workspace = true, features = ["derive","cargo"] }
 clap_mangen = { version = "0.2.20", optional = true }
-cap-std-ext = { version = "4.0.1", features = ["fs_utf8"] }
+cap-std-ext = { workspace = true, features = ["fs_utf8"] }
 hex = "^0.4.3"
-fn-error-context = "0.2.1"
+fn-error-context = { workspace = true }
 gvariant = "0.5.0"
 indicatif = "0.17.8"
-libc = "^0.2.154"
+libc = { workspace = true }
 liboverdrop = "0.1.0"
 libsystemd = "0.7"
 openssl = "^0.10.64"
@@ -34,14 +34,14 @@ nix = { version = "0.29", features = ["ioctl", "sched" ] }
 regex = "1.10.4"
 rustix = { "version" = "0.38.34", features = ["thread", "fs", "system", "process"] }
 schemars = { version = "0.8.17", features = ["chrono"] }
-serde = { features = ["derive"], version = "1.0.199" }
+serde = { workspace = true, features = ["derive"] }
 serde_ignored = "0.1.10"
-serde_json = "1.0.116"
+serde_json = { workspace = true }
 serde_yaml = "0.9.34"
-tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1.37.0" }
+tokio = { workspace = true, features = ["io-std", "time", "process", "rt", "net"] }
 tokio-util = { features = ["io-util"], version = "0.7.10" }
-tracing = "0.1.40"
-tempfile = "3.10.1"
+tracing = { workspace = true }
+tempfile = { workspace = true }
 toml = "0.8.12"
 xshell = { version = "0.2.6", optional = true }
 uuid = { version = "1.8.0", features = ["v4"] }
