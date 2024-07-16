@@ -139,15 +139,26 @@ impl Efi {
             log::debug!("Not booted via EFI, skipping firmware update");
             return Ok(());
         }
-        // Read /etc/os-release
-        let release: OsRelease = OsRelease::new()?;
-        let product_name: &str = &release.name;
+        let product_name = get_product_name()?;
         log::debug!("Get product name: {product_name}");
         assert!(product_name.len() > 0);
         // clear all the boot entries that match the target name
-        clear_efi_target(product_name)?;
-        create_efi_boot_entry(device, espdir, vendordir, product_name)
+        clear_efi_target(&product_name)?;
+        create_efi_boot_entry(device, espdir, vendordir, &product_name)
     }
+}
+
+#[context("Get product name")]
+fn get_product_name() -> Result<String> {
+    let file_path = Path::new("/etc/system-release");
+    if file_path.exists() {
+        let content = std::fs::read_to_string(file_path)?;
+        let re = regex::Regex::new(r" *release.*").unwrap();
+        return Ok(re.replace_all(&content, "").to_string());
+    }
+    // Read /etc/os-release
+    let release: OsRelease = OsRelease::new()?;
+    Ok(release.name)
 }
 
 /// Convert a nul-terminated UTF-16 byte array to a String.
@@ -657,6 +668,12 @@ Boot0003* test";
                 }
             ]
         );
+        Ok(())
+    }
+    #[test]
+    fn test_get_product_name() -> Result<()> {
+        let name = get_product_name()?;
+        assert!(name.len() > 0);
         Ok(())
     }
 }

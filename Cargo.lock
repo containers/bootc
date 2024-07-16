@@ -87,6 +87,7 @@ dependencies = [
  "openat-ext",
  "openssl",
  "os-release",
+ "regex",
  "rustix",
  "serde",
  "serde_json",
