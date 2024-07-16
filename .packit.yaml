@@ -38,15 +38,21 @@ jobs:
   - job: copr_build
     trigger: pull_request
     targets:
+      # Primary targets are c9s and fedora:40 right now, which build
+      # for all architectures
       - centos-stream-9-x86_64
       - centos-stream-9-aarch64
       - centos-stream-9-ppc64le
+      - centos-stream-9-s390x
       - fedora-40-x86_64
       - fedora-40-aarch64
       - fedora-40-ppc64le
+      - fedora-40-s390x
+      # Sanity check on secondary targets, fewer architectures just
+      # because the chance that we break e.g. ppc64le *just* on
+      # rawhide is basically nil.
       - fedora-rawhide-x86_64
       - fedora-rawhide-aarch64
-      - fedora-rawhide-ppc64le
       - rhel-9-x86_64
       - rhel-9-aarch64
 
