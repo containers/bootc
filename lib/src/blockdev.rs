@@ -124,6 +124,58 @@ pub(crate) fn list() -> Result<Vec<Device>> {
     list_impl(None)
 }
 
+#[derive(Debug, Deserialize)]
+struct SfDiskOutput {
+    partitiontable: PartitionTable,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub(crate) struct Partition {
+    pub(crate) node: String,
+    pub(crate) start: u64,
+    pub(crate) size: u64,
+    #[serde(rename = "type")]
+    pub(crate) parttype: String,
+    pub(crate) uuid: Option<String>,
+    pub(crate) name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub(crate) struct PartitionTable {
+    pub(crate) label: String,
+    pub(crate) id: String,
+    pub(crate) device: String,
+    // We're not using these fields
+    // pub(crate) unit: String,
+    // pub(crate) firstlba: u64,
+    // pub(crate) lastlba: u64,
+    // pub(crate) sectorsize: u64,
+    pub(crate) partitions: Vec<Partition>,
+}
+
+impl PartitionTable {
+    /// Find the partition with the given device name
+    #[allow(dead_code)]
+    pub(crate) fn find<'a>(&'a self, devname: &str) -> Option<&'a Partition> {
+        self.partitions.iter().find(|p| p.node.as_str() == devname)
+    }
+
+    pub(crate) fn path(&self) -> &Utf8Path {
+        self.device.as_str().into()
+    }
+}
+
+#[context("Listing partitions of {dev}")]
+pub(crate) fn partitions_of(dev: &Utf8Path) -> Result<PartitionTable> {
+    let o = Task::new_quiet("sfdisk")
+        .args(["-J", dev.as_str()])
+        .read()?;
+    let o: SfDiskOutput = serde_json::from_str(&o).context("Parsing sfdisk output")?;
+    Ok(o.partitiontable)
+}
+
 pub(crate) struct LoopbackDevice {
     pub(crate) dev: Option<Utf8PathBuf>,
 }
@@ -322,5 +374,50 @@ fn test_parse_size_mib() {
     .map(|(k, v)| (k.to_string(), v));
     for (s, v) in ident_cases.chain(cases) {
         assert_eq!(parse_size_mib(&s).unwrap(), v as u64, "Parsing {s}");
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_parse_sfdisk() -> Result<()> {
+        let fixture = indoc::indoc! { r#"
+        {
+            "partitiontable": {
+               "label": "gpt",
+               "id": "A67AA901-2C72-4818-B098-7F1CAC127279",
+               "device": "/dev/loop0",
+               "unit": "sectors",
+               "firstlba": 34,
+               "lastlba": 20971486,
+               "sectorsize": 512,
+               "partitions": [
+                  {
+                     "node": "/dev/loop0p1",
+                     "start": 2048,
+                     "size": 8192,
+                     "type": "9E1A2D38-C612-4316-AA26-8B49521E5A8B",
+                     "uuid": "58A4C5F0-BD12-424C-B563-195AC65A25DD",
+                     "name": "PowerPC-PReP-boot"
+                  },{
+                     "node": "/dev/loop0p2",
+                     "start": 10240,
+                     "size": 20961247,
+                     "type": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+                     "uuid": "F51ABB0D-DA16-4A21-83CB-37F4C805AAA0",
+                     "name": "root"
+                  }
+               ]
+            }
+         }
+        "# };
+        let table: SfDiskOutput = serde_json::from_str(&fixture).unwrap();
+        assert_eq!(
+            table.partitiontable.find("/dev/loop0p2").unwrap().size,
+            20961247
+        );
+        Ok(())
     }
 }
