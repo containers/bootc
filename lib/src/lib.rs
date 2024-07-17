@@ -7,11 +7,7 @@
 // See https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
-#![forbid(unused_must_use)]
-#![deny(unsafe_code)]
 #![cfg_attr(feature = "dox", feature(doc_cfg))]
-#![deny(clippy::dbg_macro)]
-#![deny(clippy::todo)]
 // These two are in my experience the lints which are most likely
 // to trigger, and among the least valuable to fix.
 #![allow(clippy::needless_borrow)]

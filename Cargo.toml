@@ -47,3 +47,14 @@ exclude-crate-paths = [ { name = "libz-sys", exclude = "src/zlib" },
                         { name = "k8s-openapi", exclude = "src/v1_25" },
                         { name = "k8s-openapi", exclude = "src/v1_27" },
                       ]
+
+[workspace.lints.rust]
+# Require an extra opt-in for unsafe
+unsafe_code = "deny"
+# Absolutely must handle errors
+unused_must_use = "forbid"
+
+[workspace.lints.clippy]
+# These should only be in local code
+dbg_macro = "deny"
+todo = "deny"

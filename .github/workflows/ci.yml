@@ -41,8 +41,6 @@ jobs:
         run: cd lib && cargo check --no-default-features
       - name: Individual checks
         run: (cd cli && cargo check) && (cd lib && cargo check)
-      - name: Lints
-        run: cargo xtask custom-lints
       - name: Run tests
         run: cargo test -- --nocapture --quiet
       - name: Manpage generation
