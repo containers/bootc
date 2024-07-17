@@ -163,7 +163,6 @@ fn parse_spec_value(value: &str) -> Result<String> {
 mod tests {
     use super::*;
     use cap_std_ext::cap_std;
-    use std::io::Write;
 
     #[test]
     fn test_parse_spec_dir() -> Result<()> {
@@ -180,22 +179,28 @@ mod tests {
         assert_eq!(images.len(), 0);
 
         // Should return BoundImages
-        let mut foo_file = td
-            .create(format!("{CONTAINER_IMAGE_DIR}/foo.image"))
-            .unwrap();
-        foo_file.write_all(b"[Image]\n").unwrap();
-        foo_file.write_all(b"Image=quay.io/foo/foo:latest").unwrap();
+        td.write(
+            format!("{CONTAINER_IMAGE_DIR}/foo.image"),
+            indoc::indoc! { r#"
+            [Image]
+            Image=quay.io/foo/foo:latest
+        "# },
+        )
+        .unwrap();
         td.symlink_contents(
             format!("/{CONTAINER_IMAGE_DIR}/foo.image"),
             format!("{BOUND_IMAGE_DIR}/foo.image"),
         )
         .unwrap();
 
-        let mut bar_file = td
-            .create(format!("{CONTAINER_IMAGE_DIR}/bar.image"))
-            .unwrap();
-        bar_file.write_all(b"[Image]\n").unwrap();
-        bar_file.write_all(b"Image=quay.io/bar/bar:latest").unwrap();
+        td.write(
+            format!("{CONTAINER_IMAGE_DIR}/bar.image"),
+            indoc::indoc! { r#"
+            [Image]
+            Image=quay.io/bar/bar:latest
+            "# },
+        )
+        .unwrap();
         td.symlink_contents(
             format!("/{CONTAINER_IMAGE_DIR}/bar.image"),
             format!("{BOUND_IMAGE_DIR}/bar.image"),
@@ -214,8 +219,7 @@ mod tests {
         assert!(parse_spec_dir(td, &BOUND_IMAGE_DIR).is_err());
 
         // Invalid image contents should return an error
-        let mut error_file = td.create("error.image").unwrap();
-        error_file.write_all(b"[Image]\n").unwrap();
+        td.write("error.image", "[Image]\n").unwrap();
         td.symlink_contents("/error.image", format!("{BOUND_IMAGE_DIR}/error.image"))
             .unwrap();
         assert!(parse_spec_dir(td, &BOUND_IMAGE_DIR).is_err());
@@ -291,9 +295,11 @@ mod tests {
         assert_eq!(bound_image.auth_file, None);
 
         //should error when auth_file is present
-        let file_contents = tini::Ini::from_string(
-            "[Image]\nImage=quay.io/foo/foo:latest\nAuthFile=/etc/containers/auth.json",
-        )
+        let file_contents = tini::Ini::from_string(indoc::indoc! { "
+            [Image]
+            Image=quay.io/foo/foo:latest
+            AuthFile=/etc/containers/auth.json
+        " })
         .unwrap();
         assert!(parse_image_file(&file_contents).is_err());
 
