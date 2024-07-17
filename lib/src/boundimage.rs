@@ -1,3 +1,10 @@
+//! # Implementation of "logically bound" container images
+//!
+//! This module implements the design in <https://github.com/containers/bootc/issues/128>
+//! for "logically bound" container images. These container images are
+//! pre-pulled (and in the future, pinned) before a new image root
+//! is considered ready.
+
 use crate::task::Task;
 use anyhow::{Context, Result};
 use camino::Utf8Path;
@@ -7,8 +14,11 @@ use fn_error_context::context;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
 
+/// The path in a root for bound images; this directory should only contain
+/// symbolic links to `.container` or `.image` files.
 const BOUND_IMAGE_DIR: &str = "usr/lib/bootc-experimental/bound-images.d";
 
+/// Given a deployment, pull all container images it references.
 pub(crate) fn pull_bound_images(sysroot: &SysrootLock, deployment: &Deployment) -> Result<()> {
     let sysroot_fd = crate::utils::sysroot_fd(&sysroot);
     let sysroot_fd = Dir::reopen_dir(&sysroot_fd)?;
@@ -111,6 +121,11 @@ fn pull_images(_deployment_root: &Dir, bound_images: Vec<BoundImage>) -> Result<
     Ok(())
 }
 
+/// A subset of data parsed from a `.image` or `.container` file with
+/// the minimal information necessary to fetch the image.
+///
+/// In the future this may be extended to include e.g. certificates or
+/// other pull options.
 #[derive(PartialEq, Eq)]
 struct BoundImage {
     image: String,
@@ -131,6 +146,10 @@ impl BoundImage {
     }
 }
 
+/// Given a string, parse it in a way similar to how systemd would do it.
+/// The primary thing here is that we reject any "specifiers" such as `%a`
+/// etc. We do allow a quoted `%%` to appear in the string, which will
+/// result in a single unquoted `%`.
 fn parse_spec_value(value: &str) -> Result<String> {
     let mut it = value.chars();
     let mut ret = String::new();
