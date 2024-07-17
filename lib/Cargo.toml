@@ -58,3 +58,5 @@ install = []
 # Implementation detail of man page generation.
 docgen = ["clap_mangen"]
 
+[lints]
+workspace = true

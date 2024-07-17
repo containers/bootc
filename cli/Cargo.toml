@@ -24,3 +24,6 @@ tokio = { workspace = true, features = ["macros"] }
 log = "0.4.21"
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+
+[lints]
+workspace = true

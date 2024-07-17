@@ -24,3 +24,6 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 xshell = { version = "0.2.6" }
+
+[lints]
+workspace = true
