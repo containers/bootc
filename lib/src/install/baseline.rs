@@ -32,6 +32,8 @@ use crate::task::Task;
 // This ensures we end up under 512 to be small-sized.
 pub(crate) const BOOTPN_SIZE_MB: u32 = 510;
 pub(crate) const EFIPN_SIZE_MB: u32 = 512;
+/// The GPT type for "linux"
+pub(crate) const LINUX_PARTTYPE: &str = "0FC63DAF-8483-4772-8E79-3D69D8477DE4";
 
 #[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -307,7 +309,7 @@ pub(crate) fn install_create_rootfs(
         rootpn,
         root_size,
         "root",
-        Some("0FC63DAF-8483-4772-8E79-3D69D8477DE4"),
+        Some(LINUX_PARTTYPE),
     );
     sgdisk.run().context("Failed to run sgdisk")?;
     tracing::debug!("Created partition table");
