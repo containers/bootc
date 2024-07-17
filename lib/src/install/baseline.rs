@@ -32,6 +32,8 @@ use crate::task::Task;
 // This ensures we end up under 512 to be small-sized.
 pub(crate) const BOOTPN_SIZE_MB: u32 = 510;
 pub(crate) const EFIPN_SIZE_MB: u32 = 512;
+/// The GPT type for "linux"
+pub(crate) const LINUX_PARTTYPE: &str = "0FC63DAF-8483-4772-8E79-3D69D8477DE4";
 
 #[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -307,7 +309,7 @@ pub(crate) fn install_create_rootfs(
         rootpn,
         root_size,
         "root",
-        Some("0FC63DAF-8483-4772-8E79-3D69D8477DE4"),
+        Some(LINUX_PARTTYPE),
     );
     sgdisk.run().context("Failed to run sgdisk")?;
     tracing::debug!("Created partition table");
@@ -326,24 +328,18 @@ pub(crate) fn install_create_rootfs(
     // we're targeting, but this is a simple coarse hammer.
     crate::blockdev::udev_settle()?;
 
-    // Now inspect the partitioned device again so we can find the names of the child devices.
-    let device_partitions = crate::blockdev::list_dev(&devpath)?
-        .children
-        .ok_or_else(|| anyhow::anyhow!("Failed to find children after partitioning"))?;
-    // Given a partition number, return the path to its device.
-    let findpart = |idx: u32| -> Result<String> {
-        // checked_sub is here because our partition numbers start at 1, but the vec starts at 0
-        let devpath = device_partitions
-            .get(idx.checked_sub(1).unwrap() as usize)
-            .ok_or_else(|| anyhow::anyhow!("Missing partition for index {idx}"))?
-            .path();
-        Ok(devpath)
-    };
+    // Re-read what we wrote into structured information
+    let base_partitions = &crate::blockdev::partitions_of(&devpath)?;
 
-    let base_rootdev = findpart(rootpn)?;
-
+    let root_partition = base_partitions.find_partno(rootpn)?;
+    if root_partition.parttype.as_str() != LINUX_PARTTYPE {
+        anyhow::bail!(
+            "root partition {partno} has type {}; expected {LINUX_PARTTYPE}",
+            root_partition.parttype.as_str()
+        );
+    }
     let (rootdev, root_blockdev_kargs) = match block_setup {
-        BlockSetup::Direct => (base_rootdev, None),
+        BlockSetup::Direct => (root_partition.node.to_owned(), None),
         BlockSetup::Tpm2Luks => {
             let uuid = uuid::Uuid::new_v4().to_string();
             // This will be replaced via --wipe-slot=all when binding to tpm below
@@ -354,21 +350,23 @@ pub(crate) fn install_create_rootfs(
             let tmp_keyfile = tmp_keyfile.path();
             let dummy_passphrase_input = Some(dummy_passphrase.as_bytes());
 
+            let root_devpath = root_partition.path();
+
             Task::new("Initializing LUKS for root", "cryptsetup")
                 .args(["luksFormat", "--uuid", uuid.as_str(), "--key-file"])
                 .args([tmp_keyfile])
-                .args([base_rootdev.as_str()])
+                .args([root_devpath])
                 .run()?;
             // The --wipe-slot=all removes our temporary passphrase, and binds to the local TPM device.
             // We also use .verbose() here as the details are important/notable.
             Task::new("Enrolling root device with TPM", "systemd-cryptenroll")
                 .args(["--wipe-slot=all", "--tpm2-device=auto", "--unlock-key-file"])
                 .args([tmp_keyfile])
-                .args([base_rootdev.as_str()])
+                .args([root_devpath])
                 .verbose()
                 .run_with_stdin_buf(dummy_passphrase_input)?;
             Task::new("Opening root LUKS device", "cryptsetup")
-                .args(["luksOpen", base_rootdev.as_str(), luks_name])
+                .args(["luksOpen", root_devpath.as_str(), luks_name])
                 .run()?;
             let rootdev = format!("/dev/mapper/{luks_name}");
             let kargs = vec![
@@ -381,12 +379,15 @@ pub(crate) fn install_create_rootfs(
 
     // Initialize the /boot filesystem
     let bootdev = if let Some(bootpn) = boot_partno {
-        Some(findpart(bootpn)?)
+        Some(base_partitions.find_partno(bootpn)?)
     } else {
         None
     };
-    let boot_uuid = if let Some(bootdev) = bootdev.as_deref() {
-        Some(mkfs(bootdev, root_filesystem, "boot", []).context("Initializing /boot")?)
+    let boot_uuid = if let Some(bootdev) = bootdev {
+        Some(
+            mkfs(bootdev.node.as_str(), root_filesystem, "boot", [])
+                .context("Initializing /boot")?,
+        )
     } else {
         None
     };
@@ -416,23 +417,23 @@ pub(crate) fn install_create_rootfs(
     let bootfs = rootfs.join("boot");
     // Create the underlying mount point directory, which should be labeled
     crate::lsm::ensure_dir_labeled(&target_rootfs, "boot", None, 0o755.into(), sepolicy)?;
-    if let Some(bootdev) = bootdev.as_deref() {
-        mount::mount(bootdev, &bootfs)?;
+    if let Some(bootdev) = bootdev {
+        mount::mount(bootdev.node.as_str(), &bootfs)?;
     }
     // And we want to label the root mount of /boot
     crate::lsm::ensure_dir_labeled(&target_rootfs, "boot", None, 0o755.into(), sepolicy)?;
 
     // Create the EFI system partition, if applicable
     if let Some(esp_partno) = esp_partno {
-        let espdev = &findpart(esp_partno)?;
+        let espdev = base_partitions.find_partno(esp_partno)?;
         Task::new("Creating ESP filesystem", "mkfs.fat")
-            .args([espdev.as_str(), "-n", "EFI-SYSTEM"])
+            .args([espdev.node.as_str(), "-n", "EFI-SYSTEM"])
             .verbose()
             .quiet_output()
             .run()?;
         let efifs_path = bootfs.join(crate::bootloader::EFI_DIR);
         std::fs::create_dir(&efifs_path).context("Creating efi dir")?;
-        mount::mount(espdev, &efifs_path)?;
+        mount::mount(espdev.node.as_str(), &efifs_path)?;
     }
 
     let luks_device = match block_setup {

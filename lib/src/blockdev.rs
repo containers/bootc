@@ -165,6 +165,21 @@ impl PartitionTable {
     pub(crate) fn path(&self) -> &Utf8Path {
         self.device.as_str().into()
     }
+
+    // Find the partition with the given offset (starting at 1)
+    pub(crate) fn find_partno(&self, partno: u32) -> Result<&Partition> {
+        let r = self
+            .partitions
+            .get(partno.checked_sub(1).expect("1 based partition offset") as usize)
+            .ok_or_else(|| anyhow::anyhow!("Missing partition for index {partno}"))?;
+        Ok(r)
+    }
+}
+
+impl Partition {
+    pub(crate) fn path(&self) -> &Utf8Path {
+        self.node.as_str().into()
+    }
 }
 
 #[context("Listing partitions of {dev}")]
