@@ -6,18 +6,11 @@ use cap_std_ext::dirext::CapStdExtDirExt;
 use fn_error_context::context;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
-use rustix::fd::BorrowedFd;
 
 const BOUND_IMAGE_DIR: &str = "usr/lib/bootc-experimental/bound-images.d";
 
-// Access the file descriptor for a sysroot
-#[allow(unsafe_code)]
-pub(crate) fn sysroot_fd(sysroot: &ostree_ext::ostree::Sysroot) -> BorrowedFd {
-    unsafe { BorrowedFd::borrow_raw(sysroot.fd()) }
-}
-
 pub(crate) fn pull_bound_images(sysroot: &SysrootLock, deployment: &Deployment) -> Result<()> {
-    let sysroot_fd = sysroot_fd(&sysroot);
+    let sysroot_fd = crate::utils::sysroot_fd(&sysroot);
     let sysroot_fd = Dir::reopen_dir(&sysroot_fd)?;
     let deployment_root_path = sysroot.deployment_dirpath(&deployment);
     let deployment_root = &sysroot_fd.open_dir(&deployment_root_path)?;
