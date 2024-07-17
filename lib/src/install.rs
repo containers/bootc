@@ -774,7 +774,11 @@ pub(crate) fn exec_in_host_mountns(args: &[std::ffi::OsString]) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Missing command"))?;
     tracing::trace!("{cmd:?} {args:?}");
     let pid1mountns = std::fs::File::open("/proc/1/ns/mnt").context("open pid1 mountns")?;
-    nix::sched::setns(pid1mountns.as_fd(), nix::sched::CloneFlags::CLONE_NEWNS).context("setns")?;
+    rustix::thread::move_into_link_name_space(
+        pid1mountns.as_fd(),
+        Some(rustix::thread::LinkNameSpaceType::Mount),
+    )
+    .context("setns")?;
     rustix::process::chdir("/").context("chdir")?;
     // Work around supermin doing chroot() and not pivot_root
     // https://github.com/libguestfs/supermin/blob/5230e2c3cd07e82bd6431e871e239f7056bf25ad/init/init.c#L288
