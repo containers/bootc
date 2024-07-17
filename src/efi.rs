@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
+use cap_std::fs::Dir;
+use cap_std_ext::cap_std;
 use fn_error_context::context;
 use openat_ext::OpenatDirExt;
 use os_release::OsRelease;
@@ -139,7 +141,8 @@ impl Efi {
             log::debug!("Not booted via EFI, skipping firmware update");
             return Ok(());
         }
-        let product_name = get_product_name()?;
+        let sysroot = Dir::open_ambient_dir(&Path::new("/"), cap_std::ambient_authority())?;
+        let product_name = get_product_name(&sysroot)?;
         log::debug!("Get product name: {product_name}");
         assert!(product_name.len() > 0);
         // clear all the boot entries that match the target name
@@ -149,10 +152,10 @@ impl Efi {
 }
 
 #[context("Get product name")]
-fn get_product_name() -> Result<String> {
-    let file_path = Path::new("/etc/system-release");
-    if file_path.exists() {
-        let content = std::fs::read_to_string(file_path)?;
+fn get_product_name(sysroot: &Dir) -> Result<String> {
+    let release_path = "etc/system-release";
+    if sysroot.exists(release_path) {
+        let content = sysroot.read_to_string(release_path)?;
         let re = regex::Regex::new(r" *release.*").unwrap();
         return Ok(re.replace_all(&content, "").to_string());
     }
@@ -597,6 +600,8 @@ fn find_file_recursive<P: AsRef<Path>>(dir: P, target_file: &str) -> Result<Vec<
 
 #[cfg(test)]
 mod tests {
+    use cap_std_ext::dirext::CapStdExtDirExt;
+
     use super::*;
 
     #[test]
@@ -670,10 +675,38 @@ Boot0003* test";
         );
         Ok(())
     }
+    #[cfg(test)]
+    fn fixture() -> Result<cap_std_ext::cap_tempfile::TempDir> {
+        let tempdir = cap_std_ext::cap_tempfile::tempdir(cap_std::ambient_authority())?;
+        tempdir.create_dir("etc")?;
+        Ok(tempdir)
+    }
     #[test]
     fn test_get_product_name() -> Result<()> {
-        let name = get_product_name()?;
-        assert!(name.len() > 0);
+        let tmpd = fixture()?;
+        {
+            tmpd.atomic_write("etc/system-release", "Fedora release 40 (Forty)")?;
+            let name = get_product_name(&tmpd)?;
+            assert_eq!("Fedora", name);
+        }
+        {
+            tmpd.atomic_write("etc/system-release", "CentOS Stream release 9")?;
+            let name = get_product_name(&tmpd)?;
+            assert_eq!("CentOS Stream", name);
+        }
+        {
+            tmpd.atomic_write(
+                "etc/system-release",
+                "Red Hat Enterprise Linux CoreOS release 4",
+            )?;
+            let name = get_product_name(&tmpd)?;
+            assert_eq!("Red Hat Enterprise Linux CoreOS", name);
+        }
+        {
+            tmpd.remove_file("etc/system-release")?;
+            let name = get_product_name(&tmpd)?;
+            assert!(name.len() > 0);
+        }
         Ok(())
     }
 }
