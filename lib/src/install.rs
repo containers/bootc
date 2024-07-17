@@ -25,6 +25,7 @@ use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use cap_std::fs::{Dir, MetadataExt};
 use cap_std_ext::cap_std;
+use cap_std_ext::cap_std::fs_utf8::DirEntry as DirEntryUtf8;
 use cap_std_ext::prelude::CapStdExtDirExt;
 use chrono::prelude::*;
 use clap::ValueEnum;
@@ -1343,11 +1344,8 @@ pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
 #[context("Verifying empty rootfs")]
 fn require_empty_rootdir(rootfs_fd: &Dir) -> Result<()> {
     for e in rootfs_fd.entries()? {
-        let e = e?;
-        let name = e.file_name();
-        let name = name
-            .to_str()
-            .ok_or_else(|| anyhow!("Invalid non-UTF8 filename: {name:?}"))?;
+        let e = DirEntryUtf8::from_cap_std(e?);
+        let name = e.file_name()?;
         if name == LOST_AND_FOUND {
             continue;
         }
@@ -1355,15 +1353,12 @@ fn require_empty_rootdir(rootfs_fd: &Dir) -> Result<()> {
         if name == BOOT {
             let mut entries = rootfs_fd.read_dir(BOOT)?;
             if let Some(e) = entries.next() {
-                let e = e?;
-                let name = e.file_name();
-                let name = name
-                    .to_str()
-                    .ok_or_else(|| anyhow!("Invalid non-UTF8 filename: {name:?}"))?;
-                if matches!(name, LOST_AND_FOUND | crate::bootloader::EFI_DIR) {
+                let e = DirEntryUtf8::from_cap_std(e?);
+                let name = e.file_name()?;
+                if matches!(name.as_str(), LOST_AND_FOUND | crate::bootloader::EFI_DIR) {
                     continue;
                 }
-                anyhow::bail!("Non-empty boot directory, found {name:?}");
+                anyhow::bail!("Non-empty boot directory, found {name}");
             }
         } else {
             anyhow::bail!("Non-empty root filesystem; found {name:?}");
