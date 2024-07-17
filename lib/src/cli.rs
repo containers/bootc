@@ -19,6 +19,7 @@ use ostree_container::store::PrepareResult;
 use ostree_ext::container as ostree_container;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
+use schemars::schema_for;
 
 use crate::deploy::RequiredHostSpec;
 use crate::lints;
@@ -244,6 +245,8 @@ pub(crate) enum InternalsOpts {
         late_dir: Option<Utf8PathBuf>,
     },
     FixupEtcFstab,
+    /// Should only be used by `make update-generated`
+    PrintJsonSchema,
 }
 
 impl InternalsOpts {
@@ -801,6 +804,12 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 crate::generator::generator(root, unit_dir)
             }
             InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
+            InternalsOpts::PrintJsonSchema => {
+                let schema = schema_for!(crate::spec::Host);
+                let mut stdout = std::io::stdout().lock();
+                serde_json::to_writer_pretty(&mut stdout, &schema)?;
+                Ok(())
+            }
         },
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),

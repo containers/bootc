@@ -13,7 +13,7 @@ const KIND: &str = "BootcHost";
 /// The default object name we use; there's only one.
 pub(crate) const OBJECT_NAME: &str = "host";
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 /// The core host definition
 pub struct Host {
@@ -30,7 +30,7 @@ pub struct Host {
 
 /// Configuration for system boot ordering.
 
-#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum BootOrder {
     /// The staged or booted deployment will be booted next
@@ -40,7 +40,7 @@ pub enum BootOrder {
     Rollback,
 }
 
-#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 /// The host specification
 pub struct HostSpec {
