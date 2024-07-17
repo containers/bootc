@@ -45,6 +45,10 @@ validate: validate-rust
 	ruff check
 .PHONY: validate
 
+update-generated:
+	cargo xtask update-generated
+.PHONY: update-generated
+
 vendor:
 	cargo xtask $@
 .PHONY: vendor
