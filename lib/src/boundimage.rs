@@ -63,8 +63,10 @@ fn parse_spec_dir(root: &Dir, spec_dir: &str) -> Result<Vec<BoundImage>> {
         let file_ini = tini::Ini::from_string(&file_contents).context("Parse to ini")?;
         let file_extension = Utf8Path::new(file_name).extension();
         let bound_image = match file_extension {
-            Some("image") => parse_image_file(file_name, &file_ini),
-            Some("container") => parse_container_file(file_name, &file_ini),
+            Some("image") => parse_image_file(&file_ini).with_context(|| format!("Parsing {path}")),
+            Some("container") => {
+                parse_container_file(&file_ini).with_context(|| format!("Parsing {path}"))
+            }
             _ => anyhow::bail!("Invalid file extension: {file_name}"),
         }?;
 
@@ -74,11 +76,10 @@ fn parse_spec_dir(root: &Dir, spec_dir: &str) -> Result<Vec<BoundImage>> {
     Ok(bound_images)
 }
 
-#[context("parse image file {file_name}")]
-fn parse_image_file(file_name: &str, file_contents: &tini::Ini) -> Result<BoundImage> {
+fn parse_image_file(file_contents: &tini::Ini) -> Result<BoundImage> {
     let image: String = file_contents
         .get("Image", "Image")
-        .ok_or_else(|| anyhow::anyhow!("Missing Image field in {file_name}"))?;
+        .ok_or_else(|| anyhow::anyhow!("Missing Image field"))?;
 
     //TODO: auth_files have some semi-complicated edge cases that we need to handle,
     //      so for now let's bail out if we see one since the existence of an authfile
@@ -92,11 +93,10 @@ fn parse_image_file(file_name: &str, file_contents: &tini::Ini) -> Result<BoundI
     Ok(bound_image)
 }
 
-#[context("parse container file {file_name}")]
-fn parse_container_file(file_name: &str, file_contents: &tini::Ini) -> Result<BoundImage> {
+fn parse_container_file(file_contents: &tini::Ini) -> Result<BoundImage> {
     let image: String = file_contents
         .get("Container", "Image")
-        .ok_or_else(|| anyhow::anyhow!("Missing Image field in {file_name}"))?;
+        .ok_or_else(|| anyhow::anyhow!("Missing Image field"))?;
 
     let bound_image = BoundImage::new(image.to_string(), None)?;
     Ok(bound_image)
@@ -286,7 +286,7 @@ mod tests {
         //should return BoundImage when no auth_file is present
         let file_contents =
             tini::Ini::from_string("[Image]\nImage=quay.io/foo/foo:latest").unwrap();
-        let bound_image = parse_image_file("foo.image", &file_contents).unwrap();
+        let bound_image = parse_image_file(&file_contents).unwrap();
         assert_eq!(bound_image.image, "quay.io/foo/foo:latest");
         assert_eq!(bound_image.auth_file, None);
 
@@ -295,11 +295,11 @@ mod tests {
             "[Image]\nImage=quay.io/foo/foo:latest\nAuthFile=/etc/containers/auth.json",
         )
         .unwrap();
-        assert!(parse_image_file("foo.image", &file_contents).is_err());
+        assert!(parse_image_file(&file_contents).is_err());
 
         //should return error when missing image field
         let file_contents = tini::Ini::from_string("[Image]\n").unwrap();
-        assert!(parse_image_file("foo.image", &file_contents).is_err());
+        assert!(parse_image_file(&file_contents).is_err());
 
         Ok(())
     }
@@ -309,13 +309,13 @@ mod tests {
         //should return BoundImage
         let file_contents =
             tini::Ini::from_string("[Container]\nImage=quay.io/foo/foo:latest").unwrap();
-        let bound_image = parse_container_file("foo.container", &file_contents).unwrap();
+        let bound_image = parse_container_file(&file_contents).unwrap();
         assert_eq!(bound_image.image, "quay.io/foo/foo:latest");
         assert_eq!(bound_image.auth_file, None);
 
         //should return error when missing image field
         let file_contents = tini::Ini::from_string("[Container]\n").unwrap();
-        assert!(parse_container_file("foo.container", &file_contents).is_err());
+        assert!(parse_container_file(&file_contents).is_err());
 
         Ok(())
     }
