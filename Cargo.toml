@@ -17,6 +17,20 @@ codegen-units = 1
 inherits = "release"
 lto = "yes"
 
+[workspace.dependencies]
+anyhow = "1.0.82"
+camino = "1.1.6"
+cap-std-ext = "4.0.2"
+chrono = { version = "0.4.38", default-features = false }
+clap = "4.5.4"
+fn-error-context = "0.2.1"
+libc = "0.2.154"
+serde = "1.0.199"
+serde_json = "1.0.116"
+tempfile = "3.10.1"
+tracing = "0.1.40"
+tokio = ">= 1.37.0"
+
 # See https://github.com/coreos/cargo-vendor-filterer
 [workspace.metadata.vendor-filter]
 # For now we only care about tier 1+2 Linux.  (In practice, it's unlikely there is a tier3-only Linux dependency)

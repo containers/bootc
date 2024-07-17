@@ -157,7 +157,6 @@ dependencies = [
  "anyhow",
  "bootc-lib",
  "clap",
- "libc",
  "log",
  "tokio",
  "tracing",
