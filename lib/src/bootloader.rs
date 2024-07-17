@@ -9,6 +9,7 @@ use crate::task::Task;
 pub(crate) const EFI_DIR: &str = "efi";
 pub(crate) const PREPBOOT_GUID: &str = "9E1A2D38-C612-4316-AA26-8B49521E5A8B";
 pub(crate) const PREPBOOT_LABEL: &str = "PowerPC-PReP-boot";
+pub(crate) const PREPBOOT_LOOP_TYPE: &str = "41";
 
 /// Find the device to pass to bootupd. Only on powerpc64 right now
 /// we explicitly find one with a specific label.
@@ -20,7 +21,9 @@ fn get_bootupd_device(device: &PartitionTable) -> Result<Utf8PathBuf> {
         return device
             .partitions
             .iter()
-            .find(|p| p.parttype.as_str() == PREPBOOT_GUID)
+            .find(|p|
+                (p.parttype.as_str() == PREPBOOT_GUID ||
+                 p.parttype.as_str() == PREPBOOT_LOOP_TYPE))
             .ok_or_else(|| {
                 anyhow::anyhow!("Failed to find PReP partition with GUID {PREPBOOT_GUID}")
             })
