@@ -19,7 +19,7 @@ fn main() {
 #[allow(clippy::type_complexity)]
 const TASKS: &[(&str, fn(&Shell) -> Result<()>)] = &[
     ("manpages", manpages),
-    ("man2markdown", man2markdown),
+    ("update-generated", update_generated),
     ("package", package),
     ("package-srpm", package_srpm),
     ("spec", spec),
@@ -115,12 +115,13 @@ fn manpages(sh: &Shell) -> Result<()> {
     Ok(())
 }
 
-/// Generate markdown files (converted from the man pages, which are generated
-/// from the Rust sources) into docs/src, which ends up in the rendered
-/// documentation.  This process is currently manual.
-#[context("man2markdown")]
-fn man2markdown(sh: &Shell) -> Result<()> {
+/// Update generated files, such as converting the man pages to markdown.
+/// This process is currently manual.
+#[context("Updating generated files")]
+fn update_generated(sh: &Shell) -> Result<()> {
     manpages(sh)?;
+    // And convert the man pages into markdown, so they can be included
+    // in the docs.
     for ent in std::fs::read_dir("target/man")? {
         let ent = ent?;
         let path = &ent.path();
