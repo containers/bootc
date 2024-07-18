@@ -542,15 +542,9 @@ pub(crate) fn print_configuration() -> Result<()> {
 }
 
 #[context("Creating ostree deployment")]
-async fn initialize_ostree_root_from_self(
-    state: &State,
-    root_setup: &RootSetup,
-) -> Result<InstallAleph> {
+async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result<ostree::Sysroot> {
     let sepolicy = state.load_policy()?;
     let sepolicy = sepolicy.as_ref();
-
-    let container_rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-
     // Load a fd for the mounted target physical root
     let rootfs_dir = &root_setup.rootfs_fd;
     let rootfs = root_setup.rootfs.as_path();
@@ -607,6 +601,20 @@ async fn initialize_ostree_root_from_self(
 
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
+    Ok(sysroot)
+}
+
+#[context("Creating ostree deployment")]
+async fn install_container(
+    state: &State,
+    root_setup: &RootSetup,
+    sysroot: &ostree::Sysroot,
+) -> Result<(ostree::Deployment, InstallAleph)> {
+    let sepolicy = state.load_policy()?;
+    let sepolicy = sepolicy.as_ref();
+    let stateroot = STATEROOT_DEFAULT;
+
+    let container_rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
 
     let (src_imageref, proxy_cfg) = if !state.source.in_host_mountns {
         (state.source.imageref.clone(), None)
@@ -692,7 +700,6 @@ async fn initialize_ostree_root_from_self(
     )
     .await?;
 
-    sysroot.load(cancellable)?;
     let deployment = sysroot
         .deployments()
         .into_iter()
@@ -700,7 +707,8 @@ async fn initialize_ostree_root_from_self(
         .ok_or_else(|| anyhow::anyhow!("Failed to find deployment"))?;
     // SAFETY: There must be a path
     let path = sysroot.deployment_dirpath(&deployment);
-    let root = rootfs_dir
+    let root = root_setup
+        .rootfs_fd
         .open_dir(path.as_str())
         .context("Opening deployment dir")?;
 
@@ -713,7 +721,7 @@ async fn initialize_ostree_root_from_self(
         for d in ["ostree", "boot"] {
             let mut pathbuf = Utf8PathBuf::from(d);
             crate::lsm::ensure_dir_labeled_recurse(
-                rootfs_dir,
+                &root_setup.rootfs_fd,
                 &mut pathbuf,
                 policy,
                 Some(deployment_root_devino),
@@ -758,7 +766,7 @@ async fn initialize_ostree_root_from_self(
         selinux: state.selinux_state.to_aleph().to_string(),
     };
 
-    Ok(aleph)
+    Ok((deployment, aleph))
 }
 
 /// Run a command in the host mount namespace
@@ -1223,17 +1231,19 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
     tracing::debug!("boot uuid={boot_uuid}");
 
+    // Initialize the ostree sysroot (repo, stateroot, etc.)
+    let sysroot = initialize_ostree_root(state, rootfs).await?;
+    // And actually set up the container in that root, returning a deployment and
+    // the aleph state (see below).
+    let (deployment, aleph) = install_container(state, rootfs, &sysroot).await?;
     // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
-    {
-        let aleph = initialize_ostree_root_from_self(state, rootfs).await?;
-        rootfs
-            .rootfs_fd
-            .atomic_replace_with(BOOTC_ALEPH_PATH, |f| {
-                serde_json::to_writer(f, &aleph)?;
-                anyhow::Ok(())
-            })
-            .context("Writing aleph version")?;
-    }
+    rootfs
+        .rootfs_fd
+        .atomic_replace_with(BOOTC_ALEPH_PATH, |f| {
+            serde_json::to_writer(f, &aleph)?;
+            anyhow::Ok(())
+        })
+        .context("Writing aleph version")?;
     if cfg!(target_arch = "s390x") {
         // TODO: Integrate s390x support into install_via_bootupd
         crate::bootloader::install_via_zipl(&rootfs.device_info, boot_uuid)?;
@@ -1244,6 +1254,10 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
             &state.config_opts,
         )?;
     }
+
+    // After this point, we need to drop all open references to the filesystem
+    drop(deployment);
+    drop(sysroot);
 
     tracing::debug!("Installed bootloader");
 
