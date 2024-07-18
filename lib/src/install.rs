@@ -609,7 +609,7 @@ async fn install_container(
     state: &State,
     root_setup: &RootSetup,
     sysroot: &ostree::Sysroot,
-) -> Result<InstallAleph> {
+) -> Result<(ostree::Deployment, InstallAleph)> {
     let sepolicy = state.load_policy()?;
     let sepolicy = sepolicy.as_ref();
     let stateroot = STATEROOT_DEFAULT;
@@ -766,7 +766,7 @@ async fn install_container(
         selinux: state.selinux_state.to_aleph().to_string(),
     };
 
-    Ok(aleph)
+    Ok((deployment, aleph))
 }
 
 /// Run a command in the host mount namespace
@@ -1235,18 +1235,19 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
     tracing::debug!("boot uuid={boot_uuid}");
 
-    // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
+    // Initialize the ostree sysroot (repo, stateroot, etc.)
     let sysroot = initialize_ostree_root(state, rootfs).await?;
-    {
-        let aleph = install_container(state, rootfs, &sysroot).await?;
-        rootfs
-            .rootfs_fd
-            .atomic_replace_with(BOOTC_ALEPH_PATH, |f| {
-                serde_json::to_writer(f, &aleph)?;
-                anyhow::Ok(())
-            })
-            .context("Writing aleph version")?;
-    }
+    // And actually set up the container in that root, returning a deployment and
+    // the aleph state (see below).
+    let (deployment, aleph) = install_container(state, rootfs, &sysroot).await?;
+    // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
+    rootfs
+        .rootfs_fd
+        .atomic_replace_with(BOOTC_ALEPH_PATH, |f| {
+            serde_json::to_writer(f, &aleph)?;
+            anyhow::Ok(())
+        })
+        .context("Writing aleph version")?;
     if cfg!(target_arch = "s390x") {
         // TODO: Integrate s390x support into install_via_bootupd
         crate::bootloader::install_via_zipl(&rootfs.device_info, boot_uuid)?;
@@ -1257,6 +1258,10 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
             &state.config_opts,
         )?;
     }
+
+    // After this point, we need to drop all open references to the filesystem
+    drop(deployment);
+    drop(sysroot);
 
     tracing::debug!("Installed bootloader");
 
