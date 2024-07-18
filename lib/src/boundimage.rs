@@ -18,6 +18,17 @@ use ostree_ext::sysroot::SysrootLock;
 /// symbolic links to `.container` or `.image` files.
 const BOUND_IMAGE_DIR: &str = "usr/lib/bootc-experimental/bound-images.d";
 
+/// A subset of data parsed from a `.image` or `.container` file with
+/// the minimal information necessary to fetch the image.
+///
+/// In the future this may be extended to include e.g. certificates or
+/// other pull options.
+#[derive(PartialEq, Eq)]
+struct BoundImage {
+    image: String,
+    auth_file: Option<String>,
+}
+
 /// Given a deployment, pull all container images it references.
 pub(crate) fn pull_bound_images(sysroot: &SysrootLock, deployment: &Deployment) -> Result<()> {
     let deployment_root = &crate::utils::deployment_fd(sysroot, deployment)?;
@@ -115,17 +126,6 @@ fn pull_images(_deployment_root: &Dir, bound_images: Vec<BoundImage>) -> Result<
     }
 
     Ok(())
-}
-
-/// A subset of data parsed from a `.image` or `.container` file with
-/// the minimal information necessary to fetch the image.
-///
-/// In the future this may be extended to include e.g. certificates or
-/// other pull options.
-#[derive(PartialEq, Eq)]
-struct BoundImage {
-    image: String,
-    auth_file: Option<String>,
 }
 
 impl BoundImage {
