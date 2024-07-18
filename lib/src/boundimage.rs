@@ -1,3 +1,10 @@
+//! # Implementation of "logically bound" container images
+//!
+//! This module implements the design in <https://github.com/containers/bootc/issues/128>
+//! for "logically bound" container images. These container images are
+//! pre-pulled (and in the future, pinned) before a new image root
+//! is considered ready.
+
 use crate::task::Task;
 use anyhow::{Context, Result};
 use camino::Utf8Path;
@@ -6,18 +13,14 @@ use cap_std_ext::dirext::CapStdExtDirExt;
 use fn_error_context::context;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
-use rustix::fd::BorrowedFd;
 
+/// The path in a root for bound images; this directory should only contain
+/// symbolic links to `.container` or `.image` files.
 const BOUND_IMAGE_DIR: &str = "usr/lib/bootc-experimental/bound-images.d";
 
-// Access the file descriptor for a sysroot
-#[allow(unsafe_code)]
-pub(crate) fn sysroot_fd(sysroot: &ostree_ext::ostree::Sysroot) -> BorrowedFd {
-    unsafe { BorrowedFd::borrow_raw(sysroot.fd()) }
-}
-
+/// Given a deployment, pull all container images it references.
 pub(crate) fn pull_bound_images(sysroot: &SysrootLock, deployment: &Deployment) -> Result<()> {
-    let sysroot_fd = sysroot_fd(&sysroot);
+    let sysroot_fd = crate::utils::sysroot_fd(&sysroot);
     let sysroot_fd = Dir::reopen_dir(&sysroot_fd)?;
     let deployment_root_path = sysroot.deployment_dirpath(&deployment);
     let deployment_root = &sysroot_fd.open_dir(&deployment_root_path)?;
@@ -31,6 +34,7 @@ pub(crate) fn pull_bound_images(sysroot: &SysrootLock, deployment: &Deployment) 
 #[context("parse bound image spec dir")]
 fn parse_spec_dir(root: &Dir, spec_dir: &str) -> Result<Vec<BoundImage>> {
     let Some(bound_images_dir) = root.open_dir_optional(spec_dir)? else {
+        tracing::debug!("Missing {spec_dir}");
         return Ok(Default::default());
     };
     // And open a view of the dir that uses RESOLVE_IN_ROOT so we
@@ -104,6 +108,7 @@ fn parse_container_file(file_contents: &tini::Ini) -> Result<BoundImage> {
 
 #[context("pull bound images")]
 fn pull_images(_deployment_root: &Dir, bound_images: Vec<BoundImage>) -> Result<()> {
+    tracing::debug!("Pulling bound images: {}", bound_images.len());
     //TODO: do this in parallel
     for bound_image in bound_images {
         let mut task = Task::new("Pulling bound image", "/usr/bin/podman")
@@ -118,6 +123,11 @@ fn pull_images(_deployment_root: &Dir, bound_images: Vec<BoundImage>) -> Result<
     Ok(())
 }
 
+/// A subset of data parsed from a `.image` or `.container` file with
+/// the minimal information necessary to fetch the image.
+///
+/// In the future this may be extended to include e.g. certificates or
+/// other pull options.
 #[derive(PartialEq, Eq)]
 struct BoundImage {
     image: String,
@@ -138,6 +148,10 @@ impl BoundImage {
     }
 }
 
+/// Given a string, parse it in a way similar to how systemd would do it.
+/// The primary thing here is that we reject any "specifiers" such as `%a`
+/// etc. We do allow a quoted `%%` to appear in the string, which will
+/// result in a single unquoted `%`.
 fn parse_spec_value(value: &str) -> Result<String> {
     let mut it = value.chars();
     let mut ret = String::new();
