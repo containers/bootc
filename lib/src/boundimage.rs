@@ -32,12 +32,12 @@ struct BoundImage {
 /// Given a deployment, pull all container images it references.
 pub(crate) fn pull_bound_images(sysroot: &SysrootLock, deployment: &Deployment) -> Result<()> {
     let deployment_root = &crate::utils::deployment_fd(sysroot, deployment)?;
-    let bound_images = parse_spec_dir(deployment_root)?;
+    let bound_images = query_bound_images(deployment_root)?;
     pull_images(deployment_root, bound_images)
 }
 
-#[context("parse bound image spec dir")]
-fn parse_spec_dir(root: &Dir) -> Result<Vec<BoundImage>> {
+#[context("Querying bound images")]
+fn query_bound_images(root: &Dir) -> Result<Vec<BoundImage>> {
     let spec_dir = BOUND_IMAGE_DIR;
     let Some(bound_images_dir) = root.open_dir_optional(spec_dir)? else {
         tracing::debug!("Missing {spec_dir}");
@@ -179,12 +179,12 @@ mod tests {
 
         // Empty dir should return an empty vector
         let td = &cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
-        let images = parse_spec_dir(td).unwrap();
+        let images = query_bound_images(td).unwrap();
         assert_eq!(images.len(), 0);
 
         td.create_dir_all(BOUND_IMAGE_DIR).unwrap();
         td.create_dir_all(CONTAINER_IMAGE_DIR).unwrap();
-        let images = parse_spec_dir(td).unwrap();
+        let images = query_bound_images(td).unwrap();
         assert_eq!(images.len(), 0);
 
         // Should return BoundImages
@@ -216,7 +216,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut images = parse_spec_dir(td).unwrap();
+        let mut images = query_bound_images(td).unwrap();
         images.sort_by(|a, b| a.image.as_str().cmp(&b.image.as_str()));
         assert_eq!(images.len(), 2);
         assert_eq!(images[0].image, "quay.io/bar/bar:latest");
@@ -225,13 +225,13 @@ mod tests {
         // Invalid symlink should return an error
         td.symlink("./blah", format!("{BOUND_IMAGE_DIR}/blah.image"))
             .unwrap();
-        assert!(parse_spec_dir(td).is_err());
+        assert!(query_bound_images(td).is_err());
 
         // Invalid image contents should return an error
         td.write("error.image", "[Image]\n").unwrap();
         td.symlink_contents("/error.image", format!("{BOUND_IMAGE_DIR}/error.image"))
             .unwrap();
-        assert!(parse_spec_dir(td).is_err());
+        assert!(query_bound_images(td).is_err());
 
         Ok(())
     }
