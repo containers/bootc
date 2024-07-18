@@ -67,7 +67,12 @@ tmpefimount=$(mount_tmp_efi)
 
 assert_not_has_file ${tmpefimount}/EFI/fedora/test-bootupd.efi
 
-bootupctl update | tee out.txt
+if env FAILPOINTS='update::exchange=return' bootupctl update -vvv 2>err.txt; then
+    fatal "should have errored"
+fi
+assert_file_has_content err.txt "error: .*synthetic failpoint"
+
+bootupctl update -vvv | tee out.txt
 assert_file_has_content out.txt "Previous EFI: .*"
 assert_file_has_content out.txt "Updated EFI: ${TARGET_GRUB_PKG}.*,test-bootupd-payload-1.0"
 

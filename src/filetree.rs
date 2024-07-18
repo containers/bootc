@@ -395,6 +395,7 @@ pub(crate) fn apply_diff(
                 .local_rename(tmp, dst)
                 .with_context(|| format!("rename for {} and {:?}", tmp, dst))?;
         }
+        crate::try_fail_point!("update::exchange");
     }
     // Ensure all of the updates & changes are written persistently to disk
     if !opts.skip_sync {
@@ -705,7 +706,6 @@ mod tests {
             let b_btime_foo_new = fs::metadata(pb.join(foo))?.created()?;
             assert_eq!(b_btime_foo_new, b_btime_foo);
         }
-
         Ok(())
     }
 }

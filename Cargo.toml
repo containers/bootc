@@ -26,6 +26,7 @@ camino = "1.1.7"
 chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version = "4.5", default-features = false, features = ["cargo", "derive", "std", "help", "usage", "suggestions"] }
 env_logger = "0.11"
+fail = { version = "0.5", features = ["failpoints"] }
 fn-error-context = "0.2.1"
 fs2 = "0.4.3"
 hex = "0.4.3"

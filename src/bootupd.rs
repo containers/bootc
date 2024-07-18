@@ -396,6 +396,7 @@ pub(crate) fn print_status(status: &Status) -> Result<()> {
 }
 
 pub(crate) fn client_run_update() -> Result<()> {
+    crate::try_fail_point!("update");
     let status: Status = status()?;
     if status.components.is_empty() && status.adoptable.is_empty() {
         println!("No components installed.");
@@ -488,4 +489,18 @@ pub(crate) fn client_run_validate() -> Result<()> {
         anyhow::bail!("Caught validation errors");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_failpoint_update() {
+        let guard = fail::FailScenario::setup();
+        fail::cfg("update", "return").unwrap();
+        let r = client_run_update();
+        assert_eq!(r.is_err(), true);
+        guard.teardown();
+    }
 }
