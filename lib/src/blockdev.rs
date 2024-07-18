@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use std::env;
-use std::fs::File;
-use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::process::Command;
 use std::sync::OnceLock;
@@ -9,7 +7,6 @@ use std::sync::OnceLock;
 use anyhow::{anyhow, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
-use nix::errno::Errno;
 use regex::Regex;
 use serde::Deserialize;
 
@@ -270,30 +267,6 @@ pub(crate) fn udev_settle() -> Result<()> {
     Ok(())
 }
 
-#[allow(unsafe_code)]
-pub(crate) fn reread_partition_table(file: &mut File, retry: bool) -> Result<()> {
-    let fd = file.as_raw_fd();
-    // Reread sometimes fails inexplicably.  Retry several times before
-    // giving up.
-    let max_tries = if retry { 20 } else { 1 };
-    for retries in (0..max_tries).rev() {
-        let result = unsafe { ioctl::blkrrpart(fd) };
-        match result {
-            Ok(_) => break,
-            Err(err) if retries == 0 && err == Errno::EINVAL => {
-                return Err(err)
-                    .context("couldn't reread partition table: device may not support partitions")
-            }
-            Err(err) if retries == 0 && err == Errno::EBUSY => {
-                return Err(err).context("couldn't reread partition table: device is in use")
-            }
-            Err(err) if retries == 0 => return Err(err).context("couldn't reread partition table"),
-            Err(_) => std::thread::sleep(std::time::Duration::from_millis(100)),
-        }
-    }
-    Ok(())
-}
-
 /// Parse key-value pairs from lsblk --pairs.
 /// Newer versions of lsblk support JSON but the one in CentOS 7 doesn't.
 fn split_lsblk_line(line: &str) -> HashMap<String, String> {
@@ -338,16 +311,6 @@ pub(crate) fn find_parent_devices(device: &str) -> Result<Vec<String>> {
         }
     }
     Ok(parents)
-}
-
-// create unsafe ioctl wrappers
-#[allow(clippy::missing_safety_doc)]
-mod ioctl {
-    use libc::c_int;
-    use nix::{ioctl_none, ioctl_read, ioctl_read_bad, libc, request_code_none};
-    ioctl_none!(blkrrpart, 0x12, 95);
-    ioctl_read_bad!(blksszget, request_code_none!(0x12, 104), c_int);
-    ioctl_read!(blkgetsize64, 0x12, 114, libc::size_t);
 }
 
 /// Parse a string into mibibytes

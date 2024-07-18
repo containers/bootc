@@ -315,14 +315,10 @@ pub(crate) fn install_create_rootfs(
     tracing::debug!("Created partition table");
 
     // Reread the partition table
-    {
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .open(&devpath)
-            .with_context(|| format!("opening {devpath}"))?;
-        crate::blockdev::reread_partition_table(&mut f, true)
-            .context("Rereading partition table")?;
-    }
+    Task::new("Reread partition table", "blockdev")
+        .arg("--rereadpt")
+        .arg(devpath.as_str())
+        .run()?;
 
     // Full udev sync; it'd obviously be better to await just the devices
     // we're targeting, but this is a simple coarse hammer.
