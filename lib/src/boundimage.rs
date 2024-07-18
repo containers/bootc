@@ -34,6 +34,7 @@ pub(crate) fn pull_bound_images(sysroot: &SysrootLock, deployment: &Deployment) 
 #[context("parse bound image spec dir")]
 fn parse_spec_dir(root: &Dir, spec_dir: &str) -> Result<Vec<BoundImage>> {
     let Some(bound_images_dir) = root.open_dir_optional(spec_dir)? else {
+        tracing::debug!("Missing {spec_dir}");
         return Ok(Default::default());
     };
     // And open a view of the dir that uses RESOLVE_IN_ROOT so we
@@ -107,6 +108,7 @@ fn parse_container_file(file_contents: &tini::Ini) -> Result<BoundImage> {
 
 #[context("pull bound images")]
 fn pull_images(_deployment_root: &Dir, bound_images: Vec<BoundImage>) -> Result<()> {
+    tracing::debug!("Pulling bound images: {}", bound_images.len());
     //TODO: do this in parallel
     for bound_image in bound_images {
         let mut task = Task::new("Pulling bound image", "/usr/bin/podman")
