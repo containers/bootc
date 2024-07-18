@@ -47,6 +47,7 @@
 # Experimental features
 
 - [bootc image](experimental-bootc-image.md)
+- [logically bound images](experimental-logically-bound-images.md)
 
 # More information
 
