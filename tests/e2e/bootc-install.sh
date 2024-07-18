@@ -106,13 +106,23 @@ sed "s|REPLACE_COPR_PROJECT|${PACKIT_COPR_PROJECT}|; s|REPLACE_TEST_OS|${REPLACE
 
 # Configure continerfile
 greenprint "Create $TEST_OS installation Containerfile"
-tee "$INSTALL_CONTAINERFILE" > /dev/null << EOF
+tee "$INSTALL_CONTAINERFILE" > /dev/null << REALEOF
 FROM "$TIER1_IMAGE_URL"
 COPY bootc.repo /etc/yum.repos.d/
 COPY domain.crt /etc/pki/ca-trust/source/anchors/
 RUN dnf -y update bootc && \
     update-ca-trust
+RUN cat <<EOF >> /usr/lib/bootc/install/00-mitigations.toml
+[install.filesystem.root]
+type = "xfs"
+[install]
+kargs = ["mitigations=on", "nosmt"]
 EOF
+RUN mkdir -p /usr/lib/bootc/kargs.d
+RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
+kargs = ["systemd.unified_cgroup_hierarchy=0","console=ttyS0","panic=0"]
+EOF
+REALEOF
 
 case "$TEST_CASE" in
     "to-existing-root")
@@ -244,15 +254,20 @@ ansible-playbook -v \
     -e test_os="$TEST_OS" \
     -e bootc_image="$TEST_IMAGE_URL" \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
+    -e kargs="mitigations=on,nosmt,systemd.unified_cgroup_hierarchy=0,console=ttyS0,panic=0" \
     playbooks/check-system.yaml
 
 # Prepare upgrade containerfile
 greenprint "Create upgrade Containerfile"
-tee "$UPGRADE_CONTAINERFILE" > /dev/null << EOF
+tee "$UPGRADE_CONTAINERFILE" > /dev/null << REALEOF
 FROM "$TEST_IMAGE_URL"
 RUN dnf -y install wget && \
     dnf -y clean all
+RUN rm /usr/lib/bootc/kargs.d/01-console.toml
+RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
+kargs = ["systemd.unified_cgroup_hierarchy=1","console=ttyS","panic=0"]
 EOF
+REALEOF
 
 # Build upgrade container image and push to locay registry
 greenprint "Build $TEST_OS upgrade container image"
@@ -284,6 +299,7 @@ ansible-playbook -v \
     -e bootc_image="$BOOTC_IMAGE" \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
     -e upgrade="true" \
+    -e kargs="systemd.unified_cgroup_hierarchy=1,console=ttyS,panic=0" \
     playbooks/check-system.yaml
 
 # bootc rollback test
