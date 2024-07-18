@@ -31,7 +31,6 @@ pub(crate) fn sysroot_fd(sysroot: &ostree::Sysroot) -> BorrowedFd {
 
 // Return a cap-std `Dir` type for a deployment.
 // TODO: in the future this should perhaps actually mount via composefs
-#[allow(unsafe_code)]
 pub(crate) fn deployment_fd(
     sysroot: &ostree::Sysroot,
     deployment: &ostree::Deployment,
