@@ -44,6 +44,10 @@
 - [Filesystem: sysroot](filesystem-sysroot.md)
 - [Container storage](filesystem-storage.md)
 
+# Experimental features
+
+- [bootc image](experimental-bootc-image.md)
+
 # More information
 
 - [Package manager integration](package-managers.md)

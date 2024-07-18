@@ -14,6 +14,12 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+# To build the docs locally you can also do e.g.:
+# cargo install mdbook-mermaid
+# cd docs
+# mdbook-mermaid install
+# mdbook serve
+
 jobs:
   build:
     runs-on: ubuntu-latest
