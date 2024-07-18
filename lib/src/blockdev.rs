@@ -138,10 +138,18 @@ pub(crate) struct Partition {
     pub(crate) name: Option<String>,
 }
 
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum PartitionType {
+    Dos,
+    Gpt,
+    Unknown(String),
+}
+
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub(crate) struct PartitionTable {
-    pub(crate) label: String,
+    pub(crate) label: PartitionType,
     pub(crate) id: String,
     pub(crate) device: String,
     // We're not using these fields
