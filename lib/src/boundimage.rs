@@ -24,7 +24,7 @@ const BOUND_IMAGE_DIR: &str = "usr/lib/bootc-experimental/bound-images.d";
 /// In the future this may be extended to include e.g. certificates or
 /// other pull options.
 #[derive(PartialEq, Eq)]
-struct BoundImage {
+pub(crate) struct BoundImage {
     image: String,
     auth_file: Option<String>,
 }
@@ -37,7 +37,7 @@ pub(crate) fn pull_bound_images(sysroot: &SysrootLock, deployment: &Deployment) 
 }
 
 #[context("Querying bound images")]
-fn query_bound_images(root: &Dir) -> Result<Vec<BoundImage>> {
+pub(crate) fn query_bound_images(root: &Dir) -> Result<Vec<BoundImage>> {
     let spec_dir = BOUND_IMAGE_DIR;
     let Some(bound_images_dir) = root.open_dir_optional(spec_dir)? else {
         tracing::debug!("Missing {spec_dir}");
@@ -113,7 +113,7 @@ fn parse_container_file(file_contents: &tini::Ini) -> Result<BoundImage> {
 }
 
 #[context("pull bound images")]
-fn pull_images(_deployment_root: &Dir, bound_images: Vec<BoundImage>) -> Result<()> {
+pub(crate) fn pull_images(_deployment_root: &Dir, bound_images: Vec<BoundImage>) -> Result<()> {
     tracing::debug!("Pulling bound images: {}", bound_images.len());
     //TODO: do this in parallel
     for bound_image in bound_images {
