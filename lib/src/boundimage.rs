@@ -18,15 +18,27 @@ use ostree_ext::sysroot::SysrootLock;
 /// symbolic links to `.container` or `.image` files.
 const BOUND_IMAGE_DIR: &str = "usr/lib/bootc-experimental/bound-images.d";
 
+/// A subset of data parsed from a `.image` or `.container` file with
+/// the minimal information necessary to fetch the image.
+///
+/// In the future this may be extended to include e.g. certificates or
+/// other pull options.
+#[derive(PartialEq, Eq)]
+pub(crate) struct BoundImage {
+    image: String,
+    auth_file: Option<String>,
+}
+
 /// Given a deployment, pull all container images it references.
 pub(crate) fn pull_bound_images(sysroot: &SysrootLock, deployment: &Deployment) -> Result<()> {
     let deployment_root = &crate::utils::deployment_fd(sysroot, deployment)?;
-    let bound_images = parse_spec_dir(deployment_root, BOUND_IMAGE_DIR)?;
+    let bound_images = query_bound_images(deployment_root)?;
     pull_images(deployment_root, bound_images)
 }
 
-#[context("parse bound image spec dir")]
-fn parse_spec_dir(root: &Dir, spec_dir: &str) -> Result<Vec<BoundImage>> {
+#[context("Querying bound images")]
+pub(crate) fn query_bound_images(root: &Dir) -> Result<Vec<BoundImage>> {
+    let spec_dir = BOUND_IMAGE_DIR;
     let Some(bound_images_dir) = root.open_dir_optional(spec_dir)? else {
         tracing::debug!("Missing {spec_dir}");
         return Ok(Default::default());
@@ -101,7 +113,7 @@ fn parse_container_file(file_contents: &tini::Ini) -> Result<BoundImage> {
 }
 
 #[context("pull bound images")]
-fn pull_images(_deployment_root: &Dir, bound_images: Vec<BoundImage>) -> Result<()> {
+pub(crate) fn pull_images(_deployment_root: &Dir, bound_images: Vec<BoundImage>) -> Result<()> {
     tracing::debug!("Pulling bound images: {}", bound_images.len());
     //TODO: do this in parallel
     for bound_image in bound_images {
@@ -115,17 +127,6 @@ fn pull_images(_deployment_root: &Dir, bound_images: Vec<BoundImage>) -> Result<
     }
 
     Ok(())
-}
-
-/// A subset of data parsed from a `.image` or `.container` file with
-/// the minimal information necessary to fetch the image.
-///
-/// In the future this may be extended to include e.g. certificates or
-/// other pull options.
-#[derive(PartialEq, Eq)]
-struct BoundImage {
-    image: String,
-    auth_file: Option<String>,
 }
 
 impl BoundImage {
@@ -178,12 +179,12 @@ mod tests {
 
         // Empty dir should return an empty vector
         let td = &cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
-        let images = parse_spec_dir(td, &BOUND_IMAGE_DIR).unwrap();
+        let images = query_bound_images(td).unwrap();
         assert_eq!(images.len(), 0);
 
         td.create_dir_all(BOUND_IMAGE_DIR).unwrap();
         td.create_dir_all(CONTAINER_IMAGE_DIR).unwrap();
-        let images = parse_spec_dir(td, &BOUND_IMAGE_DIR).unwrap();
+        let images = query_bound_images(td).unwrap();
         assert_eq!(images.len(), 0);
 
         // Should return BoundImages
@@ -215,7 +216,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut images = parse_spec_dir(td, &BOUND_IMAGE_DIR).unwrap();
+        let mut images = query_bound_images(td).unwrap();
         images.sort_by(|a, b| a.image.as_str().cmp(&b.image.as_str()));
         assert_eq!(images.len(), 2);
         assert_eq!(images[0].image, "quay.io/bar/bar:latest");
@@ -224,13 +225,13 @@ mod tests {
         // Invalid symlink should return an error
         td.symlink("./blah", format!("{BOUND_IMAGE_DIR}/blah.image"))
             .unwrap();
-        assert!(parse_spec_dir(td, &BOUND_IMAGE_DIR).is_err());
+        assert!(query_bound_images(td).is_err());
 
         // Invalid image contents should return an error
         td.write("error.image", "[Image]\n").unwrap();
         td.symlink_contents("/error.image", format!("{BOUND_IMAGE_DIR}/error.image"))
             .unwrap();
-        assert!(parse_spec_dir(td, &BOUND_IMAGE_DIR).is_err());
+        assert!(query_bound_images(td).is_err());
 
         Ok(())
     }

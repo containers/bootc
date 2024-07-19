@@ -35,6 +35,7 @@ use ostree_ext::container as ostree_container;
 use ostree_ext::oci_spec;
 use ostree_ext::ostree;
 use ostree_ext::prelude::Cast;
+use ostree_ext::sysroot::SysrootLock;
 use rustix::fs::{FileTypeExt, MetadataExt as _};
 use serde::{Deserialize, Serialize};
 
@@ -160,6 +161,11 @@ pub(crate) struct InstallConfigOpts {
     #[clap(long)]
     #[serde(default)]
     pub(crate) generic_image: bool,
+
+    /// Do not pull any "logically bound" images at install time.
+    #[clap(long, hide = true)]
+    #[serde(default)]
+    pub(crate) skip_bound_images: bool,
 }
 
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize, PartialEq, Eq)]
@@ -1219,23 +1225,21 @@ async fn prepare_install(
     Ok(state)
 }
 
-async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Result<()> {
-    if matches!(state.selinux_state, SELinuxFinalState::ForceTargetDisabled) {
-        rootfs.kargs.push("selinux=0".to_string());
-    }
-
-    // We verify this upfront because it's currently required by bootupd
-    let boot_uuid = rootfs
-        .get_boot_uuid()?
-        .or(rootfs.rootfs_uuid.as_deref())
-        .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
-    tracing::debug!("boot uuid={boot_uuid}");
-
-    // Initialize the ostree sysroot (repo, stateroot, etc.)
-    let sysroot = initialize_ostree_root(state, rootfs).await?;
+/// Given a baseline root filesystem with an ostree sysroot initialized:
+/// - install the container to that root
+/// - install the bootloader
+/// - Other post operations, such as pulling bound images
+async fn install_with_sysroot(
+    state: &State,
+    rootfs: &RootSetup,
+    sysroot: &ostree::Sysroot,
+    boot_uuid: &str,
+) -> Result<()> {
+    let sysroot = SysrootLock::new_from_sysroot(&sysroot).await?;
     // And actually set up the container in that root, returning a deployment and
     // the aleph state (see below).
     let (deployment, aleph) = install_container(state, rootfs, &sysroot).await?;
+    let stateroot = deployment.osname();
     // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
     rootfs
         .rootfs_fd
@@ -1244,6 +1248,7 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
             anyhow::Ok(())
         })
         .context("Writing aleph version")?;
+
     if cfg!(target_arch = "s390x") {
         // TODO: Integrate s390x support into install_via_bootupd
         crate::bootloader::install_via_zipl(&rootfs.device_info, boot_uuid)?;
@@ -1254,12 +1259,62 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
             &state.config_opts,
         )?;
     }
-
-    // After this point, we need to drop all open references to the filesystem
-    drop(deployment);
-    drop(sysroot);
-
     tracing::debug!("Installed bootloader");
+
+    tracing::debug!("Perfoming post-deployment operations");
+    let deployment_root = crate::utils::deployment_fd(&sysroot, &deployment)?;
+    let bound_images = if state.config_opts.skip_bound_images {
+        Vec::new()
+    } else {
+        crate::boundimage::query_bound_images(&deployment_root)?
+    };
+    if !bound_images.is_empty() {
+        // TODO: We only do this dance to initialize `/var` at install time if
+        // there are bound images today; it minimizes side effects.
+        // However going forward we really do need to handle a separate /var partition...
+        // and to do that we may in the general case need to run the `var.mount`
+        // target from the new root.
+        let varpath = format!("ostree/deploy/{stateroot}/var");
+        let var = rootfs
+            .rootfs_fd
+            .open_dir(&varpath)
+            .with_context(|| format!("Opening {varpath}"))?;
+        Task::new("Mounting deployment /var", "mount")
+            .args(["--bind", ".", "/var"])
+            .cwd(&var)?
+            .run()?;
+        // podman needs this
+        Task::new("Initializing /var/tmp", "systemd-tmpfiles")
+            .args(["--create", "--boot", "--prefix=/var/tmp"])
+            .verbose()
+            .run()?;
+        crate::boundimage::pull_images(&deployment_root, bound_images)?;
+    }
+
+    Ok(())
+}
+
+async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Result<()> {
+    if matches!(state.selinux_state, SELinuxFinalState::ForceTargetDisabled) {
+        rootfs.kargs.push("selinux=0".to_string());
+    }
+    // Drop exclusive ownership since we're done with mutation
+    let rootfs = &*rootfs;
+
+    // We verify this upfront because it's currently required by bootupd
+    let boot_uuid = rootfs
+        .get_boot_uuid()?
+        .or(rootfs.rootfs_uuid.as_deref())
+        .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
+    tracing::debug!("boot uuid={boot_uuid}");
+
+    // Initialize the ostree sysroot (repo, stateroot, etc.)
+    {
+        let sysroot = initialize_ostree_root(state, rootfs).await?;
+        install_with_sysroot(state, rootfs, &sysroot, &boot_uuid).await?;
+        // We must drop the sysroot here in order to close any open file
+        // descriptors.
+    }
 
     // Finalize mounted filesystems
     if !rootfs.skip_finalize {
