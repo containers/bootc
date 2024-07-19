@@ -20,15 +20,9 @@ const BOUND_IMAGE_DIR: &str = "usr/lib/bootc-experimental/bound-images.d";
 
 /// Given a deployment, pull all container images it references.
 pub(crate) fn pull_bound_images(sysroot: &SysrootLock, deployment: &Deployment) -> Result<()> {
-    let sysroot_fd = crate::utils::sysroot_fd(&sysroot);
-    let sysroot_fd = Dir::reopen_dir(&sysroot_fd)?;
-    let deployment_root_path = sysroot.deployment_dirpath(&deployment);
-    let deployment_root = &sysroot_fd.open_dir(&deployment_root_path)?;
-
-    let bound_images = parse_spec_dir(&deployment_root, BOUND_IMAGE_DIR)?;
-    pull_images(deployment_root, bound_images)?;
-
-    Ok(())
+    let deployment_root = &crate::utils::deployment_fd(sysroot, deployment)?;
+    let bound_images = parse_spec_dir(deployment_root, BOUND_IMAGE_DIR)?;
+    pull_images(deployment_root, bound_images)
 }
 
 #[context("parse bound image spec dir")]
