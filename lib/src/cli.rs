@@ -711,6 +711,21 @@ async fn usroverlay() -> Result<()> {
         .into());
 }
 
+/// Perform process global initialization. This should be called as early as possible
+/// in the standard `main` function.
+pub fn global_init() -> Result<()> {
+    let am_root = rustix::process::getuid().is_root();
+    // Work around bootc-image-builder not setting HOME, in combination with podman (really c/common)
+    // bombing out if it is unset.
+    if std::env::var_os("HOME").is_none() && am_root {
+        // Setting the environment is thread-unsafe, but we ask calling code
+        // to invoke this as early as possible. (In practice, that's just the cli's `main.rs`)
+        // xref https://internals.rust-lang.org/t/synchronized-ffi-access-to-posix-environment-variable-functions/15475
+        std::env::set_var("HOME", "/root");
+    }
+    Ok(())
+}
+
 /// Parse the provided arguments and execute.
 /// Calls [`structopt::clap::Error::exit`] on failure, printing the error message and aborting the program.
 pub async fn run_from_iter<I>(args: I) -> Result<()>
