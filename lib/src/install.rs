@@ -992,6 +992,42 @@ fn ensure_var() -> Result<()> {
     Ok(())
 }
 
+/// Unfortunately today podman requires that /etc be writable for
+/// `/etc/containers/networks`. Detect the situation where it's not
+/// (the main usual cause will be how bootc-image-builder runs us
+///  via a custom bwrap container today) and work around it by
+/// mounting a writable transient overlayfs.
+#[context("Ensuring writable /etc")]
+fn ensure_writable_etc_containers() -> Result<()> {
+    let etc_containers = Utf8Path::new("/etc/containers");
+    // If there's no /etc/containers, nothing to do
+    if !etc_containers.try_exists()? {
+        return Ok(());
+    }
+    if rustix::fs::access(etc_containers.as_std_path(), rustix::fs::Access::WRITE_OK).is_ok() {
+        return Ok(());
+    }
+    // Create a tempdir for the overlayfs upper; right now this is leaked,
+    // but in the case we care about it's into a tmpfs allocated only while
+    // we're running (equivalent to PrivateTmp=yes), so it's not
+    // really a leak.
+    let td = tempfile::tempdir_in("/tmp")?.into_path();
+    let td: &Utf8Path = (td.as_path()).try_into()?;
+    let upper = &td.join("upper");
+    let work = &td.join("work");
+    std::fs::create_dir(upper)?;
+    std::fs::create_dir(work)?;
+    let opts = format!("lowerdir={etc_containers},workdir={work},upperdir={upper}");
+    Task::new(
+        &format!("Mount transient overlayfs for {etc_containers}"),
+        "mount",
+    )
+    .args(["-t", "overlay", "overlay", "-o", opts.as_str()])
+    .arg(etc_containers)
+    .run()?;
+    Ok(())
+}
+
 /// We want to have proper /tmp and /var/tmp without requiring the caller to set them up
 /// in advance by manually specifying them via `podman run -v /tmp:/tmp` etc.
 /// Unfortunately, it's quite complex right now to "gracefully" dynamically reconfigure
@@ -1177,6 +1213,7 @@ async fn prepare_install(
 
     ensure_var()?;
     setup_tmp_mounts()?;
+    ensure_writable_etc_containers()?;
 
     // Even though we require running in a container, the mounts we create should be specific
     // to this process, so let's enter a private mountns to avoid leaking them.
