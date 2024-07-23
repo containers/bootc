@@ -14,7 +14,7 @@ This experimental feature enables an association of container "app" images to a 
 
 ## Using logically bound images
 
-Each image is defined in a [Podman Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) `.image` or `.container` file. An image is selected to be bound by creating a symlink in the `/usr/lib/bootc-experimental/bound-images.d` directory pointing to a `.image` or `.container` file. With these defined, during a `bootc upgrade` or `bootc switch` the bound images defined in the new bootc image will be automatically pulled via podman.
+Each image is defined in a [Podman Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) `.image` or `.container` file. An image is selected to be bound by creating a symlink in the `/usr/lib/bootc/bound-images.d` directory pointing to a `.image` or `.container` file. With these defined, during a `bootc upgrade` or `bootc switch` the bound images defined in the new bootc image will be automatically pulled via podman.
 
 An example Containerfile
 
@@ -24,8 +24,8 @@ FROM quay.io/myorg/myimage:latest
 COPY ./my-app.image /usr/share/containers/systemd/my-app.image
 COPY ./another-app.container /usr/share/containers/systemd/another-app.container
 
-RUN ln -s /usr/share/containers/systemd/my-app.image /usr/lib/bootc-experimental/bound-images.d/my-app.image && \
-    ln -s /usr/share/containers/systemd/my-app.image /usr/lib/bootc-experimental/bound-images.d/my-app.image
+RUN ln -s /usr/share/containers/systemd/my-app.image /usr/lib/bootc/bound-images.d/my-app.image && \
+    ln -s /usr/share/containers/systemd/my-app.image /usr/lib/bootc/bound-images.d/my-app.image
 ```
 
 ## Limitations

@@ -9,7 +9,7 @@ all:
     
 install:
 	install -D -m 0755 -t $(DESTDIR)$(prefix)/bin target/release/bootc
-	install -d -m 0755 $(DESTDIR)$(prefix)/lib/bootc-experimental/bound-images.d
+	install -d -m 0755 $(DESTDIR)$(prefix)/lib/bootc/bound-images.d
 	install -d -m 0755 $(DESTDIR)$(prefix)/lib/bootc/kargs.d
 	install -d -m 0755 $(DESTDIR)$(prefix)/lib/systemd/system-generators/
 	ln -f $(DESTDIR)$(prefix)/bin/bootc $(DESTDIR)$(prefix)/lib/systemd/system-generators/bootc-systemd-generator
