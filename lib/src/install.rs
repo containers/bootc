@@ -1338,6 +1338,18 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
     // Drop exclusive ownership since we're done with mutation
     let rootfs = &*rootfs;
 
+    match &rootfs.device_info.label {
+        crate::blockdev::PartitionType::Dos => crate::utils::medium_visibility_warning(
+            "Installing to `dos` format partitions is not recommended",
+        ),
+        crate::blockdev::PartitionType::Gpt => {
+            // The only thing we should be using in general
+        }
+        crate::blockdev::PartitionType::Unknown(o) => {
+            crate::utils::medium_visibility_warning(&format!("Unknown partition label {o}"))
+        }
+    }
+
     // We verify this upfront because it's currently required by bootupd
     let boot_uuid = rootfs
         .get_boot_uuid()?
