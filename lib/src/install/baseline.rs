@@ -124,6 +124,7 @@ fn mkfs<'a>(
     dev: &str,
     fs: Filesystem,
     label: &str,
+    wipe: bool,
     opts: impl IntoIterator<Item = &'a str>,
 ) -> Result<uuid::Uuid> {
     let devinfo = crate::blockdev::list_dev(dev.into())?;
@@ -135,6 +136,9 @@ fn mkfs<'a>(
     );
     match fs {
         Filesystem::Xfs => {
+            if wipe {
+                t.cmd.arg("-f");
+            }
             t.cmd.arg("-m");
             t.cmd.arg(format!("uuid={u}"));
         }
@@ -381,15 +385,21 @@ pub(crate) fn install_create_rootfs(
     };
     let boot_uuid = if let Some(bootdev) = bootdev {
         Some(
-            mkfs(bootdev.node.as_str(), root_filesystem, "boot", [])
-                .context("Initializing /boot")?,
+            mkfs(
+                bootdev.node.as_str(),
+                root_filesystem,
+                "boot",
+                opts.wipe,
+                [],
+            )
+            .context("Initializing /boot")?,
         )
     } else {
         None
     };
 
     // Initialize rootfs
-    let root_uuid = mkfs(&rootdev, root_filesystem, "root", [])?;
+    let root_uuid = mkfs(&rootdev, root_filesystem, "root", opts.wipe, [])?;
     let rootarg = format!("root=UUID={root_uuid}");
     let bootsrc = boot_uuid.as_ref().map(|uuid| format!("UUID={uuid}"));
     let bootarg = bootsrc.as_deref().map(|bootsrc| format!("boot={bootsrc}"));
