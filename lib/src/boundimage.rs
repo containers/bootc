@@ -11,6 +11,7 @@ use camino::Utf8Path;
 use cap_std_ext::cap_std::fs::Dir;
 use cap_std_ext::dirext::CapStdExtDirExt;
 use fn_error_context::context;
+use ostree_ext::containers_image_proxy;
 use ostree_ext::ostree::Deployment;
 use ostree_ext::sysroot::SysrootLock;
 
@@ -23,10 +24,16 @@ const BOUND_IMAGE_DIR: &str = "usr/lib/bootc/bound-images.d";
 ///
 /// In the future this may be extended to include e.g. certificates or
 /// other pull options.
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct BoundImage {
     image: String,
     auth_file: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct ResolvedBoundImage {
+    pub(crate) image: String,
+    pub(crate) digest: String,
 }
 
 /// Given a deployment, pull all container images it references.
@@ -84,6 +91,20 @@ pub(crate) fn query_bound_images(root: &Dir) -> Result<Vec<BoundImage>> {
     }
 
     Ok(bound_images)
+}
+
+impl ResolvedBoundImage {
+    pub(crate) async fn from_image(src: &BoundImage) -> Result<Self> {
+        let proxy = containers_image_proxy::ImageProxy::new().await?;
+        let img = proxy
+            .open_image(&format!("containers-storage:{}", src.image))
+            .await?;
+        let digest = proxy.fetch_manifest(&img).await?.0;
+        Ok(Self {
+            image: src.image.clone(),
+            digest,
+        })
+    }
 }
 
 fn parse_image_file(file_contents: &tini::Ini) -> Result<BoundImage> {

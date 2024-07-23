@@ -11,7 +11,7 @@ pub(crate) mod config;
 pub(crate) mod osconfig;
 
 use std::io::Write;
-use std::os::fd::AsFd;
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
@@ -26,6 +26,7 @@ use camino::Utf8PathBuf;
 use cap_std::fs::{Dir, MetadataExt};
 use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs_utf8::DirEntry as DirEntryUtf8;
+use cap_std_ext::cmdext::CapStdExtCommandExt;
 use cap_std_ext::prelude::CapStdExtDirExt;
 use chrono::prelude::*;
 use clap::ValueEnum;
@@ -1271,6 +1272,7 @@ async fn install_with_sysroot(
     rootfs: &RootSetup,
     sysroot: &ostree::Sysroot,
     boot_uuid: &str,
+    bound_images: &[crate::boundimage::ResolvedBoundImage],
 ) -> Result<()> {
     let sysroot = SysrootLock::new_from_sysroot(&sysroot).await?;
     // And actually set up the container in that root, returning a deployment and
@@ -1299,33 +1301,51 @@ async fn install_with_sysroot(
     tracing::debug!("Installed bootloader");
 
     tracing::debug!("Perfoming post-deployment operations");
-    let deployment_root = crate::utils::deployment_fd(&sysroot, &deployment)?;
-    let bound_images = if state.config_opts.skip_bound_images {
-        Vec::new()
-    } else {
-        crate::boundimage::query_bound_images(&deployment_root)?
-    };
     if !bound_images.is_empty() {
+        // TODO: We shouldn't hardcode the overlay driver for source or
+        // target, but we currently need to in order to reference the location.
+        // For this one, containers-storage: is actually the *host*'s /var/lib/containers
+        // which we are accessing directly.
+        let storage_src = "containers-storage:";
         // TODO: We only do this dance to initialize `/var` at install time if
         // there are bound images today; it minimizes side effects.
         // However going forward we really do need to handle a separate /var partition...
         // and to do that we may in the general case need to run the `var.mount`
         // target from the new root.
+        // Probably the best fix is for us to switch bound images to use the bootc storage.
         let varpath = format!("ostree/deploy/{stateroot}/var");
         let var = rootfs
             .rootfs_fd
             .open_dir(&varpath)
             .with_context(|| format!("Opening {varpath}"))?;
-        Task::new("Mounting deployment /var", "mount")
-            .args(["--bind", ".", "/var"])
-            .cwd(&var)?
-            .run()?;
-        // podman needs this
-        Task::new("Initializing /var/tmp", "systemd-tmpfiles")
-            .args(["--create", "--boot", "--prefix=/var/tmp"])
-            .verbose()
-            .run()?;
-        crate::boundimage::pull_images(&deployment_root, bound_images)?;
+
+        // The skopeo API expects absolute paths, so we make a temporary bind
+        let tmp_dest_var_abs = tempfile::tempdir()?;
+        let tmp_dest_var_abs: &Utf8Path = tmp_dest_var_abs.path().try_into()?;
+        let mut t = Task::new("Mounting deployment /var", "mount")
+            .args(["--bind", "/proc/self/fd/3"])
+            .arg(tmp_dest_var_abs);
+        t.cmd.take_fd_n(Arc::new(OwnedFd::from(var)), 3);
+        t.run()?;
+
+        // And an ephemeral place for the transient state
+        let tmp_runroot = tempfile::tempdir()?;
+        let tmp_runroot: &Utf8Path = tmp_runroot.path().try_into()?;
+
+        // The destination (target stateroot) + container storage dest
+        let storage_dest = &format!(
+            "containers-storage:[overlay@{tmp_dest_var_abs}/lib/containers/storage+{tmp_runroot}]"
+        );
+
+        // Now copy each bound image from the host's container storage into the target.
+        for image in bound_images {
+            let image = image.image.as_str();
+            Task::new(format!("Copying image to target: {}", image), "skopeo")
+                .arg("copy")
+                .arg(format!("{storage_src}{image}"))
+                .arg(format!("{storage_dest}{image}"))
+                .run()?;
+        }
     }
 
     Ok(())
@@ -1357,10 +1377,28 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
     tracing::debug!("boot uuid={boot_uuid}");
 
+    let bound_images = if state.config_opts.skip_bound_images {
+        Vec::new()
+    } else {
+        crate::boundimage::query_bound_images(&state.container_root)?
+    };
+    tracing::debug!("bound images={bound_images:?}");
+
+    // Verify each bound image is present in the container storage
+    let bound_images = {
+        let mut r = Vec::with_capacity(bound_images.len());
+        for image in bound_images {
+            let resolved = crate::boundimage::ResolvedBoundImage::from_image(&image).await?;
+            tracing::debug!("Resolved {}: {}", resolved.image, resolved.digest);
+            r.push(resolved)
+        }
+        r
+    };
+
     // Initialize the ostree sysroot (repo, stateroot, etc.)
     {
         let sysroot = initialize_ostree_root(state, rootfs).await?;
-        install_with_sysroot(state, rootfs, &sysroot, &boot_uuid).await?;
+        install_with_sysroot(state, rootfs, &sysroot, &boot_uuid, &bound_images).await?;
         // We must drop the sysroot here in order to close any open file
         // descriptors.
     }
