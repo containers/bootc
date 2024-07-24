@@ -668,7 +668,7 @@ async fn install_container(
         let spec_imgref = ImageReference::from(src_imageref.clone());
         let repo = &sysroot.repo();
         repo.set_disable_fsync(true);
-        crate::deploy::pull(repo, &spec_imgref, false).await?;
+        crate::deploy::pull(repo, &spec_imgref, Some(&state.target_imgref), false).await?;
         repo.set_disable_fsync(false);
     }
 

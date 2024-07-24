@@ -223,10 +223,14 @@ async fn handle_layer_progress_print(
 pub(crate) async fn pull(
     repo: &ostree::Repo,
     imgref: &ImageReference,
+    target_imgref: Option<&OstreeImageReference>,
     quiet: bool,
 ) -> Result<Box<ImageState>> {
     let ostree_imgref = &OstreeImageReference::from(imgref.clone());
     let mut imp = new_importer(repo, ostree_imgref).await?;
+    if let Some(target) = target_imgref {
+        imp.set_target(target);
+    }
     let prep = match imp.prepare().await? {
         PrepareResult::AlreadyPresent(c) => {
             println!("No changes in {imgref:#} => {}", c.manifest_digest);
@@ -254,8 +258,10 @@ pub(crate) async fn pull(
         let _ = printer.await;
     }
     let import = import?;
+    let wrote_imgref = target_imgref.as_ref().unwrap_or(&ostree_imgref);
     if let Some(msg) =
-        ostree_container::store::image_filtered_content_warning(repo, &ostree_imgref.imgref)?
+        ostree_container::store::image_filtered_content_warning(repo, &wrote_imgref.imgref)
+            .context("Image content warning")?
     {
         crate::journal::journal_print(libsystemd::logging::Priority::Notice, &msg);
     }
