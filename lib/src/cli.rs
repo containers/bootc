@@ -549,7 +549,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             }
         }
     } else {
-        let fetched = crate::deploy::pull(repo, imgref, opts.quiet).await?;
+        let fetched = crate::deploy::pull(repo, imgref, None, opts.quiet).await?;
         let staged_digest = staged_image.as_ref().map(|s| s.image_digest.as_str());
         let fetched_digest = fetched.manifest_digest.as_str();
         tracing::debug!("staged: {staged_digest:?}");
@@ -642,7 +642,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     }
     let new_spec = RequiredHostSpec::from_spec(&new_spec)?;
 
-    let fetched = crate::deploy::pull(repo, &target, opts.quiet).await?;
+    let fetched = crate::deploy::pull(repo, &target, None, opts.quiet).await?;
 
     if !opts.retain {
         // By default, we prune the previous ostree ref so it will go away after later upgrades
@@ -700,7 +700,7 @@ async fn edit(opts: EditOpts) -> Result<()> {
         return crate::deploy::rollback(sysroot).await;
     }
 
-    let fetched = crate::deploy::pull(repo, new_spec.image, opts.quiet).await?;
+    let fetched = crate::deploy::pull(repo, new_spec.image, None, opts.quiet).await?;
 
     // TODO gc old layers here
 
