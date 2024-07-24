@@ -1,0 +1,371 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Host",
+  "description": "The core host definition",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind"
+  ],
+  "properties": {
+    "apiVersion": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "metadata": {
+      "default": {},
+      "allOf": [
+        {
+          "$ref": "#/definitions/ObjectMeta"
+        }
+      ]
+    },
+    "spec": {
+      "description": "The spec",
+      "default": {
+        "bootOrder": "default",
+        "image": null
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/HostSpec"
+        }
+      ]
+    },
+    "status": {
+      "description": "The status",
+      "default": {
+        "booted": null,
+        "rollback": null,
+        "rollbackQueued": false,
+        "staged": null,
+        "type": null
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/HostStatus"
+        }
+      ]
+    }
+  },
+  "definitions": {
+    "BootEntry": {
+      "description": "A bootable entry",
+      "type": "object",
+      "required": [
+        "incompatible",
+        "pinned"
+      ],
+      "properties": {
+        "cachedUpdate": {
+          "description": "The last fetched cached update metadata",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ImageStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "image": {
+          "description": "The image reference",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ImageStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "incompatible": {
+          "description": "Whether this boot entry is not compatible (has origin changes bootc does not understand)",
+          "type": "boolean"
+        },
+        "ostree": {
+          "description": "If this boot entry is ostree based, the corresponding state",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BootEntryOstree"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pinned": {
+          "description": "Whether this entry will be subject to garbage collection",
+          "type": "boolean"
+        }
+      }
+    },
+    "BootEntryOstree": {
+      "description": "A bootable entry",
+      "type": "object",
+      "required": [
+        "checksum",
+        "deploySerial"
+      ],
+      "properties": {
+        "checksum": {
+          "description": "The ostree commit checksum",
+          "type": "string"
+        },
+        "deploySerial": {
+          "description": "The deployment serial",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "BootOrder": {
+      "description": "Configuration for system boot ordering.",
+      "oneOf": [
+        {
+          "description": "The staged or booted deployment will be booted next",
+          "type": "string",
+          "enum": [
+            "default"
+          ]
+        },
+        {
+          "description": "The rollback deployment will be booted next",
+          "type": "string",
+          "enum": [
+            "rollback"
+          ]
+        }
+      ]
+    },
+    "HostSpec": {
+      "description": "The host specification",
+      "type": "object",
+      "properties": {
+        "bootOrder": {
+          "description": "If set, and there is a rollback deployment, it will be set for the next boot.",
+          "default": "default",
+          "allOf": [
+            {
+              "$ref": "#/definitions/BootOrder"
+            }
+          ]
+        },
+        "image": {
+          "description": "The host image",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ImageReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "HostStatus": {
+      "description": "The status of the host system",
+      "type": "object",
+      "properties": {
+        "booted": {
+          "description": "The booted image; this will be unset if the host is not bootc compatible.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BootEntry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rollback": {
+          "description": "The previously booted image",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BootEntry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rollbackQueued": {
+          "description": "Set to true if the rollback entry is queued for the next boot.",
+          "default": false,
+          "type": "boolean"
+        },
+        "staged": {
+          "description": "The staged image for the next boot",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BootEntry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": {
+          "description": "The detected type of system",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/HostType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "HostType": {
+      "description": "The detected type of running system.  Note that this is not exhaustive and new variants may be added in the future.",
+      "oneOf": [
+        {
+          "description": "The current system is deployed in a bootc compatible way.",
+          "type": "string",
+          "enum": [
+            "bootcHost"
+          ]
+        }
+      ]
+    },
+    "ImageReference": {
+      "description": "A container image reference with attached transport and signature verification",
+      "type": "object",
+      "required": [
+        "image",
+        "transport"
+      ],
+      "properties": {
+        "image": {
+          "description": "The container image reference",
+          "type": "string"
+        },
+        "signature": {
+          "description": "Signature verification type",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ImageSignature"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transport": {
+          "description": "The container image transport",
+          "type": "string"
+        }
+      }
+    },
+    "ImageSignature": {
+      "description": "An image signature",
+      "oneOf": [
+        {
+          "description": "Fetches will use the named ostree remote for signature verification of the ostree commit.",
+          "type": "object",
+          "required": [
+            "ostreeRemote"
+          ],
+          "properties": {
+            "ostreeRemote": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Fetches will defer to the `containers-policy.json`, but we make a best effort to reject `default: insecureAcceptAnything` policy.",
+          "type": "string",
+          "enum": [
+            "containerPolicy"
+          ]
+        },
+        {
+          "description": "No signature verification will be performed",
+          "type": "string",
+          "enum": [
+            "insecure"
+          ]
+        }
+      ]
+    },
+    "ImageStatus": {
+      "description": "The status of the booted image",
+      "type": "object",
+      "required": [
+        "image",
+        "imageDigest"
+      ],
+      "properties": {
+        "image": {
+          "description": "The currently booted image",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ImageReference"
+            }
+          ]
+        },
+        "imageDigest": {
+          "description": "The digest of the fetched image (e.g. sha256:a0...);",
+          "type": "string"
+        },
+        "timestamp": {
+          "description": "The build timestamp, if any",
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "version": {
+          "description": "The version string, if any",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "ObjectMeta": {
+      "type": "object",
+      "properties": {
+        "annotations": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "labels": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

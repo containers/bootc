@@ -139,6 +139,10 @@ fn update_generated(sh: &Shell) -> Result<()> {
         )
         .run()?;
     }
+    let schema = cmd!(sh, "cargo run -q -- internals print-json-schema").read()?;
+    let target = "docs/src/host-v0.schema.json";
+    std::fs::write(target, &schema)?;
+    println!("Updated {target}");
     Ok(())
 }
 
