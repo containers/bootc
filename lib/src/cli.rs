@@ -430,6 +430,12 @@ pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootL
     Ok(sysroot)
 }
 
+#[context("Initializing storage")]
+pub(crate) async fn get_storage() -> Result<crate::store::Storage> {
+    let sysroot = get_locked_sysroot().await?;
+    Ok(crate::store::Storage::new(sysroot))
+}
+
 #[context("Querying root privilege")]
 pub(crate) fn require_root() -> Result<()> {
     let uid = rustix::process::getuid();
@@ -482,7 +488,7 @@ fn prepare_for_write() -> Result<()> {
 /// Implementation of the `bootc upgrade` CLI command.
 #[context("Upgrading")]
 async fn upgrade(opts: UpgradeOpts) -> Result<()> {
-    let sysroot = &get_locked_sysroot().await?;
+    let sysroot = &get_storage().await?;
     let repo = &sysroot.repo();
     let (booted_deployment, _deployments, host) =
         crate::status::get_status_require_booted(sysroot)?;
@@ -619,7 +625,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
 
     let cancellable = gio::Cancellable::NONE;
 
-    let sysroot = &get_locked_sysroot().await?;
+    let sysroot = &get_storage().await?;
     let repo = &sysroot.repo();
     let (booted_deployment, _deployments, host) =
         crate::status::get_status_require_booted(sysroot)?;
@@ -658,14 +664,14 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
 /// Implementation of the `bootc rollback` CLI command.
 #[context("Rollback")]
 async fn rollback(_opts: RollbackOpts) -> Result<()> {
-    let sysroot = &get_locked_sysroot().await?;
+    let sysroot = &get_storage().await?;
     crate::deploy::rollback(sysroot).await
 }
 
 /// Implementation of the `bootc edit` CLI command.
 #[context("Editing spec")]
 async fn edit(opts: EditOpts) -> Result<()> {
-    let sysroot = &get_locked_sysroot().await?;
+    let sysroot = &get_storage().await?;
     let repo = &sysroot.repo();
 
     let (booted_deployment, _deployments, host) =

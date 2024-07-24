@@ -40,6 +40,18 @@ pub enum BootOrder {
     Rollback,
 }
 
+#[derive(
+    clap::ValueEnum, Serialize, Deserialize, Copy, Clone, Debug, PartialEq, Eq, JsonSchema, Default,
+)]
+#[serde(rename_all = "camelCase")]
+/// The container storage backend
+pub enum Store {
+    /// Use the ostree-container storage backend.
+    #[default]
+    #[value(alias = "ostreecontainer")] // default is kebab-case
+    OstreeContainer,
+}
+
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 /// The host specification
@@ -112,6 +124,9 @@ pub struct BootEntry {
     pub incompatible: bool,
     /// Whether this entry will be subject to garbage collection
     pub pinned: bool,
+    /// The container storage backend
+    #[serde(default)]
+    pub store: Option<Store>,
     /// If this boot entry is ostree based, the corresponding state
     pub ostree: Option<BootEntryOstree>,
 }
@@ -257,5 +272,15 @@ mod tests {
         let displayed = format!("{s}");
         assert_eq!(displayed.as_str(), src);
         assert_eq!(format!("{s:#}"), src);
+    }
+
+    #[test]
+    fn test_store_from_str() {
+        use clap::ValueEnum;
+
+        // should be case-insensitive, kebab-case optional
+        assert!(Store::from_str("Ostree-Container", true).is_ok());
+        assert!(Store::from_str("OstrEeContAiner", true).is_ok());
+        assert!(Store::from_str("invalid", true).is_err());
     }
 }
