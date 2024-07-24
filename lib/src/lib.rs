@@ -8,10 +8,6 @@
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 #![cfg_attr(feature = "dox", feature(doc_cfg))]
-// These two are in my experience the lints which are most likely
-// to trigger, and among the least valuable to fix.
-#![allow(clippy::needless_borrow)]
-#![allow(clippy::needless_borrows_for_generic_args)]
 
 mod boundimage;
 pub mod cli;

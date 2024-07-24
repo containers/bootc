@@ -1,6 +1,3 @@
-#![allow(clippy::needless_borrow)]
-#![allow(clippy::needless_borrows_for_generic_args)]
-
 use std::path::PathBuf;
 
 use camino::Utf8PathBuf;

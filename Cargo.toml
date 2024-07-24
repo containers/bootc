@@ -58,3 +58,7 @@ unused_must_use = "forbid"
 # These should only be in local code
 dbg_macro = "deny"
 todo = "deny"
+# These two are in my experience the lints which are most likely
+# to trigger, and among the least valuable to fix.
+needless_borrow = "allow"
+needless_borrows_for_generic_args = "allow"
