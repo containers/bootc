@@ -7,7 +7,6 @@
 // See https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
-#![cfg_attr(feature = "dox", feature(doc_cfg))]
 
 mod boundimage;
 pub mod cli;
