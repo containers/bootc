@@ -268,7 +268,7 @@ pub(crate) async fn pull(
     Ok(Box::new((*import).into()))
 }
 
-pub(crate) async fn cleanup(sysroot: &SysrootLock) -> Result<()> {
+pub(crate) async fn cleanup(sysroot: &Storage) -> Result<()> {
     // We create clones (just atomic reference bumps) here to move to the thread.
     let repo = sysroot.repo();
     let sysroot = sysroot.sysroot.clone();
@@ -329,7 +329,7 @@ pub(crate) fn get_base_commit(repo: &ostree::Repo, commit: &str) -> Result<Optio
 
 #[context("Writing deployment")]
 async fn deploy(
-    sysroot: &SysrootLock,
+    sysroot: &Storage,
     merge_deployment: Option<&Deployment>,
     stateroot: &str,
     image: &ImageState,
@@ -383,7 +383,7 @@ fn origin_from_imageref(imgref: &ImageReference) -> Result<glib::KeyFile> {
 /// Stage (queue deployment of) a fetched container image.
 #[context("Staging")]
 pub(crate) async fn stage(
-    sysroot: &SysrootLock,
+    sysroot: &Storage,
     stateroot: &str,
     image: &ImageState,
     spec: &RequiredHostSpec<'_>,
