@@ -46,7 +46,7 @@ use crate::mount::Filesystem;
 use crate::spec::ImageReference;
 use crate::store::Storage;
 use crate::task::Task;
-use crate::utils::sigpolicy_from_opts;
+use crate::utils::{sigpolicy_from_opts, CommandRunExt};
 
 /// The default "stateroot" or "osname"; see https://github.com/ostreedev/ostree/issues/2794
 const STATEROOT_DEFAULT: &str = "default";
@@ -584,10 +584,9 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
         ("sysroot.bootprefix", "true"),
         ("sysroot.readonly", "true"),
     ] {
-        Task::new("Configuring ostree repo", "ostree")
+        Command::new("ostree")
             .args(["config", "--repo", "ostree/repo", "set", k, v])
-            .cwd(rootfs_dir)?
-            .quiet()
+            .cwd_dir(rootfs_dir.try_clone()?)
             .run()?;
     }
     Task::new("Initializing sysroot", "ostree")

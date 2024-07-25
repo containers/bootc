@@ -10,6 +10,25 @@ use ostree::glib;
 use ostree_ext::container::SignatureSource;
 use ostree_ext::ostree;
 
+/// Helpers intended for [`std::process::Command`].
+pub(crate) trait CommandRunExt {
+    fn run(&mut self) -> Result<()>;
+}
+
+impl CommandRunExt for Command {
+    /// Synchronously execute the child, and return an error if the child exited unsuccessfully.
+    fn run(&mut self) -> Result<()> {
+        let st = self.status()?;
+        if !st.success() {
+            // Note that we intentionally *don't* include the command string
+            // in the output; we leave it to the caller to add that if they want,
+            // as it may be verbose.
+            anyhow::bail!(format!("Subprocess failed: {st:?}"))
+        }
+        Ok(())
+    }
+}
+
 /// Try to look for keys injected by e.g. rpm-ostree requesting machine-local
 /// changes; if any are present, return `true`.
 pub(crate) fn origin_has_rpmostree_stuff(kf: &glib::KeyFile) -> bool {
@@ -189,4 +208,10 @@ fn test_sigpolicy_from_opts() {
         sigpolicy_from_opts(true, Some("foo")),
         SignatureSource::ContainerPolicyAllowInsecure
     );
+}
+
+#[test]
+fn command_run_ext() {
+    Command::new("true").run().unwrap();
+    assert!(Command::new("false").run().is_err());
 }
