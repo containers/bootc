@@ -430,10 +430,12 @@ pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootL
     Ok(sysroot)
 }
 
+/// Load global storage state, expecting that we're booted into a bootc system.
 #[context("Initializing storage")]
 pub(crate) async fn get_storage() -> Result<crate::store::Storage> {
+    let global_run = Dir::open_ambient_dir("/run", cap_std::ambient_authority())?;
     let sysroot = get_locked_sysroot().await?;
-    crate::store::Storage::new(sysroot)
+    crate::store::Storage::new(sysroot, &global_run)
 }
 
 #[context("Querying root privilege")]

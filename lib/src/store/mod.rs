@@ -2,6 +2,7 @@ use std::env;
 use std::ops::Deref;
 
 use anyhow::Result;
+use cap_std_ext::cap_std::fs::Dir;
 use clap::ValueEnum;
 
 use ostree_ext::container::OstreeImageReference;
@@ -15,6 +16,8 @@ mod ostree_container;
 
 pub(crate) struct Storage {
     pub sysroot: SysrootLock,
+    #[allow(dead_code)]
+    pub imgstore: crate::imgstorage::Storage,
     pub store: Box<dyn ContainerImageStoreImpl>,
 }
 
@@ -48,7 +51,7 @@ impl Deref for Storage {
 }
 
 impl Storage {
-    pub fn new(sysroot: SysrootLock) -> Result<Self> {
+    pub fn new(sysroot: SysrootLock, run: &Dir) -> Result<Self> {
         let store = match env::var("BOOTC_STORAGE") {
             Ok(val) => crate::spec::Store::from_str(&val, true).unwrap_or_else(|_| {
                 let default = crate::spec::Store::default();
@@ -58,9 +61,16 @@ impl Storage {
             Err(_) => crate::spec::Store::default(),
         };
 
+        let sysroot_dir = Dir::reopen_dir(&crate::utils::sysroot_fd(&sysroot))?;
+        let imgstore = crate::imgstorage::Storage::open(&sysroot_dir, run)?;
+
         let store = load(store);
 
-        Ok(Self { sysroot, store })
+        Ok(Self {
+            sysroot,
+            store,
+            imgstore,
+        })
     }
 }
 

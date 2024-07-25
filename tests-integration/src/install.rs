@@ -2,6 +2,7 @@ use std::path::Path;
 use std::{os::fd::AsRawFd, path::PathBuf};
 
 use anyhow::Result;
+use camino::Utf8Path;
 use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::Dir;
 use fn_error_context::context;
@@ -53,6 +54,12 @@ fn find_deployment_root() -> Result<Dir> {
     anyhow::bail!("Failed to find deployment root")
 }
 
+// Hook relatively cheap post-install tests here
+fn generic_post_install_verification() -> Result<()> {
+    assert!(Utf8Path::new("/ostree/bootc/storage/overlay").try_exists()?);
+    Ok(())
+}
+
 #[context("Install tests")]
 pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments) -> Result<()> {
     // Force all of these tests to be serial because they mutate global state
@@ -88,6 +95,8 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
                 std::fs::write(&tmp_keys, b"ssh-ed25519 ABC0123 testcase@example.com")?;
                 cmd!(sh, "sudo {BASE_ARGS...} {target_args...} -v {tmp_keys}:/test_authorized_keys {image} bootc install to-filesystem {generic_inst_args...} --acknowledge-destructive --karg=foo=bar --replace=alongside --root-ssh-authorized-keys=/test_authorized_keys /target").run()?;
 
+                generic_post_install_verification()?;
+
                 // Test kargs injected via CLI
                 cmd!(
                     sh,
@@ -120,6 +129,7 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
             let sh = &xshell::Shell::new()?;
             reset_root(sh)?;
             cmd!(sh, "sudo {BASE_ARGS...} {target_args...} {image} bootc install to-existing-root --acknowledge-destructive {generic_inst_args...}").run()?;
+            generic_post_install_verification()?;
             let root = &Dir::open_ambient_dir("/ostree", cap_std::ambient_authority()).unwrap();
             let mut path = PathBuf::from(".");
             crate::selinux::verify_selinux_recurse(root, &mut path, false)?;
@@ -131,6 +141,7 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
             let empty = sh.create_temp_dir()?;
             let empty = empty.path().to_str().unwrap();
             cmd!(sh, "sudo {BASE_ARGS...} {target_args...} -v {empty}:/usr/lib/bootc/install {image} bootc install to-existing-root {generic_inst_args...}").run()?;
+            generic_post_install_verification()?;
             Ok(())
         }),
     ];

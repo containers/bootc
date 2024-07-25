@@ -44,3 +44,4 @@ pub mod spec;
 
 #[cfg(feature = "docgen")]
 mod docgen;
+mod imgstorage;

@@ -11,6 +11,7 @@ install:
 	install -D -m 0755 -t $(DESTDIR)$(prefix)/bin target/release/bootc
 	install -d -m 0755 $(DESTDIR)$(prefix)/lib/bootc/bound-images.d
 	install -d -m 0755 $(DESTDIR)$(prefix)/lib/bootc/kargs.d
+	ln -s /sysroot/ostree/bootc/storage $(DESTDIR)$(prefix)/lib/bootc/storage
 	install -d -m 0755 $(DESTDIR)$(prefix)/lib/systemd/system-generators/
 	ln -f $(DESTDIR)$(prefix)/bin/bootc $(DESTDIR)$(prefix)/lib/systemd/system-generators/bootc-systemd-generator
 	install -d $(DESTDIR)$(prefix)/lib/bootc/install

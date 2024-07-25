@@ -598,6 +598,19 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
         .cwd(rootfs_dir)?
         .run()?;
 
+    let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
+    sysroot.load(cancellable)?;
+    let sysroot_dir = Dir::reopen_dir(&crate::utils::sysroot_fd(&sysroot))?;
+
+    state.tempdir.create_dir("temp-run")?;
+    let temp_run = state.tempdir.open_dir("temp-run")?;
+    sysroot_dir
+        .create_dir_all(Utf8Path::new(crate::imgstorage::SUBPATH).parent().unwrap())
+        .context("creating bootc dir")?;
+    let imgstore = crate::imgstorage::Storage::create(&sysroot_dir, &temp_run)?;
+    // And drop it again - we'll reopen it after this
+    drop(imgstore);
+
     // Bootstrap the initial labeling of the /ostree directory as usr_t
     if let Some(policy) = sepolicy {
         let ostree_dir = rootfs_dir.open_dir("ostree")?;
@@ -613,7 +626,7 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
     let sysroot = SysrootLock::new_from_sysroot(&sysroot).await?;
-    Storage::new(sysroot)
+    Storage::new(sysroot, &temp_run)
 }
 
 #[context("Creating ostree deployment")]
