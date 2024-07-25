@@ -1120,11 +1120,12 @@ pub(crate) fn setup_sys_mount(fstype: &str, fspath: &str) -> Result<()> {
 
 /// Verify that we can load the manifest of the target image
 #[context("Verifying fetch")]
-async fn verify_target_fetch(imgref: &ostree_container::OstreeImageReference) -> Result<()> {
-    let tmpdir = tempfile::tempdir()?;
-    let tmprepo = &ostree::Repo::new_for_path(tmpdir.path());
-    tmprepo
-        .create(ostree::RepoMode::Bare, ostree::gio::Cancellable::NONE)
+async fn verify_target_fetch(
+    tmpdir: &Dir,
+    imgref: &ostree_container::OstreeImageReference,
+) -> Result<()> {
+    let tmpdir = &TempDir::new_in(&tmpdir)?;
+    let tmprepo = &ostree::Repo::create_at_dir(tmpdir.as_fd(), ".", ostree::RepoMode::Bare, None)
         .context("Init tmp repo")?;
 
     tracing::trace!("Verifying fetch for {imgref}");
@@ -1207,10 +1208,6 @@ async fn prepare_install(
     };
     tracing::debug!("Target image reference: {target_imgref}");
 
-    if !target_opts.skip_fetch_check {
-        verify_target_fetch(&target_imgref).await?;
-    }
-
     // A bit of basic global state setup
     ensure_var()?;
     setup_tmp_mounts()?;
@@ -1219,6 +1216,10 @@ async fn prepare_install(
     let tempdir = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
     // And continue to init global state
     ensure_writable_etc_containers(&tempdir)?;
+
+    if !target_opts.skip_fetch_check {
+        verify_target_fetch(&tempdir, &target_imgref).await?;
+    }
 
     // Even though we require running in a container, the mounts we create should be specific
     // to this process, so let's enter a private mountns to avoid leaking them.
