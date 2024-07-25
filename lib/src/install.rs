@@ -610,7 +610,7 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
     let sysroot = SysrootLock::new_from_sysroot(&sysroot).await?;
-    Ok(Storage::new(sysroot))
+    Storage::new(sysroot)
 }
 
 #[context("Creating ostree deployment")]

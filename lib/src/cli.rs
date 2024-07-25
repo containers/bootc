@@ -433,7 +433,7 @@ pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootL
 #[context("Initializing storage")]
 pub(crate) async fn get_storage() -> Result<crate::store::Storage> {
     let sysroot = get_locked_sysroot().await?;
-    Ok(crate::store::Storage::new(sysroot))
+    crate::store::Storage::new(sysroot)
 }
 
 #[context("Querying root privilege")]

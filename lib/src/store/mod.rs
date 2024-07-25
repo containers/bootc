@@ -48,7 +48,7 @@ impl Deref for Storage {
 }
 
 impl Storage {
-    pub fn new(sysroot: SysrootLock) -> Self {
+    pub fn new(sysroot: SysrootLock) -> Result<Self> {
         let store = match env::var("BOOTC_STORAGE") {
             Ok(val) => crate::spec::Store::from_str(&val, true).unwrap_or_else(|_| {
                 let default = crate::spec::Store::default();
@@ -60,7 +60,7 @@ impl Storage {
 
         let store = load(store);
 
-        Self { sysroot, store }
+        Ok(Self { sysroot, store })
     }
 }
 
