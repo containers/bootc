@@ -151,7 +151,11 @@ fn test_tmt(sh: &Shell) -> Result<()> {
     cmd!(sh, "cargo run -p tests-integration run-vm prepare-tmt").run()?;
     // cc https://pagure.io/testcloud/pull-request/174
     cmd!(sh, "rm -vf /var/tmp/tmt/testcloud/images/disk.qcow2").run()?;
-    cmd!(sh, "tmt run plans -n integration-run").run()?;
+    if let Err(e) = cmd!(sh, "tmt run plans -n integration-run").run() {
+        // tmt annoyingly does not output errors by default
+        let _ = cmd!(sh, "tmt run -l report -vvv").run();
+        return Err(e.into());
+    }
     Ok(())
 }
 
