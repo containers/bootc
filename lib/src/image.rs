@@ -6,19 +6,29 @@ use anyhow::{Context, Result};
 use fn_error_context::context;
 use ostree_ext::container::{ImageReference, Transport};
 
+use crate::{imgstorage::Storage, utils::CommandRunExt};
+
 /// The name of the image we push to containers-storage if nothing is specified.
 const IMAGE_DEFAULT: &str = "localhost/bootc";
 
 #[context("Listing images")]
 pub(crate) async fn list_entrypoint() -> Result<()> {
-    let sysroot = crate::cli::get_locked_sysroot().await?;
+    let sysroot = crate::cli::get_storage().await?;
     let repo = &sysroot.repo();
 
     let images = ostree_ext::container::store::list_images(repo).context("Querying images")?;
 
+    println!("# Host images");
     for image in images {
         println!("{image}");
     }
+    println!("");
+
+    println!("# Logically bound images");
+    let mut listcmd = sysroot.imgstore.new_image_cmd()?;
+    listcmd.arg("list");
+    listcmd.run()?;
+
     Ok(())
 }
 
@@ -63,4 +73,17 @@ pub(crate) async fn push_entrypoint(source: Option<&str>, target: Option<&str>) 
 
     println!("Pushed: {target} {r}");
     Ok(())
+}
+
+/// Thin wrapper for invoking `podman image <X>` but set up for our internal
+/// image store (as distinct from /var/lib/containers default).
+pub(crate) async fn imgcmd_entrypoint(
+    storage: &Storage,
+    arg: &str,
+    args: &[std::ffi::OsString],
+) -> std::result::Result<(), anyhow::Error> {
+    let mut cmd = storage.new_image_cmd()?;
+    cmd.arg(arg);
+    cmd.args(args);
+    cmd.run()
 }

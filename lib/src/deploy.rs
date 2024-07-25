@@ -2,6 +2,7 @@
 //!
 //! Create a merged filesystem tree with the image and mounted configmaps.
 
+use std::collections::HashSet;
 use std::io::{BufRead, Write};
 
 use anyhow::Ok;
@@ -268,53 +269,76 @@ pub(crate) async fn pull(
     Ok(Box::new((*import).into()))
 }
 
+/// Gather all bound images in all deployments, then prune the image store,
+/// using the gathered images as the roots (that will not be GC'd).
+pub(crate) async fn prune_container_store(sysroot: &Storage) -> Result<()> {
+    let deployments = sysroot.deployments();
+    let mut all_bound_images = Vec::new();
+    for deployment in deployments {
+        let bound = crate::boundimage::query_bound_images_for_deployment(sysroot, &deployment)?;
+        all_bound_images.extend(bound.into_iter());
+    }
+    // Convert to a hashset of just the image names
+    let image_names = HashSet::from_iter(all_bound_images.iter().map(|img| img.image.as_str()));
+    let pruned = sysroot.imgstore.prune_except_roots(&image_names).await?;
+    tracing::debug!("Pruned images: {}", pruned.len());
+    Ok(())
+}
+
 pub(crate) async fn cleanup(sysroot: &Storage) -> Result<()> {
+    let bound_prune = prune_container_store(sysroot);
+
     // We create clones (just atomic reference bumps) here to move to the thread.
     let repo = sysroot.repo();
     let sysroot = sysroot.sysroot.clone();
-    ostree_ext::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| {
-        let locked_sysroot = &SysrootLock::from_assumed_locked(&sysroot);
-        let cancellable = Some(cancellable);
-        let repo = &repo;
-        let txn = repo.auto_transaction(cancellable)?;
-        let repo = txn.repo();
+    let repo_prune =
+        ostree_ext::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| {
+            let locked_sysroot = &SysrootLock::from_assumed_locked(&sysroot);
+            let cancellable = Some(cancellable);
+            let repo = &repo;
+            let txn = repo.auto_transaction(cancellable)?;
+            let repo = txn.repo();
 
-        // Regenerate our base references.  First, we delete the ones that exist
-        for ref_entry in repo
-            .list_refs_ext(
-                Some(BASE_IMAGE_PREFIX),
-                ostree::RepoListRefsExtFlags::NONE,
-                cancellable,
-            )
-            .context("Listing refs")?
-            .keys()
-        {
-            repo.transaction_set_refspec(ref_entry, None);
-        }
-
-        // Then, for each deployment which is derived (e.g. has configmaps) we synthesize
-        // a base ref to ensure that it's not GC'd.
-        for (i, deployment) in sysroot.deployments().into_iter().enumerate() {
-            let commit = deployment.csum();
-            if let Some(base) = get_base_commit(repo, &commit)? {
-                repo.transaction_set_refspec(&format!("{BASE_IMAGE_PREFIX}/{i}"), Some(&base));
+            // Regenerate our base references.  First, we delete the ones that exist
+            for ref_entry in repo
+                .list_refs_ext(
+                    Some(BASE_IMAGE_PREFIX),
+                    ostree::RepoListRefsExtFlags::NONE,
+                    cancellable,
+                )
+                .context("Listing refs")?
+                .keys()
+            {
+                repo.transaction_set_refspec(ref_entry, None);
             }
-        }
 
-        let pruned = ostree_container::deploy::prune(locked_sysroot).context("Pruning images")?;
-        if !pruned.is_empty() {
-            let size = glib::format_size(pruned.objsize);
-            println!(
-                "Pruned images: {} (layers: {}, objsize: {})",
-                pruned.n_images, pruned.n_layers, size
-            );
-        } else {
-            tracing::debug!("Nothing to prune");
-        }
+            // Then, for each deployment which is derived (e.g. has configmaps) we synthesize
+            // a base ref to ensure that it's not GC'd.
+            for (i, deployment) in sysroot.deployments().into_iter().enumerate() {
+                let commit = deployment.csum();
+                if let Some(base) = get_base_commit(repo, &commit)? {
+                    repo.transaction_set_refspec(&format!("{BASE_IMAGE_PREFIX}/{i}"), Some(&base));
+                }
+            }
 
-        Ok(())
-    })
-    .await
+            let pruned =
+                ostree_container::deploy::prune(locked_sysroot).context("Pruning images")?;
+            if !pruned.is_empty() {
+                let size = glib::format_size(pruned.objsize);
+                println!(
+                    "Pruned images: {} (layers: {}, objsize: {})",
+                    pruned.n_images, pruned.n_layers, size
+                );
+            } else {
+                tracing::debug!("Nothing to prune");
+            }
+
+            Ok(())
+        });
+
+    // We run these in parallel mostly because we can.
+    tokio::try_join!(repo_prune, bound_prune)?;
+    Ok(())
 }
 
 /// If commit is a bootc-derived commit (e.g. has configmaps), return its base.
@@ -399,7 +423,7 @@ pub(crate) async fn stage(
     )
     .await?;
 
-    crate::boundimage::pull_bound_images(sysroot, &deployment)?;
+    crate::boundimage::pull_bound_images(sysroot, &deployment).await?;
 
     crate::deploy::cleanup(sysroot).await?;
     println!("Queued for next boot: {:#}", spec.image);
