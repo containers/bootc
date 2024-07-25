@@ -44,6 +44,7 @@ use self::baseline::InstallBlockDeviceOpts;
 use crate::containerenv::ContainerExecutionInfo;
 use crate::mount::Filesystem;
 use crate::spec::ImageReference;
+use crate::store::Storage;
 use crate::task::Task;
 use crate::utils::sigpolicy_from_opts;
 
@@ -549,7 +550,7 @@ pub(crate) fn print_configuration() -> Result<()> {
 }
 
 #[context("Creating ostree deployment")]
-async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result<ostree::Sysroot> {
+async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result<Storage> {
     let sepolicy = state.load_policy()?;
     let sepolicy = sepolicy.as_ref();
     // Load a fd for the mounted target physical root
@@ -608,7 +609,8 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
 
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
-    Ok(sysroot)
+    let sysroot = SysrootLock::new_from_sysroot(&sysroot).await?;
+    Ok(Storage::new(sysroot))
 }
 
 #[context("Creating ostree deployment")]
@@ -1270,11 +1272,10 @@ async fn prepare_install(
 async fn install_with_sysroot(
     state: &State,
     rootfs: &RootSetup,
-    sysroot: &ostree::Sysroot,
+    sysroot: &Storage,
     boot_uuid: &str,
     bound_images: &[crate::boundimage::ResolvedBoundImage],
 ) -> Result<()> {
-    let sysroot = SysrootLock::new_from_sysroot(&sysroot).await?;
     // And actually set up the container in that root, returning a deployment and
     // the aleph state (see below).
     let (deployment, aleph) = install_container(state, rootfs, &sysroot).await?;
