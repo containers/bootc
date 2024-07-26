@@ -10,10 +10,10 @@ use ostree_ext::ostree::Deployment;
 use ostree_ext::prelude::Cast;
 use ostree_ext::prelude::FileEnumeratorExt;
 use ostree_ext::prelude::FileExt;
-use ostree_ext::sysroot::SysrootLock;
 use serde::Deserialize;
 
 use crate::deploy::ImageState;
+use crate::store::Storage;
 
 /// The kargs.d configuration file.
 #[derive(Deserialize)]
@@ -96,7 +96,7 @@ fn get_kargs_from_ostree(
 /// karg, but applies the diff between the bootc karg files in /usr/lib/bootc/kargs.d
 /// between the booted deployment and the new one.
 pub(crate) fn get_kargs(
-    sysroot: &SysrootLock,
+    sysroot: &Storage,
     merge_deployment: &Deployment,
     fetched: &ImageState,
 ) -> Result<Vec<String>> {
