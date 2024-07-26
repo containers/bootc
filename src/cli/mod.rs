@@ -1,14 +1,13 @@
 //! Command-line interface (CLI) logic.
 
 use anyhow::Result;
-use clap::StructOpt;
+use clap::Parser;
 use log::LevelFilter;
-
 mod bootupctl;
 mod bootupd;
 
 /// Top-level multicall CLI.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub enum MultiCall {
     Ctl(bootupctl::CtlCommand),
     D(bootupd::DCommand),
