@@ -7,8 +7,8 @@
 // This sub-module is the "basic" installer that handles creating basic block device
 // and filesystem setup.
 pub(crate) mod baseline;
-mod osbuild;
 pub(crate) mod config;
+mod osbuild;
 pub(crate) mod osconfig;
 
 use std::io::Write;
@@ -1185,7 +1185,7 @@ async fn prepare_install(
     // creating multiple.
     let tempdir = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
     // And continue to init global state
-    osbuild::adjust_for_bootc_image_builder(&tempdir)?;
+    osbuild::adjust_for_bootc_image_builder(&rootfs, &tempdir)?;
 
     if !target_opts.skip_fetch_check {
         verify_target_fetch(&tempdir, &target_imgref).await?;

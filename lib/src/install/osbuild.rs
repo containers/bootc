@@ -41,10 +41,33 @@ fn adjust_etc_containers(tempdir: &Dir) -> Result<()> {
     Ok(())
 }
 
+/// osbuild mounts the host's /var/lib/containers at /run/osbuild/containers; mount
+/// it back to /var/lib/containers where the default container stack expects to find it.
+fn propagate_run_osbuild_containers(root: &Dir) -> Result<()> {
+    let osbuild_run_containers = Utf8Path::new("run/osbuild/containers");
+    // If we're not apparently running under osbuild, then we no-op.
+    if !root.try_exists(osbuild_run_containers)? {
+        return Ok(());
+    }
+    // If we do seem to have a valid container store though, use that
+    if crate::podman::storage_exists_default(root)? {
+        return Ok(());
+    }
+    let relative_storage = Utf8Path::new(crate::podman::CONTAINER_STORAGE.trim_start_matches('/'));
+    root.create_dir_all(relative_storage)?;
+    Task::new("Creating bind mount for run/osbuild/containers", "mount")
+        .arg("--rbind")
+        .args([osbuild_run_containers, relative_storage])
+        .cwd(root)?
+        .run()?;
+    Ok(())
+}
+
 /// bootc-image-builder today does a few things that we need to
 /// deal with.
 #[context("bootc-image-builder adjustments")]
-pub(crate) fn adjust_for_bootc_image_builder(tempdir: &Dir) -> Result<()> {
+pub(crate) fn adjust_for_bootc_image_builder(root: &Dir, tempdir: &Dir) -> Result<()> {
     adjust_etc_containers(tempdir)?;
+    propagate_run_osbuild_containers(root)?;
     Ok(())
 }
