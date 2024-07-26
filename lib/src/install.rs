@@ -26,6 +26,7 @@ use camino::Utf8PathBuf;
 use cap_std::fs::{Dir, MetadataExt};
 use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs_utf8::DirEntry as DirEntryUtf8;
+use cap_std_ext::cap_tempfile::TempDir;
 use cap_std_ext::cmdext::CapStdExtCommandExt;
 use cap_std_ext::prelude::CapStdExtDirExt;
 use chrono::prelude::*;
@@ -322,6 +323,7 @@ pub(crate) struct State {
     pub(crate) root_ssh_authorized_keys: Option<String>,
     /// The root filesystem of the running container
     pub(crate) container_root: Dir,
+    pub(crate) tempdir: TempDir,
 }
 
 impl State {
@@ -342,6 +344,7 @@ impl State {
 
     #[context("Finalizing state")]
     pub(crate) fn consume(self) -> Result<()> {
+        self.tempdir.close()?;
         // If we had invoked `setenforce 0`, then let's re-enable it.
         if let SELinuxFinalState::Enabled(Some(guard)) = self.selinux_state {
             guard.consume()?;
@@ -1001,7 +1004,7 @@ fn ensure_var() -> Result<()> {
 ///  via a custom bwrap container today) and work around it by
 /// mounting a writable transient overlayfs.
 #[context("Ensuring writable /etc")]
-fn ensure_writable_etc_containers() -> Result<()> {
+fn ensure_writable_etc_containers(tempdir: &Dir) -> Result<()> {
     let etc_containers = Utf8Path::new("/etc/containers");
     // If there's no /etc/containers, nothing to do
     if !etc_containers.try_exists()? {
@@ -1010,24 +1013,18 @@ fn ensure_writable_etc_containers() -> Result<()> {
     if rustix::fs::access(etc_containers.as_std_path(), rustix::fs::Access::WRITE_OK).is_ok() {
         return Ok(());
     }
-    // Create a tempdir for the overlayfs upper; right now this is leaked,
-    // but in the case we care about it's into a tmpfs allocated only while
-    // we're running (equivalent to PrivateTmp=yes), so it's not
-    // really a leak.
-    let td = tempfile::tempdir_in("/tmp")?.into_path();
-    let td: &Utf8Path = (td.as_path()).try_into()?;
-    let upper = &td.join("upper");
-    let work = &td.join("work");
-    std::fs::create_dir(upper)?;
-    std::fs::create_dir(work)?;
-    let opts = format!("lowerdir={etc_containers},workdir={work},upperdir={upper}");
-    Task::new(
+    // Create dirs for the overlayfs upper and work in the install-global tmpdir.
+    tempdir.create_dir_all("etc-ovl/upper")?;
+    tempdir.create_dir("etc-ovl/work")?;
+    let opts = format!("lowerdir={etc_containers},workdir=etc-ovl/work,upperdir=etc-ovl/upper");
+    let mut t = Task::new(
         &format!("Mount transient overlayfs for {etc_containers}"),
         "mount",
     )
     .args(["-t", "overlay", "overlay", "-o", opts.as_str()])
-    .arg(etc_containers)
-    .run()?;
+    .arg(etc_containers);
+    t.cmd.cwd_dir(tempdir.try_clone()?);
+    t.run()?;
     Ok(())
 }
 
@@ -1123,11 +1120,12 @@ pub(crate) fn setup_sys_mount(fstype: &str, fspath: &str) -> Result<()> {
 
 /// Verify that we can load the manifest of the target image
 #[context("Verifying fetch")]
-async fn verify_target_fetch(imgref: &ostree_container::OstreeImageReference) -> Result<()> {
-    let tmpdir = tempfile::tempdir()?;
-    let tmprepo = &ostree::Repo::new_for_path(tmpdir.path());
-    tmprepo
-        .create(ostree::RepoMode::Bare, ostree::gio::Cancellable::NONE)
+async fn verify_target_fetch(
+    tmpdir: &Dir,
+    imgref: &ostree_container::OstreeImageReference,
+) -> Result<()> {
+    let tmpdir = &TempDir::new_in(&tmpdir)?;
+    let tmprepo = &ostree::Repo::create_at_dir(tmpdir.as_fd(), ".", ostree::RepoMode::Bare, None)
         .context("Init tmp repo")?;
 
     tracing::trace!("Verifying fetch for {imgref}");
@@ -1210,13 +1208,18 @@ async fn prepare_install(
     };
     tracing::debug!("Target image reference: {target_imgref}");
 
-    if !target_opts.skip_fetch_check {
-        verify_target_fetch(&target_imgref).await?;
-    }
-
+    // A bit of basic global state setup
     ensure_var()?;
     setup_tmp_mounts()?;
-    ensure_writable_etc_containers()?;
+    // Allocate a temporary directory we can use in various places to avoid
+    // creating multiple.
+    let tempdir = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+    // And continue to init global state
+    ensure_writable_etc_containers(&tempdir)?;
+
+    if !target_opts.skip_fetch_check {
+        verify_target_fetch(&tempdir, &target_imgref).await?;
+    }
 
     // Even though we require running in a container, the mounts we create should be specific
     // to this process, so let's enter a private mountns to avoid leaking them.
@@ -1260,6 +1263,7 @@ async fn prepare_install(
         install_config,
         root_ssh_authorized_keys,
         container_root: rootfs,
+        tempdir,
     });
 
     Ok(state)
