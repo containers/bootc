@@ -148,13 +148,48 @@ fn update_generated(sh: &Shell) -> Result<()> {
 
 #[context("test-integration")]
 fn test_tmt(sh: &Shell) -> Result<()> {
+    // We need to split most of our tests into separate plans because tmt doesn't
+    // support automatic isolation. (xref)
+    let mut all_plan_files =
+        sh.read_dir("plans")?
+            .into_iter()
+            .try_fold(Vec::new(), |mut acc, ent| -> Result<_> {
+                let path = Utf8PathBuf::try_from(ent)?;
+                let Some(ext) = path.extension() else {
+                    return Ok(acc);
+                };
+                if ext != "fmf" {
+                    return Ok(acc);
+                }
+                let stem = path.file_stem().expect("file stem");
+                let Some((prefix, suffix)) = stem.split_once('-') else {
+                    return Ok(acc);
+                };
+                if prefix != "test" {
+                    return Ok(acc);
+                }
+                let Some((priority, _)) = suffix.split_once('-') else {
+                    anyhow::bail!("Invalid test {path}");
+                };
+                let priority: u32 = priority
+                    .parse()
+                    .with_context(|| format!("Parsing {path}"))?;
+                acc.push((priority, stem.to_string()));
+                Ok(acc)
+            })?;
+    all_plan_files.sort_by_key(|v| v.0);
+    println!("Discovered plans: {all_plan_files:?}");
+
     cmd!(sh, "cargo run -p tests-integration run-vm prepare-tmt").run()?;
     // cc https://pagure.io/testcloud/pull-request/174
     cmd!(sh, "rm -vf /var/tmp/tmt/testcloud/images/disk.qcow2").run()?;
-    if let Err(e) = cmd!(sh, "tmt run plans -n integration-run").run() {
-        // tmt annoyingly does not output errors by default
-        let _ = cmd!(sh, "tmt run -l report -vvv").run();
-        return Err(e.into());
+
+    for (_prio, name) in all_plan_files {
+        if let Err(e) = cmd!(sh, "tmt run plans -n {name}").run() {
+            // tmt annoyingly does not output errors by default
+            let _ = cmd!(sh, "tmt run -l report -vvv").run();
+            return Err(e.into());
+        }
     }
     Ok(())
 }
