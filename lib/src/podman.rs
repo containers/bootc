@@ -1,4 +1,6 @@
 use anyhow::{anyhow, Result};
+use camino::Utf8Path;
+use cap_std_ext::cap_std::fs::Dir;
 use serde::Deserialize;
 
 use crate::install::run_in_host_mountns;
@@ -26,4 +28,22 @@ pub(crate) fn imageid_to_digest(imgid: &str) -> Result<String> {
         .next()
         .ok_or_else(|| anyhow!("No images returned for inspect"))?;
     Ok(i.digest)
+}
+
+/// Return true if there is apparently an active container store at the target path.
+pub(crate) fn storage_exists(root: &Dir, path: impl AsRef<Utf8Path>) -> Result<bool> {
+    fn impl_storage_exists(root: &Dir, path: &Utf8Path) -> Result<bool> {
+        let lock = "storage.lock";
+        root.try_exists(path.join(lock)).map_err(Into::into)
+    }
+    impl_storage_exists(root, path.as_ref())
+}
+
+/// Return true if there is apparently an active container store in the default path
+/// for the target root.
+///
+/// Note this does not attempt to parse the root filesystem's container storage configuration,
+/// this uses a hardcoded default path.
+pub(crate) fn storage_exists_default(root: &Dir) -> Result<bool> {
+    storage_exists(root, CONTAINER_STORAGE.trim_start_matches('/'))
 }

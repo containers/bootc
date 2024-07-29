@@ -8,6 +8,7 @@
 // and filesystem setup.
 pub(crate) mod baseline;
 pub(crate) mod config;
+mod osbuild;
 pub(crate) mod osconfig;
 
 use std::io::Write;
@@ -997,36 +998,6 @@ fn ensure_var() -> Result<()> {
     Ok(())
 }
 
-/// Unfortunately today podman requires that /etc be writable for
-/// `/etc/containers/networks`. Detect the situation where it's not
-/// (the main usual cause will be how bootc-image-builder runs us
-///  via a custom bwrap container today) and work around it by
-/// mounting a writable transient overlayfs.
-#[context("Ensuring writable /etc")]
-fn ensure_writable_etc_containers(tempdir: &Dir) -> Result<()> {
-    let etc_containers = Utf8Path::new("/etc/containers");
-    // If there's no /etc/containers, nothing to do
-    if !etc_containers.try_exists()? {
-        return Ok(());
-    }
-    if rustix::fs::access(etc_containers.as_std_path(), rustix::fs::Access::WRITE_OK).is_ok() {
-        return Ok(());
-    }
-    // Create dirs for the overlayfs upper and work in the install-global tmpdir.
-    tempdir.create_dir_all("etc-ovl/upper")?;
-    tempdir.create_dir("etc-ovl/work")?;
-    let opts = format!("lowerdir={etc_containers},workdir=etc-ovl/work,upperdir=etc-ovl/upper");
-    let mut t = Task::new(
-        &format!("Mount transient overlayfs for {etc_containers}"),
-        "mount",
-    )
-    .args(["-t", "overlay", "overlay", "-o", opts.as_str()])
-    .arg(etc_containers);
-    t.cmd.cwd_dir(tempdir.try_clone()?);
-    t.run()?;
-    Ok(())
-}
-
 /// We want to have proper /tmp and /var/tmp without requiring the caller to set them up
 /// in advance by manually specifying them via `podman run -v /tmp:/tmp` etc.
 /// Unfortunately, it's quite complex right now to "gracefully" dynamically reconfigure
@@ -1214,7 +1185,7 @@ async fn prepare_install(
     // creating multiple.
     let tempdir = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
     // And continue to init global state
-    ensure_writable_etc_containers(&tempdir)?;
+    osbuild::adjust_for_bootc_image_builder(&rootfs, &tempdir)?;
 
     if !target_opts.skip_fetch_check {
         verify_target_fetch(&tempdir, &target_imgref).await?;
