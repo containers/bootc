@@ -32,7 +32,7 @@ liboverdrop = "0.1.0"
 libsystemd = "0.7"
 openssl = "^0.10.64"
 regex = "1.10.4"
-rustix = { "version" = "0.38.34", features = ["thread", "fs", "system", "process"] }
+rustix = { "version" = "0.38.34", features = ["thread", "fs", "system", "process", "mount"] }
 schemars = { version = "0.8.17", features = ["chrono"] }
 serde = { workspace = true, features = ["derive"] }
 serde_ignored = "0.1.10"
