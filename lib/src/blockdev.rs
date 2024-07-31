@@ -92,10 +92,11 @@ pub(crate) fn wipefs(dev: &Utf8Path) -> Result<()> {
     )
 }
 
-fn list_impl(dev: Option<&Utf8Path>) -> Result<Vec<Device>> {
+#[context("Listing device {dev}")]
+pub(crate) fn list_dev(dev: &Utf8Path) -> Result<Device> {
     let o = Command::new("lsblk")
         .args(["-J", "-b", "-O"])
-        .args(dev)
+        .arg(dev)
         .output()?;
     if !o.status.success() {
         return Err(anyhow::anyhow!("Failed to list block devices"));
@@ -104,13 +105,7 @@ fn list_impl(dev: Option<&Utf8Path>) -> Result<Vec<Device>> {
     for dev in devs.blockdevices.iter_mut() {
         dev.backfill_missing()?;
     }
-    Ok(devs.blockdevices)
-}
-
-#[context("Listing device {dev}")]
-pub(crate) fn list_dev(dev: &Utf8Path) -> Result<Device> {
-    let devices = list_impl(Some(dev))?;
-    devices
+    devs.blockdevices
         .into_iter()
         .next()
         .ok_or_else(|| anyhow!("no device output from lsblk for {dev}"))
