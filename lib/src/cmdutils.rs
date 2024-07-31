@@ -3,11 +3,13 @@ use std::{
     process::Command,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 /// Helpers intended for [`std::process::Command`].
 pub(crate) trait CommandRunExt {
     fn run(&mut self) -> Result<()>;
+    /// Execute the child process, parsing its stdout as JSON.
+    fn run_and_parse_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T>;
 }
 
 /// Helpers intended for [`std::process::ExitStatus`].
@@ -68,6 +70,15 @@ impl CommandRunExt for Command {
         self.stderr(stderr.try_clone()?);
         self.status()?.check_status(stderr)
     }
+
+    fn run_and_parse_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T> {
+        let mut stdout = tempfile::tempfile()?;
+        self.stdout(stdout.try_clone()?);
+        self.run()?;
+        stdout.seek(std::io::SeekFrom::Start(0)).context("seek")?;
+        let stdout = std::io::BufReader::new(stdout);
+        serde_json::from_reader(stdout).map_err(Into::into)
+    }
 }
 
 /// Helpers intended for [`tokio::process::Command`].
@@ -116,6 +127,21 @@ fn command_run_ext() {
         e.to_string(),
         "Subprocess failed: ExitStatus(unix_wait_status(256))\nexpected�����-foo�bar��\n"
     );
+}
+
+#[test]
+fn command_run_ext_json() {
+    #[derive(serde::Deserialize)]
+    struct Foo {
+        a: String,
+        b: u32,
+    }
+    let v: Foo = Command::new("echo")
+        .arg(r##"{"a": "somevalue", "b": 42}"##)
+        .run_and_parse_json()
+        .unwrap();
+    assert_eq!(v.a, "somevalue");
+    assert_eq!(v.b, 42);
 }
 
 #[tokio::test]
