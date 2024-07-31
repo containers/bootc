@@ -52,6 +52,8 @@ case ""${ID}-${VERSION_ID}"" in
         SSH_USER="cloud-user"
         REDHAT_VERSION_ID="10"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
+        # workaround CS10 libvirt selinux policy issue https://issues.redhat.com/browse/RHEL-46893
+        sudo setenforce 0
         ;;
     "fedora-"*)
         TEST_OS="fedora-${VERSION_ID}"
