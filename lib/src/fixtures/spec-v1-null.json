@@ -1,0 +1,1 @@
+{"apiVersion":"org.containers.bootc/v1","kind":"BootcHost","metadata":{"name":"host"},"spec":{"image":null,"bootOrder":"default"},"status":{"staged":null,"booted":null,"rollback":null,"rollbackQueued":false,"type":null}}
