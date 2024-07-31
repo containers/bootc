@@ -41,9 +41,16 @@ source /etc/os-release
 case ""${ID}-${VERSION_ID}"" in
     "centos-9")
         TEST_OS="centos-stream-9"
-        TIER1_IMAGE_URL="quay.io/centos-bootc/centos-bootc-dev:stream9"
+        TIER1_IMAGE_URL="quay.io/centos-bootc/centos-bootc:stream9"
         SSH_USER="cloud-user"
         REDHAT_VERSION_ID="9"
+        BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
+        ;;
+    "centos-10")
+        TEST_OS="centos-stream-10"
+        TIER1_IMAGE_URL="quay.io/centos-bootc/centos-bootc:stream10"
+        SSH_USER="cloud-user"
+        REDHAT_VERSION_ID="10"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
         ;;
     "fedora-"*)

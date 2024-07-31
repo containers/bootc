@@ -44,6 +44,10 @@ jobs:
       - centos-stream-9-aarch64
       - centos-stream-9-ppc64le
       - centos-stream-9-s390x
+      - centos-stream-10-x86_64
+      - centos-stream-10-aarch64
+      - centos-stream-10-ppc64le
+      - centos-stream-10-s390x
       - fedora-40-x86_64
       - fedora-40-aarch64
       - fedora-40-ppc64le
@@ -65,11 +69,14 @@ jobs:
     skip_build: true
     identifier: integration-test
 
+  # To avoid https://issues.redhat.com/browse/TFT-2691
+  # x86_64 tf runner is not enough now
   - job: tests
     trigger: pull_request
     targets:
       - centos-stream-9-x86_64
       - centos-stream-9-aarch64
+      - centos-stream-10-aarch64
       - fedora-40-x86_64
     tmt_plan: /to-existing-root
     identifier: e2e-test-to-existing-root
@@ -77,8 +84,9 @@ jobs:
   - job: tests
     trigger: pull_request
     targets:
-      - centos-stream-9-x86_64
       - centos-stream-9-aarch64
+      - centos-stream-10-x86_64
+      - centos-stream-10-aarch64
       - fedora-40-aarch64
     tmt_plan: /to-disk
     identifier: e2e-test-to-disk
