@@ -61,7 +61,7 @@ def verify_images [images containers] {
     let bound_containers = $containers | where bound == true
     let num_bound = ($bound_images | length) + ($bound_containers | length)
 
-    let image_names = podman images --format json | from json | select -i Names
+    let image_names = podman --storage-opt=additionalimagestore=/usr/lib/bootc/storage images --format json | from json | select -i Names
 
     for $image in $bound_images {
         let found = $image_names | where Names == [$image.image]

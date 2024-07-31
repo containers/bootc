@@ -201,6 +201,31 @@ pub(crate) enum ContainerOpts {
 
 /// Subcommands which operate on images.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
+pub(crate) enum ImageCmdOpts {
+    /// Wrapper for `podman image list` in bootc storage.
+    List {
+        #[clap(allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
+    /// Wrapper for `podman image build` in bootc storage.
+    Build {
+        #[clap(allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
+    /// Wrapper for `podman image pull` in bootc storage.
+    Pull {
+        #[clap(allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
+    /// Wrapper for `podman image push` in bootc storage.
+    Push {
+        #[clap(allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
+}
+
+/// Subcommands which operate on images.
+#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub(crate) enum ImageOpts {
     /// List fetched images stored in the bootc storage.
     ///
@@ -232,6 +257,16 @@ pub(crate) enum ImageOpts {
         /// this will make the image accessible via e.g. `podman run localhost/bootc` and for builds.
         target: Option<String>,
     },
+    /// Copy a container image from the default `containers-storage:` to the bootc-owned container storage.
+    PullFromDefaultStorage {
+        /// The image to pull
+        image: String,
+    },
+    /// List fetched images stored in the bootc storage.
+    ///
+    /// Note that these are distinct from images stored via e.g. `podman`.
+    #[clap(subcommand)]
+    Cmd(ImageCmdOpts),
 }
 
 /// Hidden, internal only options
@@ -247,6 +282,8 @@ pub(crate) enum InternalsOpts {
     FixupEtcFstab,
     /// Should only be used by `make update-generated`
     PrintJsonSchema,
+    /// Perform cleanup actions
+    Cleanup,
 }
 
 impl InternalsOpts {
@@ -430,10 +467,12 @@ pub(crate) async fn get_locked_sysroot() -> Result<ostree_ext::sysroot::SysrootL
     Ok(sysroot)
 }
 
+/// Load global storage state, expecting that we're booted into a bootc system.
 #[context("Initializing storage")]
 pub(crate) async fn get_storage() -> Result<crate::store::Storage> {
+    let global_run = Dir::open_ambient_dir("/run", cap_std::ambient_authority())?;
     let sysroot = get_locked_sysroot().await?;
-    crate::store::Storage::new(sysroot)
+    crate::store::Storage::new(sysroot, &global_run)
 }
 
 #[context("Querying root privilege")]
@@ -798,6 +837,27 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             ImageOpts::CopyToStorage { source, target } => {
                 crate::image::push_entrypoint(source.as_deref(), target.as_deref()).await
             }
+            ImageOpts::PullFromDefaultStorage { image } => {
+                let sysroot = get_storage().await?;
+                sysroot.imgstore.pull_from_host_storage(&image).await
+            }
+            ImageOpts::Cmd(opt) => {
+                let sysroot = get_storage().await?;
+                match opt {
+                    ImageCmdOpts::List { args } => {
+                        crate::image::imgcmd_entrypoint(&sysroot.imgstore, "list", &args).await
+                    }
+                    ImageCmdOpts::Build { args } => {
+                        crate::image::imgcmd_entrypoint(&sysroot.imgstore, "build", &args).await
+                    }
+                    ImageCmdOpts::Pull { args } => {
+                        crate::image::imgcmd_entrypoint(&sysroot.imgstore, "pull", &args).await
+                    }
+                    ImageCmdOpts::Push { args } => {
+                        crate::image::imgcmd_entrypoint(&sysroot.imgstore, "push", &args).await
+                    }
+                }
+            }
         },
         #[cfg(feature = "install")]
         Opt::Install(opts) => match opts {
@@ -830,6 +890,10 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 let mut stdout = std::io::stdout().lock();
                 serde_json::to_writer_pretty(&mut stdout, &schema)?;
                 Ok(())
+            }
+            InternalsOpts::Cleanup => {
+                let sysroot = get_storage().await?;
+                crate::deploy::cleanup(&sysroot).await
             }
         },
         #[cfg(feature = "docgen")]

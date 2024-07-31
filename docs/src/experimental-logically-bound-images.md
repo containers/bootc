@@ -14,7 +14,11 @@ This experimental feature enables an association of container "app" images to a 
 
 ## Using logically bound images
 
-Each image is defined in a [Podman Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) `.image` or `.container` file. An image is selected to be bound by creating a symlink in the `/usr/lib/bootc/bound-images.d` directory pointing to a `.image` or `.container` file. With these defined, during a `bootc upgrade` or `bootc switch` the bound images defined in the new bootc image will be automatically pulled via podman.
+Each image is defined in a [Podman Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) `.image` or `.container` file. An image is selected to be bound by creating a symlink in the `/usr/lib/bootc/bound-images.d` directory pointing to a `.image` or `.container` file. 
+
+With these defined, during a `bootc upgrade` or `bootc switch` the bound images defined in the new bootc image will be automatically pulled into the bootc image storage, and are available to container runtimes such as podman by explicitly configuring them to point to the bootc storage as an "additional image store", via e.g.:
+
+`podman --storage-opt=additionalimagestore=/usr/lib/bootc/storage run <image> ...`
 
 An example Containerfile
 
@@ -28,8 +32,17 @@ RUN ln -s /usr/share/containers/systemd/my-app.image /usr/lib/bootc/bound-images
     ln -s /usr/share/containers/systemd/my-app.image /usr/lib/bootc/bound-images.d/my-app.image
 ```
 
+In the `.container` definition, you should use:
+
+```
+GlobalArgs=--storage-opt=additionalimagestore=/usr/lib/bootc/storage
+```
+
+## Pull secret
+
+Images are fetched using the global bootc pull secret by default (`/etc/ostree/auth.json`). It is not yet supported to configure `PullSecret` in these image definitions.
+
 ## Limitations
 
-- Currently, only the Image field of a `.image` or `.container` file is used to pull the image. Any other field is ignored.
-- There is no cleanup during rollback.
-- Images are subject to default garbage collection semantics; e.g. a background job pruning images without a running container may prune them. They can also be manually removed via e.g. podman rmi.
+- Currently, only the Image field of a `.image` or `.container` file is used to pull the image; per above not even `PullSecret=` is supported.
+- Images are not yet garbage collected

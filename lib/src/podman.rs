@@ -3,7 +3,6 @@ use camino::Utf8Path;
 use cap_std_ext::cap_std::fs::Dir;
 use serde::Deserialize;
 
-use crate::install::run_in_host_mountns;
 use crate::task::Task;
 
 /// Where we look inside our container to find our own image
@@ -16,8 +15,18 @@ pub(crate) struct Inspect {
     pub(crate) digest: String,
 }
 
+/// This is output from `podman image list --format=json`.
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub(crate) struct ImageListEntry {
+    pub(crate) id: String,
+    pub(crate) names: Option<Vec<String>>,
+}
+
 /// Given an image ID, return its manifest digest
+#[cfg(feature = "install")]
 pub(crate) fn imageid_to_digest(imgid: &str) -> Result<String> {
+    use crate::install::run_in_host_mountns;
     let out = Task::new_cmd("podman inspect", run_in_host_mountns("podman"))
         .args(["inspect", imgid])
         .quiet()

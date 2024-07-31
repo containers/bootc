@@ -57,6 +57,7 @@ fn find_deployment_root() -> Result<Dir> {
 // Hook relatively cheap post-install tests here
 fn generic_post_install_verification() -> Result<()> {
     assert!(Utf8Path::new("/ostree/repo").try_exists()?);
+    assert!(Utf8Path::new("/ostree/bootc/storage/overlay").try_exists()?);
     Ok(())
 }
 

@@ -12,7 +12,7 @@ mod osbuild;
 pub(crate) mod osconfig;
 
 use std::io::Write;
-use std::os::fd::{AsFd, OwnedFd};
+use std::os::fd::AsFd;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
@@ -598,6 +598,19 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
         .cwd(rootfs_dir)?
         .run()?;
 
+    let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
+    sysroot.load(cancellable)?;
+    let sysroot_dir = Dir::reopen_dir(&crate::utils::sysroot_fd(&sysroot))?;
+
+    state.tempdir.create_dir("temp-run")?;
+    let temp_run = state.tempdir.open_dir("temp-run")?;
+    sysroot_dir
+        .create_dir_all(Utf8Path::new(crate::imgstorage::SUBPATH).parent().unwrap())
+        .context("creating bootc dir")?;
+    let imgstore = crate::imgstorage::Storage::create(&sysroot_dir, &temp_run)?;
+    // And drop it again - we'll reopen it after this
+    drop(imgstore);
+
     // Bootstrap the initial labeling of the /ostree directory as usr_t
     if let Some(policy) = sepolicy {
         let ostree_dir = rootfs_dir.open_dir("ostree")?;
@@ -613,7 +626,7 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
     let sysroot = SysrootLock::new_from_sysroot(&sysroot).await?;
-    Storage::new(sysroot)
+    Storage::new(sysroot, &temp_run)
 }
 
 #[context("Creating ostree deployment")]
@@ -1252,8 +1265,7 @@ async fn install_with_sysroot(
 ) -> Result<()> {
     // And actually set up the container in that root, returning a deployment and
     // the aleph state (see below).
-    let (deployment, aleph) = install_container(state, rootfs, &sysroot).await?;
-    let stateroot = deployment.osname();
+    let (_deployment, aleph) = install_container(state, rootfs, &sysroot).await?;
     // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
     rootfs
         .rootfs_fd
@@ -1276,51 +1288,10 @@ async fn install_with_sysroot(
     tracing::debug!("Installed bootloader");
 
     tracing::debug!("Perfoming post-deployment operations");
-    if !bound_images.is_empty() {
-        // TODO: We shouldn't hardcode the overlay driver for source or
-        // target, but we currently need to in order to reference the location.
-        // For this one, containers-storage: is actually the *host*'s /var/lib/containers
-        // which we are accessing directly.
-        let storage_src = "containers-storage:";
-        // TODO: We only do this dance to initialize `/var` at install time if
-        // there are bound images today; it minimizes side effects.
-        // However going forward we really do need to handle a separate /var partition...
-        // and to do that we may in the general case need to run the `var.mount`
-        // target from the new root.
-        // Probably the best fix is for us to switch bound images to use the bootc storage.
-        let varpath = format!("ostree/deploy/{stateroot}/var");
-        let var = rootfs
-            .rootfs_fd
-            .open_dir(&varpath)
-            .with_context(|| format!("Opening {varpath}"))?;
-
-        // The skopeo API expects absolute paths, so we make a temporary bind
-        let tmp_dest_var_abs = tempfile::tempdir()?;
-        let tmp_dest_var_abs: &Utf8Path = tmp_dest_var_abs.path().try_into()?;
-        let mut t = Task::new("Mounting deployment /var", "mount")
-            .args(["--bind", "/proc/self/fd/3"])
-            .arg(tmp_dest_var_abs);
-        t.cmd.take_fd_n(Arc::new(OwnedFd::from(var)), 3);
-        t.run()?;
-
-        // And an ephemeral place for the transient state
-        let tmp_runroot = tempfile::tempdir()?;
-        let tmp_runroot: &Utf8Path = tmp_runroot.path().try_into()?;
-
-        // The destination (target stateroot) + container storage dest
-        let storage_dest = &format!(
-            "containers-storage:[overlay@{tmp_dest_var_abs}/lib/containers/storage+{tmp_runroot}]"
-        );
-
-        // Now copy each bound image from the host's container storage into the target.
-        for image in bound_images {
-            let image = image.image.as_str();
-            Task::new(format!("Copying image to target: {}", image), "skopeo")
-                .arg("copy")
-                .arg(format!("{storage_src}{image}"))
-                .arg(format!("{storage_dest}{image}"))
-                .run()?;
-        }
+    // Now copy each bound image from the host's container storage into the target.
+    for image in bound_images {
+        let image = image.image.as_str();
+        sysroot.imgstore.pull_from_host_storage(image).await?;
     }
 
     Ok(())
