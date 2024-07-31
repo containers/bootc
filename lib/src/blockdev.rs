@@ -116,11 +116,6 @@ pub(crate) fn list_dev(dev: &Utf8Path) -> Result<Device> {
         .ok_or_else(|| anyhow!("no device output from lsblk for {dev}"))
 }
 
-#[allow(dead_code)]
-pub(crate) fn list() -> Result<Vec<Device>> {
-    list_impl(None)
-}
-
 #[derive(Debug, Deserialize)]
 struct SfDiskOutput {
     partitiontable: PartitionTable,
