@@ -10,6 +10,7 @@
 
 mod boundimage;
 pub mod cli;
+mod cmdutils;
 pub(crate) mod deploy;
 pub(crate) mod generator;
 mod image;

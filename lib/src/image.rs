@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use fn_error_context::context;
 use ostree_ext::container::{ImageReference, Transport};
 
-use crate::{imgstorage::Storage, utils::CommandRunExt};
+use crate::{cmdutils::CommandRunExt, imgstorage::Storage};
 
 /// The name of the image we push to containers-storage if nothing is specified.
 const IMAGE_DEFAULT: &str = "localhost/bootc";

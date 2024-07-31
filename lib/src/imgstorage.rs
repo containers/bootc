@@ -22,7 +22,7 @@ use fn_error_context::context;
 use std::os::fd::OwnedFd;
 use tokio::process::Command as AsyncCommand;
 
-use crate::utils::{AsyncCommandRunExt, CommandRunExt, ExitStatusExt};
+use crate::cmdutils::{AsyncCommandRunExt, CommandRunExt, ExitStatusExt};
 
 // Pass only 100 args at a time just to avoid potentially overflowing argument
 // vectors; not that this should happen in reality, but just in case.
