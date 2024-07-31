@@ -4,7 +4,7 @@ At the current time, bootc is primarily intended to be
 driven via a fork/exec model. The core CLI verbs
 are stable and will not change.
 
-## Using `bootc edit` and `bootc status --json --format-version=0`
+## Using `bootc edit` and `bootc status --json`
 
 While bootc does not depend on Kubernetes, it does currently
 also offere a Kubernetes *style* API, especially oriented
@@ -12,17 +12,18 @@ towards the [spec and status and other conventions](https://kubernetes.io/docs/r
 
 In general, most use cases of driving bootc via API are probably
 most easily done by forking off `bootc upgrade` when desired,
-and viewing `bootc status --json --format-version=0`.
+and viewing `bootc status --json --format-version=1`.
 
 ## JSON Schema
 
-The current API is classified as `org.containers.bootc/v1alpha1` but
-it will likely be officially stabilized mostly as is. However,
-you should still request the current "v0" format via an explicit
-`--format-version=0` as referenced above.
+The current API `org.containers.bootc/v1` is stable.
+In order to support the future introduction of a v2
+or newer format, please change your code now to explicitly
+request `--format-version=1` as referenced above. (Available
+since bootc 0.1.15, `--format-version=0` in bootc 0.1.14).
 
 There is a [JSON schema](https://json-schema.org/) generated from
-the Rust source code available here: [host-v0.schema.json](host-v0.schema.json).
+the Rust source code available here: [host-v1.schema.json](host-v1.schema.json).
 
 A common way to use this is to run a code generator such as
 [go-jsonschema](https://github.com/omissis/go-jsonschema) on the

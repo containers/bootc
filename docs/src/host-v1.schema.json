@@ -99,6 +99,18 @@
         "pinned": {
           "description": "Whether this entry will be subject to garbage collection",
           "type": "boolean"
+        },
+        "store": {
+          "description": "The container storage backend",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Store"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -366,6 +378,18 @@
           ]
         }
       }
+    },
+    "Store": {
+      "description": "The container storage backend",
+      "oneOf": [
+        {
+          "description": "Use the ostree-container storage backend.",
+          "type": "string",
+          "enum": [
+            "ostreeContainer"
+          ]
+        }
+      ]
     }
   }
 }

@@ -285,7 +285,8 @@ pub(crate) fn get_status(
 #[context("Status")]
 pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     match opts.format_version.unwrap_or_default() {
-        0 => {}
+        // For historical reasons, both 0 and 1 mean "v1".
+        0 | 1 => {}
         o => anyhow::bail!("Unsupported format version: {o}"),
     };
     let host = if !Utf8Path::new("/run/ostree-booted").try_exists()? {

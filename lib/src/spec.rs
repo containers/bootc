@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::k8sapitypes;
 
-const API_VERSION: &str = "org.containers.bootc/v1alpha1";
+const API_VERSION: &str = "org.containers.bootc/v1";
 const KIND: &str = "BootcHost";
 /// The default object name we use; there's only one.
 pub(crate) const OBJECT_NAME: &str = "host";
@@ -226,8 +226,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_spec_v0() {
-        const SPEC_FIXTURE: &str = include_str!("fixtures/spec.yaml");
+    fn test_parse_spec_v1_null() {
+        const SPEC_FIXTURE: &str = include_str!("fixtures/spec-v1-null.json");
+        let host: Host = serde_json::from_str(SPEC_FIXTURE).unwrap();
+        assert_eq!(host.resource.api_version, "org.containers.bootc/v1");
+    }
+
+    #[test]
+    fn test_parse_spec_v1a1_orig() {
+        const SPEC_FIXTURE: &str = include_str!("fixtures/spec-v1a1-orig.yaml");
         let host: Host = serde_yaml::from_str(SPEC_FIXTURE).unwrap();
         assert_eq!(
             host.spec.image.as_ref().unwrap().image.as_str(),
@@ -236,8 +243,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_spec_v1() {
-        const SPEC_FIXTURE: &str = include_str!("fixtures/spec-v1.yaml");
+    fn test_parse_spec_v1a1() {
+        const SPEC_FIXTURE: &str = include_str!("fixtures/spec-v1a1.yaml");
         let host: Host = serde_yaml::from_str(SPEC_FIXTURE).unwrap();
         assert_eq!(
             host.spec.image.as_ref().unwrap().image.as_str(),

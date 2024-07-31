@@ -132,9 +132,9 @@ pub(crate) struct StatusOpts {
     pub(crate) format: Option<OutputFormat>,
 
     /// The desired format version. There is currently one supported
-    /// version, which is version `0`. Pass this option to explicitly
-    /// request it; it is possible that multiple versions will be
-    /// supported in the future.
+    /// version, which is exposed as both `0` and `1`. Pass this
+    /// option to explicitly request it; it is possible that another future
+    /// version 2 or newer will be supported in the future.
     #[clap(long)]
     pub(crate) format_version: Option<u32>,
 
