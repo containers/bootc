@@ -10,6 +10,7 @@ use fn_error_context::context;
 use regex::Regex;
 use serde::Deserialize;
 
+use crate::cmdutils::CommandRunExt;
 use crate::install::run_in_host_mountns;
 use crate::task::Task;
 
@@ -94,14 +95,10 @@ pub(crate) fn wipefs(dev: &Utf8Path) -> Result<()> {
 
 #[context("Listing device {dev}")]
 pub(crate) fn list_dev(dev: &Utf8Path) -> Result<Device> {
-    let o = Command::new("lsblk")
+    let mut devs: DevicesOutput = Command::new("lsblk")
         .args(["-J", "-b", "-O"])
         .arg(dev)
-        .output()?;
-    if !o.status.success() {
-        return Err(anyhow::anyhow!("Failed to list block devices"));
-    }
-    let mut devs: DevicesOutput = serde_json::from_reader(&*o.stdout)?;
+        .run_and_parse_json()?;
     for dev in devs.blockdevices.iter_mut() {
         dev.backfill_missing()?;
     }
