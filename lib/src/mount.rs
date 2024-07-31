@@ -1,11 +1,13 @@
 //! Helpers for interacting with mountpoints
 
-use anyhow::{anyhow, Context, Result};
+use std::process::Command;
+
+use anyhow::{anyhow, Result};
 use camino::Utf8Path;
 use fn_error_context::context;
 use serde::Deserialize;
 
-use crate::task::Task;
+use crate::{cmdutils::CommandRunExt, task::Task};
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
@@ -26,8 +28,7 @@ pub(crate) struct Findmnt {
 }
 
 fn run_findmnt(args: &[&str], path: &str) -> Result<Filesystem> {
-    let desc = format!("Inspecting {path}");
-    let o = Task::new(desc, "findmnt")
+    let o: Findmnt = Command::new("findmnt")
         .args([
             "-J",
             "-v",
@@ -36,9 +37,7 @@ fn run_findmnt(args: &[&str], path: &str) -> Result<Filesystem> {
         ])
         .args(args)
         .arg(path)
-        .quiet()
-        .read()?;
-    let o: Findmnt = serde_json::from_str(&o).context("Parsing findmnt output")?;
+        .run_and_parse_json()?;
     o.filesystems
         .into_iter()
         .next()
