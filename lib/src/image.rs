@@ -22,7 +22,7 @@ pub(crate) async fn list_entrypoint() -> Result<()> {
     for image in images {
         println!("{image}");
     }
-    println!("");
+    println!();
 
     println!("# Logically bound images");
     let mut listcmd = sysroot.imgstore.new_image_cmd()?;
