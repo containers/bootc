@@ -280,7 +280,10 @@ pub(crate) async fn prune_container_store(sysroot: &Storage) -> Result<()> {
     }
     // Convert to a hashset of just the image names
     let image_names = HashSet::from_iter(all_bound_images.iter().map(|img| img.image.as_str()));
-    let pruned = sysroot.imgstore.prune_except_roots(&image_names).await?;
+    let pruned = sysroot
+        .get_ensure_imgstore()?
+        .prune_except_roots(&image_names)
+        .await?;
     tracing::debug!("Pruned images: {}", pruned.len());
     Ok(())
 }

@@ -145,13 +145,18 @@ fn parse_container_file(file_contents: &tini::Ini) -> Result<BoundImage> {
 #[context("Pulling bound images")]
 pub(crate) async fn pull_images(sysroot: &Storage, bound_images: Vec<BoundImage>) -> Result<()> {
     tracing::debug!("Pulling bound images: {}", bound_images.len());
+    // Only initialize the image storage if we have images to pull
+    let imgstore = if !bound_images.is_empty() {
+        sysroot.get_ensure_imgstore()?
+    } else {
+        return Ok(());
+    };
     //TODO: do this in parallel
     for bound_image in bound_images {
         let image = &bound_image.image;
         let desc = format!("Updating bound image: {image}");
         crate::utils::async_task_with_spinner(&desc, async move {
-            sysroot
-                .imgstore
+            imgstore
                 .pull(&bound_image.image, PullMode::IfNotExists)
                 .await
         })

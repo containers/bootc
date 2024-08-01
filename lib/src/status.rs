@@ -136,7 +136,7 @@ fn boot_entry_from_deployment(
             let store = deployment.store()?;
             let store = store.as_ref().unwrap_or(&sysroot.store);
             let spec = Some(store.spec());
-            let status = store.imagestatus(sysroot, deployment, image)?;
+            let status = store.imagestatus(&*sysroot, deployment, image)?;
 
             (spec, status)
         } else {

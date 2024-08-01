@@ -839,22 +839,26 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             }
             ImageOpts::PullFromDefaultStorage { image } => {
                 let sysroot = get_storage().await?;
-                sysroot.imgstore.pull_from_host_storage(&image).await
+                sysroot
+                    .get_ensure_imgstore()?
+                    .pull_from_host_storage(&image)
+                    .await
             }
             ImageOpts::Cmd(opt) => {
-                let sysroot = get_storage().await?;
+                let storage = get_storage().await?;
+                let imgstore = storage.get_ensure_imgstore()?;
                 match opt {
                     ImageCmdOpts::List { args } => {
-                        crate::image::imgcmd_entrypoint(&sysroot.imgstore, "list", &args).await
+                        crate::image::imgcmd_entrypoint(imgstore, "list", &args).await
                     }
                     ImageCmdOpts::Build { args } => {
-                        crate::image::imgcmd_entrypoint(&sysroot.imgstore, "build", &args).await
+                        crate::image::imgcmd_entrypoint(imgstore, "build", &args).await
                     }
                     ImageCmdOpts::Pull { args } => {
-                        crate::image::imgcmd_entrypoint(&sysroot.imgstore, "pull", &args).await
+                        crate::image::imgcmd_entrypoint(imgstore, "pull", &args).await
                     }
                     ImageCmdOpts::Push { args } => {
-                        crate::image::imgcmd_entrypoint(&sysroot.imgstore, "push", &args).await
+                        crate::image::imgcmd_entrypoint(imgstore, "push", &args).await
                     }
                 }
             }

@@ -25,7 +25,7 @@ pub(crate) async fn list_entrypoint() -> Result<()> {
     println!();
 
     println!("# Logically bound images");
-    let mut listcmd = sysroot.imgstore.new_image_cmd()?;
+    let mut listcmd = sysroot.get_ensure_imgstore()?.new_image_cmd()?;
     listcmd.arg("list");
     listcmd.run()?;
 

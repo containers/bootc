@@ -49,6 +49,11 @@ pub(crate) struct Storage {
     #[allow(dead_code)]
     /// Our runtime state
     run: Dir,
+    /// Disallow using this across multiple threads concurrently; while we
+    /// have internal locking in podman, in the future we may change how
+    /// things work here. And we don't have a use case right now for
+    /// concurrent operations.
+    _unsync: std::cell::Cell<()>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -160,12 +165,14 @@ impl Storage {
             sysroot
                 .rename(&tmp, sysroot, subpath)
                 .context("Renaming tmpdir")?;
+            tracing::debug!("Created image store");
         }
         Self::open(sysroot, run)
     }
 
     #[context("Opening imgstorage")]
     pub(crate) fn open(sysroot: &Dir, run: &Dir) -> Result<Self> {
+        tracing::trace!("Opening container image store");
         Self::init_globals()?;
         let storage_root = sysroot
             .open_dir(SUBPATH)
@@ -178,6 +185,7 @@ impl Storage {
             sysroot: sysroot.try_clone()?,
             storage_root,
             run,
+            _unsync: Default::default(),
         })
     }
 
@@ -291,4 +299,10 @@ impl Storage {
         temp_runroot.close()?;
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    static_assertions::assert_not_impl_any!(Storage: Sync);
 }
