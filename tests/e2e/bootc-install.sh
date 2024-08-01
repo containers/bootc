@@ -41,10 +41,19 @@ source /etc/os-release
 case ""${ID}-${VERSION_ID}"" in
     "centos-9")
         TEST_OS="centos-stream-9"
-        TIER1_IMAGE_URL="quay.io/centos-bootc/centos-bootc-dev:stream9"
+        TIER1_IMAGE_URL="quay.io/centos-bootc/centos-bootc:stream9"
         SSH_USER="cloud-user"
         REDHAT_VERSION_ID="9"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
+        ;;
+    "centos-10")
+        TEST_OS="centos-stream-10"
+        TIER1_IMAGE_URL="quay.io/centos-bootc/centos-bootc:stream10"
+        SSH_USER="cloud-user"
+        REDHAT_VERSION_ID="10"
+        BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
+        # workaround CS10 libvirt selinux policy issue https://issues.redhat.com/browse/RHEL-46893
+        sudo setenforce 0
         ;;
     "fedora-"*)
         TEST_OS="fedora-${VERSION_ID}"
@@ -120,7 +129,7 @@ kargs = ["mitigations=on", "nosmt"]
 EOF
 RUN mkdir -p /usr/lib/bootc/kargs.d
 RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
-kargs = ["systemd.unified_cgroup_hierarchy=0","console=ttyS0","panic=0"]
+kargs = ["console=ttyS0","panic=0"]
 EOF
 REALEOF
 
@@ -254,7 +263,7 @@ ansible-playbook -v \
     -e test_os="$TEST_OS" \
     -e bootc_image="$TEST_IMAGE_URL" \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
-    -e kargs="mitigations=on,nosmt,systemd.unified_cgroup_hierarchy=0,console=ttyS0,panic=0" \
+    -e kargs="mitigations=on,nosmt,console=ttyS0,panic=0" \
     playbooks/check-system.yaml
 
 # Prepare upgrade containerfile

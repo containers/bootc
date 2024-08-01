@@ -14,6 +14,7 @@
     boot_args: ""
     os_variant:
       centos-stream-9: centos-stream9
+      centos-stream-10: centos-stream9
       fedora-40: fedora-unknown
       fedora-41: fedora-unknown
 
@@ -116,7 +117,8 @@
     # Then the --cloud-init will be dropped when start after system reset
     - name: Generate seed.iso for NoCloud cloud-init
       command: |
-        genisoimage -output "{{ image_path }}/seed.iso" \
+        xorriso -as mkisofs -input-charset utf8 \
+          -o "{{ image_path  }}/seed.iso" \
           -volid cidata \
           -joliet \
           -rock \
