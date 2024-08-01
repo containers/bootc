@@ -218,13 +218,16 @@
       command: findmnt -r -o SOURCE -n /
       register: result_root_mount_point
 
+    # overlay: as default
+    # none: workaround issue https://gitlab.com/redhat/centos-stream/containers/bootc/-/issues/301
+    # composefs: issue has been fixed by https://github.com/containers/composefs/pull/303
     - name: / mount point checking
       block:
         - assert:
             that:
-              - result_root_mount_point.stdout == "overlay"
-            fail_msg: "/ does not mount with overlay"
-            success_msg: "/ mounts with overlay"
+              - result_root_mount_point.stdout == "overlay" or result_root_mount_point.stdout == "none" or result_root_mount_point.stdout == "composefs"
+            fail_msg: "/ does not mount with overlay or none or composefs"
+            success_msg: "/ mounts with overlay or none or composefs"
       always:
         - set_fact:
             total_counter: "{{ total_counter | int + 1 }}"
