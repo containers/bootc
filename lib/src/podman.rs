@@ -3,8 +3,6 @@ use camino::Utf8Path;
 use cap_std_ext::cap_std::fs::Dir;
 use serde::Deserialize;
 
-use crate::task::Task;
-
 /// Where we look inside our container to find our own image
 /// for use with `bootc install`.
 pub(crate) const CONTAINER_STORAGE: &str = "/var/lib/containers";
@@ -26,12 +24,10 @@ pub(crate) struct ImageListEntry {
 /// Given an image ID, return its manifest digest
 #[cfg(feature = "install")]
 pub(crate) fn imageid_to_digest(imgid: &str) -> Result<String> {
-    use crate::install::run_in_host_mountns;
-    let out = Task::new_cmd("podman inspect", run_in_host_mountns("podman"))
+    use crate::cmdutils::CommandRunExt;
+    let o: Vec<Inspect> = crate::install::run_in_host_mountns("podman")
         .args(["inspect", imgid])
-        .quiet()
-        .read()?;
-    let o: Vec<Inspect> = serde_json::from_str(&out)?;
+        .run_and_parse_json()?;
     let i = o
         .into_iter()
         .next()

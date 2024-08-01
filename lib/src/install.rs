@@ -43,12 +43,13 @@ use rustix::fs::{FileTypeExt, MetadataExt as _};
 use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
+use crate::cmdutils::CommandRunExt;
 use crate::containerenv::ContainerExecutionInfo;
 use crate::mount::Filesystem;
 use crate::spec::ImageReference;
 use crate::store::Storage;
 use crate::task::Task;
-use crate::utils::{sigpolicy_from_opts, CommandRunExt};
+use crate::utils::sigpolicy_from_opts;
 
 /// The default "stateroot" or "osname"; see https://github.com/ostreedev/ostree/issues/2794
 const STATEROOT_DEFAULT: &str = "default";

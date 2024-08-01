@@ -22,7 +22,7 @@ use fn_error_context::context;
 use std::os::fd::OwnedFd;
 use tokio::process::Command as AsyncCommand;
 
-use crate::utils::{AsyncCommandRunExt, CommandRunExt, ExitStatusExt};
+use crate::cmdutils::{AsyncCommandRunExt, CommandRunExt, ExitStatusExt};
 
 // Pass only 100 args at a time just to avoid potentially overflowing argument
 // vectors; not that this should happen in reality, but just in case.
@@ -126,10 +126,9 @@ impl Storage {
     }
 
     fn init_globals() -> Result<()> {
-        // Ensure our global storage alias dirs exist
-        for d in [STORAGE_ALIAS_DIR] {
-            std::fs::create_dir_all(d).with_context(|| format!("Creating {d}"))?;
-        }
+        // Ensure our global storage alias dir exists
+        std::fs::create_dir_all(STORAGE_ALIAS_DIR)
+            .with_context(|| format!("Creating {STORAGE_ALIAS_DIR}"))?;
         Ok(())
     }
 
