@@ -129,7 +129,7 @@ kargs = ["mitigations=on", "nosmt"]
 EOF
 RUN mkdir -p /usr/lib/bootc/kargs.d
 RUN cat <<EOF >> /usr/lib/bootc/kargs.d/01-console.toml
-kargs = ["systemd.unified_cgroup_hierarchy=0","console=ttyS0","panic=0"]
+kargs = ["console=ttyS0","panic=0"]
 EOF
 REALEOF
 
@@ -263,7 +263,7 @@ ansible-playbook -v \
     -e test_os="$TEST_OS" \
     -e bootc_image="$TEST_IMAGE_URL" \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
-    -e kargs="mitigations=on,nosmt,systemd.unified_cgroup_hierarchy=0,console=ttyS0,panic=0" \
+    -e kargs="mitigations=on,nosmt,console=ttyS0,panic=0" \
     playbooks/check-system.yaml
 
 # Prepare upgrade containerfile

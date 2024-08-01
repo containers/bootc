@@ -356,7 +356,7 @@
       register: result_selinux_denied
       become: true
       ignore_errors: true
-    
+
     # case: check karg
     - name: grep for kargs
       shell: cat /proc/cmdline | grep {{item}}
