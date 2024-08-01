@@ -1289,10 +1289,13 @@ async fn install_with_sysroot(
     tracing::debug!("Installed bootloader");
 
     tracing::debug!("Perfoming post-deployment operations");
+    // Note that we *always* initialize this container storage, even
+    // if there are no bound images today.
+    let imgstore = sysroot.get_ensure_imgstore()?;
     // Now copy each bound image from the host's container storage into the target.
     for image in bound_images {
         let image = image.image.as_str();
-        sysroot.imgstore.pull_from_host_storage(image).await?;
+        imgstore.pull_from_host_storage(image).await?;
     }
 
     Ok(())
