@@ -11,7 +11,7 @@ use containers_image_proxy::oci_spec;
 use fn_error_context::context;
 use gio::prelude::*;
 use oci_spec::image as oci_image;
-use ocidir::RawLayerWriter;
+use ocidir::GzipLayerWriter;
 use ostree::gio;
 use xshell::cmd;
 
@@ -58,7 +58,7 @@ pub fn generate_derived_oci_from_tar<F>(
     tag: Option<&str>,
 ) -> Result<()>
 where
-    F: FnOnce(&mut RawLayerWriter) -> Result<()>,
+    F: FnOnce(&mut GzipLayerWriter) -> Result<()>,
 {
     let src = src.as_ref();
     let src = Dir::open_ambient_dir(src, cap_std::ambient_authority())?;
@@ -67,7 +67,7 @@ where
     let mut manifest = src.read_manifest()?;
     let mut config: oci_spec::image::ImageConfiguration = src.read_json_blob(manifest.config())?;
 
-    let mut bw = src.create_raw_layer(None)?;
+    let mut bw = src.create_gzip_layer(None)?;
     f(&mut bw)?;
     let new_layer = bw.complete()?;
 
