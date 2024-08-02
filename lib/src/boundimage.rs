@@ -5,6 +5,8 @@
 //! pre-pulled (and in the future, pinned) before a new image root
 //! is considered ready.
 
+use std::num::NonZeroUsize;
+
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use cap_std_ext::cap_std::fs::Dir;
@@ -145,16 +147,22 @@ fn parse_container_file(file_contents: &tini::Ini) -> Result<BoundImage> {
 #[context("Pulling bound images")]
 pub(crate) async fn pull_images(sysroot: &Storage, bound_images: Vec<BoundImage>) -> Result<()> {
     tracing::debug!("Pulling bound images: {}", bound_images.len());
-    // Only initialize the image storage if we have images to pull
-    let imgstore = if !bound_images.is_empty() {
-        sysroot.get_ensure_imgstore()?
-    } else {
+    // Yes, the usage of NonZeroUsize here is...maybe odd looking, but I find
+    // it an elegant way to divide (empty vector, non empty vector) since
+    // we want to print the length too below.
+    let Some(n) = NonZeroUsize::new(bound_images.len()) else {
         return Ok(());
     };
-    //TODO: do this in parallel
+    // Only do work like initializing the image storage if we have images to pull.
+    let imgstore = sysroot.get_ensure_imgstore()?;
+    // TODO: do this in parallel
     for bound_image in bound_images {
         let image = &bound_image.image;
-        let desc = format!("Updating bound image: {image}");
+        if imgstore.exists(image).await? {
+            tracing::debug!("Bound image already present: {image}");
+            continue;
+        }
+        let desc = format!("Fetching bound image: {image}");
         crate::utils::async_task_with_spinner(&desc, async move {
             imgstore
                 .pull(&bound_image.image, PullMode::IfNotExists)
@@ -162,6 +170,8 @@ pub(crate) async fn pull_images(sysroot: &Storage, bound_images: Vec<BoundImage>
         })
         .await?;
     }
+
+    println!("Bound images stored: {n}");
 
     Ok(())
 }
