@@ -21,10 +21,23 @@ When booted, the physical root will be available at `/sysroot` as a
 read-only mount point and the logical root `/` will be a bind mount
 pointing to a deployment directory under `/sysroot/ostree`.  This is a
 key aspect of how `bootc upgrade` operates: it fetches the updated
-container image and writes new files to `/sysroot/ostree`.
+container image and writes the base image files (using OSTree storage
+to `/sysroot/ostree/repo`).
 
 Beyond that and debugging/introspection, there are few use cases for tooling to
 operate on the physical root.
+
+### bootc-owned container storage
+
+For [experimental-logically-bound-images.md](logically bound images),
+bootc maintains a dedicated [containers/storage](https://github.com/containers/storage)
+instance using the `overlay` backend (the same type of thing that backs `/var/lib/containers`).
+
+This storage is accessible via a `/usr/lib/bootc/storage` symbolic link which points into
+`/sysroot`. (Avoid directly referencing the `/sysroot` target)
+
+At the current time, this storage is *not* used for the base bootable image.
+This [unified storage issue](https://github.com/containers/bootc/issues/20) tracks unification.
 
 ## Expanding the root filesystem
 
