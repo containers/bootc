@@ -245,17 +245,21 @@ impl Storage {
         Ok(garbage)
     }
 
+    /// Return true if the image exists in the storage.
+    pub(crate) async fn exists(&self, image: &str) -> Result<bool> {
+        // Sadly https://docs.rs/containers-image-proxy/latest/containers_image_proxy/struct.ImageProxy.html#method.open_image_optional
+        // doesn't work with containers-storage yet
+        let mut cmd = AsyncCommand::from(self.new_image_cmd()?);
+        cmd.args(["exists", image]);
+        Ok(cmd.status().await?.success())
+    }
+
     /// Fetch the image if it is not already present; return whether
     /// or not the image was fetched.
     pub(crate) async fn pull(&self, image: &str, mode: PullMode) -> Result<bool> {
         match mode {
             PullMode::IfNotExists => {
-                // Sadly https://docs.rs/containers-image-proxy/latest/containers_image_proxy/struct.ImageProxy.html#method.open_image_optional
-                // doesn't work with containers-storage yet
-                let mut cmd = AsyncCommand::from(self.new_image_cmd()?);
-                cmd.args(["exists", image]);
-                let exists = cmd.status().await?.success();
-                if exists {
+                if self.exists(image).await? {
                     tracing::debug!("Image is already present: {image}");
                     return Ok(false);
                 }
