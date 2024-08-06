@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::io::IsTerminal;
 
 use anyhow::{Context, Result};
 use camino::Utf8Path;
@@ -306,12 +307,24 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     let legacy_opt = if opts.json {
         OutputFormat::Json
     } else {
-        OutputFormat::Yaml
+        if  std::io::stdout().is_terminal() {
+            OutputFormat::HumanReadable
+        } else {
+            OutputFormat::Yaml
+        }
     };
     let format = opts.format.unwrap_or(legacy_opt);
     match format {
         OutputFormat::Json => serde_json::to_writer(&mut out, &host).map_err(anyhow::Error::new),
         OutputFormat::Yaml => serde_yaml::to_writer(&mut out, &host).map_err(anyhow::Error::new),
+        OutputFormat::HumanReadable => {
+            if let Some(booted) = host.status.booted {
+                println!("Current deployment image: {:?}", booted.image.unwrap().image.image);
+            } else {
+                println!("Not on a bootc host");
+            }
+            Ok(())
+        }
     }
     .context("Writing to stdout")?;
 
