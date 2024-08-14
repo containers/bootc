@@ -12,6 +12,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use bootc_utils::{AsyncCommandRunExt, CommandRunExt, ExitStatusExt};
 use camino::Utf8Path;
 use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::Dir;
@@ -21,8 +22,6 @@ use cap_std_ext::dirext::CapStdExtDirExt;
 use fn_error_context::context;
 use std::os::fd::OwnedFd;
 use tokio::process::Command as AsyncCommand;
-
-use crate::cmdutils::{AsyncCommandRunExt, CommandRunExt, ExitStatusExt};
 
 // Pass only 100 args at a time just to avoid potentially overflowing argument
 // vectors; not that this should happen in reality, but just in case.

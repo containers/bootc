@@ -6,14 +6,14 @@ use std::{
 use anyhow::{Context, Result};
 
 /// Helpers intended for [`std::process::Command`].
-pub(crate) trait CommandRunExt {
+pub trait CommandRunExt {
     fn run(&mut self) -> Result<()>;
     /// Execute the child process, parsing its stdout as JSON.
     fn run_and_parse_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T>;
 }
 
 /// Helpers intended for [`std::process::ExitStatus`].
-pub(crate) trait ExitStatusExt {
+pub trait ExitStatusExt {
     /// If the exit status signals it was not successful, return an error.
     /// Note that we intentionally *don't* include the command string
     /// in the output; we leave it to the caller to add that if they want,
@@ -82,8 +82,8 @@ impl CommandRunExt for Command {
 }
 
 /// Helpers intended for [`tokio::process::Command`].
-#[allow(dead_code)]
-pub(crate) trait AsyncCommandRunExt {
+#[allow(async_fn_in_trait)]
+pub trait AsyncCommandRunExt {
     async fn run(&mut self) -> Result<()>;
 }
 

@@ -24,7 +24,7 @@ pub(crate) struct ImageListEntry {
 /// Given an image ID, return its manifest digest
 #[cfg(feature = "install")]
 pub(crate) fn imageid_to_digest(imgid: &str) -> Result<String> {
-    use crate::cmdutils::CommandRunExt;
+    use bootc_utils::CommandRunExt;
     let o: Vec<Inspect> = crate::install::run_in_host_mountns("podman")
         .args(["inspect", imgid])
         .run_and_parse_json()?;

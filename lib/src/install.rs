@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use anyhow::Ok;
 use anyhow::{anyhow, Context, Result};
+use bootc_utils::CommandRunExt;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use cap_std::fs::{Dir, MetadataExt};
@@ -43,7 +44,6 @@ use rustix::fs::{FileTypeExt, MetadataExt as _};
 use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
-use crate::cmdutils::CommandRunExt;
 use crate::containerenv::ContainerExecutionInfo;
 use crate::mount::Filesystem;
 use crate::spec::ImageReference;
