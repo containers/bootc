@@ -3,10 +3,11 @@
 //! APIs for operating on container images in the bootc storage.
 
 use anyhow::{Context, Result};
+use bootc_utils::CommandRunExt;
 use fn_error_context::context;
 use ostree_ext::container::{ImageReference, Transport};
 
-use crate::{cmdutils::CommandRunExt, imgstorage::Storage};
+use crate::imgstorage::Storage;
 
 /// The name of the image we push to containers-storage if nothing is specified.
 const IMAGE_DEFAULT: &str = "localhost/bootc";

@@ -10,9 +10,9 @@ use fn_error_context::context;
 use regex::Regex;
 use serde::Deserialize;
 
-use crate::cmdutils::CommandRunExt;
 use crate::install::run_in_host_mountns;
 use crate::task::Task;
+use bootc_utils::CommandRunExt;
 
 #[derive(Debug, Deserialize)]
 struct DevicesOutput {

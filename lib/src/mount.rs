@@ -3,11 +3,12 @@
 use std::process::Command;
 
 use anyhow::{anyhow, Result};
+use bootc_utils::CommandRunExt;
 use camino::Utf8Path;
 use fn_error_context::context;
 use serde::Deserialize;
 
-use crate::{cmdutils::CommandRunExt, task::Task};
+use crate::task::Task;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]

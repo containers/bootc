@@ -170,6 +170,7 @@ dependencies = [
  "anstream",
  "anstyle",
  "anyhow",
+ "bootc-utils",
  "camino",
  "cap-std-ext",
  "chrono",
@@ -202,6 +203,20 @@ dependencies = [
  "tracing",
  "uuid",
  "xshell",
+]
+
+[[package]]
+name = "bootc-utils"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "similar-asserts",
+ "static_assertions",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

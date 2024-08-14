@@ -1,0 +1,22 @@
+[package]
+name = "bootc-utils"
+publish = false
+version = "0.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/containers/bootc"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["process"] }
+
+[dev-dependencies]
+similar-asserts = { version = "1.5.0" }
+static_assertions = "1.1.0"
+
+[lints]
+workspace = true
