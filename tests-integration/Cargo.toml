@@ -16,7 +16,7 @@ camino = { workspace = true }
 cap-std-ext = { workspace = true }
 clap = { workspace = true, features = ["derive","cargo"] }
 fn-error-context = { workspace = true }
-indoc = "2.0.5"
+indoc = { workspace = true }
 libtest-mimic = "0.7.3"
 oci-spec = "0.6.5"
 rustix = { "version" = "0.38.34", features = ["thread", "fs", "system", "process"] }
