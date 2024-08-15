@@ -137,21 +137,30 @@ case "$TEST_CASE" in
     "to-existing-root")
         SSH_USER="root"
         SSH_KEY_PUB_CONTENT=$(cat "${SSH_KEY_PUB}")
+        mkdir -p "${TEMPDIR}/usr/share/containers/systemd"
+        cp files/caddy.container files/node_exporter.container "${TEMPDIR}/usr/share/containers/systemd"
         tee -a "$INSTALL_CONTAINERFILE" > /dev/null << EOF
+COPY usr/ usr/
 RUN mkdir -p /usr/etc-system/ && \
     echo 'AuthorizedKeysFile /usr/etc-system/%u.keys' >> /etc/ssh/sshd_config.d/30-auth-system.conf && \
     echo "$SSH_KEY_PUB_CONTENT" > /usr/etc-system/root.keys && \
     chmod 0600 /usr/etc-system/root.keys && \
     dnf -y install qemu-guest-agent && \
     dnf clean all && \
-    systemctl enable qemu-guest-agent
+    systemctl enable qemu-guest-agent && \
+    ln -s /usr/share/containers/systemd/caddy.container /usr/lib/bootc/bound-images.d/caddy.container && \
+    ln -s /usr/share/containers/systemd/node_exporter.container /usr/lib/bootc/bound-images.d/node_exporter.container
 EOF
+    # logical bound image
+    LBI="enabled"
     ;;
     "to-disk")
         tee -a "$INSTALL_CONTAINERFILE" > /dev/null << EOF
 RUN dnf -y install python3 cloud-init && \
     dnf -y clean all
 EOF
+    # LBI is disabled in to-disk test
+    LBI="disabled"
     ;;
 esac
 
@@ -264,6 +273,7 @@ ansible-playbook -v \
     -e bootc_image="$TEST_IMAGE_URL" \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
     -e kargs="mitigations=on,nosmt,console=ttyS0,panic=0" \
+    -e lbi="$LBI" \
     playbooks/check-system.yaml
 
 # Prepare upgrade containerfile
@@ -309,6 +319,7 @@ ansible-playbook -v \
     -e image_label_version_id="$REDHAT_VERSION_ID" \
     -e upgrade="true" \
     -e kargs="systemd.unified_cgroup_hierarchy=1,console=ttyS,panic=0" \
+    -e lbi="$LBI" \
     playbooks/check-system.yaml
 
 # bootc rollback test
