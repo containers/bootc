@@ -5,6 +5,7 @@
     bootc_image: ""
     upgrade: ""
     kargs: ""
+    lbi: ""
     total_counter: "0"
     failed_counter: "0"
 
@@ -436,6 +437,50 @@
         - name: failed count + 1
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check logically bound image caddy container status
+    - name: check LBI caddy container status
+      shell: podman ps --filter "name=systemd-caddy" --format json | jq -r '.[].State'
+      register: result_caddy_state
+      when: lbi == "enabled"
+
+    - name: run caddy container status test
+      block:
+        - assert:
+            that:
+              -  result_caddy_state.stdout == "running"
+            fail_msg: "failed to run caddy container"
+            success_msg: "running caddy container"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: lbi == "enabled"
+
+    # case: check logically bound image node_exporter container status
+    - name: check LBI node_exporter container status
+      shell: podman ps --filter "name=systemd-node_exporter" --format json | jq -r '.[].State'
+      register: result_node_exporter_state
+      when: lbi == "enabled"
+
+    - name: run node_exporter container status test
+      block:
+        - assert:
+            that:
+              -  result_node_exporter_state.stdout == "running"
+            fail_msg: "failed to run node_exporter container"
+            success_msg: "running node_exporter container"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: lbi == "enabled"
 
     # case: check system reboot
     - name: check system reboot
