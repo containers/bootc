@@ -19,7 +19,7 @@ fn-error-context = { workspace = true }
 indoc = { workspace = true }
 libtest-mimic = "0.7.3"
 oci-spec = "0.6.5"
-rustix = { "version" = "0.38.34", features = ["thread", "fs", "system", "process"] }
+rustix = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
