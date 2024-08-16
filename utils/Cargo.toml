@@ -15,8 +15,8 @@ tracing = { workspace = true }
 tokio = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
-similar-asserts = { version = "1.5.0" }
-static_assertions = "1.1.0"
+similar-asserts = { workspace = true }
+static_assertions = { workspace = true }
 
 [lints]
 workspace = true
