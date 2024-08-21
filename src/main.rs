@@ -24,6 +24,7 @@ mod component;
 mod coreos;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod efi;
+mod failpoints;
 mod filesystem;
 mod filetree;
 #[cfg(any(
@@ -43,6 +44,7 @@ use clap::crate_name;
 
 /// Binary entrypoint, for both daemon and client logic.
 fn main() {
+    let _scenario = fail::FailScenario::setup();
     let exit_code = run_cli();
     std::process::exit(exit_code);
 }

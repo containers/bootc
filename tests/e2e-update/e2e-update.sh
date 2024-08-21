@@ -24,10 +24,14 @@ export test_tmpdir=${testtmp}
 
 # This is new content for our update
 test_bootupd_payload_file=/boot/efi/EFI/fedora/test-bootupd.efi
+test_bootupd_payload_file1=/boot/efi/EFI/BOOT/test-bootupd1.efi
 build_rpm test-bootupd-payload \
-  files ${test_bootupd_payload_file} \
+  files "${test_bootupd_payload_file}
+         ${test_bootupd_payload_file1}" \
   install "mkdir -p %{buildroot}/$(dirname ${test_bootupd_payload_file})
-           echo test-payload > %{buildroot}/${test_bootupd_payload_file}"
+           echo test-payload > %{buildroot}/${test_bootupd_payload_file}
+           mkdir -p %{buildroot}/$(dirname ${test_bootupd_payload_file1})
+           echo test-payload1 > %{buildroot}/${test_bootupd_payload_file1}"
 
 # Start in cosa dir
 cd ${COSA_DIR}

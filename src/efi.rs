@@ -141,7 +141,7 @@ impl Efi {
             log::debug!("Not booted via EFI, skipping firmware update");
             return Ok(());
         }
-        let sysroot = Dir::open_ambient_dir(&Path::new("/"), cap_std::ambient_authority())?;
+        let sysroot = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
         let product_name = get_product_name(&sysroot)?;
         log::debug!("Get product name: {product_name}");
         assert!(product_name.len() > 0);
