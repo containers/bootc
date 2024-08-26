@@ -157,6 +157,7 @@ impl Storage {
             // root, simply passing a path will attempt to auto-create it.
             // We run "podman images" in the new root.
             new_podman_cmd_in(&storage_root, &run)?
+                .stdout(Stdio::null())
                 .arg("images")
                 .run()
                 .context("Initializing images")?;
