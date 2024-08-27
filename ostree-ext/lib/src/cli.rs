@@ -711,14 +711,28 @@ async fn container_import(
 /// Grouping of metadata about an object.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct RawMeta {
-    /// When the image was created. Sync it with the io.container.image.created label.
+    /// The metadata format version. Should be set to 1.
+    pub version: Option<u32>,
+    /// The image creation timestamp. Format is YYYY-MM-DDTHH:MM:SSZ.
+    /// Should be synced with the label io.container.image.created.
     pub created: Option<String>,
     /// Top level labels, to be prefixed to the ones with --label
+    /// Applied to both the outer config annotations and the inner config labels.
     pub labels: Option<BTreeMap<String, String>>,
-    /// ContentId to layer annotation
+    /// The output layers ordered. Provided as an ordered mapping of a unique
+    /// machine readable strings to a human readable name (e.g., the layer contents).
+    /// The human-readable name is placed in a layer annotation.
     pub layers: IndexMap<String, String>,
-    /// OSTree hash to layer ContentId
+    /// The layer contents. The key is an ostree hash and the value is the
+    /// machine readable string of the layer the hash belongs to.
+    /// WARNING: needs to contain all ostree hashes in the input commit.
     pub mapping: IndexMap<String, String>,
+    /// Whether the mapping is ordered. If true, the output tar stream of the
+    /// layers will reflect the order of the hashes in the mapping.
+    /// Otherwise, a deterministic ordering will be used regardless of mapping
+    /// order. Potentially useful for optimizing zstd:chunked compression.
+    /// WARNING: not currently supported.
+    pub ordered: Option<bool>,
 }
 
 /// Export a container image with an encapsulated ostree commit.
@@ -749,6 +763,18 @@ async fn container_export(
         let buf = File::open(contentmeta).map(BufReader::new);
         let raw: RawMeta = serde_json::from_reader(buf?)?;
 
+        // Check future variables are set correctly
+        if let Some(version) = raw.version {
+            if version != 1 {
+                return Err(anyhow::anyhow!("Unsupported metadata version: {}", version));
+            }
+        }
+        if let Some(ordered) = raw.ordered {
+            if ordered {
+                return Err(anyhow::anyhow!("Ordered mapping not currently supported."));
+            }
+        }
+
         created = raw.created;
         contentmeta_data = Some(ObjectMetaSized {
             map: raw
@@ -772,10 +798,8 @@ async fn container_export(
                 .collect(),
         });
 
-        // Allow --label to override labels from the content metadata
-        if let Some(raw_labels) = raw.labels {
-            labels = raw_labels.into_iter().chain(labels.into_iter()).collect();
-        };
+        // Merge --label args to the labels from the metadata
+        labels.extend(raw.labels.into_iter().flatten());
     }
 
     // Use enough layers so that each package ends in its own layer
