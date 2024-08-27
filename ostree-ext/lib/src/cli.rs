@@ -746,39 +746,36 @@ async fn container_export(
     let mut created = None;
     let mut labels = labels.clone();
     if let Some(contentmeta) = contentmeta {
-        let raw: Option<RawMeta> =
-            serde_json::from_reader(File::open(contentmeta).map(BufReader::new)?)?;
-        if let Some(raw) = raw {
-            created = raw.created;
+        let buf = File::open(contentmeta).map(BufReader::new);
+        let raw: RawMeta = serde_json::from_reader(buf?)?;
 
-            contentmeta_data = Some(ObjectMetaSized {
-                map: raw
-                    .mapping
-                    .into_iter()
-                    .map(|(k, v)| (k.into(), v.into()))
-                    .collect(),
-                sizes: raw
-                    .layers
-                    .into_iter()
-                    .map(|(k, v)| ObjectSourceMetaSized {
-                        meta: ObjectSourceMeta {
-                            identifier: k.clone().into(),
-                            name: v.into(),
-                            srcid: k.clone().into(),
-                            change_frequency: if k == "unpackaged" { std::u32::MAX } else { 1 },
-                            change_time_offset: 1,
-                        },
-                        size: 1,
-                    })
-                    .collect(),
-            });
-            // Allow --label to override labels from the content metadata
-            if let Some(raw_labels) = raw.labels {
-                labels = raw_labels.into_iter().chain(labels.into_iter()).collect();
-            };
-        } else {
-            anyhow::bail!("Content metadata must be a JSON object")
-        }
+        created = raw.created;
+        contentmeta_data = Some(ObjectMetaSized {
+            map: raw
+                .mapping
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+            sizes: raw
+                .layers
+                .into_iter()
+                .map(|(k, v)| ObjectSourceMetaSized {
+                    meta: ObjectSourceMeta {
+                        identifier: k.clone().into(),
+                        name: v.into(),
+                        srcid: k.clone().into(),
+                        change_frequency: if k == "unpackaged" { std::u32::MAX } else { 1 },
+                        change_time_offset: 1,
+                    },
+                    size: 1,
+                })
+                .collect(),
+        });
+
+        // Allow --label to override labels from the content metadata
+        if let Some(raw_labels) = raw.labels {
+            labels = raw_labels.into_iter().chain(labels.into_iter()).collect();
+        };
     }
 
     // Use enough layers so that each package ends in its own layer
