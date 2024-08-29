@@ -59,6 +59,14 @@ pub(crate) struct SwitchOpts {
     #[clap(long)]
     pub(crate) quiet: bool,
 
+    /// Restart or reboot into the new target image.
+    ///
+    /// Currently, this option always reboots.  In the future this command
+    /// will detect the case where no kernel changes are queued, and perform
+    /// a userspace-only restart.
+    #[clap(long)]
+    pub(crate) apply: bool,
+
     /// The transport; e.g. oci, oci-archive, containers-storage.  Defaults to `registry`.
     #[clap(long, default_value = "registry")]
     pub(crate) transport: String,
@@ -696,6 +704,10 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
 
     let stateroot = booted_deployment.osname();
     crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec).await?;
+
+    if opts.apply {
+        crate::reboot::reboot()?;
+    }
 
     Ok(())
 }
