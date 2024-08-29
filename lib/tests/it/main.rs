@@ -4,6 +4,7 @@ use cap_std::fs::{Dir, DirBuilder, DirBuilderExt};
 use cap_std_ext::cap_std;
 use containers_image_proxy::oci_spec;
 use containers_image_proxy::oci_spec::image::ImageManifest;
+use ocidir::oci_spec::image::Arch;
 use once_cell::sync::Lazy;
 use ostree_ext::chunking::ObjectMetaSized;
 use ostree_ext::container::{store, ManifestDiff};
@@ -769,6 +770,55 @@ fn validate_chunked_structure(oci_path: &Utf8Path) -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_container_arch_mismatch() -> Result<()> {
+    let fixture = Fixture::new_v1()?;
+
+    let imgref = fixture.export_container().await.unwrap().0;
+
+    // Build a derived image
+    let derived_path = &fixture.path.join("derived.oci");
+    let srcpath = imgref.name.as_str();
+    oci_clone(srcpath, derived_path).await.unwrap();
+    ostree_ext::integrationtest::generate_derived_oci_from_tar(
+        derived_path,
+        |w| {
+            let mut layer_tar = tar::Builder::new(w);
+            let mut h = tar::Header::new_gnu();
+            h.set_uid(0);
+            h.set_gid(0);
+            h.set_size(0);
+            h.set_mode(0o755);
+            h.set_entry_type(tar::EntryType::Directory);
+            layer_tar.append_data(
+                &mut h.clone(),
+                "etc/mips-operating-system",
+                &mut std::io::empty(),
+            )?;
+            layer_tar.into_inner()?;
+            Ok(())
+        },
+        None,
+        Some(Arch::Mips64le),
+    )?;
+
+    let derived_imgref = OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: ImageReference {
+            transport: Transport::OciDir,
+            name: derived_path.to_string(),
+        },
+    };
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), &derived_imgref, Default::default()).await?;
+    imp.require_bootable();
+    imp.set_ostree_version(2023, 11);
+    let r = imp.prepare().await;
+    assert_err_contains(r, "Image has architecture mips64le");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_container_chunked() -> Result<()> {
     let nlayers = LAYERS_V0_LEN - 1;
     let mut fixture = Fixture::new_v1()?;
@@ -1117,6 +1167,7 @@ async fn test_container_etc_hardlinked() -> Result<()> {
             layer_tar.finish()?;
             Ok(())
         },
+        None,
         None,
     )?;
 
@@ -1533,6 +1584,7 @@ async fn test_container_write_derive_sysroot_hardlink() -> Result<()> {
             }
             Ok::<_, anyhow::Error>(())
         },
+        None,
         None,
     )?;
     let derived_ref = &OstreeImageReference {
