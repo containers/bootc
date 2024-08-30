@@ -1310,7 +1310,7 @@ pub(crate) fn export_to_oci(
     let compression = opts.skip_compression.then_some(Compression::none());
     for (i, layer) in remaining_layers.iter().enumerate() {
         let layer_ref = &ref_for_layer(layer)?;
-        let mut target_blob = dest_oci.create_gzip_layer(compression)?;
+        let mut target_blob = dest_oci.create_raw_layer(compression)?;
         // Sadly the libarchive stuff isn't exposed via Rust due to type unsafety,
         // so we'll just fork off the CLI.
         let repo_dfd = repo.dfd_borrow();
