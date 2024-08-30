@@ -2,9 +2,9 @@
 //!
 //! This is used to help split up containers into distinct layers.
 
+use indexmap::IndexMap;
 use std::borrow::Borrow;
 use std::collections::HashSet;
-use indexmap::IndexMap;
 use std::hash::Hash;
 use std::rc::Rc;
 
