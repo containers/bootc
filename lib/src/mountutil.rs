@@ -7,12 +7,18 @@ use anyhow::Result;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 
+// Fix musl support
+#[cfg(target_env = "gnu")]
+use libc::STATX_ATTR_MOUNT_ROOT;
+#[cfg(target_env = "musl")]
+const STATX_ATTR_MOUNT_ROOT: libc::c_int = 0x2000;
+
 fn is_mountpoint_impl_statx(root: &Dir, path: &Path) -> Result<Option<bool>> {
     // https://github.com/systemd/systemd/blob/8fbf0a214e2fe474655b17a4b663122943b55db0/src/basic/mountpoint-util.c#L176
     use rustix::fs::{AtFlags, StatxFlags};
 
     // SAFETY(unwrap): We can infallibly convert an i32 into a u64.
-    let mountroot_flag: u64 = libc::STATX_ATTR_MOUNT_ROOT.try_into().unwrap();
+    let mountroot_flag: u64 = STATX_ATTR_MOUNT_ROOT.try_into().unwrap();
     match rustix::fs::statx(
         root.as_fd(),
         path,
