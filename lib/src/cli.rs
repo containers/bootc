@@ -712,7 +712,7 @@ async fn container_import(
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct RawMeta {
     /// The metadata format version. Should be set to 1.
-    pub version: Option<u32>,
+    pub version: u32,
     /// The image creation timestamp. Format is YYYY-MM-DDTHH:MM:SSZ.
     /// Should be synced with the label io.container.image.created.
     pub created: Option<String>,
@@ -764,10 +764,13 @@ async fn container_export(
         let raw: RawMeta = serde_json::from_reader(buf?)?;
 
         // Check future variables are set correctly
-        if let Some(version) = raw.version {
-            if version != 1 {
-                return Err(anyhow::anyhow!("Unsupported metadata version: {}", version));
-            }
+        let supported_version = 1;
+        if raw.version != supported_version {
+            return Err(anyhow::anyhow!(
+                "Unsupported metadata version: {}. Currently supported: {}",
+                raw.version,
+                supported_version
+            ));
         }
         if let Some(ordered) = raw.ordered {
             if ordered {
