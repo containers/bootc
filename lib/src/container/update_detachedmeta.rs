@@ -74,7 +74,7 @@ pub async fn update_detached_metadata(
             // Create tar streams for source and destination
             let src_layer = BufReader::new(tempsrc.read_blob(commit_layer)?);
             let mut src_layer = flate2::read::GzDecoder::new(src_layer);
-            let mut out_layer = BufWriter::new(tempsrc.create_gzip_layer(None)?);
+            let mut out_layer = BufWriter::new(tempsrc.create_raw_layer(None)?);
 
             // Process the tar stream and inject our new detached metadata
             crate::tar::update_detached_metadata(
