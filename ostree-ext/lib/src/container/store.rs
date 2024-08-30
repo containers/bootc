@@ -20,7 +20,9 @@ use containers_image_proxy::{ImageProxy, OpenedImage};
 use flate2::Compression;
 use fn_error_context::context;
 use futures_util::TryFutureExt;
-use oci_spec::image::{self as oci_image, Descriptor, History, ImageConfiguration, ImageManifest};
+use oci_spec::image::{
+    self as oci_image, Arch, Descriptor, History, ImageConfiguration, ImageManifest,
+};
 use ostree::prelude::{Cast, FileEnumeratorExt, FileExt, ToVariant};
 use ostree::{gio, glib};
 use std::collections::{BTreeSet, HashMap};
@@ -583,6 +585,11 @@ impl ImageImporter {
             let bootable = config_labels.map_or(false, |l| l.contains_key(bootable_key));
             if !bootable {
                 anyhow::bail!("Target image does not have {bootable_key} label");
+            }
+            let container_arch = config.architecture();
+            let target_arch = &Arch::default();
+            if container_arch != target_arch {
+                anyhow::bail!("Image has architecture {container_arch}; expected {target_arch}");
             }
         }
 

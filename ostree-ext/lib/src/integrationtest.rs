@@ -10,8 +10,10 @@ use cap_std_ext::cap_std;
 use containers_image_proxy::oci_spec;
 use fn_error_context::context;
 use gio::prelude::*;
-use oci_spec::image as oci_image;
-use ocidir::GzipLayerWriter;
+use ocidir::{
+    oci_spec::image::{Arch, Platform},
+    GzipLayerWriter,
+};
 use ostree::gio;
 use xshell::cmd;
 
@@ -46,6 +48,7 @@ pub fn generate_derived_oci(
             Ok(())
         },
         tag,
+        None,
     )
 }
 
@@ -56,6 +59,7 @@ pub fn generate_derived_oci_from_tar<F>(
     src: impl AsRef<Utf8Path>,
     f: F,
     tag: Option<&str>,
+    arch: Option<Arch>,
 ) -> Result<()>
 where
     F: FnOnce(&mut GzipLayerWriter) -> Result<()>,
@@ -66,6 +70,10 @@ where
 
     let mut manifest = src.read_manifest()?;
     let mut config: oci_spec::image::ImageConfiguration = src.read_json_blob(manifest.config())?;
+
+    if let Some(arch) = arch.as_ref() {
+        config.set_architecture(arch.clone());
+    }
 
     let mut bw = src.create_gzip_layer(None)?;
     f(&mut bw)?;
@@ -92,10 +100,15 @@ where
     let new_config_desc = src.write_config(config)?;
     manifest.set_config(new_config_desc);
 
+    let mut platform = Platform::default();
+    if let Some(arch) = arch.as_ref() {
+        platform.set_architecture(arch.clone());
+    }
+
     if let Some(tag) = tag {
-        src.insert_manifest(manifest, Some(tag), oci_image::Platform::default())?;
+        src.insert_manifest(manifest, Some(tag), platform)?;
     } else {
-        src.replace_with_single_manifest(manifest, oci_image::Platform::default())?;
+        src.replace_with_single_manifest(manifest, platform)?;
     }
     Ok(())
 }
