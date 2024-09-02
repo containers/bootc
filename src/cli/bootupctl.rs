@@ -4,7 +4,7 @@ use clap::Parser;
 use log::LevelFilter;
 
 use std::os::unix::process::CommandExt;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 static SYSTEMD_ARGS_BOOTUPD: &[&str] = &[
     "--unit",
@@ -154,6 +154,14 @@ fn ensure_running_in_systemd() -> Result<()> {
     require_root_permission()?;
     let running_in_systemd = running_in_systemd();
     if !running_in_systemd {
+        // Clear any failure status that may have happened previously
+        let _r = Command::new("systemctl")
+            .arg("reset-failed")
+            .arg("bootupd.service")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?
+            .wait()?;
         let r = Command::new("systemd-run")
             .args(SYSTEMD_ARGS_BOOTUPD)
             .args(std::env::args())
