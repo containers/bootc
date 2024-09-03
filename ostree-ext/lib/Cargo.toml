@@ -50,6 +50,7 @@ tokio-util = { features = ["io-util"], version = "0.7" }
 tokio-stream = { features = ["sync"], version = "0.1.8" }
 tracing = "0.1"
 zstd = { version = "0.13.1", features = ["pkg-config"] }
+indexmap = { version = "2.2.2", features = ["serde"] }
 
 indoc = { version = "2", optional = true }
 xshell = { version = "0.2", optional = true }

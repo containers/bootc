@@ -2,8 +2,9 @@
 //!
 //! This is used to help split up containers into distinct layers.
 
+use indexmap::IndexMap;
 use std::borrow::Borrow;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::rc::Rc;
 
@@ -78,7 +79,7 @@ impl Borrow<str> for ObjectSourceMeta {
 pub type ObjectMetaSet = HashSet<ObjectSourceMeta>;
 
 /// Maps from an ostree content object digest to the `ContentSet` key.
-pub type ObjectMetaMap = BTreeMap<String, ContentID>;
+pub type ObjectMetaMap = IndexMap<String, ContentID>;
 
 /// Grouping of metadata about an object.
 #[derive(Debug, Default)]

@@ -302,7 +302,7 @@ fn build_mapping_recurse(
     dir: &gio::File,
     ret: &mut ObjectMeta,
 ) -> Result<()> {
-    use std::collections::btree_map::Entry;
+    use indexmap::map::Entry;
     let cancellable = gio::Cancellable::NONE;
     let e = dir.enumerate_children(
         "standard::name,standard::type",

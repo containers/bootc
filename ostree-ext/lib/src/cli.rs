@@ -12,6 +12,7 @@ use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtDirExt;
 use clap::{Parser, Subcommand};
 use fn_error_context::context;
+use indexmap::IndexMap;
 use io_lifetimes::AsFd;
 use ostree::{gio, glib};
 use std::borrow::Cow;
@@ -19,16 +20,20 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::process::Command;
 use tokio::sync::mpsc::Receiver;
 
+use crate::chunking::{ObjectMetaSized, ObjectSourceMetaSized};
 use crate::commit::container_commit;
 use crate::container::store::{ExportToOCIOpts, ImportProgress, LayerProgress, PreparedImport};
 use crate::container::{self as ostree_container, ManifestDiff};
 use crate::container::{Config, ImageReference, OstreeImageReference};
+use crate::objectsource::ObjectSourceMeta;
 use crate::sysroot::SysrootLock;
 use ostree_container::store::{ImageImporter, PrepareResult};
+use serde::{Deserialize, Serialize};
 
 /// Parse an [`OstreeImageReference`] from a CLI arguemnt.
 pub fn parse_imgref(s: &str) -> Result<OstreeImageReference> {
@@ -165,6 +170,10 @@ pub(crate) enum ContainerOpts {
         /// Compress at the fastest level (e.g. gzip level 1)
         #[clap(long)]
         compression_fast: bool,
+
+        /// Path to a JSON-formatted content meta object.
+        #[clap(long)]
+        contentmeta: Option<Utf8PathBuf>,
     },
 
     /// Perform build-time checking and canonicalization.
@@ -699,6 +708,33 @@ async fn container_import(
     Ok(())
 }
 
+/// Grouping of metadata about an object.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct RawMeta {
+    /// The metadata format version. Should be set to 1.
+    pub version: u32,
+    /// The image creation timestamp. Format is YYYY-MM-DDTHH:MM:SSZ.
+    /// Should be synced with the label io.container.image.created.
+    pub created: Option<String>,
+    /// Top level labels, to be prefixed to the ones with --label
+    /// Applied to both the outer config annotations and the inner config labels.
+    pub labels: Option<BTreeMap<String, String>>,
+    /// The output layers ordered. Provided as an ordered mapping of a unique
+    /// machine readable strings to a human readable name (e.g., the layer contents).
+    /// The human-readable name is placed in a layer annotation.
+    pub layers: IndexMap<String, String>,
+    /// The layer contents. The key is an ostree hash and the value is the
+    /// machine readable string of the layer the hash belongs to.
+    /// WARNING: needs to contain all ostree hashes in the input commit.
+    pub mapping: IndexMap<String, String>,
+    /// Whether the mapping is ordered. If true, the output tar stream of the
+    /// layers will reflect the order of the hashes in the mapping.
+    /// Otherwise, a deterministic ordering will be used regardless of mapping
+    /// order. Potentially useful for optimizing zstd:chunked compression.
+    /// WARNING: not currently supported.
+    pub ordered: Option<bool>,
+}
+
 /// Export a container image with an encapsulated ostree commit.
 #[allow(clippy::too_many_arguments)]
 async fn container_export(
@@ -712,22 +748,85 @@ async fn container_export(
     container_config: Option<Utf8PathBuf>,
     cmd: Option<Vec<String>>,
     compression_fast: bool,
+    contentmeta: Option<Utf8PathBuf>,
 ) -> Result<()> {
-    let config = Config {
-        labels: Some(labels),
-        cmd,
-    };
     let container_config = if let Some(container_config) = container_config {
         serde_json::from_reader(File::open(container_config).map(BufReader::new)?)?
     } else {
         None
     };
+
+    let mut contentmeta_data = None;
+    let mut created = None;
+    let mut labels = labels.clone();
+    if let Some(contentmeta) = contentmeta {
+        let buf = File::open(contentmeta).map(BufReader::new);
+        let raw: RawMeta = serde_json::from_reader(buf?)?;
+
+        // Check future variables are set correctly
+        let supported_version = 1;
+        if raw.version != supported_version {
+            return Err(anyhow::anyhow!(
+                "Unsupported metadata version: {}. Currently supported: {}",
+                raw.version,
+                supported_version
+            ));
+        }
+        if let Some(ordered) = raw.ordered {
+            if ordered {
+                return Err(anyhow::anyhow!("Ordered mapping not currently supported."));
+            }
+        }
+
+        created = raw.created;
+        contentmeta_data = Some(ObjectMetaSized {
+            map: raw
+                .mapping
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+            sizes: raw
+                .layers
+                .into_iter()
+                .map(|(k, v)| ObjectSourceMetaSized {
+                    meta: ObjectSourceMeta {
+                        identifier: k.clone().into(),
+                        name: v.into(),
+                        srcid: k.clone().into(),
+                        change_frequency: if k == "unpackaged" { std::u32::MAX } else { 1 },
+                        change_time_offset: 1,
+                    },
+                    size: 1,
+                })
+                .collect(),
+        });
+
+        // Merge --label args to the labels from the metadata
+        labels.extend(raw.labels.into_iter().flatten());
+    }
+
+    // Use enough layers so that each package ends in its own layer
+    // while respecting the layer ordering.
+    let max_layers = if let Some(contentmeta_data) = &contentmeta_data {
+        NonZeroU32::new((contentmeta_data.sizes.len() + 1).try_into().unwrap())
+    } else {
+        None
+    };
+
+    let config = Config {
+        labels: Some(labels),
+        cmd,
+    };
+
     let opts = crate::container::ExportOpts {
         copy_meta_keys,
         copy_meta_opt_keys,
         container_config,
         authfile,
         skip_compression: compression_fast, // TODO rename this in the struct at the next semver break
+        contentmeta: contentmeta_data.as_ref(),
+        max_layers,
+        created,
         ..Default::default()
     };
     let pushed = crate::container::encapsulate(repo, rev, &config, Some(opts), imgref).await?;
@@ -958,6 +1057,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 config,
                 cmd,
                 compression_fast,
+                contentmeta,
             } => {
                 let labels: Result<BTreeMap<_, _>> = labels
                     .into_iter()
@@ -980,6 +1080,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     config,
                     cmd,
                     compression_fast,
+                    contentmeta,
                 )
                 .await
             }
