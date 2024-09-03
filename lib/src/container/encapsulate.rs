@@ -186,16 +186,19 @@ fn build_oci(
 
     let mut ctrcfg = opts.container_config.clone().unwrap_or_default();
     let mut imgcfg = oci_image::ImageConfiguration::default();
-    imgcfg.set_created(Some(
-        commit_timestamp.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-    ));
-    let labels = ctrcfg.labels_mut().get_or_insert_with(Default::default);
+
+    let created_at = opts
+        .created
+        .clone()
+        .unwrap_or_else(|| commit_timestamp.format("%Y-%m-%dT%H:%M:%SZ").to_string());
+    imgcfg.set_created(Some(created_at));
+    let mut labels = HashMap::new();
 
     commit_meta_to_labels(
         &commit_meta,
         opts.copy_meta_keys.iter().map(|k| k.as_str()),
         opts.copy_meta_opt_keys.iter().map(|k| k.as_str()),
-        labels,
+        &mut labels,
     )?;
 
     let mut manifest = ocidir::new_empty_manifest().build().unwrap();
@@ -244,7 +247,7 @@ fn build_oci(
         writer,
         &mut manifest,
         &mut imgcfg,
-        labels,
+        &mut labels,
         chunking,
         &opts,
         &description,
@@ -261,9 +264,14 @@ fn build_oci(
         ctrcfg.set_cmd(Some(cmd.clone()));
     }
 
+    ctrcfg
+        .labels_mut()
+        .get_or_insert_with(Default::default)
+        .extend(labels.clone());
     imgcfg.set_config(Some(ctrcfg));
     let ctrcfg = writer.write_config(imgcfg)?;
     manifest.set_config(ctrcfg);
+    manifest.set_annotations(Some(labels));
     let platform = oci_image::Platform::default();
     if let Some(tag) = tag {
         writer.insert_manifest(manifest, Some(tag), platform)?;
@@ -375,6 +383,8 @@ pub struct ExportOpts<'m, 'o> {
     /// Metadata mapping between objects and their owning component/package;
     /// used to optimize packing.
     pub contentmeta: Option<&'o ObjectMetaSized>,
+    /// Sets the created tag in the image manifest.
+    pub created: Option<String>,
 }
 
 impl<'m, 'o> ExportOpts<'m, 'o> {

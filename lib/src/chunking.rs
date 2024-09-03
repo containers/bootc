@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use std::borrow::{Borrow, Cow};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
@@ -19,6 +19,7 @@ use camino::Utf8PathBuf;
 use containers_image_proxy::oci_spec;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{Marker, Structure};
+use indexmap::IndexMap;
 use ostree::{gio, glib};
 use serde::{Deserialize, Serialize};
 
@@ -53,9 +54,9 @@ pub(crate) struct Chunk {
 pub struct ObjectSourceMetaSized {
     /// The original metadata
     #[serde(flatten)]
-    meta: ObjectSourceMeta,
+    pub meta: ObjectSourceMeta,
     /// Total size of associated objects
-    size: u64,
+    pub size: u64,
 }
 
 impl Hash for ObjectSourceMetaSized {
@@ -89,7 +90,7 @@ impl ObjectMetaSized {
         let map = meta.map;
         let mut set = meta.set;
         // Maps content id -> total size of associated objects
-        let mut sizes = HashMap::<&str, u64>::new();
+        let mut sizes = BTreeMap::<&str, u64>::new();
         // Populate two mappings above, iterating over the object -> contentid mapping
         for (checksum, contentid) in map.iter() {
             let finfo = repo.query_file(checksum, cancellable)?.0;
@@ -308,7 +309,7 @@ impl Chunking {
         }
 
         // Reverses `contentmeta.map` i.e. contentid -> Vec<checksum>
-        let mut rmap = HashMap::<ContentID, Vec<&String>>::new();
+        let mut rmap = IndexMap::<ContentID, Vec<&String>>::new();
         for (checksum, contentid) in meta.map.iter() {
             rmap.entry(Rc::clone(contentid)).or_default().push(checksum);
         }
@@ -577,12 +578,12 @@ fn basic_packing_with_prior_build<'a>(
     let mut curr_build = curr_build?;
 
     // View the packages as unordered sets for lookups and differencing
-    let prev_pkgs_set: HashSet<String> = curr_build
+    let prev_pkgs_set: BTreeSet<String> = curr_build
         .iter()
         .flat_map(|v| v.iter().cloned())
         .filter(|name| !name.is_empty())
         .collect();
-    let curr_pkgs_set: HashSet<String> = components
+    let curr_pkgs_set: BTreeSet<String> = components
         .iter()
         .map(|pkg| pkg.meta.name.to_string())
         .collect();
@@ -597,13 +598,13 @@ fn basic_packing_with_prior_build<'a>(
     }
 
     // Handle removed packages
-    let removed: HashSet<&String> = prev_pkgs_set.difference(&curr_pkgs_set).collect();
+    let removed: BTreeSet<&String> = prev_pkgs_set.difference(&curr_pkgs_set).collect();
     for bin in curr_build.iter_mut() {
         bin.retain(|pkg| !removed.contains(pkg));
     }
 
     // Handle updated packages
-    let mut name_to_component: HashMap<String, &ObjectSourceMetaSized> = HashMap::new();
+    let mut name_to_component: BTreeMap<String, &ObjectSourceMetaSized> = BTreeMap::new();
     for component in components.iter() {
         name_to_component
             .entry(component.meta.name.to_string())
@@ -821,6 +822,8 @@ mod test {
     }
 
     fn create_manifest(prev_expected_structure: Vec<Vec<&str>>) -> oci_spec::image::ImageManifest {
+        use std::collections::HashMap;
+
         let mut p = prev_expected_structure
             .iter()
             .map(|b| {
