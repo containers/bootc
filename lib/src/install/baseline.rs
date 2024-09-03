@@ -7,8 +7,8 @@
 
 use std::borrow::Cow;
 use std::fmt::Display;
+use std::fmt::Write as _;
 use std::io::Write;
-use std::process::Command;
 use std::process::Stdio;
 
 use anyhow::Ok;
@@ -100,23 +100,6 @@ impl BlockSetup {
             BlockSetup::Direct => false,
             BlockSetup::Tpm2Luks => true,
         }
-    }
-}
-
-fn sgdisk_partition(
-    sgdisk: &mut Command,
-    n: u32,
-    part: impl AsRef<str>,
-    name: impl AsRef<str>,
-    typecode: Option<&str>,
-) {
-    sgdisk.arg("-n");
-    sgdisk.arg(format!("{n}:{}", part.as_ref()));
-    sgdisk.arg("-c");
-    sgdisk.arg(format!("{n}:{}", name.as_ref()));
-    if let Some(typecode) = typecode {
-        sgdisk.arg("-t");
-        sgdisk.arg(format!("{n}:{typecode}"));
     }
 }
 
@@ -239,35 +222,27 @@ pub(crate) fn install_create_rootfs(
     let bootfs = mntdir.join("boot");
     std::fs::create_dir_all(bootfs)?;
 
+    // Generate partitioning spec as input to sfdisk
     let mut partno = 0;
-
-    // Run sgdisk to create partitions.
-    let mut sgdisk = Task::new("Initializing partitions", "sgdisk");
-    // sgdisk is too verbose
-    sgdisk.cmd.stdout(Stdio::null());
-    sgdisk.cmd.arg("-Z");
-    sgdisk.cmd.arg(device.path());
-    sgdisk.cmd.args(["-U", "R"]);
+    let mut partitioning_buf = String::new();
+    writeln!(partitioning_buf, "label: gpt")?;
+    let random_label = uuid::Uuid::new_v4();
+    writeln!(&mut partitioning_buf, "label-id: {random_label}")?;
     if cfg!(target_arch = "x86_64") {
-        // BIOS-BOOT
         partno += 1;
-        sgdisk_partition(
-            &mut sgdisk.cmd,
-            partno,
-            "0:+1M",
-            "BIOS-BOOT",
-            Some("21686148-6449-6E6F-744E-656564454649"),
-        );
+        writeln!(
+            &mut partitioning_buf,
+            r#"size=1MiB, bootable, type=21686148-6449-6E6F-744E-656564454649, name="BIOS-BOOT""#
+        )?;
     } else if cfg!(target_arch = "powerpc64") {
         // PowerPC-PReP-boot
         partno += 1;
-        sgdisk_partition(
-            &mut sgdisk.cmd,
-            partno,
-            "0:+4M",
-            crate::bootloader::PREPBOOT_LABEL,
-            Some(crate::bootloader::PREPBOOT_GUID),
-        );
+        let label = crate::bootloader::PREPBOOT_LABEL;
+        let uuid = crate::bootloader::PREPBOOT_GUID;
+        writeln!(
+            &mut partitioning_buf,
+            r#"size=4MiB, bootable, type={uuid}, name="{label}""#
+        )?;
     } else if cfg!(any(target_arch = "aarch64", target_arch = "s390x")) {
         // No bootloader partition is necessary
     } else {
@@ -276,13 +251,10 @@ pub(crate) fn install_create_rootfs(
 
     let esp_partno = if super::ARCH_USES_EFI {
         partno += 1;
-        sgdisk_partition(
-            &mut sgdisk.cmd,
-            partno,
-            format!("0:+{EFIPN_SIZE_MB}M"),
-            "EFI-SYSTEM",
-            Some("C12A7328-F81F-11D2-BA4B-00A0C93EC93B"),
-        );
+        writeln!(
+            &mut partitioning_buf,
+            r#"size={EFIPN_SIZE_MB}MiB, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="EFI-SYSTEM""#
+        )?;
         Some(partno)
     } else {
         None
@@ -293,36 +265,30 @@ pub(crate) fn install_create_rootfs(
     // it would aid systemd-boot.
     let boot_partno = if block_setup.requires_bootpart() {
         partno += 1;
-        sgdisk_partition(
-            &mut sgdisk.cmd,
-            partno,
-            format!("0:+{BOOTPN_SIZE_MB}M"),
-            "boot",
-            None,
-        );
+        writeln!(
+            &mut partitioning_buf,
+            r#"size={BOOTPN_SIZE_MB}MiB, name="boot""#
+        )?;
         Some(partno)
     } else {
         None
     };
     let rootpn = partno + 1;
     let root_size = root_size
-        .map(|v| Cow::Owned(format!("0:{v}M")))
-        .unwrap_or_else(|| Cow::Borrowed("0:0"));
-    sgdisk_partition(
-        &mut sgdisk.cmd,
-        rootpn,
-        root_size,
-        "root",
-        Some(LINUX_PARTTYPE),
-    );
-    sgdisk.run().context("Failed to run sgdisk")?;
+        .map(|v| Cow::Owned(format!("size={v}MiB, ")))
+        .unwrap_or_else(|| Cow::Borrowed(""));
+    writeln!(
+        &mut partitioning_buf,
+        r#"{root_size}type={LINUX_PARTTYPE}, name="root""#
+    )?;
+    tracing::debug!("Partitioning: {partitioning_buf}");
+    Task::new("Initializing partitions", "sfdisk")
+        .arg("--wipe=always")
+        .arg(device.path())
+        .quiet()
+        .run_with_stdin_buf(Some(partitioning_buf.as_bytes()))
+        .context("Failed to run sfdisk")?;
     tracing::debug!("Created partition table");
-
-    // Reread the partition table
-    Task::new("Reread partition table", "blockdev")
-        .arg("--rereadpt")
-        .arg(devpath.as_str())
-        .run()?;
 
     // Full udev sync; it'd obviously be better to await just the devices
     // we're targeting, but this is a simple coarse hammer.
