@@ -16,8 +16,8 @@ use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
 use ostree_ext::container::store::{ImportProgress, PrepareResult};
 use ostree_ext::oci_spec::image::Descriptor;
-use ostree_ext::ostree;
 use ostree_ext::ostree::Deployment;
+use ostree_ext::ostree::{self, Sysroot};
 use ostree_ext::sysroot::SysrootLock;
 
 use crate::spec::ImageReference;
@@ -285,6 +285,14 @@ pub(crate) async fn prune_container_store(sysroot: &Storage) -> Result<()> {
         .prune_except_roots(&image_names)
         .await?;
     tracing::debug!("Pruned images: {}", pruned.len());
+    Ok(())
+}
+
+pub(crate) async fn wipe_ostree(sysroot: &Sysroot) -> Result<()> {
+    sysroot
+        .write_deployments(&[], gio::Cancellable::NONE)
+        .context("removing deployments")?;
+
     Ok(())
 }
 

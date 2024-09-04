@@ -21,6 +21,7 @@ use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
 use schemars::schema_for;
 
+use crate::deploy::wipe_ostree;
 use crate::deploy::RequiredHostSpec;
 use crate::lints;
 use crate::spec::Host;
@@ -294,6 +295,12 @@ pub(crate) enum InternalsOpts {
     Cleanup,
 }
 
+#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
+pub(crate) enum StateOpts {
+    /// Remove all ostree deployments from this system
+    WipeOstree,
+}
+
 impl InternalsOpts {
     /// The name of the binary we inject into /usr/lib/systemd/system-generators
     const GENERATOR_BIN: &'static str = "bootc-systemd-generator";
@@ -424,6 +431,10 @@ pub(crate) enum Opt {
         #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<OsString>,
     },
+    /// Modify the state of the system
+    #[clap(hide = true)]
+    #[clap(subcommand)]
+    State(StateOpts),
     #[clap(subcommand)]
     #[clap(hide = true)]
     Internals(InternalsOpts),
@@ -914,6 +925,14 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         },
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
+        Opt::State(opts) => match opts {
+            StateOpts::WipeOstree => {
+                let sysroot = ostree::Sysroot::new_default();
+                sysroot.load(gio::Cancellable::NONE)?;
+                wipe_ostree(&sysroot).await?;
+                Ok(())
+            }
+        },
     }
 }
 

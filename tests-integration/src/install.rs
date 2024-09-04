@@ -1,5 +1,7 @@
-use std::path::Path;
-use std::{os::fd::AsRawFd, path::PathBuf};
+use std::{
+    os::fd::AsRawFd,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Result;
 use camino::Utf8Path;
@@ -23,18 +25,24 @@ pub(crate) const BASE_ARGS: &[&str] = &[
     "label=disable",
 ];
 
-// Clear out and delete any ostree roots
-fn reset_root(sh: &Shell) -> Result<()> {
-    // TODO fix https://github.com/containers/bootc/pull/137
-    if !Path::new("/ostree/deploy/default").exists() {
+/// Clear out and delete any ostree roots, leverage bootc hidden wipe-ostree command to get rid of
+/// otherwise hard to delete deployment files
+fn reset_root(sh: &Shell, image: &str) -> Result<()> {
+    if !Path::new("/ostree/deploy/").exists() {
         return Ok(());
     }
+
+    // Without /boot ostree will not delete anything
+    let mounts = &["-v", "/ostree:/ostree", "-v", "/boot:/boot"];
+
     cmd!(
         sh,
-        "sudo /bin/sh -c 'chattr -i /ostree/deploy/default/deploy/*'"
+        "sudo {BASE_ARGS...} {mounts...} {image} bootc state wipe-ostree"
     )
     .run()?;
-    cmd!(sh, "sudo rm /ostree/deploy/default -rf").run()?;
+
+    // Now that the hard to delete files are gone, we can just rm -rf the rest
+    cmd!(sh, "sudo /bin/sh -c 'rm -rf /ostree/deploy/*'").run()?;
     Ok(())
 }
 
@@ -76,7 +84,7 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
     let tests = [
         Trial::test("loopback install", move || {
             let sh = &xshell::Shell::new()?;
-            reset_root(sh)?;
+            reset_root(sh, image)?;
             let size = 10 * 1000 * 1000 * 1000;
             let mut tmpdisk = tempfile::NamedTempFile::new_in("/var/tmp")?;
             tmpdisk.as_file_mut().set_len(size)?;
@@ -89,7 +97,7 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
             "replace=alongside with ssh keys and a karg, and SELinux disabled",
             move || {
                 let sh = &xshell::Shell::new()?;
-                reset_root(sh)?;
+                reset_root(sh, image)?;
                 let tmpd = &sh.create_temp_dir()?;
                 let tmp_keys = tmpd.path().join("test_authorized_keys");
                 let tmp_keys = tmp_keys.to_str().unwrap();
@@ -128,7 +136,7 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
         ),
         Trial::test("Install and verify selinux state", move || {
             let sh = &xshell::Shell::new()?;
-            reset_root(sh)?;
+            reset_root(sh, image)?;
             cmd!(sh, "sudo {BASE_ARGS...} {target_args...} {image} bootc install to-existing-root --acknowledge-destructive {generic_inst_args...}").run()?;
             generic_post_install_verification()?;
             let root = &Dir::open_ambient_dir("/ostree", cap_std::ambient_authority()).unwrap();
@@ -138,7 +146,7 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
         }),
         Trial::test("without an install config", move || {
             let sh = &xshell::Shell::new()?;
-            reset_root(sh)?;
+            reset_root(sh, image)?;
             let empty = sh.create_temp_dir()?;
             let empty = empty.path().to_str().unwrap();
             cmd!(sh, "sudo {BASE_ARGS...} {target_args...} -v {empty}:/usr/lib/bootc/install {image} bootc install to-existing-root {generic_inst_args...}").run()?;
