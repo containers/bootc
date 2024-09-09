@@ -25,6 +25,9 @@ pub(crate) const BASE_ARGS: &[&str] = &[
     "label=disable",
 ];
 
+// Arbitrary
+const NON_DEFAULT_STATEROOT: &str = "foo";
+
 /// Clear out and delete any ostree roots, leverage bootc hidden wipe-ostree command to get rid of
 /// otherwise hard to delete deployment files
 fn reset_root(sh: &Shell, image: &str) -> Result<()> {
@@ -142,6 +145,16 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
             let root = &Dir::open_ambient_dir("/ostree", cap_std::ambient_authority()).unwrap();
             let mut path = PathBuf::from(".");
             crate::selinux::verify_selinux_recurse(root, &mut path, false)?;
+            Ok(())
+        }),
+        Trial::test("Install to non-default stateroot", move || {
+            let sh = &xshell::Shell::new()?;
+            reset_root(sh, image)?;
+            cmd!(sh, "sudo {BASE_ARGS...} {target_args...} {image} bootc install to-existing-root --stateroot {NON_DEFAULT_STATEROOT} --acknowledge-destructive {generic_inst_args...}").run()?;
+            generic_post_install_verification()?;
+            assert!(
+                Utf8Path::new(&format!("/ostree/deploy/{NON_DEFAULT_STATEROOT}")).try_exists()?
+            );
             Ok(())
         }),
         Trial::test("without an install config", move || {
