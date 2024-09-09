@@ -120,6 +120,8 @@ pub(crate) struct EditOpts {
 #[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
 #[clap(rename_all = "lowercase")]
 pub(crate) enum OutputFormat {
+    /// Output in Human Readable format.
+    HumanReadable,
     /// Output in YAML format.
     Yaml,
     /// Output in JSON format.
