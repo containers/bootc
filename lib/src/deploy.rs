@@ -288,10 +288,13 @@ pub(crate) async fn prune_container_store(sysroot: &Storage) -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn wipe_ostree(sysroot: &Sysroot) -> Result<()> {
-    sysroot
-        .write_deployments(&[], gio::Cancellable::NONE)
-        .context("removing deployments")?;
+pub(crate) async fn wipe_ostree(sysroot: Sysroot) -> Result<()> {
+    tokio::task::spawn_blocking(move || {
+        sysroot
+            .write_deployments(&[], gio::Cancellable::NONE)
+            .context("removing deployments")
+    })
+    .await??;
 
     Ok(())
 }

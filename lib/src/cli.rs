@@ -21,7 +21,6 @@ use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
 use schemars::schema_for;
 
-use crate::deploy::wipe_ostree;
 use crate::deploy::RequiredHostSpec;
 use crate::lints;
 use crate::spec::Host;
@@ -929,7 +928,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             StateOpts::WipeOstree => {
                 let sysroot = ostree::Sysroot::new_default();
                 sysroot.load(gio::Cancellable::NONE)?;
-                wipe_ostree(&sysroot).await?;
+                crate::deploy::wipe_ostree(sysroot).await?;
                 Ok(())
             }
         },
