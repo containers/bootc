@@ -355,6 +355,13 @@ impl State {
         }
         Ok(())
     }
+
+    fn stateroot(&self) -> &str {
+        self.config_opts
+            .stateroot
+            .as_deref()
+            .unwrap_or(ostree_ext::container::deploy::STATEROOT_DEFAULT)
+    }
 }
 
 /// Path to initially deployed version information
@@ -569,11 +576,7 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
     // Another implementation: https://github.com/coreos/coreos-assembler/blob/3cd3307904593b3a131b81567b13a4d0b6fe7c90/src/create_disk.sh#L295
     crate::lsm::ensure_dir_labeled(rootfs_dir, "", Some("/".into()), 0o755.into(), sepolicy)?;
 
-    let stateroot = state
-        .config_opts
-        .stateroot
-        .as_deref()
-        .unwrap_or(ostree_ext::container::deploy::STATEROOT_DEFAULT);
+    let stateroot = state.stateroot();
 
     Task::new_and_run(
         "Initializing ostree layout",
@@ -644,11 +647,7 @@ async fn install_container(
 ) -> Result<(ostree::Deployment, InstallAleph)> {
     let sepolicy = state.load_policy()?;
     let sepolicy = sepolicy.as_ref();
-    let stateroot = state
-        .config_opts
-        .stateroot
-        .as_deref()
-        .unwrap_or(ostree_ext::container::deploy::STATEROOT_DEFAULT);
+    let stateroot = state.stateroot();
 
     let container_rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
 
