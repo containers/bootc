@@ -603,13 +603,14 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
             .cwd_dir(rootfs_dir.try_clone()?)
             .run()?;
     }
-    Task::new("Initializing sysroot", "ostree")
-        .args(["admin", "os-init", stateroot, "--sysroot", "."])
-        .cwd(rootfs_dir)?
-        .run()?;
 
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
+
+    sysroot
+        .init_osname(stateroot, cancellable)
+        .context("initializing stateroot")?;
+
     let sysroot_dir = Dir::reopen_dir(&crate::utils::sysroot_fd(&sysroot))?;
 
     state.tempdir.create_dir("temp-run")?;
