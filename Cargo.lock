@@ -165,7 +165,7 @@ dependencies = [
 
 [[package]]
 name = "bootc-lib"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "anstream",
  "anstyle",
