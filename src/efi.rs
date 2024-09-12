@@ -179,7 +179,7 @@ fn string_from_utf16_bytes(slice: &[u8]) -> String {
 fn read_efi_var_utf16_string(name: &str) -> Option<String> {
     let efivars = Path::new("/sys/firmware/efi/efivars");
     if !efivars.exists() {
-        log::warn!("No efivars mount at {:?}", efivars);
+        log::trace!("No efivars mount at {:?}", efivars);
         return None;
     }
     let path = efivars.join(name);
@@ -239,39 +239,13 @@ impl Component for Efi {
             log::trace!("No ESP detected");
             return Ok(None);
         };
-        // This would be extended with support for other operating systems later
-        if let Some(coreos_aleph) = crate::coreos::get_aleph_version(Path::new("/"))? {
-            let meta = ContentMetadata {
-                timestamp: coreos_aleph.ts,
-                version: coreos_aleph.aleph.version,
-            };
-            log::trace!("EFI adoptable: {:?}", &meta);
-            return Ok(Some(Adoptable {
-                version: meta,
-                confident: true,
-            }));
-        } else {
-            log::trace!("No CoreOS aleph detected");
-        }
+
         // Don't adopt if the system is booted with systemd-boot or
         // systemd-stub since those will be managed with bootctl.
         if skip_systemd_bootloaders() {
             return Ok(None);
         }
-        let ostree_deploy_dir = Path::new("/ostree/deploy");
-        if ostree_deploy_dir.exists() {
-            let btime = ostree_deploy_dir.metadata()?.created()?;
-            let timestamp = chrono::DateTime::from(btime);
-            let meta = ContentMetadata {
-                timestamp,
-                version: "unknown".to_string(),
-            };
-            return Ok(Some(Adoptable {
-                version: meta,
-                confident: true,
-            }));
-        }
-        Ok(None)
+        crate::component::query_adopt_state()
     }
 
     /// Given an adoptable system and an update, perform the update.
@@ -280,10 +254,8 @@ impl Component for Efi {
         sysroot: &openat::Dir,
         updatemeta: &ContentMetadata,
     ) -> Result<InstalledContent> {
-        let meta = if let Some(meta) = self.query_adopt()? {
-            meta
-        } else {
-            anyhow::bail!("Failed to find adoptable system");
+        let Some(meta) = self.query_adopt()? else {
+            anyhow::bail!("Failed to find adoptable system")
         };
 
         let esp = self.open_esp()?;

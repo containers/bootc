@@ -84,6 +84,13 @@ if test -s out.txt; then
 fi
 ok update not avail
 
+mount -o remount,rw /boot
+rm -f /boot/bootupd-state.json
+bootupctl adopt-and-update | tee out.txt
+assert_file_has_content out.txt "Adopted and updated: BIOS: .*"
+assert_file_has_content out.txt "Adopted and updated: EFI: .*"
+ok adopt-and-update
+
 tap_finish
 touch /run/testtmp/success
 sync

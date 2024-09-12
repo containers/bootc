@@ -122,16 +122,22 @@ impl Component for Bios {
     }
 
     fn query_adopt(&self) -> Result<Option<Adoptable>> {
-        Ok(None)
+        crate::component::query_adopt_state()
     }
 
-    #[allow(unused_variables)]
-    fn adopt_update(
-        &self,
-        sysroot: &openat::Dir,
-        update: &ContentMetadata,
-    ) -> Result<InstalledContent> {
-        todo!();
+    fn adopt_update(&self, _: &openat::Dir, update: &ContentMetadata) -> Result<InstalledContent> {
+        let Some(meta) = self.query_adopt()? else {
+            anyhow::bail!("Failed to find adoptable system")
+        };
+
+        let device = self.get_device()?;
+        let device = device.trim();
+        self.run_grub_install("/", device)?;
+        Ok(InstalledContent {
+            meta: update.clone(),
+            filetree: None,
+            adopted_from: Some(meta.version),
+        })
     }
 
     fn query_update(&self, sysroot: &openat::Dir) -> Result<Option<ContentMetadata>> {
