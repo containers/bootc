@@ -14,7 +14,10 @@ Source0:        https://github.com/coreos/bootupd/releases/download/v%{version}/
 Source1:        https://github.com/coreos/bootupd/releases/download/v%{version}/bootupd-%{version}-vendor.tar.zstd
 
 # For now, see upstream
-ExclusiveArch: x86_64 aarch64
+# See https://github.com/coreos/fedora-coreos-tracker/issues/1716
+%if 0%{?fedora} || 0%{?rhel} >= 10
+ExcludeArch:   %{ix86}
+%endif
 BuildRequires: make
 BuildRequires: cargo
 # For autosetup -Sgit
