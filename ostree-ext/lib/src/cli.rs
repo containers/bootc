@@ -783,7 +783,7 @@ async fn container_export(
             map: raw
                 .mapping
                 .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
+                .map(|(k, v)| (k, v.into()))
                 .collect(),
             sizes: raw
                 .layers
@@ -793,7 +793,7 @@ async fn container_export(
                         identifier: k.clone().into(),
                         name: v.into(),
                         srcid: k.clone().into(),
-                        change_frequency: if k == "unpackaged" { std::u32::MAX } else { 1 },
+                        change_frequency: if k == "unpackaged" { u32::MAX } else { 1 },
                         change_time_offset: 1,
                     },
                     size: 1,
@@ -936,7 +936,7 @@ async fn container_history(repo: &ostree::Repo, imgref: &ImageReference) -> Resu
 
         let digest = layer.digest().as_str();
         // Verify it's OK to slice, this should all be ASCII
-        assert!(digest.chars().all(|c| c.is_ascii()));
+        assert!(digest.is_ascii());
         let digest_max = columns[0].1;
         let digest = &digest[0..digest_max as usize];
         print_column(digest, digest_max, &mut remaining);

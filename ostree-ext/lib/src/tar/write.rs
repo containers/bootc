@@ -54,7 +54,7 @@ pub(crate) fn copy_entry(
             let target = entry.link_name()?.ok_or_else(|| anyhow!("Invalid link"))?;
             // Sanity check UTF-8 here too.
             let target: &Utf8Path = (&*target).try_into()?;
-            dest.append_link(&mut header, path, &*target)
+            dest.append_link(&mut header, path, target)
         }
         tar::EntryType::Link => {
             let target = entry.link_name()?.ok_or_else(|| anyhow!("Invalid link"))?;
@@ -395,7 +395,7 @@ pub async fn write_tar(
             c.arg("--selinux-policy");
             c.arg(sepolicy.path());
         }
-        c.arg(&format!(
+        c.arg(format!(
             "--add-metadata-string=ostree.importer.version={}",
             env!("CARGO_PKG_VERSION")
         ));

@@ -757,7 +757,7 @@ impl ImageImporter {
                 .await?;
             }
             let (blob, driver) = fetch_layer_decompress(
-                &mut self.proxy,
+                &self.proxy,
                 &self.proxy_img,
                 &import.manifest,
                 &import.ostree_commit_layer.layer,
@@ -839,7 +839,7 @@ impl ImageImporter {
         // there to label all following layers.
         self.unencapsulate_base(&mut import, true).await?;
         let des_layers = self.proxy.get_layer_info(&self.proxy_img).await?;
-        let mut proxy = self.proxy;
+        let proxy = self.proxy;
         let proxy_img = self.proxy_img;
         let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
         let base_commit = import.ostree_commit_layer.commit.clone().unwrap();
@@ -868,7 +868,7 @@ impl ImageImporter {
                         .await?;
                 }
                 let (blob, driver) = super::unencapsulate::fetch_layer_decompress(
-                    &mut proxy,
+                    &proxy,
                     &proxy_img,
                     &import.manifest,
                     &layer.layer,
@@ -984,7 +984,7 @@ impl ImageImporter {
                 let modifier =
                     ostree::RepoCommitModifier::new(ostree::RepoCommitModifierFlags::CONSUME, None);
                 modifier.set_devino_cache(&devino);
-                modifier.set_sepolicy_from_commit(&repo, &base_commit, cancellable)?;
+                modifier.set_sepolicy_from_commit(repo, &base_commit, cancellable)?;
 
                 let mt = ostree::MutableTree::new();
                 repo.write_dfd_to_mtree(
@@ -1243,7 +1243,7 @@ fn chunking_from_layer_committed(
 ) -> Result<()> {
     let mut chunk = Chunk::default();
     let layer_ref = &ref_for_layer(l)?;
-    let root = repo.read_commit(&layer_ref, gio::Cancellable::NONE)?.0;
+    let root = repo.read_commit(layer_ref, gio::Cancellable::NONE)?.0;
     let e = root.enumerate_children(
         "standard::name,standard::size",
         gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
@@ -1288,7 +1288,7 @@ pub(crate) fn export_to_oci(
     let mut new_config = srcinfo.configuration.clone();
     new_config.history_mut().clear();
 
-    let mut dest_oci = ocidir::OciDir::ensure(&dest_oci)?;
+    let mut dest_oci = ocidir::OciDir::ensure(dest_oci)?;
 
     let opts = ExportOpts {
         skip_compression: opts.skip_compression,
