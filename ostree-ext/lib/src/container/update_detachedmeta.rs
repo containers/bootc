@@ -5,7 +5,7 @@ use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
-use containers_image_proxy::oci_spec;
+use containers_image_proxy::oci_spec::image as oci_image;
 use std::io::{BufReader, BufWriter};
 
 /// Given an OSTree container image reference, update the detached metadata (e.g. GPG signature)
@@ -16,7 +16,7 @@ pub async fn update_detached_metadata(
     src: &ImageReference,
     dest: &ImageReference,
     detached_buf: Option<&[u8]>,
-) -> Result<String> {
+) -> Result<oci_image::Digest> {
     // For now, convert the source to a temporary OCI directory, so we can directly
     // parse and manipulate it.  In the future this will be replaced by https://github.com/ostreedev/ostree-rs-ext/issues/153
     // and other work to directly use the containers/image API via containers-image-proxy.
@@ -29,7 +29,7 @@ pub async fn update_detached_metadata(
     };
 
     // Full copy of the source image
-    let pulled_digest: String = skopeo::copy(src, &tempsrc_ref, None, None, false)
+    let pulled_digest = skopeo::copy(src, &tempsrc_ref, None, None, false)
         .await
         .context("Creating temporary copy to OCI dir")?;
 
@@ -44,16 +44,24 @@ pub async fn update_detached_metadata(
         let tempsrc = ocidir::OciDir::open(&tempsrc)?;
 
         // Load the manifest, platform, and config
-        let (mut manifest, manifest_descriptor) = tempsrc
-            .read_manifest_and_descriptor()
-            .context("Reading manifest from source")?;
-        anyhow::ensure!(manifest_descriptor.digest().as_str() == pulled_digest.as_str());
+        let idx = tempsrc
+            .read_index()?
+            .ok_or(anyhow!("Reading image index from source"))?;
+        let manifest_descriptor = idx
+            .manifests()
+            .first()
+            .ok_or(anyhow!("No manifests in index"))?;
+        let mut manifest: oci_image::ImageManifest = tempsrc
+            .read_json_blob(manifest_descriptor)
+            .context("Reading manifest json blob")?;
+
+        anyhow::ensure!(manifest_descriptor.digest().digest() == pulled_digest.digest());
         let platform = manifest_descriptor
             .platform()
             .as_ref()
             .cloned()
             .unwrap_or_default();
-        let mut config: oci_spec::image::ImageConfiguration =
+        let mut config: oci_image::ImageConfiguration =
             tempsrc.read_json_blob(manifest.config())?;
         let mut ctrcfg = config
             .config()
@@ -91,10 +99,10 @@ pub async fn update_detached_metadata(
                 .complete()?
         };
         // Get the diffid and descriptor for our new tar layer
-        let out_layer_diffid = format!("sha256:{}", out_layer.uncompressed_sha256);
+        let out_layer_diffid = format!("sha256:{}", out_layer.uncompressed_sha256.digest());
         let out_layer_descriptor = out_layer
             .descriptor()
-            .media_type(oci_spec::image::MediaType::ImageLayerGzip)
+            .media_type(oci_image::MediaType::ImageLayerGzip)
             .build()
             .unwrap(); // SAFETY: We pass all required fields
 

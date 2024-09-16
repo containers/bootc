@@ -151,7 +151,10 @@ pub(crate) fn export_chunked(
 
     // This label (mentioned above) points to the last layer that is part of
     // the ostree commit.
-    labels.insert(DIFFID_LABEL.into(), format!("sha256:{}", last_digest));
+    labels.insert(
+        DIFFID_LABEL.into(),
+        format!("sha256:{}", last_digest.digest()),
+    );
     Ok(())
 }
 
@@ -300,7 +303,7 @@ async fn build_impl(
     config: &Config,
     opts: Option<ExportOpts<'_, '_>>,
     dest: &ImageReference,
-) -> Result<String> {
+) -> Result<oci_image::Digest> {
     let mut opts = opts.unwrap_or_default();
     if dest.transport == Transport::ContainerStorage {
         opts.skip_compression = true;
@@ -407,7 +410,7 @@ pub async fn encapsulate<S: AsRef<str>>(
     config: &Config,
     opts: Option<ExportOpts<'_, '_>>,
     dest: &ImageReference,
-) -> Result<String> {
+) -> Result<oci_image::Digest> {
     build_impl(repo, ostree_ref.as_ref(), config, opts, dest).await
 }
 

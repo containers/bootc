@@ -15,6 +15,7 @@ use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::prelude::CapStdExtCommandExt;
 use chrono::TimeZone;
+use containers_image_proxy::oci_spec::image as oci_image;
 use fn_error_context::context;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{Marker, Structure};
@@ -805,7 +806,7 @@ impl Fixture {
     /// Export the current ref as a container image.
     /// This defaults to using chunking.
     #[context("Exporting container")]
-    pub async fn export_container(&self) -> Result<(ImageReference, String)> {
+    pub async fn export_container(&self) -> Result<(ImageReference, oci_image::Digest)> {
         let name = "oci-v1";
         let container_path = &self.path.join(name);
         if container_path.exists() {
