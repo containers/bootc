@@ -428,6 +428,7 @@ fn packing_size(packing: &[Vec<&ObjectSourceMetaSized>]) -> u64 {
 /// - Mean and Standard Deviation Method
 ///      The medium partition from the previous step is less aggressively
 ///      classified by using mean for both size and frequency
+///
 /// Note: Assumes components is sorted by descending size
 fn get_partitions_with_threshold<'a>(
     components: &[&'a ObjectSourceMetaSized],
