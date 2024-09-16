@@ -425,7 +425,7 @@ dependencies = [
  "cap-std-ext",
  "fn-error-context",
  "futures-util",
- "oci-spec",
+ "oci-spec 0.6.8",
  "rustix",
  "semver",
  "serde",
@@ -1270,6 +1270,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "oci-spec"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cee185ce7cf1cce45e194e34cd87c0bad7ff0aa2e8917009a2da4f7b31fb363"
+dependencies = [
+ "derive_builder",
+ "getset",
+ "regex",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "thiserror",
+]
+
+[[package]]
 name = "ocidir"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1282,7 +1298,7 @@ dependencies = [
  "flate2",
  "fn-error-context",
  "hex",
- "oci-spec",
+ "oci-spec 0.6.8",
  "olpc-cjson",
  "openssl",
  "serde",
@@ -2001,7 +2017,7 @@ dependencies = [
  "fn-error-context",
  "indoc",
  "libtest-mimic",
- "oci-spec",
+ "oci-spec 0.7.0",
  "rustix",
  "serde",
  "serde_json",
