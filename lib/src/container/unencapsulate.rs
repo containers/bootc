@@ -101,18 +101,18 @@ impl<T: AsyncRead> AsyncRead for ProgressReader<T> {
 async fn fetch_manifest_impl(
     proxy: &mut ImageProxy,
     imgref: &OstreeImageReference,
-) -> Result<(oci_spec::image::ImageManifest, String)> {
+) -> Result<(oci_image::ImageManifest, oci_image::Digest)> {
     let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
     let (digest, manifest) = proxy.fetch_manifest(oi).await?;
     proxy.close_image(oi).await?;
-    Ok((manifest, digest))
+    Ok((manifest, oci_image::Digest::from_str(digest.as_str())?))
 }
 
 /// Download the manifest for a target image and its sha256 digest.
 #[context("Fetching manifest")]
 pub async fn fetch_manifest(
     imgref: &OstreeImageReference,
-) -> Result<(oci_spec::image::ImageManifest, String)> {
+) -> Result<(oci_image::ImageManifest, oci_image::Digest)> {
     let mut proxy = ImageProxy::new().await?;
     fetch_manifest_impl(&mut proxy, imgref).await
 }
@@ -122,13 +122,14 @@ pub async fn fetch_manifest(
 pub async fn fetch_manifest_and_config(
     imgref: &OstreeImageReference,
 ) -> Result<(
-    oci_spec::image::ImageManifest,
-    String,
-    oci_spec::image::ImageConfiguration,
+    oci_image::ImageManifest,
+    oci_image::Digest,
+    oci_image::ImageConfiguration,
 )> {
     let proxy = ImageProxy::new().await?;
     let oi = &proxy.open_image(&imgref.imgref.to_string()).await?;
     let (digest, manifest) = proxy.fetch_manifest(oi).await?;
+    let digest = oci_image::Digest::from_str(&digest)?;
     let config = proxy.fetch_config(oi).await?;
     Ok((manifest, digest, config))
 }
@@ -289,18 +290,16 @@ pub(crate) async fn fetch_layer_decompress<'a>(
             })?;
             size = layer_blob.size;
             media_type = &layer_blob.media_type;
-            (blob, driver) = proxy
-                .get_blob(img, layer_blob.digest.as_str(), size as u64)
-                .await?;
+            (blob, driver) = proxy.get_blob(img, &layer_blob.digest, size).await?;
         }
         _ => {
             size = layer.size();
             media_type = layer.media_type();
-            (blob, driver) = proxy
-                .get_blob(img, layer.digest().as_str(), size as u64)
-                .await?;
+            (blob, driver) = proxy.get_blob(img, layer.digest(), size).await?;
         }
     };
+
+    let driver = async { driver.await.map_err(Into::into) };
 
     if let Some(progress) = progress {
         let (readprogress, mut readwatch) = ProgressReader::new(blob);
@@ -311,7 +310,7 @@ pub(crate) async fn fetch_layer_decompress<'a>(
                 let status = LayerProgress {
                     layer_index,
                     fetched: *fetched,
-                    total: size as u64,
+                    total: size,
                 };
                 progress.send_replace(Some(status));
             }

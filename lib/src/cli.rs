@@ -594,9 +594,14 @@ pub fn layer_progress_format(p: &ImportProgress) -> String {
         ImportProgress::DerivedLayerCompleted(v) => (false, "layer", v),
     };
     // podman outputs 12 characters of digest, let's add 7 for `sha256:`.
-    let short_digest = layer.digest().chars().take(12 + 7).collect::<String>();
+    let short_digest = layer
+        .digest()
+        .digest()
+        .chars()
+        .take(12 + 7)
+        .collect::<String>();
     if starting {
-        let size = glib::format_size(layer.size() as u64);
+        let size = glib::format_size(layer.size());
         format!("Fetching {s} {short_digest} ({size})")
     } else {
         format!("Fetched {s} {short_digest}")
@@ -934,13 +939,13 @@ async fn container_history(repo: &ostree::Repo, imgref: &ImageReference) -> Resu
 
         let mut remaining = width;
 
-        let digest = layer.digest().as_str();
+        let digest = layer.digest().digest();
         // Verify it's OK to slice, this should all be ASCII
         assert!(digest.is_ascii());
         let digest_max = columns[0].1;
         let digest = &digest[0..digest_max as usize];
         print_column(digest, digest_max, &mut remaining);
-        let size = glib::format_size(layer.size() as u64);
+        let size = glib::format_size(layer.size());
         print_column(size.as_str(), columns[1].1, &mut remaining);
         print_column(created_by, columns[2].1, &mut remaining);
         println!();
