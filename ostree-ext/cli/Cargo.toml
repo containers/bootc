@@ -5,7 +5,7 @@ authors = ["Colin Walters <walters@verbum.org>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ostreedev/ostree-rs-ext"
-readme = "README.md"
+readme = "../README.md"
 publish = false
 rust-version = "1.74.0"
 
