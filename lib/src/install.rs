@@ -894,6 +894,7 @@ impl RootSetup {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum SELinuxFinalState {
     /// Host and target both have SELinux, but user forced it off for target
     ForceTargetDisabled,
@@ -952,15 +953,10 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
             let g = crate::lsm::selinux_ensure_install_or_setenforce()?;
             SELinuxFinalState::Enabled(g)
         } else {
-            // This used to be a hard error, but is now a mild warning
-            crate::utils::medium_visibility_warning(
-                "Host kernel does not have SELinux support, but target enables it by default; this is less well tested.  See https://github.com/containers/bootc/issues/419",
-            );
             SELinuxFinalState::HostDisabled
         };
         Ok(r)
     } else {
-        tracing::debug!("Target does not enable SELinux");
         Ok(SELinuxFinalState::Disabled)
     }
 }
@@ -1227,6 +1223,7 @@ async fn prepare_install(
 
     // Now, deal with SELinux state.
     let selinux_state = reexecute_self_for_selinux_if_needed(&source, config_opts.disable_selinux)?;
+    tracing::debug!("SELinux state: {selinux_state:?}");
 
     println!("Installing image: {:#}", &target_imgref);
     if let Some(digest) = source.digest.as_deref() {
