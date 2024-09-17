@@ -185,7 +185,18 @@ fn test_tmt(sh: &Shell) -> Result<()> {
     cmd!(sh, "rm -vf /var/tmp/tmt/testcloud/images/disk.qcow2").run()?;
 
     for (_prio, name) in all_plan_files {
-        if let Err(e) = cmd!(sh, "tmt run plans -n {name}")
+        let verbose_enabled = std::env::var("TMT_VERBOSE")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+
+        let verbose = if verbose_enabled == 1 {
+            Some("-vvvvv".to_string())
+        } else {
+            None
+        };
+
+        if let Err(e) = cmd!(sh, "tmt {verbose...} run plans -n {name}")
             .env("TMT_PLUGINS", "./tests/plugins")
             .run()
         {
