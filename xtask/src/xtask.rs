@@ -185,7 +185,10 @@ fn test_tmt(sh: &Shell) -> Result<()> {
     cmd!(sh, "rm -vf /var/tmp/tmt/testcloud/images/disk.qcow2").run()?;
 
     for (_prio, name) in all_plan_files {
-        if let Err(e) = cmd!(sh, "tmt run plans -n {name}").run() {
+        if let Err(e) = cmd!(sh, "tmt run plans -n {name}")
+            .env("TMT_PLUGINS", "./tests/plugins")
+            .run()
+        {
             // tmt annoyingly does not output errors by default
             let _ = cmd!(sh, "tmt run -l report -vvv").run();
             return Err(e.into());
