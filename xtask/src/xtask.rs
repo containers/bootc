@@ -181,10 +181,10 @@ fn test_tmt(sh: &Shell) -> Result<()> {
     println!("Discovered plans: {all_plan_files:?}");
 
     cmd!(sh, "cargo run -p tests-integration run-vm prepare-tmt").run()?;
-    // cc https://pagure.io/testcloud/pull-request/174
-    cmd!(sh, "rm -vf /var/tmp/tmt/testcloud/images/disk.qcow2").run()?;
 
     for (_prio, name) in all_plan_files {
+        // cc https://pagure.io/testcloud/pull-request/174
+        cmd!(sh, "rm -vf /var/tmp/tmt/testcloud/images/disk.qcow2").run()?;
         let verbose_enabled = std::env::var("TMT_VERBOSE")
             .ok()
             .and_then(|s| s.parse::<u32>().ok())
