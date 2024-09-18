@@ -1,0 +1,37 @@
+apiVersion: org.containers.bootc/v1alpha1
+kind: BootcHost
+metadata:
+  name: host
+spec:
+  image:
+    image: quay.io/centos-bootc/centos-bootc:stream9
+    transport: registry
+  bootOrder: default
+status:
+  staged:
+    image:
+      image:
+        image: quay.io/centos-bootc/centos-bootc:stream9
+        transport: registry
+      version: stream9.20240807.0
+      timestamp: null
+      imageDigest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
+    cachedUpdate: null
+    incompatible: false
+    pinned: false
+    store: ostreeContainer
+    ostree:
+      checksum: 05cbf6dcae32e7a1c5a0774a648a073a5834a305ca92204b53fb6c281fe49db1
+      deploySerial: 0
+  booted:
+    image: null
+    cachedUpdate: null
+    incompatible: false
+    pinned: false
+    store: null
+    ostree:
+      checksum: f9fa3a553ceaaaf30cf85bfe7eed46a822f7b8fd7e14c1e3389cbc3f6d27f791
+      deploySerial: 0
+  rollback: null
+  rollbackQueued: false
+  type: null

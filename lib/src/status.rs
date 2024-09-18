@@ -1,4 +1,6 @@
 use std::collections::VecDeque;
+use std::io::IsTerminal;
+use std::io::Write;
 
 use anyhow::{Context, Result};
 use camino::Utf8Path;
@@ -305,6 +307,8 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     let mut out = out.lock();
     let legacy_opt = if opts.json {
         OutputFormat::Json
+    } else if std::io::stdout().is_terminal() {
+        OutputFormat::HumanReadable
     } else {
         OutputFormat::Yaml
     };
@@ -312,10 +316,142 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     match format {
         OutputFormat::Json => serde_json::to_writer(&mut out, &host).map_err(anyhow::Error::new),
         OutputFormat::Yaml => serde_yaml::to_writer(&mut out, &host).map_err(anyhow::Error::new),
+        OutputFormat::HumanReadable => human_readable_output(&mut out, &host),
     }
     .context("Writing to stdout")?;
 
     Ok(())
+}
+
+fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
+    for (status_string, status) in [
+        ("staged", &host.status.staged),
+        ("booted", &host.status.booted),
+        ("rollback", &host.status.rollback),
+    ] {
+        if let Some(host_status) = status {
+            if let Some(image) = &host_status.image {
+                writeln!(
+                    out,
+                    "Current {} image: {}",
+                    status_string, image.image.image
+                )?;
+
+                let version = image
+                    .version
+                    .as_deref()
+                    .unwrap_or("No image version defined");
+                let timestamp = image
+                    .timestamp
+                    .as_ref()
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "No timestamp present".to_owned());
+                let transport = &image.image.transport;
+                let digest = &image.image_digest;
+
+                writeln!(out, "    Image version: {version} ({timestamp})")?;
+                writeln!(out, "    Image transport: {transport}")?;
+                writeln!(out, "    Image digest: {digest}")?;
+            } else {
+                writeln!(out, "Current {status_string} state is native ostree")?;
+            }
+        } else {
+            writeln!(out, "No {status_string} image present")?;
+        }
+    }
+    Ok(())
+}
+
+fn human_status_from_spec_fixture(spec_fixture: &str) -> Result<String> {
+    let host: Host = serde_yaml::from_str(spec_fixture).unwrap();
+    let mut w = Vec::new();
+    human_readable_output(&mut w, &host).unwrap();
+    let w = String::from_utf8(w).unwrap();
+    Ok(w)
+}
+
+#[test]
+fn test_human_readable_base_spec() {
+    // Tests Staged and Booted, null Rollback
+    let w = human_status_from_spec_fixture(include_str!("fixtures/spec-staged-booted.yaml"))
+        .expect("No spec found");
+    let expected = indoc::indoc! { r"
+    Current staged image: quay.io/example/someimage:latest
+        Image version: nightly (2023-10-14 19:22:15 UTC)
+        Image transport: registry
+        Image digest: sha256:16dc2b6256b4ff0d2ec18d2dbfb06d117904010c8cf9732cdb022818cf7a7566
+    Current booted image: quay.io/example/someimage:latest
+        Image version: nightly (2023-09-30 19:22:16 UTC)
+        Image transport: registry
+        Image digest: sha256:736b359467c9437c1ac915acaae952aad854e07eb4a16a94999a48af08c83c34
+    No rollback image present
+    "};
+    similar_asserts::assert_eq!(w, expected);
+}
+
+#[test]
+fn test_human_readable_rfe_spec() {
+    // Basic rhel for edge bootc install with nothing
+    let w =
+        human_status_from_spec_fixture(include_str!("fixtures/spec-rfe-ostree-deployment.yaml"))
+            .expect("No spec found");
+    let expected = indoc::indoc! { r"
+    Current staged state is native ostree
+    Current booted state is native ostree
+    No rollback image present
+    "};
+    similar_asserts::assert_eq!(w, expected);
+}
+
+#[test]
+fn test_human_readable_staged_spec() {
+    // staged image, no boot/rollback
+    let w = human_status_from_spec_fixture(include_str!("fixtures/spec-ostree-to-bootc.yaml"))
+        .expect("No spec found");
+    let expected = indoc::indoc! { r"
+    Current staged image: quay.io/centos-bootc/centos-bootc:stream9
+        Image version: stream9.20240807.0 (No timestamp present)
+        Image transport: registry
+        Image digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
+    Current booted state is native ostree
+    No rollback image present
+    "};
+    similar_asserts::assert_eq!(w, expected);
+}
+
+#[test]
+fn test_human_readable_booted_spec() {
+    // booted image, no staged/rollback
+    let w = human_status_from_spec_fixture(include_str!("fixtures/spec-only-booted.yaml"))
+        .expect("No spec found");
+    let expected = indoc::indoc! { r"
+    No staged image present
+    Current booted image: quay.io/centos-bootc/centos-bootc:stream9
+        Image version: stream9.20240807.0 (No timestamp present)
+        Image transport: registry
+        Image digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
+    No rollback image present
+    "};
+    similar_asserts::assert_eq!(w, expected);
+}
+
+#[test]
+fn test_human_readable_staged_rollback_spec() {
+    // staged/rollback image, no booted
+    let w = human_status_from_spec_fixture(include_str!("fixtures/spec-staged-rollback.yaml"))
+        .expect("No spec found");
+    let expected = indoc::indoc! { r"
+    Current staged image: quay.io/example/someimage:latest
+        Image version: nightly (2023-10-14 19:22:15 UTC)
+        Image transport: registry
+        Image digest: sha256:16dc2b6256b4ff0d2ec18d2dbfb06d117904010c8cf9732cdb022818cf7a7566
+    No booted image present
+    Current rollback image: quay.io/example/someimage:latest
+        Image version: nightly (2023-09-30 19:22:16 UTC)
+        Image transport: registry
+        Image digest: sha256:736b359467c9437c1ac915acaae952aad854e07eb4a16a94999a48af08c83c34
+    "};
+    similar_asserts::assert_eq!(w, expected);
 }
 
 #[test]
