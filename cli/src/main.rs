@@ -1,3 +1,6 @@
+//! The main entrypoint for bootc, which just performs global initialization, and then
+//! calls out into the library.
+
 use anyhow::Result;
 
 /// The code called after we've done process global init and created

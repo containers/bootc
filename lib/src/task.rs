@@ -21,6 +21,7 @@ enum CmdVerbosity {
     Verbose,
 }
 
+/// Too many things in the install path are conditional
 pub(crate) struct Task {
     description: String,
     verbosity: CmdVerbosity,
@@ -28,6 +29,7 @@ pub(crate) struct Task {
     pub(crate) cmd: Command,
 }
 
+#[allow(dead_code)]
 impl Task {
     pub(crate) fn new(description: impl AsRef<str>, exe: impl AsRef<str>) -> Self {
         Self::new_cmd(description, Command::new(exe.as_ref()))

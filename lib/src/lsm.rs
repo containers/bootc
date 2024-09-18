@@ -7,10 +7,15 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
-use cap_std::fs::{Dir, DirBuilder, OpenOptions};
+use cap_std::fs::Dir;
+#[cfg(feature = "install")]
+use cap_std::fs::{DirBuilder, OpenOptions};
+#[cfg(feature = "install")]
 use cap_std::io_lifetimes::AsFilelike;
 use cap_std_ext::cap_std;
+#[cfg(feature = "install")]
 use cap_std_ext::cap_std::fs::{Metadata, MetadataExt};
+#[cfg(feature = "install")]
 use cap_std_ext::dirext::CapStdExtDirExt;
 use fn_error_context::context;
 #[cfg(feature = "install")]
@@ -212,6 +217,7 @@ pub(crate) fn set_security_selinux(fd: std::os::fd::BorrowedFd, label: &[u8]) ->
 
 /// The labeling state; "unsupported" is distinct as we need to handle
 /// cases like the ESP which don't support labeling.
+#[cfg(feature = "install")]
 pub(crate) enum SELinuxLabelState {
     Unlabeled,
     Unsupported,
@@ -219,6 +225,7 @@ pub(crate) enum SELinuxLabelState {
 }
 
 /// Query the SELinux labeling for a particular path
+#[cfg(feature = "install")]
 pub(crate) fn has_security_selinux(root: &Dir, path: &Utf8Path) -> Result<SELinuxLabelState> {
     // TODO: avoid hardcoding a max size here
     let mut buf = [0u8; 2048];
@@ -231,6 +238,7 @@ pub(crate) fn has_security_selinux(root: &Dir, path: &Utf8Path) -> Result<SELinu
     }
 }
 
+#[cfg(feature = "install")]
 pub(crate) fn set_security_selinux_path(root: &Dir, path: &Utf8Path, label: &[u8]) -> Result<()> {
     // TODO: avoid hardcoding a max size here
     let fdpath = format!("/proc/self/fd/{}/", root.as_raw_fd());
@@ -244,6 +252,7 @@ pub(crate) fn set_security_selinux_path(root: &Dir, path: &Utf8Path, label: &[u8
     Ok(())
 }
 
+#[cfg(feature = "install")]
 pub(crate) fn ensure_labeled(
     root: &Dir,
     path: &Utf8Path,

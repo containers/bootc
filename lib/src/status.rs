@@ -100,6 +100,7 @@ pub(crate) struct Deployments {
     pub(crate) other: VecDeque<ostree::Deployment>,
 }
 
+#[cfg(feature = "install")]
 pub(crate) fn try_deserialize_timestamp(t: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     match chrono::DateTime::parse_from_rfc3339(t).context("Parsing timestamp") {
         Ok(t) => Some(t.into()),
@@ -362,20 +363,24 @@ fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
     Ok(())
 }
 
-fn human_status_from_spec_fixture(spec_fixture: &str) -> Result<String> {
-    let host: Host = serde_yaml::from_str(spec_fixture).unwrap();
-    let mut w = Vec::new();
-    human_readable_output(&mut w, &host).unwrap();
-    let w = String::from_utf8(w).unwrap();
-    Ok(w)
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_human_readable_base_spec() {
-    // Tests Staged and Booted, null Rollback
-    let w = human_status_from_spec_fixture(include_str!("fixtures/spec-staged-booted.yaml"))
-        .expect("No spec found");
-    let expected = indoc::indoc! { r"
+    fn human_status_from_spec_fixture(spec_fixture: &str) -> Result<String> {
+        let host: Host = serde_yaml::from_str(spec_fixture).unwrap();
+        let mut w = Vec::new();
+        human_readable_output(&mut w, &host).unwrap();
+        let w = String::from_utf8(w).unwrap();
+        Ok(w)
+    }
+
+    #[test]
+    fn test_human_readable_base_spec() {
+        // Tests Staged and Booted, null Rollback
+        let w = human_status_from_spec_fixture(include_str!("fixtures/spec-staged-booted.yaml"))
+            .expect("No spec found");
+        let expected = indoc::indoc! { r"
     Current staged image: quay.io/example/someimage:latest
         Image version: nightly (2023-10-14 19:22:15 UTC)
         Image transport: registry
@@ -386,29 +391,30 @@ fn test_human_readable_base_spec() {
         Image digest: sha256:736b359467c9437c1ac915acaae952aad854e07eb4a16a94999a48af08c83c34
     No rollback image present
     "};
-    similar_asserts::assert_eq!(w, expected);
-}
+        similar_asserts::assert_eq!(w, expected);
+    }
 
-#[test]
-fn test_human_readable_rfe_spec() {
-    // Basic rhel for edge bootc install with nothing
-    let w =
-        human_status_from_spec_fixture(include_str!("fixtures/spec-rfe-ostree-deployment.yaml"))
-            .expect("No spec found");
-    let expected = indoc::indoc! { r"
+    #[test]
+    fn test_human_readable_rfe_spec() {
+        // Basic rhel for edge bootc install with nothing
+        let w = human_status_from_spec_fixture(include_str!(
+            "fixtures/spec-rfe-ostree-deployment.yaml"
+        ))
+        .expect("No spec found");
+        let expected = indoc::indoc! { r"
     Current staged state is native ostree
     Current booted state is native ostree
     No rollback image present
     "};
-    similar_asserts::assert_eq!(w, expected);
-}
+        similar_asserts::assert_eq!(w, expected);
+    }
 
-#[test]
-fn test_human_readable_staged_spec() {
-    // staged image, no boot/rollback
-    let w = human_status_from_spec_fixture(include_str!("fixtures/spec-ostree-to-bootc.yaml"))
-        .expect("No spec found");
-    let expected = indoc::indoc! { r"
+    #[test]
+    fn test_human_readable_staged_spec() {
+        // staged image, no boot/rollback
+        let w = human_status_from_spec_fixture(include_str!("fixtures/spec-ostree-to-bootc.yaml"))
+            .expect("No spec found");
+        let expected = indoc::indoc! { r"
     Current staged image: quay.io/centos-bootc/centos-bootc:stream9
         Image version: stream9.20240807.0 (No timestamp present)
         Image transport: registry
@@ -416,15 +422,15 @@ fn test_human_readable_staged_spec() {
     Current booted state is native ostree
     No rollback image present
     "};
-    similar_asserts::assert_eq!(w, expected);
-}
+        similar_asserts::assert_eq!(w, expected);
+    }
 
-#[test]
-fn test_human_readable_booted_spec() {
-    // booted image, no staged/rollback
-    let w = human_status_from_spec_fixture(include_str!("fixtures/spec-only-booted.yaml"))
-        .expect("No spec found");
-    let expected = indoc::indoc! { r"
+    #[test]
+    fn test_human_readable_booted_spec() {
+        // booted image, no staged/rollback
+        let w = human_status_from_spec_fixture(include_str!("fixtures/spec-only-booted.yaml"))
+            .expect("No spec found");
+        let expected = indoc::indoc! { r"
     No staged image present
     Current booted image: quay.io/centos-bootc/centos-bootc:stream9
         Image version: stream9.20240807.0 (No timestamp present)
@@ -432,15 +438,15 @@ fn test_human_readable_booted_spec() {
         Image digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
     No rollback image present
     "};
-    similar_asserts::assert_eq!(w, expected);
-}
+        similar_asserts::assert_eq!(w, expected);
+    }
 
-#[test]
-fn test_human_readable_staged_rollback_spec() {
-    // staged/rollback image, no booted
-    let w = human_status_from_spec_fixture(include_str!("fixtures/spec-staged-rollback.yaml"))
-        .expect("No spec found");
-    let expected = indoc::indoc! { r"
+    #[test]
+    fn test_human_readable_staged_rollback_spec() {
+        // staged/rollback image, no booted
+        let w = human_status_from_spec_fixture(include_str!("fixtures/spec-staged-rollback.yaml"))
+            .expect("No spec found");
+        let expected = indoc::indoc! { r"
     Current staged image: quay.io/example/someimage:latest
         Image version: nightly (2023-10-14 19:22:15 UTC)
         Image transport: registry
@@ -451,29 +457,30 @@ fn test_human_readable_staged_rollback_spec() {
         Image transport: registry
         Image digest: sha256:736b359467c9437c1ac915acaae952aad854e07eb4a16a94999a48af08c83c34
     "};
-    similar_asserts::assert_eq!(w, expected);
-}
+        similar_asserts::assert_eq!(w, expected);
+    }
 
-#[test]
-fn test_convert_signatures() {
-    use std::str::FromStr;
-    let ir_unverified = &OstreeImageReference::from_str(
-        "ostree-unverified-registry:quay.io/someexample/foo:latest",
-    )
-    .unwrap();
-    let ir_ostree = &OstreeImageReference::from_str(
-        "ostree-remote-registry:fedora:quay.io/fedora/fedora-coreos:stable",
-    )
-    .unwrap();
+    #[test]
+    fn test_convert_signatures() {
+        use std::str::FromStr;
+        let ir_unverified = &OstreeImageReference::from_str(
+            "ostree-unverified-registry:quay.io/someexample/foo:latest",
+        )
+        .unwrap();
+        let ir_ostree = &OstreeImageReference::from_str(
+            "ostree-remote-registry:fedora:quay.io/fedora/fedora-coreos:stable",
+        )
+        .unwrap();
 
-    let ir = ImageReference::from(ir_unverified.clone());
-    assert_eq!(ir.image, "quay.io/someexample/foo:latest");
-    assert_eq!(ir.signature, None);
+        let ir = ImageReference::from(ir_unverified.clone());
+        assert_eq!(ir.image, "quay.io/someexample/foo:latest");
+        assert_eq!(ir.signature, None);
 
-    let ir = ImageReference::from(ir_ostree.clone());
-    assert_eq!(ir.image, "quay.io/fedora/fedora-coreos:stable");
-    assert_eq!(
-        ir.signature,
-        Some(ImageSignature::OstreeRemote("fedora".into()))
-    );
+        let ir = ImageReference::from(ir_ostree.clone());
+        assert_eq!(ir.image, "quay.io/fedora/fedora-coreos:stable");
+        assert_eq!(
+            ir.signature,
+            Some(ImageSignature::OstreeRemote("fedora".into()))
+        );
+    }
 }

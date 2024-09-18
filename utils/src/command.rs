@@ -1,3 +1,5 @@
+//! Helpers intended for [`std::process::Command`] and related structures.
+
 use std::{
     io::{Read, Seek},
     process::Command,
@@ -7,6 +9,7 @@ use anyhow::{Context, Result};
 
 /// Helpers intended for [`std::process::Command`].
 pub trait CommandRunExt {
+    /// Execute the child process.
     fn run(&mut self) -> Result<()>;
     /// Execute the child process, parsing its stdout as JSON.
     fn run_and_parse_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T>;
@@ -84,12 +87,11 @@ impl CommandRunExt for Command {
 /// Helpers intended for [`tokio::process::Command`].
 #[allow(async_fn_in_trait)]
 pub trait AsyncCommandRunExt {
+    /// Asynchronously execute the child, and return an error if the child exited unsuccessfully.
     async fn run(&mut self) -> Result<()>;
 }
 
 impl AsyncCommandRunExt for tokio::process::Command {
-    /// Asynchronously execute the child, and return an error if the child exited unsuccessfully.
-    ///
     async fn run(&mut self) -> Result<()> {
         let stderr = tempfile::tempfile()?;
         self.stderr(stderr.try_clone()?);

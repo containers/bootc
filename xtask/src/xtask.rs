@@ -1,3 +1,6 @@
+//! See https://github.com/matklad/cargo-xtask
+//! This is kind of like "Justfile but in Rust".
+
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Command, Stdio};

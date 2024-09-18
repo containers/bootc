@@ -1,4 +1,4 @@
-// build.rs
+//! Our build script, which basically today just generates a version.
 
 use std::env;
 use std::fs;

@@ -799,7 +799,7 @@ pub fn global_init() -> Result<()> {
 }
 
 /// Parse the provided arguments and execute.
-/// Calls [`structopt::clap::Error::exit`] on failure, printing the error message and aborting the program.
+/// Calls [`clap::Error::exit`] on failure, printing the error message and aborting the program.
 pub async fn run_from_iter<I>(args: I) -> Result<()>
 where
     I: IntoIterator,

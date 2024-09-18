@@ -33,14 +33,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: "tests"
-      - name: cargo fmt (check)
-        run: cargo fmt -- --check -l
-      - name: Build
-        run: cargo test --no-run
-      - name: Build lib without default features
-        run: cd lib && cargo check --no-default-features
-      - name: Individual checks
-        run: (cd cli && cargo check) && (cd lib && cargo check)
+      - name: make validate-rust
+        # the ruff checks are covered via a dedicated action
+        run: make validate-rust
       - name: Run tests
         run: cargo test -- --nocapture --quiet
       - name: Manpage generation

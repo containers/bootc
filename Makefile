@@ -38,10 +38,14 @@ test-bin-archive: all
 test-tmt:
 	cargo xtask test-tmt
 
-# Checks extra rust things (formatting and select clippy lints)
+# Checks extra rust things (formatting, a few extra rust warnings, and select clippy lints)
 validate-rust:
 	cargo fmt -- --check -l
+	cargo check
+	(cd lib && cargo check --no-default-features)
+	cargo test --no-run
 	cargo clippy -- -D clippy::correctness -D clippy::suspicious
+	env RUSTDOCFLAGS='-D warnings' cargo doc --lib
 .PHONY: validate-rust
 
 validate: validate-rust
