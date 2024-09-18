@@ -181,11 +181,25 @@ fn test_tmt(sh: &Shell) -> Result<()> {
     println!("Discovered plans: {all_plan_files:?}");
 
     cmd!(sh, "cargo run -p tests-integration run-vm prepare-tmt").run()?;
-    // cc https://pagure.io/testcloud/pull-request/174
-    cmd!(sh, "rm -vf /var/tmp/tmt/testcloud/images/disk.qcow2").run()?;
 
     for (_prio, name) in all_plan_files {
-        if let Err(e) = cmd!(sh, "tmt run plans -n {name}").run() {
+        // cc https://pagure.io/testcloud/pull-request/174
+        cmd!(sh, "rm -vf /var/tmp/tmt/testcloud/images/disk.qcow2").run()?;
+        let verbose_enabled = std::env::var("TMT_VERBOSE")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+
+        let verbose = if verbose_enabled == 1 {
+            Some("-vvvvv".to_string())
+        } else {
+            None
+        };
+
+        if let Err(e) = cmd!(sh, "tmt {verbose...} run plans -n {name}")
+            .env("TMT_PLUGINS", "./tests/plugins")
+            .run()
+        {
             // tmt annoyingly does not output errors by default
             let _ = cmd!(sh, "tmt run -l report -vvv").run();
             return Err(e.into());
