@@ -12,6 +12,7 @@ use camino::Utf8Path;
 use cap_std_ext::cap_std::fs::Dir;
 use cap_std_ext::dirext::CapStdExtDirExt;
 use fn_error_context::context;
+#[cfg(feature = "install")]
 use ostree_ext::containers_image_proxy;
 use ostree_ext::ostree::Deployment;
 
@@ -34,6 +35,7 @@ pub(crate) struct BoundImage {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+#[cfg(feature = "install")]
 pub(crate) struct ResolvedBoundImage {
     pub(crate) image: String,
     pub(crate) digest: String,
@@ -104,6 +106,7 @@ pub(crate) fn query_bound_images(root: &Dir) -> Result<Vec<BoundImage>> {
     Ok(bound_images)
 }
 
+#[cfg(feature = "install")]
 impl ResolvedBoundImage {
     pub(crate) async fn from_image(src: &BoundImage) -> Result<Self> {
         let proxy = containers_image_proxy::ImageProxy::new().await?;

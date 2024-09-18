@@ -43,6 +43,7 @@ pub(crate) fn deployment_fd(
 /// Given an mount option string list like foo,bar=baz,something=else,ro parse it and find
 /// the first entry like $optname=
 /// This will not match a bare `optname` without an equals.
+#[cfg(feature = "install")]
 pub(crate) fn find_mount_option<'a>(
     option_string_list: &'a str,
     optname: &'_ str,
@@ -99,6 +100,7 @@ pub(crate) fn sigpolicy_from_opts(
 
 /// Output a warning message that we want to be quite visible.
 /// The process (thread) execution will be delayed for a short time.
+#[cfg(feature = "install")]
 pub(crate) fn medium_visibility_warning(s: &str) {
     anstream::eprintln!(
         "{}{s}{}",

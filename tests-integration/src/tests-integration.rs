@@ -1,3 +1,5 @@
+//! Integration tests.
+
 use std::path::PathBuf;
 
 use camino::Utf8PathBuf;

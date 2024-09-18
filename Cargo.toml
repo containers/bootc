@@ -57,6 +57,10 @@ exclude-crate-paths = [ { name = "libz-sys", exclude = "src/zlib" },
 unsafe_code = "deny"
 # Absolutely must handle errors
 unused_must_use = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+# Feel free to comment this one out locally during development of a patch.
+dead_code = "deny"
 
 [workspace.lints.clippy]
 # These should only be in local code

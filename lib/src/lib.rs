@@ -4,10 +4,6 @@
 //! to provide a fully "container native" tool for using
 //! bootable container images.
 
-// See https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
-#![deny(missing_docs)]
-#![deny(missing_debug_implementations)]
-
 mod boundimage;
 pub mod cli;
 pub(crate) mod deploy;
