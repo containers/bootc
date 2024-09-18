@@ -38,6 +38,7 @@ fn run_findmnt(args: &[&str], path: &str) -> Result<Filesystem> {
         ])
         .args(args)
         .arg(path)
+        .log_debug()
         .run_and_parse_json()?;
     o.filesystems
         .into_iter()

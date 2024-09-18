@@ -98,6 +98,7 @@ pub(crate) fn list_dev(dev: &Utf8Path) -> Result<Device> {
     let mut devs: DevicesOutput = Command::new("lsblk")
         .args(["-J", "-b", "-O"])
         .arg(dev)
+        .log_debug()
         .run_and_parse_json()?;
     for dev in devs.blockdevices.iter_mut() {
         dev.backfill_missing()?;
