@@ -99,6 +99,7 @@ pub(crate) fn selinux_ensure_install() -> Result<bool> {
 /// gain the `mac_admin` permission (install_t).
 #[cfg(feature = "install")]
 #[must_use]
+#[derive(Debug)]
 pub(crate) struct SetEnforceGuard(Option<()>);
 
 #[cfg(feature = "install")]
