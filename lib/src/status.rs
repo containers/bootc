@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::IsTerminal;
 use std::io::Write;
@@ -332,11 +333,16 @@ fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
     ] {
         if let Some(host_status) = status {
             if let Some(image) = &host_status.image {
-                writeln!(
-                    out,
-                    "Current {} image: {}",
-                    status_string, image.image.image
-                )?;
+                let transport = &image.image.transport;
+                let imagename = &image.image.image;
+                // Registry is the default, so don't show that
+                let imageref = if transport == "registry" {
+                    Cow::Borrowed(imagename)
+                } else {
+                    // But for non-registry we include the transport
+                    Cow::Owned(format!("{transport}:{imagename}"))
+                };
+                writeln!(out, "Current {status_string} image: {imageref}")?;
 
                 let version = image
                     .version
@@ -347,11 +353,9 @@ fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
                     .as_ref()
                     .map(|t| t.to_string())
                     .unwrap_or_else(|| "No timestamp present".to_owned());
-                let transport = &image.image.transport;
                 let digest = &image.image_digest;
 
                 writeln!(out, "    Image version: {version} ({timestamp})")?;
-                writeln!(out, "    Image transport: {transport}")?;
                 writeln!(out, "    Image digest: {digest}")?;
             } else {
                 writeln!(out, "Current {status_string} state is native ostree")?;
@@ -383,11 +387,9 @@ mod tests {
         let expected = indoc::indoc! { r"
     Current staged image: quay.io/example/someimage:latest
         Image version: nightly (2023-10-14 19:22:15 UTC)
-        Image transport: registry
         Image digest: sha256:16dc2b6256b4ff0d2ec18d2dbfb06d117904010c8cf9732cdb022818cf7a7566
     Current booted image: quay.io/example/someimage:latest
         Image version: nightly (2023-09-30 19:22:16 UTC)
-        Image transport: registry
         Image digest: sha256:736b359467c9437c1ac915acaae952aad854e07eb4a16a94999a48af08c83c34
     No rollback image present
     "};
@@ -417,7 +419,6 @@ mod tests {
         let expected = indoc::indoc! { r"
     Current staged image: quay.io/centos-bootc/centos-bootc:stream9
         Image version: stream9.20240807.0 (No timestamp present)
-        Image transport: registry
         Image digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
     Current booted state is native ostree
     No rollback image present
@@ -434,7 +435,6 @@ mod tests {
     No staged image present
     Current booted image: quay.io/centos-bootc/centos-bootc:stream9
         Image version: stream9.20240807.0 (No timestamp present)
-        Image transport: registry
         Image digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
     No rollback image present
     "};
@@ -449,13 +449,25 @@ mod tests {
         let expected = indoc::indoc! { r"
     Current staged image: quay.io/example/someimage:latest
         Image version: nightly (2023-10-14 19:22:15 UTC)
-        Image transport: registry
         Image digest: sha256:16dc2b6256b4ff0d2ec18d2dbfb06d117904010c8cf9732cdb022818cf7a7566
     No booted image present
     Current rollback image: quay.io/example/someimage:latest
         Image version: nightly (2023-09-30 19:22:16 UTC)
-        Image transport: registry
         Image digest: sha256:736b359467c9437c1ac915acaae952aad854e07eb4a16a94999a48af08c83c34
+    "};
+        similar_asserts::assert_eq!(w, expected);
+    }
+
+    #[test]
+    fn test_via_oci() {
+        let w = human_status_from_spec_fixture(include_str!("fixtures/spec-via-local-oci.yaml"))
+            .unwrap();
+        let expected = indoc::indoc! { r"
+        No staged image present
+        Current booted image: oci:/var/mnt/osupdate
+            Image version: stream9.20240807.0 (No timestamp present)
+            Image digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
+        No rollback image present
     "};
         similar_asserts::assert_eq!(w, expected);
     }
