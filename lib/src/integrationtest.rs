@@ -3,13 +3,14 @@
 use std::path::Path;
 
 use crate::container_utils::is_ostree_container;
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use containers_image_proxy::oci_spec;
 use fn_error_context::context;
 use gio::prelude::*;
+use oci_spec::image as oci_image;
 use ocidir::{
     oci_spec::image::{Arch, Platform},
     GzipLayerWriter,
@@ -68,8 +69,17 @@ where
     let src = Dir::open_ambient_dir(src, cap_std::ambient_authority())?;
     let src = ocidir::OciDir::open(&src)?;
 
-    let mut manifest = src.read_manifest()?;
-    let mut config: oci_spec::image::ImageConfiguration = src.read_json_blob(manifest.config())?;
+    let idx = src
+        .read_index()?
+        .ok_or(anyhow!("Reading image index from source"))?;
+    let manifest_descriptor = idx
+        .manifests()
+        .first()
+        .ok_or(anyhow!("No manifests in index"))?;
+    let mut manifest: oci_image::ImageManifest = src
+        .read_json_blob(manifest_descriptor)
+        .context("Reading manifest json blob")?;
+    let mut config: oci_image::ImageConfiguration = src.read_json_blob(manifest.config())?;
 
     if let Some(arch) = arch.as_ref() {
         config.set_architecture(arch.clone());
@@ -96,7 +106,7 @@ where
     config
         .rootfs_mut()
         .diff_ids_mut()
-        .push(new_layer.uncompressed_sha256);
+        .push(new_layer.uncompressed_sha256.digest().to_string());
     let new_config_desc = src.write_config(config)?;
     manifest.set_config(new_config_desc);
 
