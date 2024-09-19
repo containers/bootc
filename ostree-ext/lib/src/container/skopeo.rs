@@ -3,12 +3,14 @@
 use super::ImageReference;
 use anyhow::{Context, Result};
 use cap_std_ext::cmdext::CapStdExtCommandExt;
+use containers_image_proxy::oci_spec::image as oci_image;
 use fn_error_context::context;
 use io_lifetimes::OwnedFd;
 use serde::Deserialize;
 use std::io::Read;
 use std::path::Path;
 use std::process::Stdio;
+use std::str::FromStr;
 use tokio::process::Command;
 
 // See `man containers-policy.json` and
@@ -68,7 +70,7 @@ pub(crate) async fn copy(
     authfile: Option<&Path>,
     add_fd: Option<(std::sync::Arc<OwnedFd>, i32)>,
     progress: bool,
-) -> Result<String> {
+) -> Result<oci_image::Digest> {
     let digestfile = tempfile::NamedTempFile::new()?;
     let mut cmd = new_cmd();
     cmd.arg("copy");
@@ -96,7 +98,7 @@ pub(crate) async fn copy(
     let mut digestfile = digestfile.into_file();
     let mut r = String::new();
     digestfile.read_to_string(&mut r)?;
-    Ok(r.trim().to_string())
+    Ok(oci_image::Digest::from_str(r.trim())?)
 }
 
 #[cfg(test)]

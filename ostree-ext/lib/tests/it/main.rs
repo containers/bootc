@@ -3,7 +3,8 @@ use camino::Utf8Path;
 use cap_std::fs::{Dir, DirBuilder, DirBuilderExt};
 use cap_std_ext::cap_std;
 use containers_image_proxy::oci_spec;
-use containers_image_proxy::oci_spec::image::ImageManifest;
+use oci_image::ImageManifest;
+use oci_spec::image as oci_image;
 use ocidir::oci_spec::image::Arch;
 use once_cell::sync::Lazy;
 use ostree_ext::chunking::ObjectMetaSized;
@@ -516,7 +517,7 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
             transport: Transport::OciArchive,
             name: archivepath.as_str().to_string(),
         };
-        let _: String = ostree_ext::container::encapsulate(
+        let _: oci_image::Digest = ostree_ext::container::encapsulate(
             fixture.srcrepo(),
             fixture.testref(),
             &config,
@@ -577,10 +578,9 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
         transport: Transport::OciDir,
         name: fixture.path.join("unsigned.ocidir").to_string(),
     };
-    let _: String =
-        ostree_ext::container::update_detached_metadata(&srcoci_imgref, &temp_unsigned, None)
-            .await
-            .unwrap();
+    let _ = ostree_ext::container::update_detached_metadata(&srcoci_imgref, &temp_unsigned, None)
+        .await
+        .unwrap();
     let temp_unsigned = OstreeImageReference {
         sigverify: SignatureSource::OstreeRemote("myremote".to_string()),
         imgref: temp_unsigned,
@@ -621,8 +621,12 @@ async fn test_export_as_container_nonderived() -> Result<()> {
     let exported = store::export(fixture.destrepo(), &src_imgref, &dest, None)
         .await
         .unwrap();
-    let (new_manifest, desc) = ocidir.read_manifest_and_descriptor()?;
-    assert_eq!(desc.digest(), exported.as_str());
+
+    let idx = ocidir.read_index()?.unwrap();
+    let desc = idx.manifests().first().unwrap();
+    let new_manifest: oci_image::ImageManifest = ocidir.read_json_blob(desc).unwrap();
+
+    assert_eq!(desc.digest().digest(), exported.digest());
     assert_eq!(new_manifest.layers().len(), fixture::LAYERS_V0_LEN);
 
     // Reset the destrepo
@@ -666,8 +670,11 @@ async fn test_export_as_container_derived() -> Result<()> {
         .await
         .unwrap();
 
-    let (new_manifest, desc) = ocidir.read_manifest_and_descriptor()?;
-    assert_eq!(desc.digest(), exported.as_str());
+    let idx = ocidir.read_index()?.unwrap();
+    let desc = idx.manifests().first().unwrap();
+    let new_manifest: oci_image::ImageManifest = ocidir.read_json_blob(desc).unwrap();
+
+    assert_eq!(desc.digest().digest(), exported.digest());
     assert_eq!(new_manifest.layers().len(), fixture::LAYERS_V0_LEN + 1);
 
     // Reset the destrepo
@@ -737,7 +744,10 @@ fn validate_chunked_structure(oci_path: &Utf8Path) -> Result<()> {
 
     let d = Dir::open_ambient_dir(oci_path, cap_std::ambient_authority())?;
     let d = ocidir::OciDir::open(&d)?;
-    let manifest = d.read_manifest()?;
+    let idx = d.read_index()?.unwrap();
+    let desc = idx.manifests().first().unwrap();
+    let manifest: oci_image::ImageManifest = d.read_json_blob(desc).unwrap();
+
     assert_eq!(manifest.layers().len(), LAYERS_V0_LEN);
     let ostree_layer = manifest.layers().first().unwrap();
     let mut ostree_layer_blob = d
@@ -855,7 +865,7 @@ async fn test_container_chunked() -> Result<()> {
     for layer in prep.layers.iter() {
         assert!(layer.commit.is_none());
     }
-    assert_eq!(digest, expected_digest);
+    assert_eq!(digest, expected_digest.to_string());
     {
         let mut layer_history = prep.layers_with_history();
         assert!(layer_history
@@ -904,7 +914,7 @@ r usr/bin/bash bash-v0
         .context("Failed to update")?;
 
     let expected_digest = fixture.export_container().await.unwrap().1;
-    assert_ne!(digest, expected_digest);
+    assert_ne!(digest, expected_digest.digest());
 
     let mut imp =
         store::ImageImporter::new(fixture.destrepo(), &imgref, Default::default()).await?;
@@ -928,7 +938,7 @@ r usr/bin/bash bash-v0
     }
     let to_fetch = prep.layers_to_fetch().collect::<Result<Vec<_>>>()?;
     assert_eq!(to_fetch.len(), 2);
-    assert_eq!(expected_digest, prep.manifest_digest.as_str());
+    assert_eq!(expected_digest.to_string(), prep.manifest_digest.as_str());
     assert!(prep.ostree_commit_layer.commit.is_none());
     assert_eq!(prep.ostree_layers.len(), nlayers);
     let (first, second) = (to_fetch[0], to_fetch[1]);
@@ -1741,20 +1751,20 @@ fn test_manifest_diff() {
     assert_eq!(d.to, &b);
     assert_eq!(d.added.len(), 4);
     assert_eq!(
-        d.added[0].digest(),
+        d.added[0].digest().to_string(),
         "sha256:0b5d930ffc92d444b0a7b39beed322945a3038603fbe2a56415a6d02d598df1f"
     );
     assert_eq!(
-        d.added[3].digest(),
+        d.added[3].digest().to_string(),
         "sha256:cb9b8a4ac4a8df62df79e6f0348a14b3ec239816d42985631c88e76d4e3ff815"
     );
     assert_eq!(d.removed.len(), 4);
     assert_eq!(
-        d.removed[0].digest(),
+        d.removed[0].digest().to_string(),
         "sha256:0ff8b1fdd38e5cfb6390024de23ba4b947cd872055f62e70f2c21dad5c928925"
     );
     assert_eq!(
-        d.removed[3].digest(),
+        d.removed[3].digest().to_string(),
         "sha256:76b83eea62b7b93200a056b5e0201ef486c67f1eeebcf2c7678ced4d614cece2"
     );
 }

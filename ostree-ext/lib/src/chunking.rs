@@ -785,7 +785,12 @@ fn basic_packing<'a>(
 mod test {
     use super::*;
 
+    use oci_spec::image as oci_image;
+    use std::str::FromStr;
+
     const FCOS_CONTENTMETA: &[u8] = include_bytes!("fixtures/fedora-coreos-contentmeta.json.gz");
+    const SHA256_EXAMPLE: &str =
+        "sha256:0000111122223333444455556666777788889999aaaabbbbccccddddeeeeffff";
 
     #[test]
     fn test_packing_basics() -> Result<()> {
@@ -838,8 +843,8 @@ mod test {
 
         let config = oci_spec::image::DescriptorBuilder::default()
             .media_type(oci_spec::image::MediaType::ImageConfig)
-            .size(7023)
-            .digest("sha256:imageconfig")
+            .size(7023_u64)
+            .digest(oci_image::Digest::from_str(SHA256_EXAMPLE).unwrap())
             .build()
             .expect("build config descriptor");
 
@@ -850,8 +855,8 @@ mod test {
                 let sep = COMPONENT_SEPARATOR.encode_utf8(&mut buf);
                 oci_spec::image::DescriptorBuilder::default()
                     .media_type(oci_spec::image::MediaType::ImageLayerGzip)
-                    .size(100)
-                    .digest(format!("sha256:{}", l.len()))
+                    .size(100_u64)
+                    .digest(oci_image::Digest::from_str(SHA256_EXAMPLE).unwrap())
                     .annotations(HashMap::from([(
                         CONTENT_ANNOTATION.to_string(),
                         l.join(sep),

@@ -68,7 +68,7 @@ fn ref_for_blob_digest(d: &str) -> Result<String> {
 
 /// Convert e.g. sha256:12345... into `/ostree/container/blob/sha256_2B12345...`.
 fn ref_for_layer(l: &oci_image::Descriptor) -> Result<String> {
-    ref_for_blob_digest(l.digest().as_str())
+    ref_for_blob_digest(l.digest().digest())
 }
 
 /// Convert e.g. sha256:12345... into `/ostree/container/blob/sha256_2B12345...`.
@@ -202,12 +202,12 @@ pub struct ManifestLayerState {
 impl ManifestLayerState {
     /// The cryptographic checksum.
     pub fn digest(&self) -> &str {
-        self.layer.digest().as_str()
+        self.layer.digest().digest()
     }
 
     /// The (possibly compressed) size.
     pub fn size(&self) -> u64 {
-        self.layer.size() as u64
+        self.layer.size()
     }
 }
 
@@ -638,7 +638,7 @@ impl ImageImporter {
         }
 
         let (manifest_digest, manifest) = self.proxy.fetch_manifest(&self.proxy_img).await?;
-        let new_imageid = manifest.config().digest().as_str();
+        let new_imageid = manifest.config().digest().digest();
 
         // Query for previous stored state
 
@@ -649,7 +649,7 @@ impl ImageImporter {
                     return Ok(PrepareResult::AlreadyPresent(previous_state));
                 }
                 // Failing that, if they have the same imageID, we're also done.
-                let previous_imageid = previous_state.manifest.config().digest().as_str();
+                let previous_imageid = previous_state.manifest.config().digest().digest();
                 if previous_imageid == new_imageid {
                     return Ok(PrepareResult::AlreadyPresent(previous_state));
                 }
@@ -1355,7 +1355,7 @@ pub(crate) fn export_to_oci(
     let new_config = dest_oci.write_config(new_config)?;
     new_manifest.set_config(new_config);
 
-    dest_oci.insert_manifest(new_manifest, tag, oci_image::Platform::default())
+    Ok(dest_oci.insert_manifest(new_manifest, tag, oci_image::Platform::default())?)
 }
 
 /// Given a container image reference which is stored in `repo`, export it to the
@@ -1366,7 +1366,7 @@ pub async fn export(
     src_imgref: &ImageReference,
     dest_imgref: &ImageReference,
     opts: Option<ExportToOCIOpts>,
-) -> Result<String> {
+) -> Result<oci_image::Digest> {
     let opts = opts.unwrap_or_default();
     let target_oci = dest_imgref.transport == Transport::OciDir;
     let tempdir = if !target_oci {
@@ -1476,7 +1476,7 @@ fn gc_image_layers_impl(
     let mut referenced_layers = BTreeSet::new();
     for m in all_manifests.iter() {
         for layer in m.layers() {
-            referenced_layers.insert(layer.digest().as_str());
+            referenced_layers.insert(layer.digest().digest());
         }
     }
     tracing::debug!("Referenced layers: {}", referenced_layers.len());

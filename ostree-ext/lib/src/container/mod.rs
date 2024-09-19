@@ -341,12 +341,12 @@ impl<'a> ManifestDiff<'a> {
         let src_layers = src
             .layers()
             .iter()
-            .map(|l| (l.digest(), l))
+            .map(|l| (l.digest().digest(), l))
             .collect::<HashMap<_, _>>();
         let dest_layers = dest
             .layers()
             .iter()
-            .map(|l| (l.digest(), l))
+            .map(|l| (l.digest().digest(), l))
             .collect::<HashMap<_, _>>();
         let mut removed = Vec::new();
         let mut added = Vec::new();
@@ -355,16 +355,16 @@ impl<'a> ManifestDiff<'a> {
                 removed.push(descriptor);
             }
         }
-        removed.sort_by(|a, b| a.digest().cmp(b.digest()));
+        removed.sort_by(|a, b| a.digest().digest().cmp(b.digest().digest()));
         for (blobid, &descriptor) in dest_layers.iter() {
             if !src_layers.contains_key(blobid) {
                 added.push(descriptor);
             }
         }
-        added.sort_by(|a, b| a.digest().cmp(b.digest()));
+        added.sort_by(|a, b| a.digest().digest().cmp(b.digest().digest()));
 
         fn layersum<'a, I: Iterator<Item = &'a oci_spec::image::Descriptor>>(layers: I) -> u64 {
-            layers.map(|layer| layer.size() as u64).sum()
+            layers.map(|layer| layer.size()).sum()
         }
         let total = dest_layers.len() as u64;
         let total_size = layersum(dest.layers().iter());
