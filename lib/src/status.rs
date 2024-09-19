@@ -325,6 +325,46 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     Ok(())
 }
 
+/// Write the data for a container image based status.
+fn human_render_imagestatus(
+    mut out: impl Write,
+    slot_name: &str,
+    image: &crate::spec::ImageStatus,
+) -> Result<()> {
+    let transport = &image.image.transport;
+    let imagename = &image.image.image;
+    // Registry is the default, so don't show that
+    let imageref = if transport == "registry" {
+        Cow::Borrowed(imagename)
+    } else {
+        // But for non-registry we include the transport
+        Cow::Owned(format!("{transport}:{imagename}"))
+    };
+    writeln!(out, "Current {slot_name} image: {imageref}")?;
+
+    let version = image
+        .version
+        .as_deref()
+        .unwrap_or("No image version defined");
+    let timestamp = image
+        .timestamp
+        .as_ref()
+        .map(|t| t.to_string())
+        .unwrap_or_else(|| "No timestamp present".to_owned());
+    let digest = &image.image_digest;
+
+    writeln!(out, "    Image version: {version} ({timestamp})")?;
+    writeln!(out, "    Image digest: {digest}")?;
+    Ok(())
+}
+
+fn human_render_ostree(mut out: impl Write, slot_name: &str, _ostree_commit: &str) -> Result<()> {
+    // TODO consider rendering more ostree stuff here like rpm-ostree status does
+    writeln!(out, "Current {slot_name} state is native ostree")?;
+    Ok(())
+}
+
+/// Implementation of rendering our host structure in a "human readable" way.
 fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
     for (slot_name, status) in [
         ("staged", &host.status.staged),
@@ -333,32 +373,11 @@ fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
     ] {
         if let Some(host_status) = status {
             if let Some(image) = &host_status.image {
-                let transport = &image.image.transport;
-                let imagename = &image.image.image;
-                // Registry is the default, so don't show that
-                let imageref = if transport == "registry" {
-                    Cow::Borrowed(imagename)
-                } else {
-                    // But for non-registry we include the transport
-                    Cow::Owned(format!("{transport}:{imagename}"))
-                };
-                writeln!(out, "Current {slot_name} image: {imageref}")?;
-
-                let version = image
-                    .version
-                    .as_deref()
-                    .unwrap_or("No image version defined");
-                let timestamp = image
-                    .timestamp
-                    .as_ref()
-                    .map(|t| t.to_string())
-                    .unwrap_or_else(|| "No timestamp present".to_owned());
-                let digest = &image.image_digest;
-
-                writeln!(out, "    Image version: {version} ({timestamp})")?;
-                writeln!(out, "    Image digest: {digest}")?;
+                human_render_imagestatus(&mut out, slot_name, image)?;
+            } else if let Some(ostree) = host_status.ostree.as_ref() {
+                human_render_ostree(&mut out, slot_name, &ostree.checksum)?;
             } else {
-                writeln!(out, "Current {slot_name} state is native ostree")?;
+                writeln!(out, "Current {slot_name} state is unknown")?;
             }
         } else {
             writeln!(out, "No {slot_name} image present")?;
