@@ -1,0 +1,12 @@
+environment+:
+  TMT_PLUGINS: ./tests/plugins
+provision:
+  how: bootc
+  add_deps: false
+  containerfile: tests/containerfiles/lbi/Containerfile
+  containerfile_workdir: tests/containerfiles/lbi
+  disk: 20
+summary: Execute logically bound images tests for installing image
+execute:
+  how: tmt
+  script: exec nu tests/booted/test-logically-bound-install.nu

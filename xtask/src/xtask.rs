@@ -11,6 +11,7 @@ use fn_error_context::context;
 use xshell::{cmd, Shell};
 
 const NAME: &str = "bootc";
+const TEST_IMAGES: &[&str] = &["quay.io/curl/curl-base:latest", "quay.io/curl/curl:latest"];
 
 fn main() {
     if let Err(e) = try_main() {
@@ -184,6 +185,9 @@ fn test_tmt(sh: &Shell) -> Result<()> {
     println!("Discovered plans: {all_plan_files:?}");
 
     cmd!(sh, "cargo run -p tests-integration run-vm prepare-tmt").run()?;
+
+    // pull some small images that are used for LBI installation tests
+    cmd!(sh, "podman pull {TEST_IMAGES...}").run()?;
 
     for (_prio, name) in all_plan_files {
         // cc https://pagure.io/testcloud/pull-request/174
