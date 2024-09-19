@@ -417,19 +417,19 @@ dependencies = [
 
 [[package]]
 name = "containers-image-proxy"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "450ba7a168d28a978bed898a3303bb387aaafabea982a956689129cdb821920f"
+checksum = "c1b4ec45d60513c498a40c69d89447d8bf91bbd17f71a32aa285b39e4dc03294"
 dependencies = [
- "anyhow",
  "cap-std-ext",
  "fn-error-context",
  "futures-util",
- "oci-spec 0.6.8",
+ "oci-spec",
  "rustix",
  "semver",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "tracing",
 ]
@@ -963,6 +963,7 @@ checksum = "824b2ae422412366ba479e8111fd301f7b5faece8149317bb81925979a53f520"
 dependencies = [
  "equivalent",
  "hashbrown",
+ "serde",
 ]
 
 [[package]]
@@ -1254,23 +1255,6 @@ dependencies = [
 
 [[package]]
 name = "oci-spec"
-version = "0.6.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f5a3fe998d50101ae009351fec56d88a69f4ed182e11000e711068c2f5abf72"
-dependencies = [
- "derive_builder",
- "getset",
- "once_cell",
- "regex",
- "serde",
- "serde_json",
- "strum",
- "strum_macros",
- "thiserror",
-]
-
-[[package]]
-name = "oci-spec"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5cee185ce7cf1cce45e194e34cd87c0bad7ff0aa2e8917009a2da4f7b31fb363"
@@ -1287,23 +1271,22 @@ dependencies = [
 
 [[package]]
 name = "ocidir"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c9e545ae89c695346b4581fa67d31085abd7354f93208142113f72221872391"
+checksum = "1123c697592d4240224b7e09d50375c7da3f17320ed741c922f54b5377b79eb0"
 dependencies = [
- "anyhow",
  "camino",
  "cap-std-ext",
  "chrono",
  "flate2",
- "fn-error-context",
  "hex",
- "oci-spec 0.6.8",
+ "oci-spec",
  "olpc-cjson",
  "openssl",
  "serde",
  "serde_json",
  "tar",
+ "thiserror",
 ]
 
 [[package]]
@@ -1380,9 +1363,9 @@ dependencies = [
 
 [[package]]
 name = "ostree-ext"
-version = "0.14.4"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "502954dd77e19df256429bb830e1d2c4e8d89cf60a33368b856417e7f633e87d"
+checksum = "8778f3ba7b521c1eb9228dd3b92c5461a5594a003e62fef15367199e4cd46482"
 dependencies = [
  "anyhow",
  "camino",
@@ -1395,6 +1378,7 @@ dependencies = [
  "futures-util",
  "gvariant",
  "hex",
+ "indexmap",
  "indicatif",
  "io-lifetimes",
  "libc",
@@ -2017,7 +2001,7 @@ dependencies = [
  "fn-error-context",
  "indoc",
  "libtest-mimic",
- "oci-spec 0.7.0",
+ "oci-spec",
  "rustix",
  "serde",
  "serde_json",

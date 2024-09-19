@@ -178,7 +178,7 @@ async fn handle_layer_progress_print(
                         byte_bar.reset_eta();
                         byte_bar.set_length(layer_size);
                         let layer_type = prefix_of_progress(&l);
-                        let short_digest = &layer.digest()[0..21];
+                        let short_digest = &layer.digest().digest()[0..21];
                         byte_bar.set_message(format!("{layer_type} {short_digest}"));
                     } else {
                         byte_bar.set_position(layer_size);
