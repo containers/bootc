@@ -326,7 +326,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
 }
 
 fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
-    for (status_string, status) in [
+    for (slot_name, status) in [
         ("staged", &host.status.staged),
         ("booted", &host.status.booted),
         ("rollback", &host.status.rollback),
@@ -342,7 +342,7 @@ fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
                     // But for non-registry we include the transport
                     Cow::Owned(format!("{transport}:{imagename}"))
                 };
-                writeln!(out, "Current {status_string} image: {imageref}")?;
+                writeln!(out, "Current {slot_name} image: {imageref}")?;
 
                 let version = image
                     .version
@@ -358,10 +358,10 @@ fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
                 writeln!(out, "    Image version: {version} ({timestamp})")?;
                 writeln!(out, "    Image digest: {digest}")?;
             } else {
-                writeln!(out, "Current {status_string} state is native ostree")?;
+                writeln!(out, "Current {slot_name} state is native ostree")?;
             }
         } else {
-            writeln!(out, "No {status_string} image present")?;
+            writeln!(out, "No {slot_name} image present")?;
         }
     }
     Ok(())
