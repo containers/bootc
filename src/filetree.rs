@@ -104,9 +104,7 @@ impl FileTree {
         let mut ret = HashMap::new();
         for entry in dir.list_dir(".")? {
             let entry = entry?;
-            let name = if let Some(name) = entry.file_name().to_str() {
-                name
-            } else {
+            let Some(name) = entry.file_name().to_str() else {
                 bail!("Invalid UTF-8 filename: {:?}", entry.file_name())
             };
             if name.starts_with(TMP_PREFIX) {
@@ -239,9 +237,7 @@ impl FileTree {
 fn cleanup_tmp(dir: &openat::Dir) -> Result<()> {
     for entry in dir.list_dir(".")? {
         let entry = entry?;
-        let name = if let Some(name) = entry.file_name().to_str() {
-            name
-        } else {
+        let Some(name) = entry.file_name().to_str() else {
             // Skip invalid UTF-8 for now, we will barf on it later though.
             continue;
         };

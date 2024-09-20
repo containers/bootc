@@ -37,9 +37,7 @@ pub(crate) fn filenames(dir: &openat::Dir) -> Result<HashSet<String>> {
     let mut ret = HashSet::new();
     for entry in dir.list_dir(".")? {
         let entry = entry?;
-        let name = if let Some(name) = entry.file_name().to_str() {
-            name
-        } else {
+        let Some(name) = entry.file_name().to_str() else {
             bail!("Invalid UTF-8 filename: {:?}", entry.file_name())
         };
         match dir.get_file_type(&entry)? {

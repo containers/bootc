@@ -249,9 +249,7 @@ pub(crate) fn adopt_and_update(name: &str) -> Result<ContentMetadata> {
 
     ensure_writable_boot()?;
 
-    let update = if let Some(update) = component.query_update(&sysroot)? {
-        update
-    } else {
+    let Some(update) = component.query_update(&sysroot)? else {
         anyhow::bail!("Component {} has no available update", name);
     };
     let mut state_guard =
@@ -270,12 +268,10 @@ pub(crate) fn adopt_and_update(name: &str) -> Result<ContentMetadata> {
 pub(crate) fn validate(name: &str) -> Result<ValidationResult> {
     let state = SavedState::load_from_disk("/")?.unwrap_or_default();
     let component = component::new_from_name(name)?;
-    let inst = if let Some(inst) = state.installed.get(name) {
-        inst.clone()
-    } else {
+    let Some(inst) = state.installed.get(name) else {
         anyhow::bail!("Component {} is not installed", name);
     };
-    component.validate(&inst)
+    component.validate(inst)
 }
 
 pub(crate) fn status() -> Result<Status> {
