@@ -283,9 +283,7 @@ impl Component for Efi {
         device: &str,
         update_firmware: bool,
     ) -> Result<InstalledContent> {
-        let meta = if let Some(meta) = get_component_update(src_root, self)? {
-            meta
-        } else {
+        let Some(meta) = get_component_update(src_root, self)? else {
             anyhow::bail!("No update metadata for component {} found", self.name());
         };
         log::debug!("Found metadata {}", meta.version);
