@@ -63,6 +63,10 @@ impl Efi {
     }
 
     fn open_esp_optional(&self) -> Result<Option<openat::Dir>> {
+        if !is_efi_booted()? && self.get_esp_device().is_none() {
+            log::debug!("Skip EFI");
+            return Ok(None);
+        }
         let sysroot = openat::Dir::open("/")?;
         let esp = sysroot.sub_dir_optional(&self.esp_path()?)?;
         Ok(esp)
@@ -73,6 +77,20 @@ impl Efi {
         let sysroot = openat::Dir::open("/")?;
         let esp = sysroot.sub_dir(&self.esp_path()?)?;
         Ok(esp)
+    }
+
+    fn get_esp_device(&self) -> Option<PathBuf> {
+        let esp_devices = [COREOS_ESP_PART_LABEL, ANACONDA_ESP_PART_LABEL]
+            .into_iter()
+            .map(|p| Path::new("/dev/disk/by-partlabel/").join(p));
+        let mut esp_device = None;
+        for path in esp_devices {
+            if path.exists() {
+                esp_device = Some(path);
+                break;
+            }
+        }
+        return esp_device;
     }
 
     pub(crate) fn ensure_mounted_esp(&self, root: &Path) -> Result<PathBuf> {
@@ -94,17 +112,9 @@ impl Efi {
             return Ok(mnt);
         }
 
-        let esp_devices = [COREOS_ESP_PART_LABEL, ANACONDA_ESP_PART_LABEL]
-            .into_iter()
-            .map(|p| Path::new("/dev/disk/by-partlabel/").join(p));
-        let mut esp_device = None;
-        for path in esp_devices {
-            if path.exists() {
-                esp_device = Some(path);
-                break;
-            }
-        }
-        let esp_device = esp_device.ok_or_else(|| anyhow::anyhow!("Failed to find ESP device"))?;
+        let esp_device = self
+            .get_esp_device()
+            .ok_or_else(|| anyhow::anyhow!("Failed to find ESP device"))?;
         for &mnt in ESP_MOUNTS.iter() {
             let mnt = root.join(mnt);
             if !mnt.exists() {
@@ -386,6 +396,9 @@ impl Component for Efi {
     }
 
     fn validate(&self, current: &InstalledContent) -> Result<ValidationResult> {
+        if !is_efi_booted()? && self.get_esp_device().is_none() {
+            return Ok(ValidationResult::Skip);
+        }
         let currentf = current
             .filetree
             .as_ref()

@@ -380,11 +380,7 @@ pub(crate) fn print_status(status: &Status) -> Result<()> {
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
-        let boot_method = if Path::new("/sys/firmware/efi").exists() {
-            "EFI"
-        } else {
-            "BIOS"
-        };
+        let boot_method = if efi::is_efi_booted()? { "EFI" } else { "BIOS" };
         println!("Boot method: {}", boot_method);
     }
 
