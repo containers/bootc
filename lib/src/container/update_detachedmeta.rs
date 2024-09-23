@@ -55,7 +55,7 @@ pub async fn update_detached_metadata(
             .read_json_blob(manifest_descriptor)
             .context("Reading manifest json blob")?;
 
-        anyhow::ensure!(manifest_descriptor.digest().digest() == pulled_digest.digest());
+        anyhow::ensure!(manifest_descriptor.digest() == &pulled_digest);
         let platform = manifest_descriptor
             .platform()
             .as_ref()
