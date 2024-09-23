@@ -5,7 +5,7 @@ use cap_std_ext::cap_std;
 use containers_image_proxy::oci_spec;
 use oci_image::ImageManifest;
 use oci_spec::image as oci_image;
-use ocidir::oci_spec::image::Arch;
+use ocidir::oci_spec::image::{Arch, DigestAlgorithm};
 use once_cell::sync::Lazy;
 use ostree_ext::chunking::ObjectMetaSized;
 use ostree_ext::container::{store, ManifestDiff};
@@ -626,7 +626,7 @@ async fn test_export_as_container_nonderived() -> Result<()> {
     let desc = idx.manifests().first().unwrap();
     let new_manifest: oci_image::ImageManifest = ocidir.read_json_blob(desc).unwrap();
 
-    assert_eq!(desc.digest().digest(), exported.digest());
+    assert_eq!(desc.digest().to_string(), exported.to_string());
     assert_eq!(new_manifest.layers().len(), fixture::LAYERS_V0_LEN);
 
     // Reset the destrepo
@@ -865,7 +865,7 @@ async fn test_container_chunked() -> Result<()> {
     for layer in prep.layers.iter() {
         assert!(layer.commit.is_none());
     }
-    assert_eq!(digest, expected_digest.to_string());
+    assert_eq!(digest, expected_digest);
     {
         let mut layer_history = prep.layers_with_history();
         assert!(layer_history
@@ -888,7 +888,7 @@ async fn test_container_chunked() -> Result<()> {
         );
     }
     let import = imp.import(prep).await.context("Init pull derived").unwrap();
-    assert_eq!(import.manifest_digest.as_str(), digest);
+    assert_eq!(import.manifest_digest, digest);
 
     assert_eq!(store::list_images(fixture.destrepo()).unwrap().len(), 1);
 
@@ -914,7 +914,7 @@ r usr/bin/bash bash-v0
         .context("Failed to update")?;
 
     let expected_digest = fixture.export_container().await.unwrap().1;
-    assert_ne!(digest, expected_digest.digest());
+    assert_ne!(digest, expected_digest);
 
     let mut imp =
         store::ImageImporter::new(fixture.destrepo(), &imgref, Default::default()).await?;
@@ -930,15 +930,12 @@ r usr/bin/bash bash-v0
         assert_eq!(cached.version(), Some("42.0"));
 
         let cached_update = cached.cached_update.unwrap();
-        assert_eq!(
-            cached_update.manifest_digest.as_str(),
-            prep.manifest_digest.as_str()
-        );
+        assert_eq!(cached_update.manifest_digest, prep.manifest_digest);
         assert_eq!(cached_update.version(), Some("42.0"));
     }
     let to_fetch = prep.layers_to_fetch().collect::<Result<Vec<_>>>()?;
     assert_eq!(to_fetch.len(), 2);
-    assert_eq!(expected_digest.to_string(), prep.manifest_digest.as_str());
+    assert_eq!(expected_digest, prep.manifest_digest);
     assert!(prep.ostree_commit_layer.commit.is_none());
     assert_eq!(prep.ostree_layers.len(), nlayers);
     let (first, second) = (to_fetch[0], to_fetch[1]);
@@ -1333,7 +1330,7 @@ async fn test_container_write_derive() -> Result<()> {
         .load_commit(import.merge_commit.as_str())?
         .0;
     let digest = store::manifest_digest_from_commit(imported_commit)?;
-    assert!(digest.starts_with("sha256:"));
+    assert_eq!(digest.algorithm(), &DigestAlgorithm::Sha256);
     assert_eq!(digest, expected_digest);
 
     let commit_meta = &imported_commit.child_value(0);

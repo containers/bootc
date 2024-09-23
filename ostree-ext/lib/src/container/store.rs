@@ -21,7 +21,7 @@ use flate2::Compression;
 use fn_error_context::context;
 use futures_util::TryFutureExt;
 use oci_spec::image::{
-    self as oci_image, Arch, Descriptor, History, ImageConfiguration, ImageManifest,
+    self as oci_image, Arch, Descriptor, Digest, History, ImageConfiguration, ImageManifest,
 };
 use ostree::prelude::{Cast, FileEnumeratorExt, FileExt, ToVariant};
 use ostree::{gio, glib};
@@ -68,7 +68,7 @@ fn ref_for_blob_digest(d: &str) -> Result<String> {
 
 /// Convert e.g. sha256:12345... into `/ostree/container/blob/sha256_2B12345...`.
 fn ref_for_layer(l: &oci_image::Descriptor) -> Result<String> {
-    ref_for_blob_digest(l.digest().digest())
+    ref_for_blob_digest(&l.digest().to_string())
 }
 
 /// Convert e.g. sha256:12345... into `/ostree/container/blob/sha256_2B12345...`.
@@ -120,7 +120,7 @@ pub struct LayeredImageState {
     /// The merge commit unions all layers
     pub merge_commit: String,
     /// The digest of the original manifest
-    pub manifest_digest: String,
+    pub manifest_digest: Digest,
     /// The image manfiest
     pub manifest: ImageManifest,
     /// The image configuration
@@ -151,7 +151,7 @@ pub struct CachedImageUpdate {
     /// The image configuration
     pub config: ImageConfiguration,
     /// The digest of the manifest
-    pub manifest_digest: String,
+    pub manifest_digest: Digest,
 }
 
 impl CachedImageUpdate {
@@ -199,23 +199,11 @@ pub struct ManifestLayerState {
     pub commit: Option<String>,
 }
 
-impl ManifestLayerState {
-    /// The cryptographic checksum.
-    pub fn digest(&self) -> &str {
-        self.layer.digest().digest()
-    }
-
-    /// The (possibly compressed) size.
-    pub fn size(&self) -> u64 {
-        self.layer.size()
-    }
-}
-
 /// Information about which layers need to be downloaded.
 #[derive(Debug)]
 pub struct PreparedImport {
     /// The manifest digest that was found
-    pub manifest_digest: String,
+    pub manifest_digest: Digest,
     /// The deserialized manifest.
     pub manifest: oci_image::ImageManifest,
     /// The deserialized configuration.
@@ -223,7 +211,7 @@ pub struct PreparedImport {
     /// The previous manifest
     pub previous_state: Option<Box<LayeredImageState>>,
     /// The previously stored manifest digest.
-    pub previous_manifest_digest: Option<String>,
+    pub previous_manifest_digest: Option<Digest>,
     /// The previously stored image ID.
     pub previous_imageid: Option<String>,
     /// The layers containing split objects
@@ -286,7 +274,7 @@ impl PreparedImport {
                     if v.commit.is_some() {
                         (stored + 1, to_fetch, sz)
                     } else {
-                        (stored, to_fetch + 1, sz + v.size())
+                        (stored, to_fetch + 1, sz + v.layer.size())
                     }
                 });
         (to_fetch > 0).then(|| {
@@ -313,10 +301,11 @@ pub(crate) fn query_layer(
 #[context("Reading manifest data from commit")]
 fn manifest_data_from_commitmeta(
     commit_meta: &glib::VariantDict,
-) -> Result<(oci_image::ImageManifest, String)> {
+) -> Result<(oci_image::ImageManifest, Digest)> {
     let digest = commit_meta
-        .lookup(META_MANIFEST_DIGEST)?
+        .lookup::<String>(META_MANIFEST_DIGEST)?
         .ok_or_else(|| anyhow!("Missing {} metadata on merge commit", META_MANIFEST_DIGEST))?;
+    let digest = Digest::from_str(&digest)?;
     let manifest_bytes: String = commit_meta
         .lookup::<String>(META_MANIFEST)?
         .ok_or_else(|| anyhow!("Failed to find {} metadata key", META_MANIFEST))?;
@@ -344,7 +333,7 @@ fn image_config_from_commitmeta(commit_meta: &glib::VariantDict) -> Result<Image
 ///
 /// This can be used to uniquely identify the image.  For example, it can be used
 /// in a "digested pull spec" like `quay.io/someuser/exampleos@sha256:...`.
-pub fn manifest_digest_from_commit(commit: &glib::Variant) -> Result<String> {
+pub fn manifest_digest_from_commit(commit: &glib::Variant) -> Result<Digest> {
     let commit_meta = &commit.child_value(0);
     let commit_meta = &glib::VariantDict::new(Some(commit_meta));
     Ok(manifest_data_from_commitmeta(commit_meta)?.1)
@@ -548,12 +537,15 @@ impl ImageImporter {
     pub(crate) async fn cache_pending(
         &self,
         commit: &str,
-        manifest_digest: &str,
+        manifest_digest: &Digest,
         manifest: &ImageManifest,
         config: &ImageConfiguration,
     ) -> Result<()> {
         let commitmeta = glib::VariantDict::new(None);
-        commitmeta.insert(Self::CACHED_KEY_MANIFEST_DIGEST, manifest_digest);
+        commitmeta.insert(
+            Self::CACHED_KEY_MANIFEST_DIGEST,
+            manifest_digest.to_string(),
+        );
         let cached_manifest = serde_json::to_string(manifest).context("Serializing manifest")?;
         commitmeta.insert(Self::CACHED_KEY_MANIFEST, cached_manifest);
         let cached_config = serde_json::to_string(config).context("Serializing config")?;
@@ -573,7 +565,7 @@ impl ImageImporter {
     /// which e.g. includes a diff of the layers.
     fn create_prepared_import(
         &mut self,
-        manifest_digest: String,
+        manifest_digest: Digest,
         manifest: ImageManifest,
         config: ImageConfiguration,
         previous_state: Option<Box<LayeredImageState>>,
@@ -638,7 +630,8 @@ impl ImageImporter {
         }
 
         let (manifest_digest, manifest) = self.proxy.fetch_manifest(&self.proxy_img).await?;
-        let new_imageid = manifest.config().digest().digest();
+        let manifest_digest = Digest::from_str(&manifest_digest)?;
+        let new_imageid = manifest.config().digest();
 
         // Query for previous stored state
 
@@ -649,7 +642,7 @@ impl ImageImporter {
                     return Ok(PrepareResult::AlreadyPresent(previous_state));
                 }
                 // Failing that, if they have the same imageID, we're also done.
-                let previous_imageid = previous_state.manifest.config().digest().digest();
+                let previous_imageid = previous_state.manifest.config().digest();
                 if previous_imageid == new_imageid {
                     return Ok(PrepareResult::AlreadyPresent(previous_state));
                 }
@@ -666,7 +659,7 @@ impl ImageImporter {
         if let Some(previous_state) = previous_state.as_ref() {
             self.cache_pending(
                 previous_state.merge_commit.as_str(),
-                manifest_digest.as_str(),
+                &manifest_digest,
                 &manifest,
                 &config,
             )
@@ -741,7 +734,7 @@ impl ImageImporter {
                     txn.commit(Some(cancellable))?;
                     Ok::<_, anyhow::Error>(commit)
                 })
-                .map_err(|e| e.context(format!("Layer {}", layer.digest())));
+                .map_err(|e| e.context(format!("Layer {}", layer.layer.digest())));
             let commit = super::unencapsulate::join_fetch(import_task, driver).await?;
             layer.commit = commit;
             if let Some(p) = self.layer_progress.as_ref() {
@@ -889,12 +882,12 @@ impl ImageImporter {
                     crate::tar::write_tar(&self.repo, blob, layer.ostree_ref.as_str(), Some(opts));
                 let r = super::unencapsulate::join_fetch(r, driver)
                     .await
-                    .with_context(|| format!("Parsing layer blob {}", layer.digest()))?;
+                    .with_context(|| format!("Parsing layer blob {}", layer.layer.digest()))?;
                 layer_commits.push(r.commit);
                 if !r.filtered.is_empty() {
                     let filtered = HashMap::from_iter(r.filtered.into_iter());
                     tracing::debug!("Found {} filtered toplevels", filtered.len());
-                    layer_filtered_content.insert(layer.digest().to_string(), filtered);
+                    layer_filtered_content.insert(layer.layer.digest().to_string(), filtered);
                 } else {
                     tracing::debug!("No filtered content");
                 }
@@ -916,7 +909,10 @@ impl ImageImporter {
         let serialized_manifest = serde_json::to_string(&import.manifest)?;
         let serialized_config = serde_json::to_string(&import.config)?;
         let mut metadata = HashMap::new();
-        metadata.insert(META_MANIFEST_DIGEST, import.manifest_digest.to_variant());
+        metadata.insert(
+            META_MANIFEST_DIGEST,
+            import.manifest_digest.to_string().to_variant(),
+        );
         metadata.insert(META_MANIFEST, serialized_manifest.to_variant());
         metadata.insert(META_CONFIG, serialized_config.to_variant());
         metadata.insert(
@@ -1089,6 +1085,7 @@ fn parse_cached_update(meta: &glib::VariantDict) -> Result<Option<CachedImageUpd
             // our key; gracefully handle that.
             return Ok(None);
         };
+    let manifest_digest = Digest::from_str(&manifest_digest)?;
     // If we found the cached manifest digest key, then we must have the manifest and config;
     // otherwise that's an error.
     let manifest = meta.lookup_value(ImageImporter::CACHED_KEY_MANIFEST, None);
@@ -1476,7 +1473,7 @@ fn gc_image_layers_impl(
     let mut referenced_layers = BTreeSet::new();
     for m in all_manifests.iter() {
         for layer in m.layers() {
-            referenced_layers.insert(layer.digest().digest());
+            referenced_layers.insert(layer.digest().to_string());
         }
     }
     tracing::debug!("Referenced layers: {}", referenced_layers.len());
@@ -1807,4 +1804,27 @@ pub(crate) fn verify_container_image(
     }
 
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use oci_image::{DescriptorBuilder, MediaType, Sha256Digest};
+
+    use super::*;
+
+    #[test]
+    fn test_ref_for_descriptor() {
+        let d = DescriptorBuilder::default()
+            .size(42u64)
+            .media_type(MediaType::ImageManifest)
+            .digest(
+                Sha256Digest::from_str(
+                    "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+                )
+                .unwrap(),
+            )
+            .build()
+            .unwrap();
+        assert_eq!(ref_for_layer(&d).unwrap(), "ostree/container/blob/sha256_3A_2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae");
+    }
 }
