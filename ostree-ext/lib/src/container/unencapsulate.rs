@@ -37,7 +37,7 @@ use super::*;
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
 use futures_util::{Future, FutureExt, TryFutureExt as _};
-use oci_spec::image as oci_image;
+use oci_spec::image::{self as oci_image, Digest};
 use std::sync::{Arc, Mutex};
 use tokio::{
     io::{AsyncBufRead, AsyncRead},
@@ -140,7 +140,7 @@ pub struct Import {
     /// The ostree commit that was imported
     pub ostree_commit: String,
     /// The image digest retrieved
-    pub image_digest: String,
+    pub image_digest: Digest,
 
     /// Any deprecation warning
     pub deprecated_warning: Option<String>,
