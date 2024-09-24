@@ -609,16 +609,17 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         }
     } else {
         let fetched = crate::deploy::pull(repo, imgref, None, opts.quiet).await?;
-        let staged_digest = staged_image.as_ref().map(|s| s.image_digest.as_str());
-        let fetched_digest = fetched.manifest_digest.as_str();
+        let staged_digest = staged_image.map(|s| s.digest().expect("valid digest in status"));
+        let fetched_digest = &fetched.manifest_digest;
         tracing::debug!("staged: {staged_digest:?}");
         tracing::debug!("fetched: {fetched_digest}");
         let staged_unchanged = staged_digest
+            .as_ref()
             .map(|d| d == fetched_digest)
             .unwrap_or_default();
         let booted_unchanged = booted_image
             .as_ref()
-            .map(|img| img.manifest_digest.as_str() == fetched_digest)
+            .map(|img| &img.manifest_digest == fetched_digest)
             .unwrap_or_default();
         if staged_unchanged {
             println!("Staged update present, not changed.");

@@ -3,6 +3,7 @@
 use std::fmt::Display;
 
 use ostree_ext::container::OstreeImageReference;
+use ostree_ext::oci_spec::image::Digest;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -216,6 +217,13 @@ impl Display for ImageReference {
             let ostree_imgref = OstreeImageReference::from(self.clone());
             ostree_imgref.fmt(f)
         }
+    }
+}
+
+impl ImageStatus {
+    pub(crate) fn digest(&self) -> anyhow::Result<Digest> {
+        use std::str::FromStr;
+        Ok(Digest::from_str(&self.image_digest)?)
     }
 }
 
