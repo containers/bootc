@@ -172,7 +172,7 @@ async fn handle_layer_progress_print(
             layer = layers.recv() => {
                 if let Some(l) = layer {
                     let layer = descriptor_of_progress(&l);
-                    let layer_size = u64::try_from(layer.size()).unwrap();
+                    let layer_size = layer.size();
                     if l.is_starting() {
                         byte_bar.reset_elapsed();
                         byte_bar.reset_eta();
