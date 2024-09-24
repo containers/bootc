@@ -15,7 +15,7 @@ use ostree::{gio, glib};
 use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
 use ostree_ext::container::store::{ImportProgress, PrepareResult};
-use ostree_ext::oci_spec::image::Descriptor;
+use ostree_ext::oci_spec::image::{Descriptor, Digest};
 use ostree_ext::ostree::Deployment;
 use ostree_ext::ostree::{self, Sysroot};
 use ostree_ext::sysroot::SysrootLock;
@@ -38,7 +38,7 @@ pub(crate) struct RequiredHostSpec<'a> {
 
 /// State of a locally fetched image
 pub(crate) struct ImageState {
-    pub(crate) manifest_digest: String,
+    pub(crate) manifest_digest: Digest,
     pub(crate) version: Option<String>,
     pub(crate) ostree_commit: String,
 }
@@ -481,7 +481,10 @@ pub(crate) async fn rollback(sysroot: &Storage) -> Result<()> {
         &msg,
         [
             ("MESSAGE_ID", ROLLBACK_JOURNAL_ID),
-            ("BOOTC_MANIFEST_DIGEST", &rollback_image.manifest_digest),
+            (
+                "BOOTC_MANIFEST_DIGEST",
+                &rollback_image.manifest_digest.to_string(),
+            ),
         ]
         .into_iter(),
     )?;

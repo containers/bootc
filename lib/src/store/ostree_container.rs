@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 
 use ostree_ext::container as ostree_container;
 use ostree_ext::oci_spec;
-use ostree_ext::oci_spec::image::ImageConfiguration;
+use ostree_ext::oci_spec::image::{Digest, ImageConfiguration};
 use ostree_ext::ostree;
 use ostree_ext::sysroot::SysrootLock;
 
@@ -42,7 +42,7 @@ impl super::ContainerImageStoreImpl for OstreeContainerStore {
 /// Convert between a subset of ostree-ext metadata and the exposed spec API.
 fn create_imagestatus(
     image: ImageReference,
-    manifest_digest: &str,
+    manifest_digest: &Digest,
     config: &ImageConfiguration,
 ) -> ImageStatus {
     let labels = labels_of_config(config);
@@ -58,7 +58,7 @@ fn create_imagestatus(
         image,
         version,
         timestamp,
-        image_digest: manifest_digest.to_owned(),
+        image_digest: manifest_digest.to_string(),
     }
 }
 
