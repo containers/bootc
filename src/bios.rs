@@ -8,9 +8,22 @@ use crate::packagesystem;
 use anyhow::{bail, Result};
 
 use crate::util;
+use serde::{Deserialize, Serialize};
 
 // grub2-install file path
 pub(crate) const GRUB_BIN: &str = "usr/sbin/grub2-install";
+
+#[derive(Serialize, Deserialize, Debug)]
+struct BlockDevice {
+    path: String,
+    pttype: String,
+    parttypename: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Devices {
+    blockdevices: Vec<BlockDevice>,
+}
 
 #[derive(Default)]
 pub(crate) struct Bios {}
@@ -22,12 +35,11 @@ impl Bios {
         #[cfg(target_arch = "x86_64")]
         {
             // find /boot partition
-            let boot_dir = Path::new("/").join("boot");
             cmd = Command::new("findmnt");
             cmd.arg("--noheadings")
                 .arg("--output")
                 .arg("SOURCE")
-                .arg(boot_dir);
+                .arg("/boot");
             let partition = util::cmd_output(&mut cmd)?;
 
             // lsblk to find parent device
@@ -81,6 +93,38 @@ impl Bios {
         }
         Ok(())
     }
+
+    // check bios_boot partition on gpt type disk
+    fn get_bios_boot_partition(&self) -> Result<Option<String>> {
+        let target = self.get_device()?;
+        // lsblk to list children with bios_boot
+        let output = Command::new("lsblk")
+            .args([
+                "--json",
+                "--output",
+                "PATH,PTTYPE,PARTTYPENAME",
+                target.trim(),
+            ])
+            .output()?;
+        if !output.status.success() {
+            std::io::stderr().write_all(&output.stderr)?;
+            bail!("Failed to run lsblk");
+        }
+
+        let output = String::from_utf8(output.stdout)?;
+        // Parse the JSON string into the `Devices` struct
+        let devices: Devices = serde_json::from_str(&output).expect("JSON was not well-formatted");
+
+        // Find the device with the parttypename "BIOS boot"
+        for device in devices.blockdevices {
+            if let Some(parttypename) = &device.parttypename {
+                if parttypename == "BIOS boot" && device.pttype == "gpt" {
+                    return Ok(Some(device.path));
+                }
+            }
+        }
+        Ok(None)
+    }
 }
 
 impl Component for Bios {
@@ -120,6 +164,11 @@ impl Component for Bios {
     }
 
     fn query_adopt(&self) -> Result<Option<Adoptable>> {
+        #[cfg(target_arch = "x86_64")]
+        if crate::efi::is_efi_booted()? && self.get_bios_boot_partition()?.is_none() {
+            log::debug!("Skip BIOS adopt");
+            return Ok(None);
+        }
         crate::component::query_adopt_state()
     }
 
