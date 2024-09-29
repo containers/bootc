@@ -192,11 +192,21 @@ pub enum PrepareResult {
 /// A container image layer with associated downloaded-or-not state.
 #[derive(Debug)]
 pub struct ManifestLayerState {
+    /// The underlying layer descriptor.
     pub(crate) layer: oci_image::Descriptor,
+    // TODO semver: Make this readonly via an accessor
     /// The ostree ref name for this layer.
     pub ostree_ref: String,
+    // TODO semver: Make this readonly via an accessor
     /// The ostree commit that caches this layer, if present.
     pub commit: Option<String>,
+}
+
+impl ManifestLayerState {
+    /// Return the layer descriptor.
+    pub fn layer(&self) -> &oci_image::Descriptor {
+        &self.layer
+    }
 }
 
 /// Information about which layers need to be downloaded.
@@ -274,7 +284,7 @@ impl PreparedImport {
                     if v.commit.is_some() {
                         (stored + 1, to_fetch, sz)
                     } else {
-                        (stored, to_fetch + 1, sz + v.layer.size())
+                        (stored, to_fetch + 1, sz + v.layer().size())
                     }
                 });
         (to_fetch > 0).then(|| {
