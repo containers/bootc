@@ -50,6 +50,23 @@ impl Device {
         self.children.as_ref().map_or(false, |v| !v.is_empty())
     }
 
+    // I know I can pretty this up, very much a wip
+    pub(crate) fn is_mounted_in_pid_mounts(&self, pid: rustix::process::Pid) -> Result<bool> {
+        let output = Command::new("findmnt")
+            .arg("-N")
+            .arg((pid.as_raw_nonzero()).to_string())
+            .arg("-S")
+            .arg(self.path())
+            .output()
+            .expect("Failed to execute findmnt");
+
+        let mounts = String::from_utf8(output.stdout).unwrap();
+
+        let mounts_present = mounts.is_empty();
+
+        Ok(!mounts_present)
+    }
+
     // The "start" parameter was only added in a version of util-linux that's only
     // in Fedora 40 as of this writing.
     fn backfill_start(&mut self) -> Result<()> {

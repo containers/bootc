@@ -179,6 +179,11 @@ pub(crate) fn install_create_rootfs(
         );
     }
 
+    // Always disallow writing to mounted device
+    if device.is_mounted_in_pid_mounts(rustix::process::getpid()).expect("Failed to check mountpoints") {
+        anyhow::bail!("Device {} is mounted", device.path())
+    }
+
     let run_bootc = Utf8Path::new(RUN_BOOTC);
     let mntdir = run_bootc.join("mounts");
     if mntdir.exists() {
