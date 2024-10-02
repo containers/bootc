@@ -861,6 +861,7 @@ impl ImageImporter {
 
         let mut layer_commits = Vec::new();
         let mut layer_filtered_content: MetaFilteredData = HashMap::new();
+        let have_derived_layers = !import.layers.is_empty();
         for layer in import.layers {
             if let Some(c) = layer.commit {
                 tracing::debug!("Reusing fetched commit {}", c);
@@ -990,7 +991,19 @@ impl ImageImporter {
                 let modifier =
                     ostree::RepoCommitModifier::new(ostree::RepoCommitModifierFlags::CONSUME, None);
                 modifier.set_devino_cache(&devino);
-                modifier.set_sepolicy_from_commit(repo, &base_commit, cancellable)?;
+                // If we have derived layers, then we need to handle the case where
+                // the derived layers include custom policy. Just relabel everything
+                // in this case.
+                if have_derived_layers {
+                    let rootpath = td.open_dir(rootpath)?;
+                    let sepolicy = ostree::SePolicy::new_at(rootpath.as_raw_fd(), cancellable)?;
+                    tracing::debug!("labeling from merged tree");
+                    modifier.set_sepolicy(Some(&sepolicy));
+                } else {
+                    tracing::debug!("labeling from base tree");
+                    // TODO: We can likely drop this; we know all labels should be pre-computed.
+                    modifier.set_sepolicy_from_commit(repo, &base_commit, cancellable)?;
+                }
 
                 let mt = ostree::MutableTree::new();
                 repo.write_dfd_to_mtree(
