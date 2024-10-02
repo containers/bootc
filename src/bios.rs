@@ -16,7 +16,7 @@ pub(crate) const GRUB_BIN: &str = "usr/sbin/grub2-install";
 #[derive(Serialize, Deserialize, Debug)]
 struct BlockDevice {
     path: String,
-    pttype: String,
+    pttype: Option<String>,
     parttypename: Option<String>,
 }
 
@@ -113,12 +113,14 @@ impl Bios {
 
         let output = String::from_utf8(output.stdout)?;
         // Parse the JSON string into the `Devices` struct
-        let devices: Devices = serde_json::from_str(&output).expect("JSON was not well-formatted");
+        let Ok(devices) = serde_json::from_str::<Devices>(&output) else {
+            bail!("Could not deserialize JSON output from lsblk");
+        };
 
         // Find the device with the parttypename "BIOS boot"
         for device in devices.blockdevices {
             if let Some(parttypename) = &device.parttypename {
-                if parttypename == "BIOS boot" && device.pttype == "gpt" {
+                if parttypename == "BIOS boot" && device.pttype.as_deref() == Some("gpt") {
                     return Ok(Some(device.path));
                 }
             }
@@ -211,5 +213,20 @@ impl Component for Bios {
 
     fn get_efi_vendor(&self, _: &openat::Dir) -> Result<Option<String>> {
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_lsblk_output() {
+        let data = include_str!("../tests/fixtures/example-lsblk-output.json");
+        let devices: Devices = serde_json::from_str(&data).expect("JSON was not well-formatted");
+        assert_eq!(devices.blockdevices.len(), 7);
+        assert_eq!(devices.blockdevices[0].path, "/dev/sr0");
+        assert!(devices.blockdevices[0].pttype.is_none());
+        assert!(devices.blockdevices[0].parttypename.is_none());
     }
 }
