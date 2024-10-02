@@ -40,7 +40,7 @@ COPY ./my-app.image /usr/share/containers/systemd/my-app.image
 COPY ./another-app.container /usr/share/containers/systemd/another-app.container
 
 RUN ln -s /usr/share/containers/systemd/my-app.image /usr/lib/bootc/bound-images.d/my-app.image && \
-    ln -s /usr/share/containers/systemd/my-app.image /usr/lib/bootc/bound-images.d/my-app.image
+    ln -s /usr/share/containers/systemd/another-app.container /usr/lib/bootc/bound-images.d/another-app.container
 ```
 
 In the `.container` definition, you should use:
@@ -76,6 +76,31 @@ invocation used by bootc. However, many properties used for container registry i
 can be configured via [containers-registries.conf](https://github.com/containers/image/blob/main/docs/containers-registries.conf.5.md)
 and apply to all commands operating on that image.
 
+It is not currently supported in general to launch "rootless" containers from system-owned
+image stores in general, whether from `/var/lib/containers` or the `/usr/lib/bootc/storage`.
+There is no integration between bootc and "rootless" storage today, and none is planned.
+Instead, it's recommended to ensure that your "system" or "rootful" containers drop
+privileges. More in e.g. <https://github.com/containers/podman/discussions/13728>.
+
 ### Distro/OS installer support
 
 At the current time, logically bound images are [not supported by Anaconda](https://github.com/rhinstaller/anaconda/discussions/5197).
+
+## Comparison with default podman systemd units
+
+In the comparison below, the term "floating" will be used for non-logically bound images. These images are often fetched by e.g. [podman-systemd](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) and may be upgraded, added or removed independently of the host upgrade lifecycle.
+
+### Lifecycle
+
+- **Floating image:** The images are downloaded by the machine the first time it starts (requiring networking typically). Tools such as `podman auto-update` can be used to upgrade them independently of the host.
+- **Logically bound image:** The images are referenced by the bootable container and are ensured to be available when the (bootc based) server starts. The image is always upgraded via `bootc upgrade` and appears read-only to other processes (e.g. `podman`).
+
+### Upgrades, rollbacks and garbage collection
+
+- **Floating image:** Managed by the user (`podman auto-update`, `podman image prune`). This can be triggered at anytime independent of the host upgrades or rollbacks, and host upgrades/rollbacks do not affect the set of images.
+- **Logically bound image:** Managed exclusively by `bootc` during upgrades. The logically bound images corresponding to rollback deployments will also be retained. `bootc` performs garbage collection of unused images.
+
+### "rootless" container image
+
+- **Floating image:** Supported.
+- **Logically bound image:** Not supported (`bootc` cannot be invoked as non-root). Instead, it's recommended to just drop most privileges for launched logically bound containers.
