@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 name = "ostree-ext"
 readme = "../README.md"
 repository = "https://github.com/ostreedev/ostree-rs-ext"
-version = "0.15.1"
+version = "0.15.2"
 rust-version = "1.74.0"
 
 [dependencies]
