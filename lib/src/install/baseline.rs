@@ -163,8 +163,10 @@ pub(crate) fn install_create_rootfs(
     let devpath: Utf8PathBuf = device.path().into();
 
     // Always disallow writing to mounted device
-    if device.is_mounted_in_pid_mounts(rustix::process::getpid()).expect("Failed to check mountpoints") {
-        println!("{:?}", rustix::process::getpid());
+    if device
+        .is_mounted_in_pid_mounts()
+        .expect("Failed to check mountpoints")
+    {
         anyhow::bail!("Device {} is mounted", device.path())
     }
 

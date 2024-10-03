@@ -50,33 +50,22 @@ impl Device {
         self.children.as_ref().map_or(false, |v| !v.is_empty())
     }
 
-    // I know I can pretty this up, very much a wip
-    pub(crate) fn is_mounted_in_pid_mounts(&self, pid: rustix::process::Pid) -> Result<bool> {
+    // Return true if device is mounted anywhere
+    pub(crate) fn is_mounted_in_pid_mounts(&self) -> Result<bool> {
         let output = Command::new("findmnt")
             .arg("-N")
-            //.arg((pid.as_raw_nonzero()).to_string())
             .arg("1")
-            //.arg("-S")
-            //.arg("/dev/vdb3")
-            //.arg(self.path())
             .arg("--output=SOURCE")
             .output()
             .expect("Failed to execute findmnt");
 
-        // findmnt -N 1 --output=SOURCE
-
         let mounts = String::from_utf8(output.stdout).unwrap();
 
-        let mut mounts_present = false;
-
         if mounts.contains(&self.path()) {
-        //if mounts.contains("/dev/vdb3") { 
-            mounts_present = true;
+            return Ok(true);
         }
 
-        println!("{mounts}");
-
-        Ok(mounts_present)
+        Ok(false)
     }
 
     // The "start" parameter was only added in a version of util-linux that's only
