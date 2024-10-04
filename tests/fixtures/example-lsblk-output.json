@@ -1,0 +1,33 @@
+{
+   "blockdevices": [
+      {
+         "path": "/dev/sr0",
+         "pttype": null,
+         "parttypename": null
+      },{
+         "path": "/dev/zram0",
+         "pttype": null,
+         "parttypename": null
+      },{
+         "path": "/dev/vda",
+         "pttype": "gpt",
+         "parttypename": null
+      },{
+         "path": "/dev/vda1",
+         "pttype": "gpt",
+         "parttypename": "EFI System"
+      },{
+         "path": "/dev/vda2",
+         "pttype": "gpt",
+         "parttypename": "Linux extended boot"
+      },{
+         "path": "/dev/vda3",
+         "pttype": "gpt",
+         "parttypename": "Linux filesystem"
+      },{
+         "path": "/dev/mapper/luks-df2d5f95-5725-44dd-83e1-81bc4cdc49b8",
+         "pttype": null,
+         "parttypename": null
+      }
+   ]
+}
