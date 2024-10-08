@@ -50,6 +50,24 @@ impl Device {
         self.children.as_ref().map_or(false, |v| !v.is_empty())
     }
 
+    // Return true if device is mounted anywhere
+    pub(crate) fn is_mounted_in_pid_mounts(&self) -> Result<bool> {
+        let output = Command::new("findmnt")
+            .arg("-N")
+            .arg("1")
+            .arg("--output=SOURCE")
+            .output()
+            .expect("Failed to execute findmnt");
+
+        let mounts = String::from_utf8(output.stdout).unwrap();
+
+        if mounts.contains(&self.path()) {
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
     // The "start" parameter was only added in a version of util-linux that's only
     // in Fedora 40 as of this writing.
     fn backfill_start(&mut self) -> Result<()> {

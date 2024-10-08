@@ -162,6 +162,14 @@ pub(crate) fn install_create_rootfs(
     // Canonicalize devpath
     let devpath: Utf8PathBuf = device.path().into();
 
+    // Always disallow writing to mounted device
+    if device
+        .is_mounted_in_pid_mounts()
+        .expect("Failed to check mountpoints")
+    {
+        anyhow::bail!("Device {} is mounted", device.path())
+    }
+
     // Handle wiping any existing data
     if opts.wipe {
         let dev = &opts.device;
