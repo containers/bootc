@@ -9,8 +9,12 @@ use anyhow::{Context, Result};
 
 /// Helpers intended for [`std::process::Command`].
 pub trait CommandRunExt {
+    /// Log (at debug level) the full child commandline.
+    fn log_debug(&mut self) -> &mut Self;
+
     /// Execute the child process.
     fn run(&mut self) -> Result<()>;
+
     /// Execute the child process, parsing its stdout as JSON.
     fn run_and_parse_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T>;
 }
@@ -71,9 +75,20 @@ impl CommandRunExt for Command {
     fn run(&mut self) -> Result<()> {
         let stderr = tempfile::tempfile()?;
         self.stderr(stderr.try_clone()?);
+        tracing::trace!("exec: {self:?}");
         self.status()?.check_status(stderr)
     }
 
+    /// Output a debug-level log message with this command.
+    fn log_debug(&mut self) -> &mut Self {
+        // We unconditionally log at trace level, so avoid double logging
+        if !tracing::enabled!(tracing::Level::TRACE) {
+            tracing::debug!("exec: {self:?}");
+        }
+        self
+    }
+
+    /// Synchronously execute the child, and parse its stdout as JSON.
     fn run_and_parse_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T> {
         let mut stdout = tempfile::tempfile()?;
         self.stdout(stdout.try_clone()?);

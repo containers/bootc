@@ -6,6 +6,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result};
+use bootc_utils::CommandRunExt;
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_std::fs::Dir;
 #[cfg(feature = "install")]
@@ -95,7 +96,7 @@ pub(crate) fn selinux_ensure_install() -> Result<bool> {
     let mut cmd = Command::new(&tmpf);
     cmd.env(guardenv, tmpf);
     cmd.args(std::env::args_os().skip(1));
-    tracing::debug!("Re-executing {cmd:?}");
+    cmd.log_debug();
     Err(anyhow::Error::msg(cmd.exec()).context("execve"))
 }
 
