@@ -334,7 +334,6 @@ pub(crate) fn ensure_dir_labeled_recurse(
     Ok(())
 }
 
-/// A wrapper for creating a directory, also optionally setting a SELinux label.
 #[cfg(feature = "install")]
 pub(crate) fn ensure_dir_labeled(
     root: &Dir,
@@ -366,6 +365,11 @@ pub(crate) fn ensure_dir_labeled(
 
     root.ensure_dir_with(local_destname, &DirBuilder::new())
         .with_context(|| format!("Opening {local_destname}"))?;
+    // tracing::trace!("Rooted at {}", root.canonicalize()
+    tracing::trace!(
+        "Going to open {} for fchmod",
+        local_destname.as_std_path().to_str().unwrap()
+    );
     let dirfd = cap_std_ext::cap_primitives::fs::open(
         &root.as_filelike_view(),
         local_destname.as_std_path(),
