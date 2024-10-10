@@ -51,6 +51,7 @@ fn create_imagestatus(
             l.get(oci_spec::image::ANNOTATION_CREATED)
                 .map(|s| s.as_str())
         })
+        .or_else(|| config.created().as_deref())
         .and_then(try_deserialize_timestamp);
 
     let version = ostree_container::version_for_config(config).map(ToOwned::to_owned);
