@@ -2,7 +2,7 @@
 name = "bootupd"
 description = "Bootloader updater"
 license = "Apache-2.0"
-version = "0.2.23"
+version = "0.2.24"
 authors = ["Colin Walters <walters@verbum.org>"]
 edition = "2021"
 rust-version = "1.75.0"
