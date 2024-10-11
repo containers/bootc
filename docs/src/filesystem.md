@@ -146,7 +146,26 @@ However, for some use cases, it may be easier to allow some level of mutability.
 There are two options for this, each with separate trade-offs: transient roots
 and state overlays.
 
-#### Enabling transient root
+### Other toplevel directories
+
+Creating other toplevel directories and content (e.g. `/afs`, `/arbitrarymountpoint`)
+or in general further nested data is supported - just create the directory
+as part of your container image build process (e.g. `RUN mkdir /arbitrarymountpoint`).
+These directories will be lifecycled with the container image state,
+and appear immutable by default, the same as all other directories
+such as `/usr` and `/opt`.
+
+Mounting separate filesystems there can be done by the usual mechanisms
+of `/etc/fstab`, systemd `.mount` units, etc.
+
+#### SELinux for arbitrary toplevels
+
+Note that operating systems using SELinux may use a label such as
+`default_t` for unknown toplevel directories, which may not be
+accessible by some processes. In this situation you currently may
+need to also ensure a label is defined for them in the file contexts.
+
+## Enabling transient root
 
 This feature enables a fully transient writable rootfs by default.
 To do this, set the
@@ -161,7 +180,7 @@ write (transiently, i.e. until the next reboot) to all top-level directories,
 including `/usr` and `/opt`, with symlinks to `/var` for content that should
 persist.
 
-#### Enabling state overlays
+## Enabling state overlays
 
 This feature enables a writable overlay on top of `/opt` (or really, any
 toplevel or subdirectory baked into the image that is normally read-only).
