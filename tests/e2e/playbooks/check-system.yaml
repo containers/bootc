@@ -45,7 +45,25 @@
 
     - name: check rpm-ostree status
       command: rpm-ostree status
+      register: result_rpm_ostree_status
       ignore_errors: true
+
+    # issue https://github.com/containers/bootc/issues/800
+    # ostree-rs-ext version-skew test (bumped in rpm-ostree and in bootc)
+    - name: check rpm-ostree output
+      block:
+        - assert:
+            that:
+              - "'error' not in result_rpm_ostree_status.stdout"
+            fail_msg: "rpm-ostree status failed"
+            success_msg: "rpm-ostree status succeeded"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
 
     - name: check bootc status
       command: bootc status
