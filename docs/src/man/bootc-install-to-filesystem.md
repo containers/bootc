@@ -13,7 +13,7 @@ filesystem structure
 \[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
 \[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
-\[**-h**\|**\--help**\] \<*ROOT_PATH*\>
+\[**\--stateroot**\] \[**-h**\|**\--help**\] \<*ROOT_PATH*\>
 
 # DESCRIPTION
 
@@ -144,6 +144,10 @@ boot.
 \- All bootloader types will be installed - Changes to the system
 firmware will be skipped
 
+**\--stateroot**=*STATEROOT*
+
+:   The stateroot name to use. Defaults to \`default\`
+
 **-h**, **\--help**
 
 :   Print help (see a summary with -h)
@@ -157,4 +161,4 @@ mounting. To override this, use \`\--root-mount-spec\`.
 
 # VERSION
 
-v0.1.13
+v0.1.16

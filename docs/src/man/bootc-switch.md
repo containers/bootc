@@ -4,7 +4,7 @@ bootc-switch - Target a new container image reference to boot
 
 # SYNOPSIS
 
-**bootc switch** \[**\--quiet**\] \[**\--transport**\]
+**bootc switch** \[**\--quiet**\] \[**\--apply**\] \[**\--transport**\]
 \[**\--enforce-container-sigpolicy**\] \[**\--ostree-remote**\]
 \[**\--retain**\] \[**-h**\|**\--help**\] \<*TARGET*\>
 
@@ -15,7 +15,7 @@ Target a new container image reference to boot.
 This is almost exactly the same operation as \`upgrade\`, but
 additionally changes the container image reference instead.
 
-\## Usage
+## Usage
 
 A common pattern is to have a management agent control operating system
 updates via container image tags; for example,
@@ -29,6 +29,14 @@ updates via container image tags; for example,
 **\--quiet**
 
 :   Dont display progress
+
+**\--apply**
+
+:   Restart or reboot into the new target image.
+
+Currently, this option always reboots. In the future this command will
+detect the case where no kernel changes are queued, and perform a
+userspace-only restart.
 
 **\--transport**=*TRANSPORT* \[default: registry\]
 
@@ -61,4 +69,4 @@ includes a default policy which requires signatures.
 
 # VERSION
 
-v0.1.13
+v0.1.16
