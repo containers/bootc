@@ -277,8 +277,16 @@ match-architectures = ["x86_64", "aarch64"]
         let txn = repo.auto_transaction(cancellable)?;
 
         let mt = ostree::MutableTree::new();
-        repo.write_dfd_to_mtree(d.as_fd().as_raw_fd(), path.as_str(), &mt, None, cancellable)
-            .context("Writing merged filesystem to mtree")?;
+        let commitmod_flags = ostree::RepoCommitModifierFlags::SKIP_XATTRS;
+        let commitmod = ostree::RepoCommitModifier::new(commitmod_flags, None);
+        repo.write_dfd_to_mtree(
+            d.as_fd().as_raw_fd(),
+            path.as_str(),
+            &mt,
+            Some(&commitmod),
+            cancellable,
+        )
+        .context("Writing merged filesystem to mtree")?;
 
         let merged_root = repo
             .write_mtree(&mt, cancellable)
