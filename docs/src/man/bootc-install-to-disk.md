@@ -10,7 +10,8 @@ bootc-install-to-disk - Install to the target block device
 \[**\--enforce-container-sigpolicy**\] \[**\--target-ostree-remote**\]
 \[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
-\[**\--via-loopback**\] \[**-h**\|**\--help**\] \<*DEVICE*\>
+\[**\--stateroot**\] \[**\--via-loopback**\] \[**-h**\|**\--help**\]
+\<*DEVICE*\>
 
 # DESCRIPTION
 
@@ -129,6 +130,10 @@ boot.
 \- All bootloader types will be installed - Changes to the system
 firmware will be skipped
 
+**\--stateroot**=*STATEROOT*
+
+:   The stateroot name to use. Defaults to \`default\`
+
 **\--via-loopback**
 
 :   Instead of targeting a block device, write to a file via loopback
@@ -144,4 +149,4 @@ firmware will be skipped
 
 # VERSION
 
-v0.1.13
+v0.1.16

@@ -364,8 +364,7 @@ fn human_render_ostree(mut out: impl Write, slot_name: &str, _ostree_commit: &st
     Ok(())
 }
 
-/// Implementation of rendering our host structure in a "human readable" way.
-fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
+fn human_readable_output_booted(mut out: impl Write, host: &Host) -> Result<()> {
     for (slot_name, status) in [
         ("staged", &host.status.staged),
         ("booted", &host.status.booted),
@@ -382,6 +381,16 @@ fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
         } else {
             writeln!(out, "No {slot_name} image present")?;
         }
+    }
+    Ok(())
+}
+
+/// Implementation of rendering our host structure in a "human readable" way.
+fn human_readable_output(mut out: impl Write, host: &Host) -> Result<()> {
+    if host.status.booted.is_some() {
+        human_readable_output_booted(out, host)?;
+    } else {
+        writeln!(out, "System is not deployed via bootc.")?;
     }
     Ok(())
 }
@@ -465,15 +474,7 @@ mod tests {
         // staged/rollback image, no booted
         let w = human_status_from_spec_fixture(include_str!("fixtures/spec-staged-rollback.yaml"))
             .expect("No spec found");
-        let expected = indoc::indoc! { r"
-    Current staged image: quay.io/example/someimage:latest
-        Image version: nightly (2023-10-14 19:22:15 UTC)
-        Image digest: sha256:16dc2b6256b4ff0d2ec18d2dbfb06d117904010c8cf9732cdb022818cf7a7566
-    No booted image present
-    Current rollback image: quay.io/example/someimage:latest
-        Image version: nightly (2023-09-30 19:22:16 UTC)
-        Image digest: sha256:736b359467c9437c1ac915acaae952aad854e07eb4a16a94999a48af08c83c34
-    "};
+        let expected = "System is not deployed via bootc.\n";
         similar_asserts::assert_eq!(w, expected);
     }
 

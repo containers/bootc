@@ -369,10 +369,19 @@ pub(crate) enum Opt {
     Edit(EditOpts),
     /// Display status
     ///
-    /// This will output a YAML-formatted object using a schema intended to match a Kubernetes resource
-    /// that describes the state of the booted system.
+    /// If standard output is a terminal, this will output a description of the bootc system state.
+    /// If standard output is not a terminal, output a YAML-formatted object using a schema
+    /// intended to match a Kubernetes resource that describes the state of the booted system.
     ///
-    /// The exact API format is not currently declared stable.
+    /// ## Parsing output via programs
+    ///
+    /// Either the default YAML format or `--format=json` can be used. Do not attempt to
+    /// explicitly parse the output of `--format=humanreadable` as it will very likely
+    /// change over time.
+    ///
+    /// ## Programmatically detecting whether the system is deployed via bootc
+    ///
+    /// Invoke e.g. `bootc status --json`, and check if `status.booted` is not `null`.
     Status(StatusOpts),
     /// Adds a transient writable overlayfs on `/usr` that will be discarded on reboot.
     ///
