@@ -19,8 +19,6 @@ use cap_std_ext::cap_std::fs::{Metadata, MetadataExt};
 #[cfg(feature = "install")]
 use cap_std_ext::dirext::CapStdExtDirExt;
 use fn_error_context::context;
-#[cfg(feature = "install")]
-use gvariant::{aligned_bytes::TryAsAligned, Marker, Structure};
 use ostree_ext::gio;
 use ostree_ext::ostree;
 use rustix::fd::AsFd;
@@ -177,12 +175,12 @@ pub(crate) fn selinux_set_permissive(permissive: bool) -> Result<()> {
 #[cfg(feature = "install")]
 /// Check if the ostree-formatted extended attributes include a security.selinux value.
 pub(crate) fn xattrs_have_selinux(xattrs: &ostree::glib::Variant) -> bool {
-    let v = xattrs.data_as_bytes();
-    let v = v.try_as_aligned().unwrap();
-    let v = gvariant::gv!("a(ayay)").cast(v);
-    for xattr in v.iter() {
-        let k = xattr.to_tuple().0;
-        if k == SELINUX_XATTR {
+    let n = xattrs.n_children();
+    for i in 0..n {
+        let child = xattrs.child_value(i);
+        let key = child.child_value(0);
+        let key = key.data_as_bytes();
+        if key == SELINUX_XATTR {
             return true;
         }
     }

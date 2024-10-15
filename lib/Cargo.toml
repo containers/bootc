@@ -26,7 +26,6 @@ clap_mangen = { version = "0.2.20", optional = true }
 cap-std-ext = { workspace = true, features = ["fs_utf8"] }
 hex = "^0.4.3"
 fn-error-context = { workspace = true }
-gvariant = "0.5.0"
 indicatif = "0.17.8"
 libc = { workspace = true }
 liboverdrop = "0.1.0"
