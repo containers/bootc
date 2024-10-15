@@ -419,3 +419,19 @@ where
         f(w)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gio::glib::Variant;
+
+    #[test]
+    fn test_selinux_xattr() {
+        let notfound: &[&[(&[u8], &[u8])]] = &[&[], &[(b"foo", b"bar")]];
+        for case in notfound {
+            assert!(!xattrs_have_selinux(&Variant::from(case)));
+        }
+        let found: &[(&[u8], &[u8])] = &[(b"foo", b"bar"), (SELINUX_XATTR, b"foo_t")];
+        assert!(xattrs_have_selinux(&Variant::from(found)));
+    }
+}
