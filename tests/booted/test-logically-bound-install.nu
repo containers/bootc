@@ -6,5 +6,6 @@ print "IMAGES:"
 podman --storage-opt=additionalimagestore=/usr/lib/bootc/storage images # for debugging
 assert ($images | any {|item| $item.column1 == "quay.io/curl/curl"})
 assert ($images | any {|item| $item.column1 == "quay.io/curl/curl-base"})
+assert ($images | any {|item| $item.column1 == "registry.redhat.io/ubi9/podman"}) # this image is signed
 
 tap ok

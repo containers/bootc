@@ -3,4 +3,5 @@ FROM localhost/bootc
 COPY ./usr/. /usr
 
 RUN ln -s /usr/share/containers/systemd/curl.container /usr/lib/bootc/bound-images.d/curl.container && \
-    ln -s /usr/share/containers/systemd/curl-base.image /usr/lib/bootc/bound-images.d/curl-base.image
+    ln -s /usr/share/containers/systemd/curl-base.image /usr/lib/bootc/bound-images.d/curl-base.image && \
+    ln -s /usr/share/containers/systemd/podman.image /usr/lib/bootc/bound-images.d/podman.image

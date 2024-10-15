@@ -296,7 +296,7 @@ impl Storage {
         let storage_dest = &format!(
             "containers-storage:[overlay@{STORAGE_ALIAS_DIR}+/proc/self/fd/{STORAGE_RUN_FD}]"
         );
-        cmd.args(["image", "push", image])
+        cmd.args(["image", "push", "--remove-signatures", image])
             .arg(format!("{storage_dest}{image}"));
         let mut cmd = AsyncCommand::from(cmd);
         cmd.run().await?;
