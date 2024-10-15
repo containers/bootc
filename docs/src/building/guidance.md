@@ -135,7 +135,7 @@ is generic support for `/etc`.
 
 Some software supports generic configuration both `/usr` and `/etc` - systemd,
 among others.  Because bootc supports *derivation* (the way OCI
-containers work) - it is supported and encourged to put configuration
+containers work) - it is supported and encouraged to put configuration
 files in `/usr` (instead of `/etc`) where possible, because then
 the state is consistently immutable.
 
@@ -161,7 +161,7 @@ However, some software installs to `/opt/examplepkg` or another
 location outside of `/usr`, and may include all three types of data
 undernath its single toplevel directory.  For example, it
 may write log files to `/opt/examplepkg/logs`.  A simple way to handle
-this is to change the directories that need to be writble to symbolic links
+this is to change the directories that need to be writable to symbolic links
 to `/var`:
 
 ```dockerfile
