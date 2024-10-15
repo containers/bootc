@@ -11,7 +11,11 @@ use fn_error_context::context;
 use xshell::{cmd, Shell};
 
 const NAME: &str = "bootc";
-const TEST_IMAGES: &[&str] = &["quay.io/curl/curl-base:latest", "quay.io/curl/curl:latest"];
+const TEST_IMAGES: &[&str] = &[
+    "quay.io/curl/curl-base:latest",
+    "quay.io/curl/curl:latest",
+    "registry.redhat.io/ubi9/podman:latest",
+];
 
 fn main() {
     if let Err(e) = try_main() {
