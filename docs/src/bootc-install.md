@@ -166,7 +166,7 @@ via e.g.:
 
 ```bash
 truncate -s 10G myimage.raw
-podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t  -v /var/lib/containers:/var/lib/containers -v .:/output <yourimage> bootc install to-disk --generic-image --via-loopback /output/myimage.raw
+podman run --rm --privileged --pid=host --security-opt label=type:unconfined_t -v /dev:/dev -v /var/lib/containers:/var/lib/containers -v .:/output <yourimage> bootc install to-disk --generic-image --via-loopback /output/myimage.raw
 ```
 
 Notice that we use `--generic-image` for this use case.
