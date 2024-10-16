@@ -19,7 +19,7 @@ platforms = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "powerpc64
 
 [dependencies]
 anyhow = { workspace = true }
-bootc-lib = { version = "0.1", path = "../lib" }
+bootc-lib = { version = "1.0", path = "../lib" }
 clap = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 log = "0.4.21"

@@ -36,4 +36,4 @@ Only changes to the \`spec\` section are honored.
 
 # VERSION
 
-v0.1.16
+v1.1.0

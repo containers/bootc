@@ -161,4 +161,4 @@ mounting. To override this, use \`\--root-mount-spec\`.
 
 # VERSION
 
-v0.1.16
+v1.1.0

@@ -52,4 +52,4 @@ userspace-only restart.
 
 # VERSION
 
-v0.1.16
+v1.1.0
