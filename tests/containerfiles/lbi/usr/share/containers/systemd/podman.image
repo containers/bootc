@@ -1,2 +1,2 @@
 [Image]
-Image=registry.redhat.io/ubi9/podman:latest
+Image=registry.access.redhat.com/ubi9/podman:latest
