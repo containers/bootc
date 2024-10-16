@@ -19,6 +19,7 @@
 
 - [Upgrade and rollback](upgrades.md)
 - [Accessing registries and offline updates](registries-and-offline.md)
+- [Logically bound images](logically-bound-images.md)
 - [Booting local builds](booting-local-builds.md)
 - [`man bootc`](man/bootc.md)
 - [`man bootc-status`](man/bootc-status.md)
@@ -48,7 +49,6 @@
 # Experimental features
 
 - [bootc image](experimental-bootc-image.md)
-- [logically bound images](experimental-logically-bound-images.md)
 
 # More information
 
