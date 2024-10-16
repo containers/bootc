@@ -1,13 +1,8 @@
 # Logically Bound Images
 
-Experimental features are subject to change or removal. Please
-do provide feedback on them.
-
-Tracking issue: <https://github.com/containers/bootc/issues/128>
-
 ## About logically bound images
 
-This experimental feature enables an association of container "app" images to a base bootc system image. Use cases for this include:
+This feature enables an association of container "app" images to a base bootc system image. Use cases for this include:
 
 - Logging (e.g. journald->remote log forwarder container)
 - Monitoring (e.g. [Prometheus node_exporter](https://github.com/prometheus/node_exporter))
