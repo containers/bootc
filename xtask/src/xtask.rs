@@ -14,7 +14,7 @@ const NAME: &str = "bootc";
 const TEST_IMAGES: &[&str] = &[
     "quay.io/curl/curl-base:latest",
     "quay.io/curl/curl:latest",
-    "registry.redhat.io/ubi9/podman:latest",
+    "registry.access.redhat.com/ubi9/podman:latest",
 ];
 
 fn main() {
