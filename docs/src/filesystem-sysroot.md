@@ -29,7 +29,7 @@ operate on the physical root.
 
 ### bootc-owned container storage
 
-For [logically bound images](experimental-logically-bound-images.md),
+For [logically bound images](logically-bound-images.md),
 bootc maintains a dedicated [containers/storage](https://github.com/containers/storage)
 instance using the `overlay` backend (the same type of thing that backs `/var/lib/containers`).
 
