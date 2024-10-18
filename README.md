@@ -30,6 +30,14 @@ are also operating systems and distributions using bootc; here are some examples
 - https://docs.fedoraproject.org/en-US/bootc/
 - https://www.heliumos.org/
 
+## Community discussion
+
+The [Github discussion forum](https://github.com/containers/bootc/discussions) is enabled.
+
+This project is also tightly related to the previously mentioned Fedora/CentOS bootc project,
+and many developers monitor the relevant discussion forums there. In particular there's a
+Matrix channel and a weekly video call meeting for example: <https://docs.fedoraproject.org/en-US/bootc/community/>.
+
 ## Developing bootc
 
 Are you interested in working on bootc?  Great!  See our [CONTRIBUTING.md](CONTRIBUTING.md) guide.
