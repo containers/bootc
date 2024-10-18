@@ -7,6 +7,14 @@ as well as C (e.g. https://github.com/ostreedev/ostree/).  Depending
 on what area you want to work on, you'll need to be familiar with
 the relevant language.
 
+## Note: Before writing a big patch
+
+If you plan to contribute a large change, please get in touch *before*
+submitting a pull request by e.g. filing an issue describing your proposed
+change. This will help ensure alignment.
+
+## Development environment
+
 There isn't a single approach to working on bootc; however
 the primary developers tend to use Linux host systems,
 and test in Linux VMs.  One specifically recommended
