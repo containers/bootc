@@ -1,9 +1,11 @@
 # Filesystem
 
-As noted in other chapters, the bootc project inherits
-a lot of code from the [ostree project](https://github.com/ostreedev/ostree/).
+As noted in other chapters, the bootc project currently
+depends on [ostree project](https://github.com/ostreedev/ostree/)
+for storing the base container image. Additionally there is a [containers/storage](https://github.com/containers/storage) instance for [logically bound images](logically-bound-images.md).
 
-However, bootc is intending to be a "fresh, new container-native interface".
+However, bootc is intending to be a "fresh, new container-native interface",
+and ostree is an implementation detail.
 
 First, it is strongly recommended that bootc consumers use the ostree
 [composefs backend](https://ostreedev.github.io/ostree/composefs/); to do this,
@@ -14,7 +16,8 @@ ensure that you have a `/usr/lib/ostree/prepare-root.conf` that contains at leas
 enabled = true
 ```
 
-This will ensure that the entire `/` is a read-only filesystem.
+This will ensure that the entire `/` is a read-only filesystem which
+is very important for achieving correct semantics.
 
 ## Understanding container build/runtime vs deployment
 

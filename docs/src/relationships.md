@@ -46,11 +46,18 @@ as a backing model.  Hence, when using a container source,
 `rpm-ostree upgrade` and `bootc upgrade` are effectively equivalent;
 you can use either command.
 
-However with rpm-ostree (or, perhaps re-framed as
-"dnf image"), it will continue to work to e.g. `dnf install`
-(i.e. `rpm-ostree install`) on the *client side* system.
-In addition there are other client-side mutation commands such as
-`rpm-ostree initramfs --enable`.
+### Differences from rpm-ostree
+
+- The ostree project never tried to have an opinionated "install" mechanism,
+  but bootc does with `bootc install to-filesystem`
+- Bootc has additional features such as `/usr/lib/bootc/kargs.d` and
+  [logically bound images](logically-bound-images.md).
+
+### Client side changes
+
+Currently all functionality for client-side changes
+such as `rpm-ostree install` or `rpm-ostree initramfs --enable`
+continue to work, because of the shared base.
 
 However, as soon as you mutate the system in this way, `bootc upgrade`
 will error out as it will not understand how to upgrade
