@@ -19,8 +19,8 @@ More about this in the docs; see below.
 
 ## Status
 
-NOTE: At the current time, bootc has not reached 1.0, and it is possible
-that some APIs and CLIs may change.
+The CLI and API are considered stable. We will ensure that every existing system
+can be upgraded in place seamlessly across any future changes.
 
 ## Documentation
 
