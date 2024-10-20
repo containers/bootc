@@ -2,7 +2,9 @@
 
 The bootc project uses [ostree](https://github.com/ostreedev/ostree/) and specifically
 the [ostree-rs-ext](https://github.com/ostreedev/ostree-rs-ext/) Rust library
-which handles storage of container images on top of an ostree-based system.
+which handles storage of container images on top of an ostree-based system for
+the booted host, and additionally there is a
+[containers/storage](https://github.com/containers/storage) instance for [logically bound images](logically-bound-images.md).
 
 ## Architecture
 
@@ -10,6 +12,7 @@ which handles storage of container images on top of an ostree-based system.
 flowchart TD
     bootc --- ostree-rs-ext --- ostree-rs --- ostree
     ostree-rs-ext --- containers-image-proxy-rs --- skopeo --- containers/image
+    bootc --- podman --- image-storage["containers/{image,storage}"]
 ```
 
 There were two high level goals that drove the design of the current system
@@ -88,3 +91,7 @@ from an OCI image or some other mechanism; it just targets a
 prepared flattened filesystem tree.
 
 This is what is referenced by the `ostree=` kernel commandline.
+
+## Logically bound images
+
+In addition to the base image, bootc supports [logically bound images](logically-bound-images.md).
