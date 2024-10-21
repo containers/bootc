@@ -34,6 +34,7 @@
 use crate::container::store::LayerProgress;
 
 use super::*;
+use anyhow::Context as _;
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
 use futures_util::{Future, FutureExt, TryFutureExt as _};
@@ -225,7 +226,7 @@ pub(crate) fn decompress_bridge(
             Box::new(flate2::bufread::GzDecoder::new(bufr))
         };
         // We don't care about the number of bytes copied
-        let _n: u64 = std::io::copy(&mut src, &mut tx)?;
+        let _n: u64 = std::io::copy(&mut src, &mut tx).context("Copying for decompression")?;
         Ok(())
     })
     // Flatten the nested Result<Result<>>
