@@ -24,11 +24,13 @@ can be upgraded in place seamlessly across any future changes.
 
 ## Documentation
 
-See the [project documentation](https://containers.github.io/bootc/); there
-are also operating systems and distributions using bootc; here are some examples:
+See the [project documentation](https://containers.github.io/bootc/).
 
-- https://docs.fedoraproject.org/en-US/bootc/
-- https://www.heliumos.org/
+## Adopters (base and end-user images)
+
+The bootc CLI is just a client system; it is not tied to any particular
+operating system or Linux distribution. You very likely want to actually
+start by looking at [ADOPTERS.md](ADOPTERS.md).
 
 ## Community discussion
 
@@ -41,4 +43,5 @@ Matrix channel and a weekly video call meeting for example: <https://docs.fedora
 ## Developing bootc
 
 Are you interested in working on bootc?  Great!  See our [CONTRIBUTING.md](CONTRIBUTING.md) guide.
+There is also a list of [MAINTAINERS.md](MAINTAINERS.md).
 
