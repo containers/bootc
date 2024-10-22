@@ -27,6 +27,7 @@ use super::State;
 use super::RUN_BOOTC;
 use super::RW_KARG;
 use crate::mount;
+use crate::mount::is_mounted_in_pid1_mountns;
 use crate::task::Task;
 
 // This ensures we end up under 512 to be small-sized.
@@ -161,6 +162,11 @@ pub(crate) fn install_create_rootfs(
     let device = crate::blockdev::list_dev(&opts.device)?;
     // Canonicalize devpath
     let devpath: Utf8PathBuf = device.path().into();
+
+    // Always disallow writing to mounted device
+    if is_mounted_in_pid1_mountns(&device.path())? {
+        anyhow::bail!("Device {} is mounted", device.path())
+    }
 
     // Handle wiping any existing data
     if opts.wipe {

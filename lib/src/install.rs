@@ -1802,6 +1802,7 @@ fn test_gather_root_args() {
         maj_min: "252:4".into(),
         options: "rw".into(),
         uuid: Some("965eb3c7-5a3f-470d-aaa2-1bcf04334bc6".into()),
+        children: None,
     };
     let r = find_root_args_to_inherit(&[], &inspect).unwrap();
     assert_eq!(r.mount_spec, "UUID=965eb3c7-5a3f-470d-aaa2-1bcf04334bc6");
