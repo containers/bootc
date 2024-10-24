@@ -227,7 +227,7 @@ pub struct PreparedImport {
     /// The layers containing split objects
     pub ostree_layers: Vec<ManifestLayerState>,
     /// The layer for the ostree commit.
-    pub ostree_commit_layer: ManifestLayerState,
+    pub ostree_commit_layer: Option<ManifestLayerState>,
     /// Any further non-ostree (derived) layers.
     pub layers: Vec<ManifestLayerState>,
 }
@@ -235,7 +235,8 @@ pub struct PreparedImport {
 impl PreparedImport {
     /// Iterate over all layers; the commit layer, the ostree split object layers, and any non-ostree layers.
     pub fn all_layers(&self) -> impl Iterator<Item = &ManifestLayerState> {
-        std::iter::once(&self.ostree_commit_layer)
+        self.ostree_commit_layer
+            .iter()
             .chain(self.ostree_layers.iter())
             .chain(self.layers.iter())
     }
@@ -376,21 +377,20 @@ fn layer_from_diffid<'a>(
 pub(crate) fn parse_manifest_layout<'a>(
     manifest: &'a ImageManifest,
     config: &ImageConfiguration,
-) -> Result<(&'a Descriptor, Vec<&'a Descriptor>, Vec<&'a Descriptor>)> {
+) -> Result<(
+    Option<&'a Descriptor>,
+    Vec<&'a Descriptor>,
+    Vec<&'a Descriptor>,
+)> {
     let config_labels = super::labels_of(config);
 
     let first_layer = manifest
         .layers()
         .first()
         .ok_or_else(|| anyhow!("No layers in manifest"))?;
-    let target_diffid = config_labels
-        .and_then(|labels| labels.get(DIFFID_LABEL))
-        .ok_or_else(|| {
-            anyhow!(
-                "No {} label found, not an ostree encapsulated container",
-                DIFFID_LABEL
-            )
-        })?;
+    let Some(target_diffid) = config_labels.and_then(|labels| labels.get(DIFFID_LABEL)) else {
+        return Ok((None, Vec::new(), manifest.layers().iter().collect()));
+    };
 
     let target_layer = layer_from_diffid(manifest, config, target_diffid.as_str())?;
     let mut chunk_layers = Vec::new();
@@ -416,7 +416,20 @@ pub(crate) fn parse_manifest_layout<'a>(
         }
     }
 
-    Ok((ostree_layer, chunk_layers, derived_layers))
+    Ok((Some(ostree_layer), chunk_layers, derived_layers))
+}
+
+/// Like [`parse_manifest_layout`] but requires the image has an ostree base.
+#[context("Parsing manifest layout")]
+pub(crate) fn parse_ostree_manifest_layout<'a>(
+    manifest: &'a ImageManifest,
+    config: &ImageConfiguration,
+) -> Result<(&'a Descriptor, Vec<&'a Descriptor>, Vec<&'a Descriptor>)> {
+    let (ostree_layer, component_layers, derived_layers) = parse_manifest_layout(manifest, config)?;
+    let ostree_layer = ostree_layer.ok_or_else(|| {
+        anyhow!("No {DIFFID_LABEL} label found, not an ostree encapsulated container")
+    })?;
+    Ok((ostree_layer, component_layers, derived_layers))
 }
 
 /// Find the timestamp of the manifest (or config), ignoring errors.
@@ -601,10 +614,10 @@ impl ImageImporter {
             parse_manifest_layout(&manifest, &config)?;
 
         let query = |l: &Descriptor| query_layer(&self.repo, l.clone());
-        let commit_layer = query(commit_layer)?;
+        let commit_layer = commit_layer.map(query).transpose()?;
         let component_layers = component_layers
             .into_iter()
-            .map(query)
+            .map(|l| query(l))
             .collect::<Result<Vec<_>>>()?;
         let remaining_layers = remaining_layers
             .into_iter()
@@ -693,6 +706,7 @@ impl ImageImporter {
     pub(crate) async fn unencapsulate_base(
         &mut self,
         import: &mut store::PreparedImport,
+        require_ostree: bool,
         write_refs: bool,
     ) -> Result<()> {
         tracing::debug!("Fetching base");
@@ -706,6 +720,14 @@ impl ImageImporter {
             SignatureSource::ContainerPolicy | SignatureSource::ContainerPolicyAllowInsecure => {
                 None
             }
+        };
+        let Some(commit_layer) = import.ostree_commit_layer.as_mut() else {
+            if require_ostree {
+                anyhow::bail!(
+                    "No {DIFFID_LABEL} label found, not an ostree encapsulated container"
+                );
+            }
+            return Ok(());
         };
         let des_layers = self.proxy.get_layer_info(&self.proxy_img).await?;
         for layer in import.ostree_layers.iter_mut() {
@@ -755,10 +777,10 @@ impl ImageImporter {
                     .await?;
             }
         }
-        if import.ostree_commit_layer.commit.is_none() {
+        if commit_layer.commit.is_none() {
             if let Some(p) = self.layer_progress.as_ref() {
                 p.send(ImportProgress::OstreeChunkStarted(
-                    import.ostree_commit_layer.layer.clone(),
+                    commit_layer.layer.clone(),
                 ))
                 .await?;
             }
@@ -766,14 +788,14 @@ impl ImageImporter {
                 &self.proxy,
                 &self.proxy_img,
                 &import.manifest,
-                &import.ostree_commit_layer.layer,
+                &commit_layer.layer,
                 self.layer_byte_progress.as_ref(),
                 des_layers.as_ref(),
                 self.imgref.imgref.transport,
             )
             .await?;
             let repo = self.repo.clone();
-            let target_ref = import.ostree_commit_layer.ostree_ref.clone();
+            let target_ref = commit_layer.ostree_ref.clone();
             let import_task =
                 crate::tokio_util::spawn_blocking_cancellable_flatten(move |cancellable| {
                     let txn = repo.auto_transaction(Some(cancellable))?;
@@ -792,10 +814,10 @@ impl ImageImporter {
                     Ok::<_, anyhow::Error>(commit)
                 });
             let commit = super::unencapsulate::join_fetch(import_task, driver).await?;
-            import.ostree_commit_layer.commit = Some(commit);
+            commit_layer.commit = Some(commit);
             if let Some(p) = self.layer_progress.as_ref() {
                 p.send(ImportProgress::OstreeChunkCompleted(
-                    import.ostree_commit_layer.layer.clone(),
+                    commit_layer.layer.clone(),
                 ))
                 .await?;
             }
@@ -818,11 +840,12 @@ impl ImageImporter {
             anyhow::bail!("Image has {} non-ostree layers", prep.layers.len());
         }
         let deprecated_warning = prep.deprecated_warning().map(ToOwned::to_owned);
-        self.unencapsulate_base(&mut prep, false).await?;
+        self.unencapsulate_base(&mut prep, true, false).await?;
         // TODO change the imageproxy API to ensure this happens automatically when
         // the image reference is dropped
         self.proxy.close_image(&self.proxy_img).await?;
-        let ostree_commit = prep.ostree_commit_layer.commit.unwrap();
+        // SAFETY: We know we have a commit
+        let ostree_commit = prep.ostree_commit_layer.unwrap().commit.unwrap();
         let image_digest = prep.manifest_digest;
         Ok(Import {
             ostree_commit,
@@ -844,20 +867,23 @@ impl ImageImporter {
         }
         // First download all layers for the base image (if necessary) - we need the SELinux policy
         // there to label all following layers.
-        self.unencapsulate_base(&mut import, true).await?;
+        self.unencapsulate_base(&mut import, false, true).await?;
         let des_layers = self.proxy.get_layer_info(&self.proxy_img).await?;
         let proxy = self.proxy;
         let proxy_img = self.proxy_img;
         let target_imgref = self.target_imgref.as_ref().unwrap_or(&self.imgref);
-        let base_commit = import.ostree_commit_layer.commit.clone().unwrap();
+        let base_commit = import
+            .ostree_commit_layer
+            .as_ref()
+            .map(|c| c.commit.clone().unwrap());
 
-        let root_is_transient = {
-            let rootf = self
-                .repo
-                .read_commit(&base_commit, gio::Cancellable::NONE)?
-                .0;
+        let root_is_transient = if let Some(base) = base_commit.as_ref() {
+            let rootf = self.repo.read_commit(&base, gio::Cancellable::NONE)?.0;
             let rootf = rootf.downcast_ref::<ostree::RepoFile>().unwrap();
             crate::ostree_prepareroot::overlayfs_root_enabled(rootf)?
+        } else {
+            // For generic images we assume they're using composefs
+            true
         };
         tracing::debug!("Base rootfs is transient: {root_is_transient}");
 
@@ -888,7 +914,7 @@ impl ImageImporter {
                 // An important aspect of this is that we SELinux label the derived layers using
                 // the base policy.
                 let opts = crate::tar::WriteTarOptions {
-                    base: Some(base_commit.clone()),
+                    base: base_commit.clone(),
                     selinux: true,
                     allow_nonusr: root_is_transient,
                     retain_var: self.ostree_v2024_3,
@@ -975,14 +1001,16 @@ impl ImageImporter {
                     process_whiteouts: false,
                     ..Default::default()
                 };
-                repo.checkout_at(
-                    Some(&checkout_opts),
-                    (*td).as_raw_fd(),
-                    rootpath,
-                    &base_commit,
-                    cancellable,
-                )
-                .context("Checking out base commit")?;
+                if let Some(base) = base_commit.as_ref() {
+                    repo.checkout_at(
+                        Some(&checkout_opts),
+                        (*td).as_raw_fd(),
+                        rootpath,
+                        &base,
+                        cancellable,
+                    )
+                    .context("Checking out base commit")?;
+                }
 
                 // Layer all subsequent commits
                 checkout_opts.process_whiteouts = true;
@@ -1008,10 +1036,12 @@ impl ImageImporter {
                     let sepolicy = ostree::SePolicy::new_at(rootpath.as_raw_fd(), cancellable)?;
                     tracing::debug!("labeling from merged tree");
                     modifier.set_sepolicy(Some(&sepolicy));
-                } else {
+                } else if let Some(base) = base_commit.as_ref() {
                     tracing::debug!("labeling from base tree");
                     // TODO: We can likely drop this; we know all labels should be pre-computed.
-                    modifier.set_sepolicy_from_commit(repo, &base_commit, cancellable)?;
+                    modifier.set_sepolicy_from_commit(repo, &base, cancellable)?;
+                } else {
+                    unreachable!()
                 }
 
                 let mt = ostree::MutableTree::new();
@@ -1303,6 +1333,7 @@ pub(crate) fn export_to_oci(
     let srcinfo = query_image(repo, imgref)?.ok_or_else(|| anyhow!("No such image"))?;
     let (commit_layer, component_layers, remaining_layers) =
         parse_manifest_layout(&srcinfo.manifest, &srcinfo.configuration)?;
+    let commit_layer = commit_layer.ok_or_else(|| anyhow!("Missing {DIFFID_LABEL}"))?;
     let commit_chunk_ref = ref_for_layer(commit_layer)?;
     let commit_chunk_rev = repo.require_rev(&commit_chunk_ref)?;
     let mut chunking = chunking::Chunking::new(repo, &commit_chunk_rev)?;
@@ -1768,10 +1799,12 @@ pub(crate) fn verify_container_image(
         .0
         .downcast::<ostree::RepoFile>()
         .expect("downcast");
-    println!(
-        "Verifying with base ostree layer {}",
-        ref_for_layer(commit_layer)?
-    );
+    if let Some(commit_layer) = commit_layer {
+        println!(
+            "Verifying with base ostree layer {}",
+            ref_for_layer(commit_layer)?
+        );
+    }
     compare_commit_trees(
         repo,
         "/".into(),
