@@ -98,6 +98,13 @@ pub(crate) fn selinux_ensure_install() -> Result<bool> {
     Err(anyhow::Error::msg(cmd.exec()).context("execve"))
 }
 
+/// Query whether SELinux is apparently enabled in the target root
+#[cfg(feature = "install")]
+pub(crate) fn have_selinux_policy(root: &Dir) -> Result<bool> {
+    // TODO use ostree::SePolicy and query policy name
+    root.try_exists("etc/selinux/config").map_err(Into::into)
+}
+
 /// A type which will reset SELinux back to enforcing mode when dropped.
 /// This is a workaround for the deep difficulties in trying to reliably
 /// gain the `mac_admin` permission (install_t).
