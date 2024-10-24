@@ -182,8 +182,12 @@ fn normalize_validate_path<'a>(
         ret.push(camino::Utf8Component::CurDir);
     }
     let mut found_first = false;
+    let mut excluded = false;
     for part in components {
         let part = part?;
+        if excluded {
+            return Ok(NormalizedPathResult::Filtered(part.as_str()));
+        }
         if !found_first {
             if let Utf8Component::Normal(part) = part {
                 found_first = true;
@@ -203,7 +207,10 @@ fn normalize_validate_path<'a>(
                         }
                     }
                     o if EXCLUDED_TOPLEVEL_PATHS.contains(&o) => {
-                        return Ok(NormalizedPathResult::Filtered(part));
+                        // We don't want to actually drop the toplevel, but mark
+                        // *children* of it as excluded.
+                        excluded = true;
+                        ret.push(part)
                     }
                     _ if config.allow_nonusr => ret.push(part),
                     _ => {
@@ -516,6 +523,8 @@ mod tests {
             ("usr///share/.//blah", "./usr/share/blah"),
             ("var/lib/blah", "./usr/share/factory/var/lib/blah"),
             ("./var/lib/blah", "./usr/share/factory/var/lib/blah"),
+            ("dev", "./dev"),
+            ("/proc", "./proc"),
             ("./", "."),
         ];
         let valid_nonusr = &[("boot", "./boot"), ("opt/puppet/blah", "./opt/puppet/blah")];

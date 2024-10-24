@@ -584,7 +584,9 @@ impl ImageImporter {
         let config_labels = super::labels_of(&config);
         if self.require_bootable {
             let bootable_key = *ostree::METADATA_KEY_BOOTABLE;
-            let bootable = config_labels.map_or(false, |l| l.contains_key(bootable_key));
+            let bootable = config_labels.map_or(false, |l| {
+                l.contains_key(bootable_key) || l.contains_key(BOOTC_LABEL)
+            });
             if !bootable {
                 anyhow::bail!("Target image does not have {bootable_key} label");
             }
