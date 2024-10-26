@@ -211,12 +211,14 @@ async fn handle_layer_progress_print(
     let elapsed = end.duration_since(start);
     let persec = total_read as f64 / elapsed.as_secs_f64();
     let persec = indicatif::HumanBytes(persec as u64);
-    println!(
+    if let Err(e) = bar.println(&format!(
         "Fetched layers: {} in {} ({}/s)",
         indicatif::HumanBytes(total_read),
         indicatif::HumanDuration(elapsed),
         persec,
-    );
+    )) {
+        tracing::warn!("writing to stdout: {e}");
+    }
 }
 
 /// Wrapper for pulling a container image, wiring up status output.
