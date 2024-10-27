@@ -6,6 +6,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use cap_std_ext::cap_std::fs::Dir;
+use indicatif::HumanDuration;
+use libsystemd::logging::journal_print;
 use ostree::glib;
 use ostree_ext::container::SignatureSource;
 use ostree_ext::ostree;
@@ -119,6 +121,7 @@ pub(crate) async fn async_task_with_spinner<F, T>(msg: &str, f: F) -> T
 where
     F: Future<Output = T>,
 {
+    let start_time = std::time::Instant::now();
     let pb = indicatif::ProgressBar::new_spinner();
     let style = indicatif::ProgressStyle::default_bar();
     pb.set_style(style.template("{spinner} {msg}").unwrap());
@@ -131,10 +134,15 @@ where
         std::io::stdout().flush().unwrap();
     }
     let r = f.await;
+    let elapsed = HumanDuration(start_time.elapsed());
+    let _ = journal_print(
+        libsystemd::logging::Priority::Info,
+        &format!("completed task in {elapsed}: {msg}"),
+    );
     if pb.is_hidden() {
-        println!("done");
+        println!("done ({elapsed})");
     } else {
-        pb.finish_with_message(format!("{msg}: done"));
+        pb.finish_with_message(format!("{msg}: done ({elapsed})"));
     }
     r
 }
