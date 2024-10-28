@@ -2,6 +2,7 @@
 //!
 //! Command line tool to manage bootable ostree-based containers.
 
+use std::ffi::CString;
 use std::ffi::OsString;
 use std::io::Seek;
 use std::os::unix::process::CommandExt;
@@ -796,6 +797,14 @@ async fn usroverlay() -> Result<()> {
 /// Perform process global initialization. This should be called as early as possible
 /// in the standard `main` function.
 pub fn global_init() -> Result<()> {
+    // In some cases we re-exec with a temporary binary,
+    // so ensure that the syslog identifier is set.
+    let name = "bootc";
+    ostree::glib::set_prgname(name.into());
+    if let Err(e) = rustix::thread::set_name(&CString::new(name).unwrap()) {
+        // This shouldn't ever happen
+        eprintln!("failed to set name: {e}");
+    }
     let am_root = rustix::process::getuid().is_root();
     // Work around bootc-image-builder not setting HOME, in combination with podman (really c/common)
     // bombing out if it is unset.
