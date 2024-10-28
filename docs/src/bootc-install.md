@@ -148,9 +148,9 @@ can be configured off at build time via Cargo features.
 ### Using `bootc install to-filesystem`
 
 The usual expected way for an external storage system to work
-is to provide `root=<UUID>` type kernel arguments.  At the current
-time a separate `/boot` filesystem is also required (mainly to enable LUKS)
-so you will also need to provide e.g. `--boot-mount-spec UUID=...`.
+is to provide `root=<UUID>` type kernel arguments. Note that
+if a separate `/boot` is needed (e.g. for LUKS) you will also need to
+provide `--boot-mount-spec UUID=...`.
 
 The `bootc install to-filesystem` command allows an operating
 system or distribution to ship a separate installer that creates more complex block
