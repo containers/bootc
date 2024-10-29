@@ -68,6 +68,12 @@ case ""${ID}-${VERSION_ID}"" in
         ;;
 esac
 
+
+# FIXME: https://github.com/containers/podman/issues/22813
+if [[ "$REDHAT_VERSION_ID" == "10" ]]; then
+    sed -i 's/^compression_format = .*/compression_format = "gzip"/' /usr/share/containers/containers.conf
+fi
+
 # Setup local registry
 greenprint "Generate certificate"
 openssl req \
