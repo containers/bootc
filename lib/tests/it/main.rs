@@ -1677,6 +1677,68 @@ async fn test_old_code_parses_new_export() -> Result<()> {
     Ok(())
 }
 
+/// Test for https://github.com/ostreedev/ostree-rs-ext/issues/655
+#[tokio::test]
+async fn test_container_xattr() -> Result<()> {
+    let fixture = Fixture::new_v1()?;
+    let sh = fixture.new_shell()?;
+    let baseimg = &fixture.export_container().await?.0;
+    let basepath = &match baseimg.transport {
+        Transport::OciDir => fixture.path.join(baseimg.name.as_str()),
+        _ => unreachable!(),
+    };
+
+    // Build a derived image
+    let derived_path = &fixture.path.join("derived.oci");
+    oci_clone(basepath, derived_path).await?;
+    ostree_ext::integrationtest::generate_derived_oci_from_tar(
+        derived_path,
+        |w| {
+            let mut tar = tar::Builder::new(w);
+            let mut h = tar::Header::new_gnu();
+            h.set_entry_type(tar::EntryType::Regular);
+            h.set_uid(0);
+            h.set_gid(0);
+            h.set_mode(0o644);
+            h.set_mtime(0);
+            let data = b"hello";
+            h.set_size(data.len() as u64);
+            tar.append_pax_extensions([("SCHILY.xattr.user.foo", b"bar".as_slice())])
+                .unwrap();
+            tar.append_data(&mut h, "usr/bin/testxattr", std::io::Cursor::new(data))
+                .unwrap();
+            Ok::<_, anyhow::Error>(())
+        },
+        None,
+        None,
+    )?;
+    let derived_ref = &OstreeImageReference {
+        sigverify: SignatureSource::ContainerPolicyAllowInsecure,
+        imgref: ImageReference {
+            transport: Transport::OciDir,
+            name: derived_path.to_string(),
+        },
+    };
+    let mut imp =
+        store::ImageImporter::new(fixture.destrepo(), derived_ref, Default::default()).await?;
+    let prep = match imp.prepare().await.context("Init prep derived")? {
+        store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+        store::PrepareResult::Ready(r) => r,
+    };
+    let import = imp.import(prep).await.unwrap();
+    let merge_commit = import.merge_commit;
+
+    // Yeah we just scrape the output of ostree because it's easy
+    let out = cmd!(
+        sh,
+        "ostree --repo=dest/repo ls -X {merge_commit} /usr/bin/testxattr"
+    )
+    .read()?;
+    assert!(out.contains("'user.foo', [byte 0x62, 0x61, 0x72]"));
+
+    Ok(())
+}
+
 #[ignore]
 #[tokio::test]
 // Verify that we can push and pull to a registry, not just oci-archive:.
