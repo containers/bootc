@@ -38,7 +38,7 @@ jobs:
   - job: copr_build
     trigger: pull_request
     targets:
-      # Primary targets are c9s and fedora:40 right now, which build
+      # Primary targets are c9s, c10s and fedora:41 right now, which build
       # for all architectures
       - centos-stream-9-x86_64
       - centos-stream-9-aarch64
@@ -48,10 +48,10 @@ jobs:
       - centos-stream-10-aarch64
       - centos-stream-10-ppc64le
       - centos-stream-10-s390x
-      - fedora-40-x86_64
-      - fedora-40-aarch64
-      - fedora-40-ppc64le
-      - fedora-40-s390x
+      - fedora-41-x86_64
+      - fedora-41-aarch64
+      - fedora-41-ppc64le
+      - fedora-41-s390x
       # Sanity check on secondary targets, fewer architectures just
       # because the chance that we break e.g. ppc64le *just* on
       # rawhide is basically nil.
@@ -63,8 +63,8 @@ jobs:
   - job: tests
     trigger: pull_request
     targets:
-      - fedora-40-x86_64
-      - fedora-40-aarch64
+      - fedora-41-x86_64
+      - fedora-41-aarch64
     tmt_plan: /integration-build
     skip_build: true
     identifier: integration-test
@@ -75,9 +75,8 @@ jobs:
     trigger: pull_request
     targets:
       - centos-stream-9-x86_64
-      - centos-stream-9-aarch64
       - centos-stream-10-aarch64
-      - fedora-40-x86_64
+      - fedora-41-x86_64
     tmt_plan: /to-existing-root
     identifier: e2e-test-to-existing-root
 
@@ -85,8 +84,7 @@ jobs:
     trigger: pull_request
     targets:
       - centos-stream-9-aarch64
-      - centos-stream-10-x86_64
       - centos-stream-10-aarch64
-      - fedora-40-aarch64
+      - fedora-41-aarch64
     tmt_plan: /to-disk
     identifier: e2e-test-to-disk
