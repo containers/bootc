@@ -35,17 +35,6 @@ function redprint {
     echo -e "\033[1;31m[$(date -Isecond)] ${1}\033[0m"
 }
 
-# Retry container image pull and push
-function retry {
-    n=0
-    until [ "$n" -ge 3 ]
-    do
-       "$@" && break
-       n=$((n+1))
-       sleep 10
-    done
-}
-
 function deploy_libvirt_network {
     greenprint "Start firewalld"
     sudo systemctl enable --now firewalld

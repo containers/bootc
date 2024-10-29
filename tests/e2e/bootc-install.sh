@@ -175,10 +175,10 @@ cat "$INSTALL_CONTAINERFILE"
 
 # Build test bootc image and push to local registry
 greenprint "Build $TEST_OS installation container image"
-sudo podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$INSTALL_CONTAINERFILE" "$TEMPDIR"
+sudo podman build --tls-verify=false -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$INSTALL_CONTAINERFILE" "$TEMPDIR"
 
 greenprint "Push $TEST_OS installation container image"
-retry sudo podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
+sudo podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
 
 # Prepare Ansible inventory file and ansible.cfg
 greenprint "Prepare inventory file"
@@ -296,14 +296,14 @@ REALEOF
 
 # Build upgrade container image and push to locay registry
 greenprint "Build $TEST_OS upgrade container image"
-sudo podman build --tls-verify=false --retry=5 --retry-delay=10 -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$UPGRADE_CONTAINERFILE" .
+sudo podman build --tls-verify=false -t "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" -f "$UPGRADE_CONTAINERFILE" .
 
 greenprint "Push $TEST_OS upgrade container image"
-retry sudo podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
+sudo podman push --tls-verify=false --quiet "${TEST_IMAGE_NAME}:${QUAY_REPO_TAG}" "$TEST_IMAGE_URL"
 
 # Copy upgrade image to local folder for bootc switch test
 if [[ "$AIR_GAPPED_DIR" != "" ]]; then
-    retry skopeo copy docker://"$TEST_IMAGE_URL" dir://"$AIR_GAPPED_DIR"
+    skopeo copy docker://"$TEST_IMAGE_URL" dir://"$AIR_GAPPED_DIR"
     BOOTC_IMAGE="/mnt"
 else
     BOOTC_IMAGE="$TEST_IMAGE_URL"
