@@ -385,7 +385,14 @@ async fn test_tar_write() -> Result<()> {
     let src = fixture.dir.open(tmptar)?;
     fixture.dir.remove_file(tmptar)?;
     let src = tokio::fs::File::from_std(src.into_std());
-    let r = ostree_ext::tar::write_tar(fixture.destrepo(), src, "layer", None).await?;
+    let r = ostree_ext::tar::write_tar(
+        fixture.destrepo(),
+        src,
+        oci_image::MediaType::ImageLayer,
+        "layer",
+        None,
+    )
+    .await?;
     let layer_commit = r.commit.as_str();
     cmd!(
         sh,
@@ -409,7 +416,14 @@ async fn test_tar_write_tar_layer() -> Result<()> {
     let mut dec = flate2::bufread::GzDecoder::new(std::io::Cursor::new(EXAMPLE_TAR_LAYER));
     let _n = std::io::copy(&mut dec, &mut v)?;
     let r = tokio::io::BufReader::new(std::io::Cursor::new(v));
-    ostree_ext::tar::write_tar(fixture.destrepo(), r, "test", None).await?;
+    ostree_ext::tar::write_tar(
+        fixture.destrepo(),
+        r,
+        oci_image::MediaType::ImageLayer,
+        "test",
+        None,
+    )
+    .await?;
     Ok(())
 }
 

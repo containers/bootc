@@ -15,6 +15,7 @@ use cap_std::io_lifetimes;
 use cap_std_ext::cap_std::fs::Dir;
 use cap_std_ext::cmdext::CapStdExtCommandExt;
 use cap_std_ext::{cap_std, cap_tempfile};
+use containers_image_proxy::oci_spec::image as oci_image;
 use fn_error_context::context;
 use ostree::gio;
 use ostree::prelude::FileExt;
@@ -337,6 +338,7 @@ pub(crate) fn filter_tar(
 #[context("Filtering tar stream")]
 async fn filter_tar_async(
     src: impl AsyncRead + Send + 'static,
+    media_type: oci_image::MediaType,
     mut dest: impl AsyncWrite + Send + Unpin,
     config: &TarImportConfig,
     repo_tmpdir: Dir,
@@ -345,12 +347,14 @@ async fn filter_tar_async(
     // The source must be moved to the heap so we know it is stable for passing to the worker thread
     let src = Box::pin(src);
     let config = config.clone();
-    let tar_transformer = tokio::task::spawn_blocking(move || {
-        let mut src = tokio_util::io::SyncIoBridge::new(src);
+    let tar_transformer = crate::tokio_util::spawn_blocking_flatten(move || {
+        let src = tokio_util::io::SyncIoBridge::new(src);
+        let mut src = crate::container::decompressor(&media_type, src)?;
         let dest = tokio_util::io::SyncIoBridge::new(tx_buf);
+
         let r = filter_tar(&mut src, dest, &config, &repo_tmpdir);
         // Pass ownership of the input stream back to the caller - see below.
-        (r, src)
+        Ok((r, src))
     });
     let copier = tokio::io::copy(&mut rx_buf, &mut dest);
     let (r, v) = tokio::join!(tar_transformer, copier);
@@ -373,6 +377,7 @@ async fn filter_tar_async(
 pub async fn write_tar(
     repo: &ostree::Repo,
     src: impl tokio::io::AsyncRead + Send + Unpin + 'static,
+    media_type: oci_image::MediaType,
     refname: &str,
     options: Option<WriteTarOptions>,
 ) -> Result<WriteTarResult> {
@@ -430,7 +435,8 @@ pub async fn write_tar(
     let repo_tmpdir = Dir::reopen_dir(&repo.dfd_borrow())?
         .open_dir("tmp")
         .context("Getting repo tmpdir")?;
-    let filtered_result = filter_tar_async(src, child_stdin, &import_config, repo_tmpdir);
+    let filtered_result =
+        filter_tar_async(src, media_type, child_stdin, &import_config, repo_tmpdir);
     let output_copier = async move {
         // Gather stdout/stderr to buffers
         let mut child_stdout_buf = String::new();
@@ -585,7 +591,14 @@ mod tests {
         let mut dest = Vec::new();
         let src = tokio::io::BufReader::new(tokio::fs::File::open(rootfs_tar_path).await?);
         let cap_tmpdir = Dir::open_ambient_dir(&tempd, cap_std::ambient_authority())?;
-        filter_tar_async(src, &mut dest, &Default::default(), cap_tmpdir).await?;
+        filter_tar_async(
+            src,
+            oci_image::MediaType::ImageLayer,
+            &mut dest,
+            &Default::default(),
+            cap_tmpdir,
+        )
+        .await?;
         let dest = dest.as_slice();
         let mut final_tar = tar::Archive::new(Cursor::new(dest));
         let destdir = &tempd.path().join("destdir");
