@@ -22,8 +22,10 @@ case "$variant" in
       # tmt wants rsync
       dnf -y install cloud-init rsync
       ln -s ../cloud-init.target /usr/lib/systemd/system/default.target.wants
-      # And tmt wants to write to /usr/local/bin
-      rm /usr/local -rf && ln -sr /var/usrlocal /usr/local && mkdir -p /var/usrlocal/bin
+
+      # tmt puts scrips in /var/lib/tmt/scripts, add them to $PATH
+      touch /etc/environment
+      echo "export PATH=$PATH:/var/lib/tmt/scripts" >> /etc/environment
 
       # tmt needs a webserver to verify the VM is running
       TESTCLOUD_GUEST="python3 -m http.server 10022 || python -m http.server 10022 || /usr/libexec/platform-python -m http.server 10022 || python2 -m SimpleHTTPServer 10022 || python -m SimpleHTTPServer 10022"

@@ -186,7 +186,8 @@ class ProvisionBootc(tmt.steps.provision.ProvisionPlugin[BootcData]):
 
             RUN dnf -y install cloud-init rsync && \
             ln -s ../cloud-init.target /usr/lib/systemd/system/default.target.wants && \
-            rm /usr/local -rf && ln -sr /var/usrlocal /usr/local && mkdir -p /var/usrlocal/bin && \
+            touch /etc/environment && \
+            echo "export PATH=$PATH:/var/lib/tmt/scripts" >> /etc/environment && \
             dnf clean all && \
             echo "{{ testcloud_guest }}" >> /opt/testcloud-guest.sh && \
             chmod +x /opt/testcloud-guest.sh && \
