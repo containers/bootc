@@ -22,8 +22,23 @@ case "$variant" in
       # tmt wants rsync
       dnf -y install cloud-init rsync
       ln -s ../cloud-init.target /usr/lib/systemd/system/default.target.wants
-      # And tmt wants to write to /usr/local/bin
-      rm /usr/local -rf && ln -sr /var/usrlocal /usr/local && mkdir -p /var/usrlocal/bin
+
+      # tmt puts scrips in /var/lib/tmt/scripts, add them to $PATH
+      touch /etc/environment
+      echo "export PATH=$PATH:/var/lib/tmt/scripts" >> /etc/environment
+
+      # tmt needs a webserver to verify the VM is running
+      TESTCLOUD_GUEST="python3 -m http.server 10022 || python -m http.server 10022 || /usr/libexec/platform-python -m http.server 10022 || python2 -m SimpleHTTPServer 10022 || python -m SimpleHTTPServer 10022"
+      echo "$TESTCLOUD_GUEST" >> /opt/testcloud-guest.sh
+      chmod +x /opt/testcloud-guest.sh
+      echo "[Unit]" >> /etc/systemd/system/testcloud.service
+      echo "Description=Testcloud guest integration" >> /etc/systemd/system/testcloud.service
+      echo "After=cloud-init.service" >> /etc/systemd/system/testcloud.service
+      echo "[Service]" >> /etc/systemd/system/testcloud.service
+      echo "ExecStart=/bin/bash /opt/testcloud-guest.sh" >> /etc/systemd/system/testcloud.service
+      echo "[Install]" >> /etc/systemd/system/testcloud.service
+      echo "WantedBy=multi-user.target" >> /etc/systemd/system/testcloud.service
+      systemctl enable testcloud.service
       ;;
     "") echo "No variant" 
       ;;
