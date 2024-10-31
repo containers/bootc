@@ -20,8 +20,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
-use anyhow::{ensure, Ok};
+use anyhow::{anyhow, ensure, Context, Result};
 use bootc_utils::CommandRunExt;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
@@ -44,6 +43,7 @@ use rustix::fs::{FileTypeExt, MetadataExt as _};
 use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
+use crate::boundimage::{BoundImage, ResolvedBoundImage};
 use crate::containerenv::ContainerExecutionInfo;
 use crate::lsm;
 use crate::mount::Filesystem;
@@ -131,6 +131,27 @@ pub(crate) struct InstallSourceOpts {
     pub(crate) source_imgref: Option<String>,
 }
 
+#[derive(ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum BoundImagesOpt {
+    /// Bound images must exist in the source's root container storage (default)
+    #[default]
+    Stored,
+    #[clap(hide = true)]
+    /// Do not resolve any "logically bound" images at install time.
+    Skip,
+    // TODO: Once we implement https://github.com/containers/bootc/issues/863 update this comment
+    // to mention source's root container storage being used as lookaside cache
+    /// Bound images will be pulled and stored directly in the target's bootc container storage
+    Pull,
+}
+
+impl std::fmt::Display for BoundImagesOpt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
+}
+
 #[derive(clap::Args, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct InstallConfigOpts {
     /// Disable SELinux in the target (installed) system.
@@ -166,10 +187,11 @@ pub(crate) struct InstallConfigOpts {
     #[serde(default)]
     pub(crate) generic_image: bool,
 
-    /// Do not pull any "logically bound" images at install time.
-    #[clap(long, hide = true)]
+    /// How should logically bound images be retrieved.
+    #[clap(long)]
     #[serde(default)]
-    pub(crate) skip_bound_images: bool,
+    #[arg(default_value_t)]
+    pub(crate) bound_images: BoundImagesOpt,
 
     /// The stateroot name to use. Defaults to `default`.
     #[clap(long)]
@@ -1318,7 +1340,7 @@ async fn install_with_sysroot(
     rootfs: &RootSetup,
     sysroot: &Storage,
     boot_uuid: &str,
-    bound_images: &[crate::boundimage::ResolvedBoundImage],
+    bound_images: BoundImages,
     has_ostree: bool,
 ) -> Result<()> {
     // And actually set up the container in that root, returning a deployment and
@@ -1346,16 +1368,64 @@ async fn install_with_sysroot(
     tracing::debug!("Installed bootloader");
 
     tracing::debug!("Perfoming post-deployment operations");
-    // Note that we *always* initialize this container storage, even
-    // if there are no bound images today.
+
+    // Note that we *always* initialize this container storage, even if there are no bound images
+    // today.
     let imgstore = sysroot.get_ensure_imgstore()?;
-    // Now copy each bound image from the host's container storage into the target.
-    for image in bound_images {
-        let image = image.image.as_str();
-        imgstore.pull_from_host_storage(image).await?;
+
+    match bound_images {
+        BoundImages::Skip => {}
+        BoundImages::Resolved(resolved_bound_images) => {
+            // Now copy each bound image from the host's container storage into the target.
+            for image in resolved_bound_images {
+                let image = image.image.as_str();
+                imgstore.pull_from_host_storage(image).await?;
+            }
+        }
+        BoundImages::Unresolved(bound_images) => {
+            crate::boundimage::pull_images(sysroot, bound_images)
+                .await
+                .context("pulling bound images")?;
+        }
     }
 
     Ok(())
+}
+
+enum BoundImages {
+    Skip,
+    Resolved(Vec<ResolvedBoundImage>),
+    Unresolved(Vec<BoundImage>),
+}
+
+impl BoundImages {
+    async fn from_state(state: &State) -> Result<Self> {
+        let bound_images = match state.config_opts.bound_images {
+            BoundImagesOpt::Skip => BoundImages::Skip,
+            others => {
+                let queried_images = crate::boundimage::query_bound_images(&state.container_root)?;
+                match others {
+                    BoundImagesOpt::Stored => {
+                        // Verify each bound image is present in the container storage
+                        let mut r = Vec::with_capacity(queried_images.len());
+                        for image in queried_images {
+                            let resolved = ResolvedBoundImage::from_image(&image).await?;
+                            tracing::debug!("Resolved {}: {}", resolved.image, resolved.digest);
+                            r.push(resolved)
+                        }
+                        BoundImages::Resolved(r)
+                    }
+                    BoundImagesOpt::Pull => {
+                        // No need to resolve the images, we will pull them into the target later
+                        BoundImages::Unresolved(queried_images)
+                    }
+                    BoundImagesOpt::Skip => anyhow::bail!("unreachable error"),
+                }
+            }
+        };
+
+        Ok(bound_images)
+    }
 }
 
 async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Result<()> {
@@ -1390,23 +1460,7 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         "Missing /dev mount to host /dev"
     );
 
-    let bound_images = if state.config_opts.skip_bound_images {
-        Vec::new()
-    } else {
-        crate::boundimage::query_bound_images(&state.container_root)?
-    };
-    tracing::debug!("bound images={bound_images:?}");
-
-    // Verify each bound image is present in the container storage
-    let bound_images = {
-        let mut r = Vec::with_capacity(bound_images.len());
-        for image in bound_images {
-            let resolved = crate::boundimage::ResolvedBoundImage::from_image(&image).await?;
-            tracing::debug!("Resolved {}: {}", resolved.image, resolved.digest);
-            r.push(resolved)
-        }
-        r
-    };
+    let bound_images = BoundImages::from_state(state).await?;
 
     // Initialize the ostree sysroot (repo, stateroot, etc.)
     {
@@ -1416,7 +1470,7 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
             rootfs,
             &sysroot,
             &boot_uuid,
-            &bound_images,
+            bound_images,
             has_ostree,
         )
         .await?;

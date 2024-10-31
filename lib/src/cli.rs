@@ -1039,6 +1039,11 @@ fn test_parse_install_args() {
     };
     assert!(o.target_opts.target_no_signature_verification);
     assert_eq!(o.filesystem_opts.root_path.as_str(), "/target");
+    // Ensure we default to old bound images behavior
+    assert_eq!(
+        o.config_opts.bound_images,
+        crate::install::BoundImagesOpt::Stored
+    );
 }
 
 #[test]
