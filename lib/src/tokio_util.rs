@@ -73,6 +73,15 @@ where
     spawn_blocking_cancellable(f).map(flatten_anyhow)
 }
 
+/// A wrapper around [`tokio::task::spawn_blocking`] that flattens nested results.
+pub fn spawn_blocking_flatten<F, T>(f: F) -> impl Future<Output = Result<T>>
+where
+    F: FnOnce() -> Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(f).map(flatten_anyhow)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

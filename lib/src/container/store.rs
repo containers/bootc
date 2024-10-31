@@ -716,7 +716,7 @@ impl ImageImporter {
                 p.send(ImportProgress::OstreeChunkStarted(layer.layer.clone()))
                     .await?;
             }
-            let (blob, driver) = fetch_layer_decompress(
+            let (blob, driver, media_type) = fetch_layer(
                 &self.proxy,
                 &self.proxy_img,
                 &import.manifest,
@@ -733,6 +733,7 @@ impl ImageImporter {
                     let txn = repo.auto_transaction(Some(cancellable))?;
                     let mut importer = crate::tar::Importer::new_for_object_set(&repo);
                     let blob = tokio_util::io::SyncIoBridge::new(blob);
+                    let blob = super::unencapsulate::decompressor(&media_type, blob)?;
                     let mut archive = tar::Archive::new(blob);
                     importer.import_objects(&mut archive, Some(cancellable))?;
                     let commit = if write_refs {
@@ -761,7 +762,7 @@ impl ImageImporter {
                 ))
                 .await?;
             }
-            let (blob, driver) = fetch_layer_decompress(
+            let (blob, driver, media_type) = fetch_layer(
                 &self.proxy,
                 &self.proxy_img,
                 &import.manifest,
@@ -778,6 +779,7 @@ impl ImageImporter {
                     let txn = repo.auto_transaction(Some(cancellable))?;
                     let mut importer = crate::tar::Importer::new_for_commit(&repo, remote);
                     let blob = tokio_util::io::SyncIoBridge::new(blob);
+                    let blob = super::unencapsulate::decompressor(&media_type, blob)?;
                     let mut archive = tar::Archive::new(blob);
                     importer.import_commit(&mut archive, Some(cancellable))?;
                     let commit = importer.finish_import_commit();
@@ -873,7 +875,7 @@ impl ImageImporter {
                     p.send(ImportProgress::DerivedLayerStarted(layer.layer.clone()))
                         .await?;
                 }
-                let (blob, driver) = super::unencapsulate::fetch_layer_decompress(
+                let (blob, driver, media_type) = super::unencapsulate::fetch_layer(
                     &proxy,
                     &proxy_img,
                     &import.manifest,
@@ -891,8 +893,13 @@ impl ImageImporter {
                     allow_nonusr: root_is_transient,
                     retain_var: self.ostree_v2024_3,
                 };
-                let r =
-                    crate::tar::write_tar(&self.repo, blob, layer.ostree_ref.as_str(), Some(opts));
+                let r = crate::tar::write_tar(
+                    &self.repo,
+                    blob,
+                    media_type,
+                    layer.ostree_ref.as_str(),
+                    Some(opts),
+                );
                 let r = super::unencapsulate::join_fetch(r, driver)
                     .await
                     .with_context(|| format!("Parsing layer blob {}", layer.layer.digest()))?;

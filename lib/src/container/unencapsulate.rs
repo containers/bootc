@@ -34,11 +34,11 @@
 use crate::container::store::LayerProgress;
 
 use super::*;
-use anyhow::Context as _;
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use fn_error_context::context;
-use futures_util::{Future, FutureExt, TryFutureExt as _};
+use futures_util::{Future, FutureExt};
 use oci_spec::image::{self as oci_image, Digest};
+use std::io::Read;
 use std::sync::{Arc, Mutex};
 use tokio::{
     io::{AsyncBufRead, AsyncRead},
@@ -191,80 +191,30 @@ pub async fn unencapsulate(repo: &ostree::Repo, imgref: &OstreeImageReference) -
     importer.unencapsulate().await
 }
 
-/// Take an async AsyncBufRead and handle decompression for it, returning
-/// a wrapped AsyncBufRead implementation.
-/// This is implemented with a background thread using a pipe-to-self,
-/// and so there is an additional Future object returned that is a "driver"
-/// task and must also be checked for errors.
-pub(crate) fn decompress_bridge(
-    src: impl tokio::io::AsyncBufRead + Send + Unpin + 'static,
-    is_zstd: bool,
-) -> Result<(
-    // This one is the input reader
-    impl tokio::io::AsyncBufRead + Send + Unpin + 'static,
-    // And this represents the worker thread doing copying
-    impl Future<Output = Result<()>> + Send + Unpin + 'static,
-)> {
-    // We use a plain unix pipe() because it's just a very convenient
-    // way to bridge arbitrarily between sync and async with a worker
-    // thread.  Yes, it involves going through the kernel, but
-    // eventually we'll replace all this logic with podman anyways.
-    let (tx, rx) = tokio::net::unix::pipe::pipe()?;
-    let task = tokio::task::spawn_blocking(move || -> Result<()> {
-        // Convert the write half of the pipe() into a regular blocking file descriptor
-        let tx = tx.into_blocking_fd()?;
-        let mut tx = std::fs::File::from(tx);
-        // Convert the async input back to synchronous.
-        let src = tokio_util::io::SyncIoBridge::new(src);
-        let bufr = std::io::BufReader::new(src);
-        // Wrap the input in a decompressor; I originally tried to make
-        // this function take a function pointer, but yeah that was painful
-        // with the type system.
-        let mut src: Box<dyn std::io::Read> = if is_zstd {
-            Box::new(zstd::stream::read::Decoder::new(bufr)?)
-        } else {
-            Box::new(flate2::bufread::GzDecoder::new(bufr))
-        };
-        // We don't care about the number of bytes copied
-        let _n: u64 = std::io::copy(&mut src, &mut tx).context("Copying for decompression")?;
-        Ok(())
-    })
-    // Flatten the nested Result<Result<>>
-    .map(crate::tokio_util::flatten_anyhow);
-    // And return the pair of futures
-    Ok((tokio::io::BufReader::new(rx), task))
-}
-
 /// Create a decompressor for this MIME type, given a stream of input.
-fn new_async_decompressor(
+pub(crate) fn decompressor(
     media_type: &oci_image::MediaType,
-    src: impl AsyncBufRead + Send + Unpin + 'static,
-) -> Result<(
-    Box<dyn AsyncBufRead + Send + Unpin + 'static>,
-    impl Future<Output = Result<()>> + Send + Unpin + 'static,
-)> {
-    let r: (
-        Box<dyn AsyncBufRead + Send + Unpin + 'static>,
-        Box<dyn Future<Output = Result<()>> + Send + Unpin + 'static>,
-    ) = match media_type {
+    src: impl Read + Send + 'static,
+) -> Result<Box<dyn Read + Send + 'static>> {
+    let r: Box<dyn std::io::Read + Send + 'static> = match media_type {
         m @ (oci_image::MediaType::ImageLayerGzip | oci_image::MediaType::ImageLayerZstd) => {
-            let is_zstd = matches!(m, oci_image::MediaType::ImageLayerZstd);
-            let (r, driver) = decompress_bridge(src, is_zstd)?;
-            (Box::new(r), Box::new(driver) as _)
+            if matches!(m, oci_image::MediaType::ImageLayerZstd) {
+                Box::new(zstd::stream::read::Decoder::new(src)?)
+            } else {
+                Box::new(flate2::bufread::GzDecoder::new(std::io::BufReader::new(
+                    src,
+                )))
+            }
         }
-        oci_image::MediaType::ImageLayer => {
-            (Box::new(src), Box::new(futures_util::future::ready(Ok(()))))
-        }
-        oci_image::MediaType::Other(t) if t.as_str() == DOCKER_TYPE_LAYER_TAR => {
-            (Box::new(src), Box::new(futures_util::future::ready(Ok(()))))
-        }
+        oci_image::MediaType::ImageLayer => Box::new(src),
+        oci_image::MediaType::Other(t) if t.as_str() == DOCKER_TYPE_LAYER_TAR => Box::new(src),
         o => anyhow::bail!("Unhandled layer type: {}", o),
     };
     Ok(r)
 }
 
 /// A wrapper for [`get_blob`] which fetches a layer and decompresses it.
-pub(crate) async fn fetch_layer_decompress<'a>(
+pub(crate) async fn fetch_layer<'a>(
     proxy: &'a ImageProxy,
     img: &OpenedImage,
     manifest: &oci_image::ImageManifest,
@@ -275,12 +225,13 @@ pub(crate) async fn fetch_layer_decompress<'a>(
 ) -> Result<(
     Box<dyn AsyncBufRead + Send + Unpin>,
     impl Future<Output = Result<()>> + 'a,
+    oci_image::MediaType,
 )> {
     use futures_util::future::Either;
     tracing::debug!("fetching {}", layer.digest());
     let layer_index = manifest.layers().iter().position(|x| x == layer).unwrap();
     let (blob, driver, size);
-    let media_type: &oci_image::MediaType;
+    let media_type: oci_image::MediaType;
     match transport_src {
         Transport::ContainerStorage => {
             let layer_info = layer_info
@@ -290,12 +241,12 @@ pub(crate) async fn fetch_layer_decompress<'a>(
                 anyhow!("blobid position {layer_index} exceeds diffid count {n_layers}")
             })?;
             size = layer_blob.size;
-            media_type = &layer_blob.media_type;
+            media_type = layer_blob.media_type.clone();
             (blob, driver) = proxy.get_blob(img, &layer_blob.digest, size).await?;
         }
         _ => {
             size = layer.size();
-            media_type = layer.media_type();
+            media_type = layer.media_type().clone();
             (blob, driver) = proxy.get_blob(img, layer.digest(), size).await?;
         }
     };
@@ -316,13 +267,10 @@ pub(crate) async fn fetch_layer_decompress<'a>(
                 progress.send_replace(Some(status));
             }
         };
-        let (reader, compression_driver) = new_async_decompressor(media_type, readprogress)?;
-        let driver = driver.and_then(|()| compression_driver);
+        let reader = Box::new(readprogress);
         let driver = futures_util::future::join(readproxy, driver).map(|r| r.1);
-        Ok((reader, Either::Left(driver)))
+        Ok((reader, Either::Left(driver), media_type))
     } else {
-        let (blob, compression_driver) = new_async_decompressor(media_type, blob)?;
-        let driver = driver.and_then(|()| compression_driver);
-        Ok((blob, Either::Right(driver)))
+        Ok((Box::new(blob), Either::Right(driver), media_type))
     }
 }
