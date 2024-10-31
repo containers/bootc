@@ -15,9 +15,6 @@ enabled=1
 enabled_metadata=1
 EOF
 
-# Pull skopeo and ostree from updates-testing, since we depend on new features in our git main
-dnf config-manager --set-enabled updates-testing
-
 # Our tests depend on this
 dnf -y install skopeo
 
