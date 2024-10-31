@@ -180,7 +180,7 @@ pub(crate) fn install_create_rootfs(
         crate::blockdev::wipefs(dev)?;
     } else if device.has_children() {
         anyhow::bail!(
-            "Detected existing partitions on {}; use e.g. `wipefs` if you intend to overwrite",
+            "Detected existing partitions on {}; use e.g. `wipefs` or --wipe if you intend to overwrite",
             opts.device
         );
     }
