@@ -1132,7 +1132,16 @@ async fn test_container_var_content() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_container_etc_hardlinked() -> Result<()> {
+async fn test_container_etc_hardlinked_absolute() -> Result<()> {
+    test_container_etc_hardlinked(true).await
+}
+
+#[tokio::test]
+async fn test_container_etc_hardlinked_relative() -> Result<()> {
+    test_container_etc_hardlinked(false).await
+}
+
+async fn test_container_etc_hardlinked(absolute: bool) -> Result<()> {
     let fixture = Fixture::new_v1()?;
 
     let imgref = fixture.export_container().await.unwrap().0;
@@ -1174,6 +1183,7 @@ async fn test_container_etc_hardlinked() -> Result<()> {
             // Another case where we have /etc/dnf.conf and a hardlinked /ostree/repo/objects
             // link into it - in this case we should ignore the hardlinked one.
             let testdata = "hardlinked into object store";
+            let mut h = tar::Header::new_ustar();
             h.set_mode(0o644);
             h.set_mtime(42);
             h.set_size(testdata.len().try_into().unwrap());
@@ -1186,7 +1196,20 @@ async fn test_container_etc_hardlinked() -> Result<()> {
             h.set_entry_type(tar::EntryType::Link);
             h.set_mtime(42);
             h.set_size(0);
-            layer_tar.append_link(&mut h.clone(), "sysroot/ostree/repo/objects/45/7279b28b541ca20358bec8487c81baac6a3d5ed3cea019aee675137fab53cb.file", "etc/dnf.conf")?;
+            let path = "sysroot/ostree/repo/objects/45/7279b28b541ca20358bec8487c81baac6a3d5ed3cea019aee675137fab53cb.file";
+            let target = "etc/dnf.conf";
+            if absolute {
+                let ustarname = &mut h.as_ustar_mut().unwrap().name;
+                // The tar crate doesn't let us set absolute paths in tar archives, so we bypass
+                // it and just write to the path buffer directly.
+                assert!(path.len() < ustarname.len());
+                ustarname[0..path.len()].copy_from_slice(path.as_bytes());
+                h.set_link_name(target)?;
+                h.set_cksum();
+                layer_tar.append(&mut h.clone(), std::io::empty())?;
+            } else {
+                layer_tar.append_link(&mut h.clone(), path, target)?;
+            }
             layer_tar.finish()?;
             Ok(())
         },
@@ -1220,6 +1243,10 @@ async fn test_container_etc_hardlinked() -> Result<()> {
     let bar = bar.downcast_ref::<ostree::RepoFile>().unwrap();
     bar.ensure_resolved()?;
     assert_eq!(foo.checksum(), bar.checksum());
+
+    let dnfconf = r.resolve_relative_path("usr/etc/dnf.conf");
+    let dnfconf: &ostree::RepoFile = dnfconf.downcast_ref::<ostree::RepoFile>().unwrap();
+    dnfconf.ensure_resolved()?;
 
     Ok(())
 }

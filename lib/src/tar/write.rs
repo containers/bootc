@@ -263,6 +263,8 @@ pub(crate) fn filter_tar(
         let header = entry.header();
         let path = entry.path()?;
         let path: &Utf8Path = (&*path).try_into()?;
+        // Force all paths to relative
+        let path = path.strip_prefix("/").unwrap_or(path);
 
         let is_modified = header.mtime().unwrap_or_default() > 0;
         let is_regular = header.entry_type() == tar::EntryType::Regular;
@@ -293,6 +295,8 @@ pub(crate) fn filter_tar(
                 .link_name()?
                 .ok_or_else(|| anyhow!("Invalid empty hardlink"))?;
             let target: &Utf8Path = (&*target).try_into()?;
+            // Canonicalize to a relative path
+            let target = path.strip_prefix("/").unwrap_or(target);
             // If this is a hardlink into /sysroot...
             if target.strip_prefix(crate::tar::REPO_PREFIX).is_ok() {
                 // And we found a previously processed modified file there
