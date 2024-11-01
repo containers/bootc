@@ -45,6 +45,7 @@ use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
 use crate::containerenv::ContainerExecutionInfo;
+use crate::lsm;
 use crate::mount::Filesystem;
 use crate::spec::ImageReference;
 use crate::store::Storage;
@@ -525,15 +526,9 @@ impl SourceInfo {
         Self::new(imageref, None, root, false, false)
     }
 
-    /// Construct a new source information structure
-    fn new(
-        imageref: ostree_container::ImageReference,
-        digest: Option<String>,
-        root: &Dir,
-        in_host_mountns: bool,
-        have_host_container_storage: bool,
-    ) -> Result<Self> {
+    fn have_selinux_from_repo(root: &Dir) -> Result<bool> {
         let cancellable = ostree::gio::Cancellable::NONE;
+
         let commit = Task::new("Reading ostree commit", "ostree")
             .args(["--repo=/ostree/repo", "rev-parse", "--single"])
             .quiet()
@@ -545,7 +540,22 @@ impl SourceInfo {
             .0;
         let root = root.downcast_ref::<ostree::RepoFile>().unwrap();
         let xattrs = root.xattrs(cancellable)?;
-        let selinux = crate::lsm::xattrs_have_selinux(&xattrs);
+        Ok(crate::lsm::xattrs_have_selinux(&xattrs))
+    }
+
+    /// Construct a new source information structure
+    fn new(
+        imageref: ostree_container::ImageReference,
+        digest: Option<String>,
+        root: &Dir,
+        in_host_mountns: bool,
+        have_host_container_storage: bool,
+    ) -> Result<Self> {
+        let selinux = if Path::new("/ostree/repo").try_exists()? {
+            Self::have_selinux_from_repo(root)?
+        } else {
+            lsm::have_selinux_policy(root)?
+        };
         Ok(Self {
             imageref,
             digest,
