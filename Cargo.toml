@@ -38,7 +38,7 @@ openat-ext = ">= 0.2.2, < 0.3.0"
 openssl = "^0.10"
 os-release = "0.1.0"
 regex = "1.11.1"
-rustix = { version = "0.38.37", features = ["process", "fs"] }
+rustix = { version = "0.38.38", features = ["process", "fs"] }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"
 tempfile = "^3.13"
