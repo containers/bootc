@@ -1,0 +1,122 @@
+#!/bin/bash
+set -xeuo pipefail
+
+. ${KOLA_EXT_DATA}/libtest.sh
+
+tmpdir=$(mktemp -d)
+cd ${tmpdir}
+echo "using tmpdir: ${tmpdir}"
+touch .testtmp
+trap cleanup EXIT
+function cleanup () {
+  if test -z "${TEST_SKIP_CLEANUP:-}"; then
+    if test -f "${tmpdir}"/.testtmp; then
+      cd /
+      rm "${tmpdir}" -rf
+    fi
+  else
+    echo "Skipping cleanup of ${tmpdir}"
+  fi
+}
+
+# Mount the EFI partition.
+tmpefimount=$(mount_tmp_efi)
+bootmount=/boot
+tmpefidir=${tmpefimount}/EFI
+bootupdir=/usr/lib/bootupd/updates
+efiupdir=${bootupdir}/EFI
+ostbaseefi=/usr/lib/ostree-boot/efi/EFI
+efisubdir=fedora
+efidir=${efiupdir}/${efisubdir}
+ostefi=${ostbaseefi}/${efisubdir}
+shim=shimx64.efi
+
+test -f "${efidir}/${shim}"
+
+prepare_efi_update() {
+  test -w /usr
+  mkdir -p ${ostbaseefi}
+  cp -a ${efiupdir}.orig/* ${ostbaseefi}/
+  rm -rf ${efiupdir} ${bootupdir}/EFI.json
+}
+
+bootupctl status > out.txt
+assert_file_has_content_literal out.txt 'Component EFI'
+assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
+assert_file_has_content_literal out.txt 'Update: At latest version'
+assert_file_has_content out.txt '^CoreOS aleph version:'
+ok status
+
+bootupctl validate | tee out.txt
+ok validate
+
+if env LANG=C.UTF-8 runuser -u bin bootupctl status 2>err.txt; then
+  fatal "Was able to bootupctl status as non-root"
+fi
+assert_file_has_content err.txt 'error: This command requires root privileges'
+
+# From here we'll fake updates
+test -w /usr || rpm-ostree usroverlay
+# Save a backup copy of the update dir
+cp -a ${efiupdir} ${efiupdir}.orig
+
+prepare_efi_update
+# FIXME need to synthesize an RPM for this
+# echo somenewfile > ${ostefi}/somenew.efi
+rm -v ${ostefi}/shim.efi
+echo bootupd-test-changes >> ${ostefi}/grubx64.efi
+/usr/libexec/bootupd generate-update-metadata /
+ver=$(jq -r .version < ${bootupdir}/EFI.json)
+cat >ver.json << EOF
+{ "version": "${ver},test", "timestamp": "$(date -u --iso-8601=seconds)" }
+EOF
+jq -s add ${bootupdir}/EFI.json ver.json > new.json
+mv new.json ${bootupdir}/EFI.json
+
+bootupctl status | tee out.txt
+assert_file_has_content_literal out.txt 'Component EFI'
+assert_file_has_content_literal out.txt '  Installed: grub2-efi-x64-'
+assert_not_file_has_content out.txt '  Installed: grub2-efi-x64.*,test'
+assert_file_has_content_literal out.txt 'Update: Available:'
+ok update avail
+
+bootupctl status --json > status.json
+jq -r '.components.EFI.installed.version' < status.json > installed.txt
+assert_file_has_content installed.txt '^grub2-efi-x64'
+
+bootupctl update | tee out.txt
+assert_file_has_content out.txt 'Updated EFI: grub2-efi-x64.*,test'
+
+bootupctl status > out.txt
+assert_file_has_content_literal out.txt 'Component EFI'
+assert_file_has_content out.txt '  Installed: grub2-efi-x64.*,test'
+assert_file_has_content_literal out.txt 'Update: At latest version'
+ok status after update
+
+bootupctl validate | tee out.txt
+ok validate after update
+
+# FIXME see above
+# assert_file_has_content ${tmpefidir}/${efisubdir}/somenew.efi 'somenewfile'
+if test -f ${tmpefidir}/${efisubdir}/shim.efi; then 
+  fatal "failed to remove file"
+fi
+if ! grep -q 'bootupd-test-changes' ${tmpefidir}/${efisubdir}/grubx64.efi; then
+  fatal "failed to update modified file"
+fi
+cmp ${tmpefidir}/${efisubdir}/shimx64.efi ${efiupdir}/${efisubdir}/shimx64.efi
+ok filesystem changes
+
+bootupctl update | tee out.txt
+assert_file_has_content_literal out.txt 'No update available for any component'
+assert_not_file_has_content_literal out.txt 'Updated EFI'
+
+echo "some additions" >> ${tmpefidir}/${efisubdir}/shimx64.efi
+if bootupctl validate 2>err.txt; then
+  fatal "unexpectedly passed validation"
+fi
+assert_file_has_content err.txt "Changed: ${efisubdir}/shimx64.efi"
+test "$(grep -cEe '^Changed:' err.txt)" = "1"
+ok validate detected changes
+
+tap_finish

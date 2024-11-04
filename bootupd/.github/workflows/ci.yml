@@ -1,0 +1,52 @@
+name: CI
+
+permissions:
+  actions: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  c9s-bootc-e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v3
+      - name: build
+        run: sudo podman build -t localhost/bootupd:latest -f ci/Containerfile.c9s .
+      - name: bootc install to disk
+        run: |
+          set -xeuo pipefail
+          sudo truncate -s 10G myimage.raw
+          sudo podman run --rm -ti --privileged -v .:/target --pid=host --security-opt label=disable \
+            -v /var/lib/containers:/var/lib/containers \
+            -v /dev:/dev \
+            localhost/bootupd:latest bootc install to-disk --skip-fetch-check \
+            --disable-selinux --generic-image --via-loopback /target/myimage.raw
+          # Verify we installed grub.cfg and shim on the disk
+          sudo losetup -P -f myimage.raw
+          device=$(losetup --list --noheadings --output NAME,BACK-FILE | grep myimage.raw | awk '{print $1}')
+          sudo mount "${device}p2" /mnt/
+          sudo ls /mnt/EFI/centos/{grub.cfg,shimx64.efi}
+          sudo umount /mnt
+          sudo losetup -D "${device}"
+          sudo rm -f myimage.raw
+      - name: bootc install to filesystem
+        run: |
+          set -xeuo pipefail
+          sudo podman run --rm -ti --privileged -v /:/target --pid=host --security-opt label=disable \
+            -v /dev:/dev -v /var/lib/containers:/var/lib/containers \
+            localhost/bootupd:latest bootc install to-filesystem --skip-fetch-check \
+            --disable-selinux --replace=alongside /target
+          # Verify we injected static configs
+          jq -re '.["static-configs"].version' /boot/bootupd-state.json

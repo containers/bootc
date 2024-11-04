@@ -1,0 +1,26 @@
+{
+  "components": {
+    "EFI": {
+      "installed": {
+        "timestamp": "2020-09-15T13:01:21Z",
+        "version": "grub2-efi-x64-1:2.04-23.fc32.x86_64,shim-x64-15-8.x86_64"
+      },
+      "interrupted": null,
+      "update": {
+        "timestamp": "2020-09-15T13:01:21Z",
+        "version": "grub2-efi-x64-1:2.04-23.fc32.x86_64,shim-x64-15-8.x86_64"
+      },
+      "updatable": "at-latest-version",
+      "adopted-from": null
+    }
+  },
+  "adoptable": {
+    "BIOS": {
+      "version": {
+        "version": "grub2-bios-42.x86_64",
+        "timestamp": "2020-09-15T13:01:21Z"
+      },
+      "confident": true
+    }
+  }
+}

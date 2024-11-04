@@ -1,0 +1,78 @@
+// Documentation: https://github.com/coreos/coreos-ci/blob/main/README-upstream-ci.md
+
+properties([
+  // abort previous runs when a PR is updated to save resources
+  disableConcurrentBuilds(abortPrevious: true)
+])
+
+stage("Build") {
+parallel build: {
+  def n = 5
+  buildPod(runAsUser: 0, memory: "2Gi", cpu: "${n}") {
+      checkout scm
+      stage("Core build") {
+        shwrap("""
+          make -j ${n} 
+        """)
+      }
+      stage("Unit tests") {
+        shwrap("""
+          cargo test
+        """)
+      }
+      shwrap("""
+        make install DESTDIR=\$(pwd)/insttree/
+        tar -c -C insttree/ -zvf insttree.tar.gz .
+      """)
+      stash includes: 'insttree.tar.gz', name: 'build'
+  }
+},
+codestyle: {
+  buildPod {
+      checkout scm
+      shwrap("cargo fmt -- --check")
+  }
+}
+}
+
+// Build FCOS and do a kola basic run
+// FIXME update to main branch once https://github.com/coreos/fedora-coreos-config/pull/595 merges
+cosaPod(runAsUser: 0, memory: "4608Mi", cpu: "4") {
+  stage("Build FCOS") {
+    checkout scm
+    unstash 'build'
+    // Note that like {rpm-,}ostree we want to install to both / and overrides/rootfs
+    // because bootupd is used both during the `rpm-ostree compose tree` as well as
+    // inside the target operating system.
+    shwrap("""
+      mkdir insttree
+      tar -C insttree -xzvf insttree.tar.gz
+      rsync -rlv insttree/ /
+      coreos-assembler init --force https://github.com/coreos/fedora-coreos-config
+      mkdir -p overrides/rootfs
+      mv insttree/* overrides/rootfs/
+      rmdir insttree
+      cosa fetch
+      cosa build
+    """)
+  }
+  // The e2e-adopt test will use the ostree commit we just generated above
+  // but a static qemu base image.
+  try {
+    // Now a test that upgrades using bootupd
+    stage("e2e upgrade test") {
+      shwrap("""
+        git config --global --add safe.directory "\$(pwd)"
+        env COSA_DIR=${env.WORKSPACE} ./tests/e2e-update/e2e-update.sh
+      """)
+    }
+    stage("Kola testing") {
+      // The previous e2e leaves things only having built an ostree update
+      shwrap("cosa build")
+      // bootupd really can't break upgrades for the OS
+      kola(cosaDir: "${env.WORKSPACE}", extraArgs: "ext.*bootupd*", skipUpgrade: true, skipBasicScenarios: true)
+    }
+  } finally {
+    archiveArtifacts allowEmptyArchive: true, artifacts: 'tmp/console.txt'
+  }
+}

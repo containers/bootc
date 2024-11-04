@@ -1,0 +1,13 @@
+# This container build is just a demo effectively; it shows how one might
+# build bootc in a container flow, using Fedora ELN as the target.
+FROM quay.io/centos/centos:stream9 as build
+RUN dnf -y install dnf-utils zstd && dnf builddep -y rust-bootupd
+COPY . /build
+WORKDIR /build
+# See https://www.reddit.com/r/rust/comments/126xeyx/exploring_the_problem_of_faster_cargo_docker/
+# We aren't using the full recommendations there, just the simple bits.
+RUN --mount=type=cache,target=/build/target --mount=type=cache,target=/var/roothome make && make bin-archive && mkdir -p /out && cp target/bootupd.tar.zst /out
+
+FROM quay.io/centos-bootc/centos-bootc-dev:stream9
+COPY --from=build /out/bootupd.tar.zst /tmp
+RUN tar -C / --zstd -xvf /tmp/bootupd.tar.zst && rm -rvf /tmp/*

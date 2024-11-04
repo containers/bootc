@@ -1,0 +1,5 @@
+/target
+fastbuild*.qcow2
+_kola_temp
+.cosa
+Cargo.lock

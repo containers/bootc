@@ -1,0 +1,41 @@
+name: Cross build
+
+on: [push, pull_request]
+
+permissions:
+  actions: read
+
+jobs:
+  crossarch-check:
+    runs-on: ubuntu-latest
+    name: Build on ${{ matrix.arch }}
+
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64
+            distro: ubuntu_latest
+          - arch: s390x
+            distro: ubuntu_latest
+          - arch: ppc64le
+            distro: ubuntu_latest
+    steps:
+      - uses: actions/checkout@v3.0.2
+        with:
+          submodules: true
+          set-safe-directory: true
+
+      - uses: uraimo/run-on-arch-action@v2.8.1
+        name: Build
+        id: build
+        with:
+          arch: ${{ matrix.arch }}
+          distro: ${{ matrix.distro }}
+
+          githubToken: ${{ github.token }}
+
+          run: |
+            set -xeu
+            apt update -y
+            apt install -y gcc make cargo libssl-dev pkg-config
+            cargo check
