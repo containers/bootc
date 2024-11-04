@@ -282,9 +282,9 @@ dependencies = [
 
 [[package]]
 name = "cap-std-ext"
-version = "4.0.3"
+version = "4.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef94280e28b736a40311060c9aa8a88e961dd6b05914bfcfc10a8d9ab0ad43d4"
+checksum = "f5cd561bc80e52c4ed4121c7bae16c585388487243f317817d509e882e8c0512"
 dependencies = [
  "cap-primitives",
  "cap-tempfile",
@@ -1933,9 +1933,9 @@ dependencies = [
 
 [[package]]
 name = "tar"
-version = "0.4.40"
+version = "0.4.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b16afcea1f22891c49a00c751c7b63b2233284064f11a200fc624137c51e2ddb"
+checksum = "c65998313f8e17d0d553d28f91a0df93e4dbbbf770279c7bc21ca0f09ea1a1f6"
 dependencies = [
  "filetime",
  "libc",
