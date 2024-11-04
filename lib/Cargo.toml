@@ -42,7 +42,7 @@ regex = "1.5.4"
 rustix = { version = "0.38", features = ["fs", "process"] }
 serde = { features = ["derive"], version = "1.0.125" }
 serde_json = "1.0.64"
-tar = "0.4.38"
+tar = "0.4.43"
 tempfile = "3.2.0"
 terminal_size = "0.3"
 tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1.13.0" }

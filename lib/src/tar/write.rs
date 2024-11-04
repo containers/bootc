@@ -35,7 +35,7 @@ const EXCLUDED_TOPLEVEL_PATHS: &[&str] = &["run", "tmp", "proc", "sys", "dev"];
 /// Copy a tar entry to a new tar archive, optionally using a different filesystem path.
 #[context("Copying entry")]
 pub(crate) fn copy_entry(
-    entry: tar::Entry<impl std::io::Read>,
+    mut entry: tar::Entry<impl std::io::Read>,
     dest: &mut tar::Builder<impl std::io::Write>,
     path: Option<&Path>,
 ) -> Result<()> {
@@ -46,6 +46,15 @@ pub(crate) fn copy_entry(
         (*entry.path()?).to_owned()
     };
     let mut header = entry.header().clone();
+    if let Some(headers) = entry.pax_extensions()? {
+        let extensions = headers
+            .map(|ext| {
+                let ext = ext?;
+                Ok((ext.key()?, ext.value_bytes()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        dest.append_pax_extensions(extensions.as_slice().iter().copied())?;
+    }
 
     // Need to use the entry.link_name() not the header.link_name()
     // api as the header api does not handle long paths:
