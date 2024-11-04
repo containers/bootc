@@ -184,7 +184,7 @@ impl FileTree {
         }
         if check_additions {
             for k in updated.children.keys() {
-                if self.children.get(k).is_some() {
+                if self.children.contains_key(k) {
                     continue;
                 }
                 additions.insert(k.clone());

@@ -44,12 +44,12 @@ pub(crate) fn install_via_bootupd(
     let bootupd_opts = (!configopts.generic_image).then_some(["--update-firmware", "--auto"]);
 
     let devpath = get_bootupd_device(device)?;
-    let args = ["backend", "install", "--write-uuid"]
+    let args = ["internals", "bootupd", "install", "--write-uuid"]
         .into_iter()
         .chain(verbose)
         .chain(bootupd_opts.iter().copied().flatten())
         .chain(["--device", devpath.as_str(), rootfs.as_str()]);
-    Task::new("Running bootupctl to install bootloader", "bootupctl")
+    Task::new("Running bootupctl to install bootloader", "bootc")
         .args(args)
         .verbose()
         .run()

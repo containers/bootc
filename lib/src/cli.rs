@@ -290,6 +290,14 @@ pub(crate) enum InternalsOpts {
         #[allow(dead_code)]
         late_dir: Option<Utf8PathBuf>,
     },
+    Bootupd {
+        #[clap(allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
+    Bootupctl {
+        #[clap(allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
     FixupEtcFstab,
     /// Should only be used by `make update-generated`
     PrintJsonSchema,
@@ -794,17 +802,21 @@ async fn usroverlay() -> Result<()> {
         .into());
 }
 
-/// Perform process global initialization. This should be called as early as possible
-/// in the standard `main` function.
-pub fn global_init() -> Result<()> {
-    // In some cases we re-exec with a temporary binary,
-    // so ensure that the syslog identifier is set.
-    let name = "bootc";
+// Set the global process name
+fn set_process_name(name: &str) {
     ostree::glib::set_prgname(name.into());
     if let Err(e) = rustix::thread::set_name(&CString::new(name).unwrap()) {
         // This shouldn't ever happen
         eprintln!("failed to set name: {e}");
     }
+}
+
+/// Perform process global initialization. This should be called as early as possible
+/// in the standard `main` function.
+pub fn global_init() -> Result<()> {
+    // In some cases we re-exec with a temporary binary,
+    // so ensure that the syslog identifier is set.
+    set_process_name("bootc");
     let am_root = rustix::process::getuid().is_root();
     // Work around bootc-image-builder not setting HOME, in combination with podman (really c/common)
     // bombing out if it is unset.
@@ -840,11 +852,24 @@ impl Opt {
             let first: OsString = first.into();
             let argv0 = first.to_str().and_then(|s| s.rsplit_once('/')).map(|s| s.1);
             tracing::debug!("argv0={argv0:?}");
-            if matches!(argv0, Some(InternalsOpts::GENERATOR_BIN)) {
-                let base_args = ["bootc", "internals", "systemd-generator"]
-                    .into_iter()
-                    .map(OsString::from);
-                return Opt::parse_from(base_args.chain(args.map(|i| i.into())));
+            if let Some(argv0) = argv0 {
+                match argv0 {
+                    InternalsOpts::GENERATOR_BIN => {
+                        let base_args = ["bootc", "internals", "systemd-generator"]
+                            .into_iter()
+                            .map(OsString::from);
+                        return Opt::parse_from(base_args.chain(args.map(|i| i.into())));
+                    }
+                    bootupd::BACKEND_NAME | bootupd::CLIENT_NAME => {
+                        let base_args = ["bootc", "internals", argv0]
+                            .into_iter()
+                            .map(OsString::from);
+                        return Opt::parse_from(base_args.chain(args.map(|i| i.into())));
+                    }
+                    _ => {
+                        // Fallthrough
+                    }
+                }
             }
             Some(first)
         } else {
@@ -930,6 +955,12 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             } => {
                 let unit_dir = &Dir::open_ambient_dir(normal_dir, cap_std::ambient_authority())?;
                 crate::generator::generator(root, unit_dir)
+            }
+            InternalsOpts::Bootupd { args } => {
+                bootupd::run(std::iter::once(bootupd::BACKEND_NAME.into()).chain(args))
+            }
+            InternalsOpts::Bootupctl { args } => {
+                bootupd::run(std::iter::once(bootupd::CLIENT_NAME.into()).chain(args))
             }
             InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
             InternalsOpts::PrintJsonSchema => {

@@ -243,7 +243,7 @@ pub(crate) fn adopt_and_update(name: &str) -> Result<ContentMetadata> {
     let sysroot = openat::Dir::open("/")?;
     let mut state = SavedState::load_from_disk("/")?.unwrap_or_default();
     let component = component::new_from_name(name)?;
-    if state.installed.get(name).is_some() {
+    if state.installed.contains_key(name) {
         anyhow::bail!("Component {} is already installed", name);
     };
 

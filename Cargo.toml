@@ -1,5 +1,5 @@
 [workspace]
-members = ["cli", "lib", "xtask", "tests-integration"]
+members = ["cli", "lib", "bootupd", "xtask", "tests-integration"]
 resolver = "2"
 
 [profile.dev]
@@ -21,7 +21,7 @@ lto = "yes"
 anyhow = "1.0.82"
 camino = "1.1.6"
 cap-std-ext = "4.0.2"
-chrono = { version = "0.4.38", default-features = false }
+chrono = { version = "0.4.38", features = ["serde"] }
 clap = "4.5.4"
 indoc = "2.0.5"
 fn-error-context = "0.2.1"

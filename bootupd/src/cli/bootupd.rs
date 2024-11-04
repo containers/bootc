@@ -17,7 +17,9 @@ pub struct DCommand {
 }
 
 impl DCommand {
+    // TODO re-enable this
     /// Return the log-level set via command-line flags.
+    #[allow(dead_code)]
     pub(crate) fn loglevel(&self) -> LevelFilter {
         match self.verbosity {
             0 => LevelFilter::Warn,

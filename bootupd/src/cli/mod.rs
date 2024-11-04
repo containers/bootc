@@ -1,5 +1,7 @@
 //! Command-line interface (CLI) logic.
 
+use std::ffi::OsString;
+
 use anyhow::Result;
 use clap::Parser;
 use log::LevelFilter;
@@ -14,7 +16,14 @@ pub enum MultiCall {
 }
 
 impl MultiCall {
-    pub fn from_args(args: Vec<String>) -> Self {
+    pub fn from_args<T>(args: impl IntoIterator<Item = T>) -> Self
+    where
+        T: Into<OsString> + Clone,
+    {
+        let args = args
+            .into_iter()
+            .map(|s| Into::<OsString>::into(s))
+            .collect::<Vec<_>>();
         use std::os::unix::ffi::OsStrExt;
 
         // This is a multicall binary, dispatched based on the introspected
@@ -38,7 +47,9 @@ impl MultiCall {
         }
     }
 
+    // TODO re-enable this
     /// Return the log-level set via command-line flags.
+    #[allow(dead_code)]
     pub fn loglevel(&self) -> LevelFilter {
         match self {
             MultiCall::Ctl(cmd) => cmd.loglevel(),

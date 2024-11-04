@@ -3,57 +3,39 @@ name = "bootupd"
 description = "Bootloader updater"
 license = "Apache-2.0"
 version = "0.2.24"
-authors = ["Colin Walters <walters@verbum.org>"]
 edition = "2021"
-rust-version = "1.75.0"
+publish = false
 
-include = ["src", "LICENSE", "Makefile", "systemd"]
-
-# See https://github.com/coreos/cargo-vendor-filterer
-[package.metadata.vendor-filter]
-platforms = ["*-unknown-linux-gnu"]
-tier = "2"
-
-[[bin]]
-name = "bootupd"
-path = "src/main.rs"
+[lib]
+path = "src/lib.rs"
 
 [dependencies]
-anyhow = "1.0"
+anyhow = { workspace = true }
 bincode = "1.3.2"
 cap-std-ext = "4.0.3"
-camino = "1.1.9"
-chrono = { version = "0.4.38", features = ["serde"] }
-clap = { version = "4.5", default-features = false, features = ["cargo", "derive", "std", "help", "usage", "suggestions"] }
+camino = { workspace = true, features = ["serde1"] }
+chrono = { workspace = true, features = ["serde"] }
+clap = { workspace = true, features = ["derive", "cargo", "help", "usage", "suggestions"] }
 env_logger = "0.11"
 fail = { version = "0.5", features = ["failpoints"] }
-fn-error-context = "0.2.1"
+fn-error-context = { workspace = true }
 fs2 = "0.4.3"
 hex = "0.4.3"
-libc = "^0.2"
+libc = { workspace = true }
 libsystemd = ">= 0.3, < 0.8"
 log = "^0.4"
 openat = "0.1.20"
 openat-ext = ">= 0.2.2, < 0.3.0"
 openssl = "^0.10"
 os-release = "0.1.0"
-regex = "1.11.1"
-rustix = { version = "0.38.38", features = ["process", "fs"] }
-serde = { version = "^1.0", features = ["derive"] }
-serde_json = "^1.0"
-tempfile = "^3.13"
+regex = "1.10"
+rustix = { workspace = true, features = ["process", "fs"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
 widestring = "1.1.0"
 walkdir = "2.3.2"
 
-[profile.release]
-# We assume we're being delivered via e.g. RPM which supports split debuginfo
-debug = true
-
-[package.metadata.release]
-disable-publish = true
-disable-push = true
-post-release-commit-message = "cargo: development version bump"
-pre-release-commit-message = "cargo: bootupd release {{version}}"
-sign-commit = true
-sign-tag = true
-tag-message = "bootupd {{version}}"
+# FIXME uncomment
+#[lints]
+#workspace = true
