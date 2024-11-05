@@ -19,11 +19,13 @@ use ostree_ext::oci_spec::image::{Descriptor, Digest};
 use ostree_ext::ostree::Deployment;
 use ostree_ext::ostree::{self, Sysroot};
 use ostree_ext::sysroot::SysrootLock;
+use ostree_ext::tokio_util::spawn_blocking_cancellable_flatten;
 
 use crate::spec::ImageReference;
 use crate::spec::{BootOrder, HostSpec};
 use crate::status::labels_of_config;
 use crate::store::Storage;
+use crate::utils::async_task_with_spinner;
 
 // TODO use https://github.com/ostreedev/ostree-rs-ext/pull/493/commits/afc1837ff383681b947de30c0cefc70080a4f87a
 const BASE_IMAGE_PREFIX: &str = "ostree/container/baseimage/bootc";
@@ -211,12 +213,14 @@ async fn handle_layer_progress_print(
     let elapsed = end.duration_since(start);
     let persec = total_read as f64 / elapsed.as_secs_f64();
     let persec = indicatif::HumanBytes(persec as u64);
-    println!(
+    if let Err(e) = bar.println(&format!(
         "Fetched layers: {} in {} ({}/s)",
         indicatif::HumanBytes(total_read),
         indicatif::HumanDuration(elapsed),
         persec,
-    );
+    )) {
+        tracing::warn!("writing to stdout: {e}");
+    }
 }
 
 /// Wrapper for pulling a container image, wiring up status output.
@@ -373,8 +377,6 @@ async fn deploy(
     image: &ImageState,
     origin: &glib::KeyFile,
 ) -> Result<Deployment> {
-    let stateroot = Some(stateroot);
-    let mut opts = ostree::SysrootDeployTreeOpts::default();
     // Compute the kernel argument overrides. In practice today this API is always expecting
     // a merge deployment. The kargs code also always looks at the booted root (which
     // is a distinct minor issue, but not super important as right now the install path
@@ -384,26 +386,49 @@ async fn deploy(
     } else {
         None
     };
-    // Because the C API expects a Vec<&str>, we need to generate a new Vec<>
-    // that borrows.
-    let override_kargs = override_kargs
-        .as_deref()
-        .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<_>>());
-    if let Some(kargs) = override_kargs.as_deref() {
-        opts.override_kernel_argv = Some(&kargs);
-    }
-    // Copy to move into thread
-    let cancellable = gio::Cancellable::NONE;
-    return sysroot
-        .stage_tree_with_options(
-            stateroot,
-            image.ostree_commit.as_str(),
-            Some(origin),
-            merge_deployment,
-            &opts,
-            cancellable,
-        )
-        .map_err(Into::into);
+    // Clone all the things to move to worker thread
+    let sysroot_clone = sysroot.sysroot.clone();
+    // ostree::Deployment is incorrently !Send 😢 so convert it to an integer
+    let merge_deployment = merge_deployment.map(|d| d.index() as usize);
+    let stateroot = stateroot.to_string();
+    let ostree_commit = image.ostree_commit.to_string();
+    // GKeyFile also isn't Send! So we serialize that as a string...
+    let origin_data = origin.to_data();
+    let r = async_task_with_spinner(
+        "Deploying",
+        spawn_blocking_cancellable_flatten(move |cancellable| -> Result<_> {
+            let sysroot = sysroot_clone;
+            let stateroot = Some(stateroot);
+            let mut opts = ostree::SysrootDeployTreeOpts::default();
+
+            // Because the C API expects a Vec<&str>, we need to generate a new Vec<>
+            // that borrows.
+            let override_kargs = override_kargs
+                .as_deref()
+                .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+            if let Some(kargs) = override_kargs.as_deref() {
+                opts.override_kernel_argv = Some(&kargs);
+            }
+            let deployments = sysroot.deployments();
+            let merge_deployment = merge_deployment.map(|m| &deployments[m]);
+            let origin = glib::KeyFile::new();
+            origin.load_from_data(&origin_data, glib::KeyFileFlags::NONE)?;
+            let d = sysroot.stage_tree_with_options(
+                stateroot.as_deref(),
+                &ostree_commit,
+                Some(&origin),
+                merge_deployment,
+                &opts,
+                Some(cancellable),
+            )?;
+            Ok(d.index())
+        }),
+    )
+    .await?;
+    // SAFETY: We must have a staged deployment
+    let staged = sysroot.staged_deployment().unwrap();
+    assert_eq!(staged.index(), r);
+    Ok(staged)
 }
 
 #[context("Generating origin")]
