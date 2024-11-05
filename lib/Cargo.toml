@@ -5,7 +5,7 @@ license = "MIT OR Apache-2.0"
 name = "bootc-lib"
 readme = "README.md"
 repository = "https://github.com/containers/bootc"
-version = "1.1.0"
+version = "1.1.2"
 # For now don't bump this above what is currently shipped in RHEL9;
 # also keep in sync with the version in cli.
 rust-version = "1.75.0"
