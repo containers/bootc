@@ -877,6 +877,9 @@ fn require_skopeo_with_containers_storage() -> Result<()> {
 pub(crate) struct RootSetup {
     luks_device: Option<String>,
     device_info: crate::blockdev::PartitionTable,
+    /// True if the rootfs already had /ostree
+    #[allow(dead_code)]
+    has_ostree: bool,
     rootfs: Utf8PathBuf,
     rootfs_fd: Dir,
     rootfs_uuid: Option<String>,
@@ -1744,6 +1747,9 @@ pub(crate) async fn install_to_filesystem(
 
     let skip_finalize =
         matches!(fsopts.replace, Some(ReplaceMode::Alongside)) || fsopts.skip_finalize;
+    let has_ostree = rootfs_fd
+        .try_exists("ostree/repo")
+        .context("Querying extant ostree repo")?;
     let mut rootfs = RootSetup {
         luks_device: None,
         device_info,
@@ -1753,6 +1759,7 @@ pub(crate) async fn install_to_filesystem(
         boot,
         kargs,
         skip_finalize,
+        has_ostree,
     };
 
     install_to_filesystem_impl(&state, &mut rootfs).await?;

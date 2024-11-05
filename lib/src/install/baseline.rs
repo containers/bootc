@@ -428,5 +428,6 @@ pub(crate) fn install_create_rootfs(
         boot,
         kargs,
         skip_finalize: false,
+        has_ostree: false, // Must not exist yet
     })
 }
