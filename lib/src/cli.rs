@@ -26,6 +26,7 @@ use crate::deploy::RequiredHostSpec;
 use crate::lints;
 use crate::spec::Host;
 use crate::spec::ImageReference;
+use crate::task::Task;
 use crate::utils::sigpolicy_from_opts;
 
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
@@ -100,6 +101,11 @@ pub(crate) struct SwitchOpts {
 
     /// Target image to use for the next boot.
     pub(crate) target: String,
+
+    /// Make the switch into a custom stateroot. If the stateroot doesn't exist, it will be created
+    /// and `/var` of the current stateroot will be copied (copy-on-write) into it.
+    #[clap(long)]
+    pub(crate) stateroot: Option<String>,
 }
 
 /// Options controlling rollback
@@ -641,7 +647,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
             println!("No update available.")
         } else {
             let osname = booted_deployment.osname();
-            crate::deploy::stage(sysroot, &osname, &fetched, &spec).await?;
+            crate::deploy::stage(sysroot, &osname, &osname, &fetched, &spec).await?;
             changed = true;
             if let Some(prev) = booted_image.as_ref() {
                 if let Some(fetched_manifest) = fetched.get_manifest(repo)? {
@@ -677,13 +683,13 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     );
     let target = ostree_container::OstreeImageReference { sigverify, imgref };
     let target = ImageReference::from(target);
+    let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
 
     // If we're doing an in-place mutation, we shortcut most of the rest of the work here
     if opts.mutate_in_place {
         let deployid = {
             // Clone to pass into helper thread
             let target = target.clone();
-            let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
             tokio::task::spawn_blocking(move || {
                 crate::deploy::switch_origin_inplace(&root, &target)
             })
@@ -700,17 +706,51 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let (booted_deployment, _deployments, host) =
         crate::status::get_status_require_booted(sysroot)?;
 
+    let (old_stateroot, stateroot) = {
+        let booted_osname = booted_deployment.osname();
+        let stateroot = opts
+            .stateroot
+            .as_deref()
+            .unwrap_or_else(|| booted_osname.as_str());
+
+        (booted_osname.to_owned(), stateroot.to_owned())
+    };
+
     let new_spec = {
         let mut new_spec = host.spec.clone();
         new_spec.image = Some(target.clone());
         new_spec
     };
 
-    if new_spec == host.spec {
-        println!("Image specification is unchanged.");
+    if new_spec == host.spec && old_stateroot == stateroot {
+        // TODO: Should we really be confusing users with terms like "stateroot"?
+        println!(
+            "The currently running deployment in stateroot {stateroot} is already using this image"
+        );
         return Ok(());
     }
     let new_spec = RequiredHostSpec::from_spec(&new_spec)?;
+
+    if old_stateroot != stateroot {
+        let init_result = sysroot.init_osname(&stateroot, cancellable);
+        match init_result {
+            Ok(_) => {
+                Task::new("Copying /var to new stateroot", "cp")
+                    .args([
+                        "--recursive",
+                        "--reflink=auto",
+                        "--archive",
+                        format!("/sysroot/ostree/deploy/{old_stateroot}/var").as_str(),
+                        format!("/sysroot/ostree/deploy/{stateroot}/").as_str(),
+                    ])
+                    .run()?;
+            }
+            Err(err) => {
+                // TODO: Only ignore non already-exists errors
+                println!("Ignoring error creating new stateroot: {err}");
+            }
+        }
+    }
 
     let fetched = crate::deploy::pull(repo, &target, None, opts.quiet).await?;
 
@@ -725,8 +765,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
         }
     }
 
-    let stateroot = booted_deployment.osname();
-    crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec).await?;
+    crate::deploy::stage(sysroot, &old_stateroot, &stateroot, &fetched, &new_spec).await?;
 
     if opts.apply {
         crate::reboot::reboot()?;
@@ -779,7 +818,7 @@ async fn edit(opts: EditOpts) -> Result<()> {
     // TODO gc old layers here
 
     let stateroot = booted_deployment.osname();
-    crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec).await?;
+    crate::deploy::stage(sysroot, &stateroot, &stateroot, &fetched, &new_spec).await?;
 
     Ok(())
 }

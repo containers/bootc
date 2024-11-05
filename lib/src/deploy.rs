@@ -373,7 +373,6 @@ async fn deploy(
     image: &ImageState,
     origin: &glib::KeyFile,
 ) -> Result<Deployment> {
-    let stateroot = Some(stateroot);
     let mut opts = ostree::SysrootDeployTreeOpts::default();
     // Compute the kernel argument overrides. In practice today this API is always expecting
     // a merge deployment. The kargs code also always looks at the booted root (which
@@ -396,7 +395,7 @@ async fn deploy(
     let cancellable = gio::Cancellable::NONE;
     return sysroot
         .stage_tree_with_options(
-            stateroot,
+            Some(stateroot),
             image.ostree_commit.as_str(),
             Some(origin),
             merge_deployment,
@@ -422,11 +421,12 @@ fn origin_from_imageref(imgref: &ImageReference) -> Result<glib::KeyFile> {
 #[context("Staging")]
 pub(crate) async fn stage(
     sysroot: &Storage,
+    merge_stateroot: &str,
     stateroot: &str,
     image: &ImageState,
     spec: &RequiredHostSpec<'_>,
 ) -> Result<()> {
-    let merge_deployment = sysroot.merge_deployment(Some(stateroot));
+    let merge_deployment = sysroot.merge_deployment(Some(merge_stateroot));
     let origin = origin_from_imageref(spec.image)?;
     let deployment = crate::deploy::deploy(
         sysroot,
