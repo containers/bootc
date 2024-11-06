@@ -19,7 +19,7 @@ anstyle = "1.0.6"
 anyhow = { workspace = true }
 bootc-utils = { path = "../utils" }
 camino = { workspace = true, features = ["serde1"] }
-ostree-ext = { version = "0.15.0" }
+ostree-ext = { path = "../ostree-ext" }
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive","cargo"] }
 clap_mangen = { version = "0.2.20", optional = true }
