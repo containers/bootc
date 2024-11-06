@@ -1493,7 +1493,7 @@ fn require_empty_rootdir(rootfs_fd: &Dir) -> Result<()> {
 }
 
 /// Remove all entries in a directory, but do not traverse across distinct devices.
-#[context("Removing entries (noxdev")]
+#[context("Removing entries (noxdev)")]
 fn remove_all_in_dir_no_xdev(d: &Dir) -> Result<()> {
     let parent_dev = d.dir_metadata()?.dev();
     for entry in d.entries()? {
