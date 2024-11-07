@@ -19,18 +19,18 @@ anstyle = "1.0.6"
 anyhow = { workspace = true }
 bootc-utils = { path = "../utils" }
 camino = { workspace = true, features = ["serde1"] }
-ostree-ext = { version = "0.15.0" }
+ostree-ext = { path = "../ostree-ext" }
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive","cargo"] }
-clap_mangen = { version = "0.2.20", optional = true }
+clap_mangen = { workspace = true, optional = true }
 cap-std-ext = { workspace = true, features = ["fs_utf8"] }
-hex = "^0.4.3"
+hex = { workspace = true }
 fn-error-context = { workspace = true }
-indicatif = "0.17.8"
+indicatif = { workspace = true }
 libc = { workspace = true }
 liboverdrop = "0.1.0"
 libsystemd = "0.7"
-openssl = "^0.10.64"
+openssl = { workspace = true }
 regex = "1.10.4"
 rustix = { workspace = true }
 schemars = { version = "0.8.17", features = ["chrono"] }
@@ -39,7 +39,7 @@ serde_ignored = "0.1.10"
 serde_json = { workspace = true }
 serde_yaml = "0.9.34"
 tokio = { workspace = true, features = ["io-std", "time", "process", "rt", "net"] }
-tokio-util = { features = ["io-util"], version = "0.7.10" }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 tempfile = { workspace = true }
 toml = "0.8.12"

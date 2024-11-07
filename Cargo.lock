@@ -564,6 +564,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
+name = "env_logger"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a19187fea3ac7e84da7dacf48de0c45d63c6a76f9490dae389aead16c243fce3"
+dependencies = [
+ "log",
+ "regex",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1354,14 +1364,13 @@ dependencies = [
 [[package]]
 name = "ostree-ext"
 version = "0.15.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3749ad9f089cd49975c43d4e510888f7063a7b2339265f15f165a0b8b2268a5c"
 dependencies = [
  "anyhow",
  "camino",
  "cap-std-ext",
  "chrono",
  "clap",
+ "clap_mangen",
  "containers-image-proxy",
  "flate2",
  "fn-error-context",
@@ -1370,6 +1379,7 @@ dependencies = [
  "hex",
  "indexmap",
  "indicatif",
+ "indoc",
  "io-lifetimes",
  "libc",
  "libsystemd",
@@ -1378,11 +1388,14 @@ dependencies = [
  "once_cell",
  "openssl",
  "ostree",
+ "ostree-ext",
  "pin-project",
+ "quickcheck",
  "regex",
  "rustix",
  "serde",
  "serde_json",
+ "similar-asserts",
  "tar",
  "tempfile",
  "terminal_size",
@@ -1390,6 +1403,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
+ "xshell",
  "zstd",
 ]
 
@@ -1522,6 +1536,17 @@ name = "pulldown-cmark-escape"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
+
+[[package]]
+name = "quickcheck"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "588f6378e4dd99458b60ec275b4477add41ce4fa9f64dcba6f15adccb19b50d6"
+dependencies = [
+ "env_logger",
+ "log",
+ "rand",
+]
 
 [[package]]
 name = "quote"
