@@ -15,7 +15,12 @@ pub trait CommandRunExt {
     /// Execute the child process.
     fn run(&mut self) -> Result<()>;
 
-    /// Execute the child process, parsing its stdout as JSON.
+    /// Execute the child process and capture its output. This uses `run` internally
+    /// and will return an error if the child process exits abnormally.
+    fn run_get_output(&mut self) -> Result<Box<dyn std::io::BufRead>>;
+
+    /// Execute the child process, parsing its stdout as JSON. This uses `run` internally
+    /// and will return an error if the child process exits abnormally.
     fn run_and_parse_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T>;
 }
 
@@ -88,14 +93,18 @@ impl CommandRunExt for Command {
         self
     }
 
-    /// Synchronously execute the child, and parse its stdout as JSON.
-    fn run_and_parse_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T> {
+    fn run_get_output(&mut self) -> Result<Box<dyn std::io::BufRead>> {
         let mut stdout = tempfile::tempfile()?;
         self.stdout(stdout.try_clone()?);
         self.run()?;
         stdout.seek(std::io::SeekFrom::Start(0)).context("seek")?;
-        let stdout = std::io::BufReader::new(stdout);
-        serde_json::from_reader(stdout).map_err(Into::into)
+        Ok(Box::new(std::io::BufReader::new(stdout)))
+    }
+
+    /// Synchronously execute the child, and parse its stdout as JSON.
+    fn run_and_parse_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T> {
+        let output = self.run_get_output()?;
+        serde_json::from_reader(output).map_err(Into::into)
     }
 }
 
