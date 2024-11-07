@@ -660,8 +660,6 @@ async fn install_container(
     let sepolicy = sepolicy.as_ref();
     let stateroot = state.stateroot();
 
-    let container_rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-
     let (src_imageref, proxy_cfg) = if !state.source.in_host_mountns {
         (state.source.imageref.clone(), None)
     } else {
@@ -703,17 +701,26 @@ async fn install_container(
 
     // Pull the container image into the target root filesystem. Since this is
     // an install path, we don't need to fsync() individual layers.
-    {
+    let pulled_image = {
         let spec_imgref = ImageReference::from(src_imageref.clone());
         let repo = &sysroot.repo();
         repo.set_disable_fsync(true);
-        crate::deploy::pull(repo, &spec_imgref, Some(&state.target_imgref), false).await?;
+        let r = crate::deploy::pull(repo, &spec_imgref, Some(&state.target_imgref), false).await?;
         repo.set_disable_fsync(false);
-    }
+        r
+    };
 
-    // Load the kargs from the /usr/lib/bootc/kargs.d from the running root,
-    // which should be the same as the filesystem we'll deploy.
-    let kargsd = crate::kargs::get_kargs_in_root(container_rootfs, std::env::consts::ARCH)?;
+    // We need to read the kargs from the target merged ostree commit before
+    // we do the deployment.
+    let merged_ostree_root = sysroot
+        .repo()
+        .read_commit(pulled_image.ostree_commit.as_str(), gio::Cancellable::NONE)?
+        .0;
+    let kargsd = crate::kargs::get_kargs_from_ostree_root(
+        &sysroot.repo(),
+        merged_ostree_root.downcast_ref().unwrap(),
+        std::env::consts::ARCH,
+    )?;
     let kargsd = kargsd.iter().map(|s| s.as_str());
 
     let install_config_kargs = state
