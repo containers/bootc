@@ -20,22 +20,22 @@ ostree = { features = ["v2022_6"], version = "0.19.0" }
 # Private dependencies
 anyhow = { workspace = true }
 camino = { workspace = true, features = ["serde1"] }
-chrono = "0.4.19"
+chrono = { workspace = true }
 olpc-cjson = "0.1.1"
 clap = { workspace = true, features = ["derive","cargo"] }
-clap_mangen = { version = "0.2.20", optional = true }
+clap_mangen = { workspace = true, optional = true }
 cap-std-ext = { workspace = true, features = ["fs_utf8"] }
 flate2 = { features = ["zlib"], default-features = false, version = "1.0.20" }
 fn-error-context = { workspace = true }
 futures-util = "0.3.13"
 gvariant = "0.5.0"
-hex = "0.4.3"
+hex = { workspace = true }
 io-lifetimes = "2"
-indicatif = "0.17.0"
+indicatif = { workspace = true }
 once_cell = "1.9"
 libc = { workspace = true }
 libsystemd = "0.7.0"
-openssl = "0.10.33"
+openssl = { workspace = true }
 ocidir = "0.3.0"
 pin-project = "1.0"
 regex = "1.5.4"
@@ -46,7 +46,7 @@ tar = "0.4.43"
 tempfile = { workspace = true }
 terminal_size = "0.3"
 tokio = { workspace = true, features = ["io-std", "time", "process", "rt", "net"] }
-tokio-util = { version = "0.7.10", features = ["io-util"] }
+tokio-util = { workspace = true }
 tokio-stream = { features = ["sync"], version = "0.1.8" }
 tracing = "0.1"
 zstd = { version = "0.13.1", features = ["pkg-config"] }
