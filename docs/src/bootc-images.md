@@ -102,13 +102,9 @@ when the base image is built, label metadata is included
 in special metadata files in `/sysroot/ostree` that correspond
 to components of the base image.
 
-When a bootc container is deployed, the system
-will use these default SELinux labels.
-Further non-OSTree layers will be dynamically labeled
-using the base policy.
-
-Hence, at the current time it will *not* work to override
-the labels for files in derived layers by using e.g.
+File content in derived layers will be labeled using the default file
+contexts (from `/etc/selinux`). For example, you can do this (as of
+bootc 1.1.0):
 
 ```
 RUN semanage fcontext -a -t httpd_sys_content_t "/web(/.*)?"
@@ -116,7 +112,7 @@ RUN semanage fcontext -a -t httpd_sys_content_t "/web(/.*)?"
 
 (This command will write to `/etc/selinux/$policy/policy/`.)
 
-It will *never* work to do e.g.:
+It will currently not work to do e.g.:
 
 ```
 RUN chcon -t foo_t /usr/bin/foo
@@ -124,8 +120,11 @@ RUN chcon -t foo_t /usr/bin/foo
 
 Because the container runtime state will deny the attempt to
 "physically" set the `security.selinux` extended attribute.
-In contrast per above, future support for custom labeling
-will by default be done by customizing the policy file_contexts.
+
+In the future, it is likely however that we add support
+for handling the `security.selinux` extended attribute in tar
+streams; but this can only currently be done with a custom
+build process.
 
 ### Toplevel directories
 
