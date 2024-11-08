@@ -37,13 +37,14 @@ pub(crate) struct Device {
     // Filesystem-related properties
     pub(crate) label: Option<String>,
     pub(crate) fstype: Option<String>,
+    pub(crate) path: Option<String>,
 }
 
 impl Device {
     #[allow(dead_code)]
     // RHEL8's lsblk doesn't have PATH, so we do it
     pub(crate) fn path(&self) -> String {
-        format!("/dev/{}", &self.name)
+        self.path.clone().unwrap_or(format!("/dev/{}", &self.name))
     }
 
     pub(crate) fn has_children(&self) -> bool {
