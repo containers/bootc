@@ -295,6 +295,16 @@ pub(crate) enum InternalsOpts {
     PrintJsonSchema,
     /// Perform cleanup actions
     Cleanup,
+    /// Proxy frontend for the `ostree-ext` CLI.
+    OstreeExt {
+        #[clap(allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
+    /// Proxy frontend for the legacy `ostree container` CLI.
+    OstreeContainer {
+        #[clap(allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
 }
 
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
@@ -931,6 +941,17 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 let unit_dir = &Dir::open_ambient_dir(normal_dir, cap_std::ambient_authority())?;
                 crate::generator::generator(root, unit_dir)
             }
+            InternalsOpts::OstreeExt { args } => {
+                ostree_ext::cli::run_from_iter(["ostree-ext".into()].into_iter().chain(args)).await
+            }
+            InternalsOpts::OstreeContainer { args } => {
+                ostree_ext::cli::run_from_iter(
+                    ["ostree-ext".into(), "container".into()]
+                        .into_iter()
+                        .chain(args),
+                )
+                .await
+            }
             InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
             InternalsOpts::PrintJsonSchema => {
                 let schema = schema_for!(crate::spec::Host);
@@ -1003,5 +1024,13 @@ fn test_parse_generator() {
             "/run/systemd/system"
         ]),
         Opt::Internals(InternalsOpts::SystemdGenerator { .. })
+    ));
+}
+
+#[test]
+fn test_parse_ostree_ext() {
+    assert!(matches!(
+        Opt::parse_including_static(["bootc", "internals", "ostree-container"]),
+        Opt::Internals(InternalsOpts::OstreeContainer { .. })
     ));
 }
