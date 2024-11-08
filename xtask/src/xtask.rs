@@ -155,7 +155,7 @@ fn update_generated(sh: &Shell) -> Result<()> {
 }
 
 #[context("test-integration")]
-fn test_tmt(sh: &Shell) -> Result<()> {
+fn all_plan_files(sh: &Shell) -> Result<Vec<(u32, String)>> {
     // We need to split most of our tests into separate plans because tmt doesn't
     // support automatic isolation. (xref)
     let mut all_plan_files =
@@ -187,13 +187,25 @@ fn test_tmt(sh: &Shell) -> Result<()> {
             })?;
     all_plan_files.sort_by_key(|v| v.0);
     println!("Discovered plans: {all_plan_files:?}");
+    Ok(all_plan_files)
+}
+
+#[context("test-integration")]
+fn test_tmt(sh: &Shell) -> Result<()> {
+    let mut tests = all_plan_files(sh)?;
+    if let Ok(name) = std::env::var("TMT_TEST") {
+        tests.retain(|x| x.1.as_str() == name);
+        if tests.is_empty() {
+            anyhow::bail!("Failed to match test: {name}");
+        }
+    }
 
     cmd!(sh, "cargo run -p tests-integration run-vm prepare-tmt").run()?;
 
     // pull some small images that are used for LBI installation tests
     cmd!(sh, "podman pull {TEST_IMAGES...}").run()?;
 
-    for (_prio, name) in all_plan_files {
+    for (_prio, name) in tests {
         // cc https://pagure.io/testcloud/pull-request/174
         cmd!(sh, "rm -vf /var/tmp/tmt/testcloud/images/disk.qcow2").run()?;
         let verbose_enabled = std::env::var("TMT_VERBOSE")
