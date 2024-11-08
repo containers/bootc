@@ -15,6 +15,8 @@ use serde::Deserialize;
 use crate::deploy::ImageState;
 use crate::store::Storage;
 
+const KARGS_PATH: &str = "usr/lib/bootc/kargs.d";
+
 /// The kargs.d configuration file.
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -37,10 +39,7 @@ impl Config {
 /// a combined list.
 pub(crate) fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> {
     // If the directory doesn't exist, that's OK.
-    let Some(d) = d
-        .open_dir_optional("usr/lib/bootc/kargs.d")?
-        .map(DirUtf8::from_cap_std)
-    else {
+    let Some(d) = d.open_dir_optional(KARGS_PATH)?.map(DirUtf8::from_cap_std) else {
         return Ok(Default::default());
     };
     let mut ret = Vec::new();
@@ -54,6 +53,18 @@ pub(crate) fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> 
 }
 
 /// Load kargs.d files from the target ostree commit root
+#[cfg(feature = "install")]
+pub(crate) fn get_kargs_from_ostree_root(
+    repo: &ostree::Repo,
+    root: &ostree::RepoFile,
+    sys_arch: &str,
+) -> Result<Vec<String>> {
+    let kargsd = root.resolve_relative_path(KARGS_PATH);
+    let kargsd = kargsd.downcast_ref::<ostree::RepoFile>().expect("downcast");
+    get_kargs_from_ostree(repo, kargsd, sys_arch)
+}
+
+/// Load kargs.d files from the target dir
 fn get_kargs_from_ostree(
     repo: &ostree::Repo,
     fetched_tree: &ostree::RepoFile,
@@ -119,7 +130,7 @@ pub(crate) fn get_kargs(
 
     // Get the kargs in kargs.d of the pending image
     let (fetched_tree, _) = repo.read_commit(fetched.ostree_commit.as_str(), cancellable)?;
-    let fetched_tree = fetched_tree.resolve_relative_path("/usr/lib/bootc/kargs.d");
+    let fetched_tree = fetched_tree.resolve_relative_path(KARGS_PATH);
     let fetched_tree = fetched_tree
         .downcast::<ostree::RepoFile>()
         .expect("downcast");
