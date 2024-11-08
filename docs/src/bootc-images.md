@@ -72,6 +72,16 @@ You can then use `podman build`, `buildah`, `docker build`, or any other contain
 build tool to produce your customized image. The only requirement is that the
 container build tool supports producing OCI container images.
 
+## Kernel
+
+The Linux kernel (and optionally initramfs) is embedded in the container image; the canonical location
+is `/usr/lib/modules/$kver/vmlinuz`, and the initramfs should be in `initramfs.img`
+in that directory. You should *not* include any content in `/boot` in your container image.
+Bootc will take care of copying the kernel/initramfs as needed from the container image to
+`/boot`.
+
+Future work for supporting UKIs will follow the recommendations of the uapi-group in [Locations for Distribution-built UKIs Installed by Package Managers](https://uapi-group.org/specifications/specs/unified_kernel_image/#locations-for-distribution-built-ukis-installed-by-package-managers).
+
 ## The `ostree container commit` command
 
 You may find some references to this; it is no longer very useful
