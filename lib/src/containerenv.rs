@@ -20,6 +20,10 @@ pub(crate) struct ContainerExecutionInfo {
     pub(crate) rootless: Option<String>,
 }
 
+pub(crate) fn is_container(rootfs: &Dir) -> bool {
+    rootfs.exists(PATH)
+}
+
 /// Load and parse the `/run/.containerenv` file.
 #[context("Querying container")]
 pub(crate) fn get_container_execution_info(rootfs: &Dir) -> Result<ContainerExecutionInfo> {

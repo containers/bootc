@@ -326,6 +326,8 @@ pub(crate) struct State {
     pub(crate) install_config: Option<config::InstallConfiguration>,
     /// The parsed contents of the authorized_keys (not the file path)
     pub(crate) root_ssh_authorized_keys: Option<String>,
+    #[allow(dead_code)]
+    pub(crate) host_is_container: bool,
     /// The root filesystem of the running container
     pub(crate) container_root: Dir,
     pub(crate) tempdir: TempDir,
@@ -1159,14 +1161,17 @@ async fn prepare_install(
     tracing::trace!("Preparing install");
     // We need full root privileges, i.e. --privileged in podman
     crate::cli::require_root()?;
-    require_host_pidns()?;
-
     let rootfs = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())
         .context("Opening /")?;
 
+    let host_is_container = crate::containerenv::is_container(&rootfs);
     let external_source = source_opts.source_imgref.is_some();
     let source = match source_opts.source_imgref {
         None => {
+            if !host_is_container {
+                anyhow::bail!("Either --source-imgref must be defined or this command must be executed inside a podman container.")
+            }
+            require_host_pidns()?;
             // Out of conservatism we only verify the host userns path when we're expecting
             // to do a self-install (e.g. not bootc-image-builder or equivalent).
             require_host_userns()?;
@@ -1274,6 +1279,7 @@ async fn prepare_install(
         root_ssh_authorized_keys,
         container_root: rootfs,
         tempdir,
+        host_is_container,
     });
 
     Ok(state)
