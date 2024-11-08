@@ -61,6 +61,9 @@ pub(crate) fn get_kargs_from_ostree_root(
 ) -> Result<Vec<String>> {
     let kargsd = root.resolve_relative_path(KARGS_PATH);
     let kargsd = kargsd.downcast_ref::<ostree::RepoFile>().expect("downcast");
+    if !kargsd.query_exists(gio::Cancellable::NONE) {
+        return Ok(Default::default());
+    }
     get_kargs_from_ostree(repo, kargsd, sys_arch)
 }
 
