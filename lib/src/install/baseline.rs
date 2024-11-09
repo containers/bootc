@@ -412,7 +412,6 @@ pub(crate) fn install_create_rootfs(
             .run()?;
         let efifs_path = bootfs.join(crate::bootloader::EFI_DIR);
         std::fs::create_dir(&efifs_path).context("Creating efi dir")?;
-        mount::mount(espdev.node.as_str(), &efifs_path)?;
     }
 
     let luks_device = match block_setup {
