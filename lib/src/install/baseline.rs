@@ -256,10 +256,11 @@ pub(crate) fn install_create_rootfs(
     }
 
     let esp_partno = if super::ARCH_USES_EFI {
+        let esp_guid = crate::bootloader::ESP_GUID;
         partno += 1;
         writeln!(
             &mut partitioning_buf,
-            r#"size={EFIPN_SIZE_MB}MiB, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="EFI-SYSTEM""#
+            r#"size={EFIPN_SIZE_MB}MiB, type={esp_guid}, name="EFI-SYSTEM""#
         )?;
         Some(partno)
     } else {
@@ -411,7 +412,6 @@ pub(crate) fn install_create_rootfs(
             .run()?;
         let efifs_path = bootfs.join(crate::bootloader::EFI_DIR);
         std::fs::create_dir(&efifs_path).context("Creating efi dir")?;
-        mount::mount(espdev.node.as_str(), &efifs_path)?;
     }
 
     let luks_device = match block_setup {
