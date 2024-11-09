@@ -58,6 +58,36 @@ pub(crate) struct BasicFilesystems {
     // pub(crate) esp: Option<FilesystemCustomization>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub(crate) enum Tristate {
+    #[default]
+    // The feature is disabled
+    #[serde(alias = "no", alias = "false")]
+    Disabled,
+    // The feature is enabled if supported
+    #[serde(alias = "maybe")]
+    Maybe,
+    // The feature is enabled
+    #[serde(alias = "yes", alias = "true")]
+    Enabled,
+}
+
+impl std::str::FromStr for Tristate {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let r = match s {
+            // Keep this in sync with ot_keyfile_get_tristate_with_default from ostree
+            "yes" | "true" | "1" => Tristate::Enabled,
+            "no" | "false" | "0" => Tristate::Disabled,
+            "maybe" => Tristate::Maybe,
+            o => anyhow::bail!("Invalid tristate value: {o}"),
+        };
+        Ok(r)
+    }
+}
+
 /// The serialized [install] section
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename = "install", rename_all = "kebab-case", deny_unknown_fields)]
@@ -68,6 +98,8 @@ pub(crate) struct InstallConfiguration {
     #[cfg(feature = "install-to-disk")]
     pub(crate) block: Option<Vec<BlockSetup>>,
     pub(crate) filesystem: Option<BasicFilesystems>,
+    /// How we should use fsverity.
+    pub(crate) fsverity: Option<Tristate>,
     /// Kernel arguments, applied at installation time
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) kargs: Option<Vec<String>>,
@@ -132,6 +164,7 @@ impl Mergeable for InstallConfiguration {
             merge_basic(&mut self.root_fs_type, other.root_fs_type, env);
             #[cfg(feature = "install-to-disk")]
             merge_basic(&mut self.block, other.block, env);
+            merge_basic(&mut self.fsverity, other.fsverity, env);
             self.filesystem.merge(other.filesystem, env);
             if let Some(other_kargs) = other.kargs {
                 self.kargs
@@ -572,4 +605,30 @@ root-fs-type = "xfs"
             )
         );
     }
+}
+
+#[test]
+/// Test parsing fsverity
+fn test_fsverity() {
+    let env = EnvProperties {
+        sys_arch: "aarch64".to_string(),
+    };
+    let mut c: InstallConfigurationToplevel = toml::from_str(
+        r##"[install]
+root-fs-type = "xfs"
+fsverity = "enabled"
+"##,
+    )
+    .unwrap();
+    let install = c.install.as_ref().unwrap();
+    assert_eq!(install.fsverity.as_ref().unwrap(), &Tristate::Enabled);
+    let o: InstallConfigurationToplevel = toml::from_str(
+        r##"[install]
+fsverity = "maybe"
+"##,
+    )
+    .unwrap();
+    c.install.merge(o.install, &env);
+    let install = c.install.as_ref().unwrap();
+    assert_eq!(install.fsverity.as_ref().unwrap(), &Tristate::Maybe);
 }
