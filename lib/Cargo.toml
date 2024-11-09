@@ -23,6 +23,8 @@ ostree-ext = { path = "../ostree-ext" }
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive","cargo"] }
 clap_mangen = { workspace = true, optional = true }
+#composefs = "0.2.0"
+composefs = { path = "../../composefs-rs" }
 cap-std-ext = { workspace = true, features = ["fs_utf8"] }
 hex = { workspace = true }
 fn-error-context = { workspace = true }

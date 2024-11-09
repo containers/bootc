@@ -33,6 +33,7 @@ use cap_std_ext::cmdext::CapStdExtCommandExt;
 use cap_std_ext::prelude::CapStdExtDirExt;
 use chrono::prelude::*;
 use clap::ValueEnum;
+use config::Tristate;
 use fn_error_context::context;
 use ostree::gio;
 use ostree_ext::container as ostree_container;
@@ -67,6 +68,15 @@ const SELINUXFS: &str = "/sys/fs/selinux";
 #[cfg(feature = "install")]
 const EFIVARFS: &str = "/sys/firmware/efi/efivars";
 pub(crate) const ARCH_USES_EFI: bool = cfg!(any(target_arch = "x86_64", target_arch = "aarch64"));
+
+const DEFAULT_REPO_CONFIG: &[(&str, &str)] = &[
+    // Default to avoiding grub2-mkconfig etc.
+    ("sysroot.bootloader", "none"),
+    // Always flip this one on because we need to support alongside installs
+    // to systems without a separate boot partition.
+    ("sysroot.bootprefix", "true"),
+    ("sysroot.readonly", "true"),
+];
 
 /// Kernel argument used to specify we want the rootfs mounted read-write by default
 const RW_KARG: &str = "rw";
@@ -577,6 +587,7 @@ pub(crate) fn print_configuration() -> Result<()> {
 
 #[context("Creating ostree deployment")]
 async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result<Storage> {
+    let install_config = state.install_config.as_ref();
     let sepolicy = state.load_policy()?;
     let sepolicy = sepolicy.as_ref();
     // Load a fd for the mounted target physical root
@@ -602,14 +613,19 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
         crate::lsm::ensure_dir_labeled(rootfs_dir, "boot", None, 0o755.into(), sepolicy)?;
     }
 
-    for (k, v) in [
-        // Default to avoiding grub2-mkconfig etc.
-        ("sysroot.bootloader", "none"),
-        // Always flip this one on because we need to support alongside installs
-        // to systems without a separate boot partition.
-        ("sysroot.bootprefix", "true"),
-        ("sysroot.readonly", "true"),
-    ] {
+    let fsverity = install_config
+        .and_then(|c| c.fsverity.clone())
+        .unwrap_or_default();
+    let fsverity_ostree_key = crate::store::REPO_VERITY_CONFIG;
+    let fsverity_ostree_opt = match fsverity {
+        Tristate::Disabled => None,
+        Tristate::Maybe => Some((fsverity_ostree_key, "maybe")),
+        Tristate::Enabled => Some((fsverity_ostree_key, "yes")),
+    };
+    for (k, v) in DEFAULT_REPO_CONFIG
+        .iter()
+        .chain(fsverity_ostree_opt.as_ref())
+    {
         Command::new("ostree")
             .args(["config", "--repo", "ostree/repo", "set", k, v])
             .cwd_dir(rootfs_dir.try_clone()?)
