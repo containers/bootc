@@ -7,6 +7,7 @@ use crate::task::Task;
 
 /// The name of the mountpoint for efi (as a subdirectory of /boot, or at the toplevel)
 pub(crate) const EFI_DIR: &str = "efi";
+pub(crate) const ESP_GUID: &str = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B";
 pub(crate) const PREPBOOT_GUID: &str = "9E1A2D38-C612-4316-AA26-8B49521E5A8B";
 pub(crate) const PREPBOOT_LABEL: &str = "PowerPC-PReP-boot";
 #[cfg(target_arch = "powerpc64")]
