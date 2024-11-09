@@ -21,11 +21,12 @@ use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{Marker, Structure};
 use io_lifetimes::AsFd;
 use ocidir::cap_std::fs::{DirBuilder, DirBuilderExt as _};
+use ocidir::oci_spec::image::ImageConfigurationBuilder;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::borrow::Cow;
 use std::fmt::Write as _;
-use std::io::Write;
+use std::io::{self, Write};
 use std::ops::Add;
 use std::process::{Command, Stdio};
 use std::rc::Rc;
@@ -128,6 +129,33 @@ impl FileDef {
                     }))
                 }
             })
+    }
+
+    pub fn append_tar<W: io::Write>(&self, w: &mut tar::Builder<W>) -> Result<()> {
+        let mut h = tar::Header::new_ustar();
+        h.set_mtime(0);
+        h.set_uid(self.uid.into());
+        h.set_gid(self.gid.into());
+        h.set_mode(self.mode.into());
+        match &self.ty {
+            FileDefType::Regular(data) => {
+                let data = data.as_bytes();
+                h.set_entry_type(tar::EntryType::Regular);
+                h.set_size(data.len().try_into().unwrap());
+                w.append_data(&mut h, &*self.path, std::io::Cursor::new(data))?;
+            }
+            FileDefType::Symlink(target) => {
+                h.set_entry_type(tar::EntryType::Symlink);
+                h.set_size(0);
+                w.append_link(&mut h, &*self.path, target.as_std_path())?;
+            }
+            FileDefType::Directory => {
+                h.set_entry_type(tar::EntryType::Directory);
+                h.set_size(0);
+                w.append_data(&mut h, &*self.path, std::io::empty())?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -470,6 +498,14 @@ pub fn assert_commits_filenames_equal(
     similar_asserts::assert_eq!(a_contents_buf, b_contents_buf);
 }
 
+fn clear_ostree_repo(repo: &ostree::Repo) -> Result<()> {
+    for (r, _) in repo.list_refs(None, gio::Cancellable::NONE)? {
+        repo.set_ref_immediate(None, &r, None, gio::Cancellable::NONE)?;
+    }
+    repo.prune(ostree::RepoPruneFlags::REFS_ONLY, 0, gio::Cancellable::NONE)?;
+    Ok(())
+}
+
 #[derive(Debug)]
 pub struct Fixture {
     // Just holds a reference
@@ -576,15 +612,7 @@ impl Fixture {
 
     // Delete all objects in the destrepo
     pub fn clear_destrepo(&self) -> Result<()> {
-        self.destrepo()
-            .set_ref_immediate(None, self.testref(), None, gio::Cancellable::NONE)?;
-        for (r, _) in self.destrepo().list_refs(None, gio::Cancellable::NONE)? {
-            self.destrepo()
-                .set_ref_immediate(None, &r, None, gio::Cancellable::NONE)?;
-        }
-        self.destrepo()
-            .prune(ostree::RepoPruneFlags::REFS_ONLY, 0, gio::Cancellable::NONE)?;
-        Ok(())
+        clear_ostree_repo(self.destrepo())
     }
 
     #[context("Writing filedef {}", def.path.as_str())]
@@ -862,5 +890,111 @@ impl Fixture {
         temprootd.write("usr/bin/newderivedfile3", "newderivedfile3 v0")?;
         crate::integrationtest::generate_derived_oci(derived_path, temproot, tag)?;
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct NonOstreeFixture {
+    // Just holds a reference
+    _tempdir: tempfile::TempDir,
+    pub dir: Arc<Dir>,
+    pub path: Utf8PathBuf,
+    src_oci: ocidir::OciDir,
+    destrepo: ostree::Repo,
+
+    pub bootable: bool,
+}
+
+impl NonOstreeFixture {
+    const SRCOCI: &str = "src/oci";
+
+    #[context("Initializing fixture")]
+    pub fn new_base() -> Result<Self> {
+        // Basic setup, allocate a tempdir
+        let tempdir = tempfile::tempdir_in("/var/tmp")?;
+        let dir = Arc::new(cap_std::fs::Dir::open_ambient_dir(
+            tempdir.path(),
+            cap_std::ambient_authority(),
+        )?);
+        let path: &Utf8Path = tempdir.path().try_into().unwrap();
+        let path = path.to_path_buf();
+
+        // Create the src/ directory
+        dir.create_dir_all(Self::SRCOCI)?;
+        let src_oci = dir.open_dir(Self::SRCOCI)?;
+        let src_oci = ocidir::OciDir::ensure(&src_oci)?;
+
+        dir.create_dir("dest")?;
+        let destrepo = ostree::Repo::create_at_dir(
+            dir.as_fd(),
+            "dest/repo",
+            ostree::RepoMode::BareUser,
+            None,
+        )?;
+        Ok(Self {
+            _tempdir: tempdir,
+            dir,
+            path,
+            src_oci,
+            destrepo,
+            bootable: true,
+        })
+    }
+
+    pub fn destrepo(&self) -> &ostree::Repo {
+        &self.destrepo
+    }
+
+    #[context("Exporting container")]
+    pub async fn export_container(&self) -> Result<(ImageReference, oci_image::Digest)> {
+        let imgref = ImageReference {
+            transport: Transport::OciDir,
+            name: self.path.join(Self::SRCOCI).to_string(),
+        };
+
+        let mut config = ImageConfigurationBuilder::default().build().unwrap();
+        let mut manifest = ocidir::new_empty_manifest().build().unwrap();
+
+        let bw = self.src_oci.create_gzip_layer(None)?;
+        let mut bw = tar::Builder::new(bw);
+        for def in FileDef::iter_from(CONTENTS_V0) {
+            let def = def.unwrap();
+            def.append_tar(&mut bw)?;
+        }
+        let bw = bw.into_inner()?;
+        let new_layer = bw.complete()?;
+
+        self.src_oci
+            .push_layer(&mut manifest, &mut config, new_layer, "root", None);
+        let config = self.src_oci.write_config(config)?;
+
+        manifest.set_config(config);
+        self.src_oci
+            .replace_with_single_manifest(manifest, oci_image::Platform::default())?;
+        let idx = self.src_oci.read_index()?.unwrap();
+        let descriptor = idx.manifests().first().unwrap();
+
+        Ok((imgref, descriptor.digest().to_owned()))
+    }
+
+    /// Given the input image reference, import it into destrepo using the default
+    /// import config. The image must not exist already in the store.
+    pub async fn must_import(&self, imgref: &ImageReference) -> Result<Box<LayeredImageState>> {
+        let ostree_imgref = crate::container::OstreeImageReference {
+            sigverify: crate::container::SignatureSource::ContainerPolicyAllowInsecure,
+            imgref: imgref.clone(),
+        };
+        let mut imp =
+            store::ImageImporter::new(self.destrepo(), &ostree_imgref, Default::default())
+                .await
+                .unwrap();
+        assert!(store::query_image(self.destrepo(), &imgref)
+            .unwrap()
+            .is_none());
+        let prep = match imp.prepare().await.context("Init prep derived")? {
+            store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
+            store::PrepareResult::Ready(r) => r,
+        };
+        imp.import(prep).await
     }
 }

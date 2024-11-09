@@ -70,7 +70,8 @@ pub async fn update_detached_metadata(
             .ok_or_else(|| anyhow!("Image is missing container configuration"))?;
 
         // Find the OSTree commit layer we want to replace
-        let (commit_layer, _, _) = container_store::parse_manifest_layout(&manifest, &config)?;
+        let (commit_layer, _, _) =
+            container_store::parse_ostree_manifest_layout(&manifest, &config)?;
         let commit_layer_idx = manifest
             .layers()
             .iter()
