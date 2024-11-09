@@ -365,6 +365,16 @@ pub(crate) enum SchemaType {
     Progress,
 }
 
+/// Options for consistency checking
+#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
+pub(crate) enum FsckOpts {
+    /// Check the state of fsverity on the ostree objects. Possible output:
+    /// "enabled" => All .file objects have fsverity
+    /// "disabled" => No .file objects have fsverity
+    /// "inconsistent" => Mixed state
+    OstreeVerity,
+}
+
 /// Hidden, internal only options
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub(crate) enum InternalsOpts {
@@ -381,6 +391,8 @@ pub(crate) enum InternalsOpts {
         #[clap(long)]
         of: SchemaType,
     },
+    /// Perform consistency checking.
+    Fsck,
     /// Perform cleanup actions
     Cleanup,
     /// Proxy frontend for the `ostree-ext` CLI.
@@ -1097,6 +1109,20 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                         .chain(args),
                 )
                 .await
+            }
+            InternalsOpts::Fsck => {
+                let storage = get_storage().await?;
+                let r = crate::fsck::fsck(&storage).await?;
+                match r.errors.as_slice() {
+                    [] => {}
+                    errs => {
+                        for err in errs {
+                            eprintln!("error: {err}");
+                        }
+                        anyhow::bail!("fsck found errors");
+                    }
+                }
+                Ok(())
             }
             InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
             InternalsOpts::PrintJsonSchema { of } => {
