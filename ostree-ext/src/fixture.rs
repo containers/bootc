@@ -906,7 +906,7 @@ pub struct NonOstreeFixture {
 }
 
 impl NonOstreeFixture {
-    const SRCOCI: &str = "src/oci";
+    const SRCOCI: &'static str = "src/oci";
 
     #[context("Initializing fixture")]
     pub fn new_base() -> Result<Self> {

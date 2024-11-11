@@ -69,3 +69,6 @@ features = ["dox"]
 docgen = ["clap_mangen"]
 dox = ["ostree/dox"]
 internal-testing-api = ["xshell", "indoc", "similar-asserts"]
+
+[lints]
+workspace = true
