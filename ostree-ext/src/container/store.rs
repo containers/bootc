@@ -617,7 +617,7 @@ impl ImageImporter {
         let commit_layer = commit_layer.map(query).transpose()?;
         let component_layers = component_layers
             .into_iter()
-            .map(|l| query(l))
+            .map(query)
             .collect::<Result<Vec<_>>>()?;
         let remaining_layers = remaining_layers
             .into_iter()
