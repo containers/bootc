@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::IsTerminal;
+use std::io::Read;
 use std::io::Write;
 
 use anyhow::{Context, Result};
@@ -325,10 +326,37 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
+enum Slot {
+    Staged,
+    Booted,
+    Rollback,
+}
+
+impl std::fmt::Display for Slot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Slot::Staged => "staged",
+            Slot::Booted => "booted",
+            Slot::Rollback => "rollback",
+        };
+        f.write_str(s)
+    }
+}
+
+/// Output a row title, prefixed by spaces
+fn write_row_name(mut out: impl Write, s: &str, prefix_len: usize) -> Result<()> {
+    let n = prefix_len.saturating_sub(s.chars().count());
+    let mut spaces = std::io::repeat(b' ').take(n as u64);
+    std::io::copy(&mut spaces, &mut out)?;
+    write!(out, "{s}: ")?;
+    Ok(())
+}
+
 /// Write the data for a container image based status.
 fn human_render_imagestatus(
     mut out: impl Write,
-    slot_name: &str,
+    slot: Slot,
     image: &crate::spec::ImageStatus,
 ) -> Result<()> {
     let transport = &image.image.transport;
@@ -340,37 +368,63 @@ fn human_render_imagestatus(
         // But for non-registry we include the transport
         Cow::Owned(format!("{transport}:{imagename}"))
     };
-    writeln!(out, "Current {slot_name} image: {imageref}")?;
+    let prefix = match slot {
+        Slot::Staged => "  Staged image".into(),
+        Slot::Booted => format!("{} Booted image", crate::glyph::Glyph::BlackCircle),
+        Slot::Rollback => "  Rollback image".into(),
+    };
+    let prefix_len = prefix.chars().count();
+    writeln!(out, "{prefix}: {imageref}")?;
 
-    let version = image
-        .version
-        .as_deref()
-        .unwrap_or("No image version defined");
-    let timestamp = image
-        .timestamp
-        .as_ref()
-        .map(|t| t.to_string())
-        .unwrap_or_else(|| "No timestamp present".to_owned());
+    write_row_name(&mut out, "Digest", prefix_len)?;
     let digest = &image.image_digest;
+    writeln!(out, "{digest}")?;
 
-    writeln!(out, "    Image version: {version} ({timestamp})")?;
-    writeln!(out, "    Image digest: {digest}")?;
+    let timestamp = image.timestamp.as_ref();
+    // If we have a version, combine with timestamp
+    if let Some(version) = image.version.as_deref() {
+        write_row_name(&mut out, "Version", prefix_len)?;
+        if let Some(timestamp) = timestamp {
+            writeln!(out, "{version} ({timestamp})")?;
+        } else {
+            writeln!(out, "{version}")?;
+        }
+    } else if let Some(timestamp) = timestamp.as_deref() {
+        // Otherwise just output timestamp
+        write_row_name(&mut out, "Timestamp", prefix_len)?;
+        writeln!(out, "{timestamp}")?;
+    }
+
     Ok(())
 }
 
-fn human_render_ostree(mut out: impl Write, slot_name: &str, _ostree_commit: &str) -> Result<()> {
+fn human_render_ostree(mut out: impl Write, slot: Slot, ostree_commit: &str) -> Result<()> {
     // TODO consider rendering more ostree stuff here like rpm-ostree status does
-    writeln!(out, "Current {slot_name} state is native ostree")?;
+    let prefix = match slot {
+        Slot::Staged => "  Staged ostree".into(),
+        Slot::Booted => format!("{} Booted ostree", crate::glyph::Glyph::BlackCircle),
+        Slot::Rollback => "  Rollback ostree".into(),
+    };
+    let prefix_len = prefix.len();
+    writeln!(out, "{prefix}")?;
+    write_row_name(&mut out, "Commit", prefix_len)?;
+    writeln!(out, "{ostree_commit}")?;
     Ok(())
 }
 
 fn human_readable_output_booted(mut out: impl Write, host: &Host) -> Result<()> {
+    let mut first = true;
     for (slot_name, status) in [
-        ("staged", &host.status.staged),
-        ("booted", &host.status.booted),
-        ("rollback", &host.status.rollback),
+        (Slot::Staged, &host.status.staged),
+        (Slot::Booted, &host.status.booted),
+        (Slot::Rollback, &host.status.rollback),
     ] {
         if let Some(host_status) = status {
+            if first {
+                first = false;
+            } else {
+                writeln!(out)?;
+            }
             if let Some(image) = &host_status.image {
                 human_render_imagestatus(&mut out, slot_name, image)?;
             } else if let Some(ostree) = host_status.ostree.as_ref() {
@@ -378,8 +432,6 @@ fn human_readable_output_booted(mut out: impl Write, host: &Host) -> Result<()> 
             } else {
                 writeln!(out, "Current {slot_name} state is unknown")?;
             }
-        } else {
-            writeln!(out, "No {slot_name} image present")?;
         }
     }
     Ok(())
@@ -413,14 +465,14 @@ mod tests {
         let w = human_status_from_spec_fixture(include_str!("fixtures/spec-staged-booted.yaml"))
             .expect("No spec found");
         let expected = indoc::indoc! { r"
-    Current staged image: quay.io/example/someimage:latest
-        Image version: nightly (2023-10-14 19:22:15 UTC)
-        Image digest: sha256:16dc2b6256b4ff0d2ec18d2dbfb06d117904010c8cf9732cdb022818cf7a7566
-    Current booted image: quay.io/example/someimage:latest
-        Image version: nightly (2023-09-30 19:22:16 UTC)
-        Image digest: sha256:736b359467c9437c1ac915acaae952aad854e07eb4a16a94999a48af08c83c34
-    No rollback image present
-    "};
+            Staged image: quay.io/example/someimage:latest
+                  Digest: sha256:16dc2b6256b4ff0d2ec18d2dbfb06d117904010c8cf9732cdb022818cf7a7566
+                 Version: nightly (2023-10-14 19:22:15 UTC)
+        
+          ● Booted image: quay.io/example/someimage:latest
+                  Digest: sha256:736b359467c9437c1ac915acaae952aad854e07eb4a16a94999a48af08c83c34
+                 Version: nightly (2023-09-30 19:22:16 UTC)
+        "};
         similar_asserts::assert_eq!(w, expected);
     }
 
@@ -432,10 +484,12 @@ mod tests {
         ))
         .expect("No spec found");
         let expected = indoc::indoc! { r"
-    Current staged state is native ostree
-    Current booted state is native ostree
-    No rollback image present
-    "};
+            Staged ostree
+                   Commit: 1c24260fdd1be20f72a4a97a75c582834ee3431fbb0fa8e4f482bb219d633a45
+          
+          ● Booted ostree
+                     Commit: f9fa3a553ceaaaf30cf85bfe7eed46a822f7b8fd7e14c1e3389cbc3f6d27f791
+        "};
         similar_asserts::assert_eq!(w, expected);
     }
 
@@ -445,12 +499,13 @@ mod tests {
         let w = human_status_from_spec_fixture(include_str!("fixtures/spec-ostree-to-bootc.yaml"))
             .expect("No spec found");
         let expected = indoc::indoc! { r"
-    Current staged image: quay.io/centos-bootc/centos-bootc:stream9
-        Image version: stream9.20240807.0 (No timestamp present)
-        Image digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
-    Current booted state is native ostree
-    No rollback image present
-    "};
+            Staged image: quay.io/centos-bootc/centos-bootc:stream9
+                  Digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
+                 Version: stream9.20240807.0
+          
+          ● Booted ostree
+                     Commit: f9fa3a553ceaaaf30cf85bfe7eed46a822f7b8fd7e14c1e3389cbc3f6d27f791
+        "};
         similar_asserts::assert_eq!(w, expected);
     }
 
@@ -460,12 +515,10 @@ mod tests {
         let w = human_status_from_spec_fixture(include_str!("fixtures/spec-only-booted.yaml"))
             .expect("No spec found");
         let expected = indoc::indoc! { r"
-    No staged image present
-    Current booted image: quay.io/centos-bootc/centos-bootc:stream9
-        Image version: stream9.20240807.0 (No timestamp present)
-        Image digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
-    No rollback image present
-    "};
+          ● Booted image: quay.io/centos-bootc/centos-bootc:stream9
+                  Digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
+                 Version: stream9.20240807.0
+        "};
         similar_asserts::assert_eq!(w, expected);
     }
 
@@ -483,12 +536,10 @@ mod tests {
         let w = human_status_from_spec_fixture(include_str!("fixtures/spec-via-local-oci.yaml"))
             .unwrap();
         let expected = indoc::indoc! { r"
-        No staged image present
-        Current booted image: oci:/var/mnt/osupdate
-            Image version: stream9.20240807.0 (No timestamp present)
-            Image digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
-        No rollback image present
-    "};
+          ● Booted image: oci:/var/mnt/osupdate
+                  Digest: sha256:47e5ed613a970b6574bfa954ab25bb6e85656552899aa518b5961d9645102b38
+                 Version: stream9.20240807.0
+        "};
         similar_asserts::assert_eq!(w, expected);
     }
 
