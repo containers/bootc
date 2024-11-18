@@ -5,7 +5,10 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use cap_std_ext::cap_std::fs::Dir;
+use camino::Utf8Path;
+use cap_std_ext::dirext::CapStdExtDirExt;
+use cap_std_ext::{cap_std::fs::Dir, prelude::CapStdExtCommandExt};
+use fn_error_context::context;
 use indicatif::HumanDuration;
 use libsystemd::logging::journal_print;
 use ostree::glib;
@@ -55,6 +58,39 @@ pub(crate) fn find_mount_option<'a>(
         .filter_map(|k| k.split_once('='))
         .filter_map(|(k, v)| (k == optname).then_some(v))
         .next()
+}
+
+/// Given a target directory, if it's a read-only mount, then remount it writable
+#[context("Opening {target} with writable mount")]
+#[cfg(feature = "install")]
+pub(crate) fn open_dir_remount_rw(root: &Dir, target: &Utf8Path) -> Result<Dir> {
+    if matches!(root.is_mountpoint(target), Ok(Some(true))) {
+        tracing::debug!("Target {target} is a mountpoint, remounting rw");
+        let st = Command::new("mount")
+            .args(["-o", "remount,rw", target.as_str()])
+            .cwd_dir(root.try_clone()?)
+            .status()?;
+
+        anyhow::ensure!(st.success(), "Failed to remount: {st:?}");
+    }
+    root.open_dir(target).map_err(anyhow::Error::new)
+}
+
+/// Given a target path, remove its immutability if present
+#[context("Removing immutable flag from {target}")]
+#[cfg(feature = "install")]
+pub(crate) fn remove_immutability(root: &Dir, target: &Utf8Path) -> Result<()> {
+    use anyhow::ensure;
+
+    tracing::debug!("Target {target} is a mountpoint, remounting rw");
+    let st = Command::new("chattr")
+        .args(["-i", target.as_str()])
+        .cwd_dir(root.try_clone()?)
+        .status()?;
+
+    ensure!(st.success(), "Failed to remove immutability: {st:?}");
+
+    Ok(())
 }
 
 pub(crate) fn spawn_editor(tmpf: &tempfile::NamedTempFile) -> Result<()> {

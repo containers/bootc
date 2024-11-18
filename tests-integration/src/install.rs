@@ -31,20 +31,29 @@ const NON_DEFAULT_STATEROOT: &str = "foo";
 /// Clear out and delete any ostree roots, leverage bootc hidden wipe-ostree command to get rid of
 /// otherwise hard to delete deployment files
 fn reset_root(sh: &Shell, image: &str) -> Result<()> {
+    delete_ostree_deployments(sh, image)?;
+    delete_ostree(sh)?;
+    Ok(())
+}
+
+fn delete_ostree(sh: &Shell) -> Result<(), anyhow::Error> {
+    if !Path::new("/ostree/").exists() {
+        return Ok(());
+    }
+    cmd!(sh, "sudo /bin/sh -c 'rm -rf /ostree/'").run()?;
+    Ok(())
+}
+
+fn delete_ostree_deployments(sh: &Shell, image: &str) -> Result<(), anyhow::Error> {
     if !Path::new("/ostree/deploy/").exists() {
         return Ok(());
     }
-
-    // Without /boot ostree will not delete anything
     let mounts = &["-v", "/ostree:/ostree", "-v", "/boot:/boot"];
-
     cmd!(
         sh,
         "sudo {BASE_ARGS...} {mounts...} {image} bootc state wipe-ostree"
     )
     .run()?;
-
-    // Now that the hard to delete files are gone, we can just rm -rf the rest
     cmd!(sh, "sudo /bin/sh -c 'rm -rf /ostree/deploy/*'").run()?;
     Ok(())
 }
