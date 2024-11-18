@@ -68,7 +68,7 @@ fn ref_for_blob_digest(d: &str) -> Result<String> {
 
 /// Convert e.g. sha256:12345... into `/ostree/container/blob/sha256_2B12345...`.
 fn ref_for_layer(l: &oci_image::Descriptor) -> Result<String> {
-    ref_for_blob_digest(&l.digest().to_string())
+    ref_for_blob_digest(&l.digest().as_ref())
 }
 
 /// Convert e.g. sha256:12345... into `/ostree/container/blob/sha256_2B12345...`.

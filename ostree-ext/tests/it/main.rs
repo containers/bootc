@@ -1256,7 +1256,7 @@ async fn test_container_etc_hardlinked(absolute: bool) -> Result<()> {
 #[tokio::test]
 async fn test_non_ostree() -> Result<()> {
     let fixture = NonOstreeFixture::new_base()?;
-    let (src_imgref, src_digest) = fixture.export_container().await?;
+    let src_digest = fixture.export_container().await?.1;
 
     let imgref = fixture.export_container().await.unwrap().0;
     let imp = fixture.must_import(&imgref).await?;
