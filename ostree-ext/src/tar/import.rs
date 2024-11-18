@@ -125,7 +125,7 @@ fn parse_object_entry_path(path: &Utf8Path) -> Result<(&str, &Utf8Path, &str)> {
         .parent()
         .and_then(|p| p.file_name())
         .ok_or_else(|| anyhow!("Invalid path (no parent) {}", path))?;
-    if parentname.len() != 2 {
+    if !(parentname.is_ascii() && parentname.as_bytes().len() == 2) {
         return Err(anyhow!("Invalid checksum parent {}", parentname));
     }
     let name = path
@@ -146,7 +146,7 @@ fn parse_checksum(parent: &str, name: &Utf8Path) -> Result<String> {
     // Also take care of the double extension on `.file.xattrs`.
     let checksum_rest = checksum_rest.trim_end_matches(".file");
 
-    if checksum_rest.len() != 62 {
+    if !(checksum_rest.is_ascii() && checksum_rest.as_bytes().len() == 62) {
         return Err(anyhow!("Invalid checksum part {}", checksum_rest));
     }
     let reassembled = format!("{}{}", parent, checksum_rest);
