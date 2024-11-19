@@ -389,7 +389,7 @@ fn human_render_imagestatus(
         } else {
             writeln!(out, "{version}")?;
         }
-    } else if let Some(timestamp) = timestamp.as_deref() {
+    } else if let Some(timestamp) = timestamp {
         // Otherwise just output timestamp
         write_row_name(&mut out, "Timestamp", prefix_len)?;
         writeln!(out, "{timestamp}")?;

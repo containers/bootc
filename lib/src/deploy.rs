@@ -508,7 +508,7 @@ pub(crate) async fn rollback(sysroot: &Storage) -> Result<()> {
             ("MESSAGE_ID", ROLLBACK_JOURNAL_ID),
             (
                 "BOOTC_MANIFEST_DIGEST",
-                &rollback_image.manifest_digest.to_string(),
+                rollback_image.manifest_digest.as_ref(),
             ),
         ]
         .into_iter(),
