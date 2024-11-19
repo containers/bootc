@@ -580,7 +580,7 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
     let sepolicy = state.load_policy()?;
     let sepolicy = sepolicy.as_ref();
     // Load a fd for the mounted target physical root
-    let rootfs_dir = &root_setup.rootfs_fd;
+    let rootfs_dir = &root_setup.physical_root;
     let cancellable = gio::Cancellable::NONE;
 
     let stateroot = state.stateroot();
@@ -779,7 +779,7 @@ async fn install_container(
     // SAFETY: There must be a path
     let path = sysroot.deployment_dirpath(&deployment);
     let root = root_setup
-        .rootfs_fd
+        .physical_root
         .open_dir(path.as_str())
         .context("Opening deployment dir")?;
 
@@ -792,7 +792,7 @@ async fn install_container(
         for d in ["ostree", "boot"] {
             let mut pathbuf = Utf8PathBuf::from(d);
             crate::lsm::ensure_dir_labeled_recurse(
-                &root_setup.rootfs_fd,
+                &root_setup.physical_root,
                 &mut pathbuf,
                 policy,
                 Some(deployment_root_devino),
@@ -902,8 +902,11 @@ fn require_skopeo_with_containers_storage() -> Result<()> {
 pub(crate) struct RootSetup {
     luks_device: Option<String>,
     device_info: crate::blockdev::PartitionTable,
-    rootfs: Utf8PathBuf,
-    rootfs_fd: Dir,
+    /// Absolute path to the location where we've mounted the physical
+    /// root filesystem for the system we're installing.
+    physical_root_path: Utf8PathBuf,
+    /// Directory file descriptor for the above physical root.
+    physical_root: Dir,
     rootfs_uuid: Option<String>,
     /// True if we should skip finalizing
     skip_finalize: bool,
@@ -925,7 +928,7 @@ impl RootSetup {
 
     // Drop any open file descriptors and return just the mount path and backing luks device, if any
     fn into_storage(self) -> (Utf8PathBuf, Option<String>) {
-        (self.rootfs, self.luks_device)
+        (self.physical_root_path, self.luks_device)
     }
 }
 
@@ -1323,7 +1326,7 @@ async fn install_with_sysroot(
     let (_deployment, aleph) = install_container(state, rootfs, &sysroot, has_ostree).await?;
     // Write the aleph data that captures the system state at the time of provisioning for aid in future debugging.
     rootfs
-        .rootfs_fd
+        .physical_root
         .atomic_replace_with(BOOTC_ALEPH_PATH, |f| {
             serde_json::to_writer(f, &aleph)?;
             anyhow::Ok(())
@@ -1336,7 +1339,7 @@ async fn install_with_sysroot(
     } else {
         crate::bootloader::install_via_bootupd(
             &rootfs.device_info,
-            &rootfs.rootfs,
+            &rootfs.physical_root_path,
             &state.config_opts,
         )?;
     }
@@ -1425,7 +1428,7 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
     if !rootfs.skip_finalize {
         let bootfs = rootfs.boot.as_ref().map(|_| ("boot", "boot"));
         for (fsname, fs) in std::iter::once(("root", ".")).chain(bootfs) {
-            finalize_filesystem(fsname, &rootfs.rootfs_fd, fs)?;
+            finalize_filesystem(fsname, &rootfs.physical_root, fs)?;
         }
     }
 
@@ -1819,8 +1822,8 @@ pub(crate) async fn install_to_filesystem(
     let mut rootfs = RootSetup {
         luks_device: None,
         device_info,
-        rootfs: fsopts.root_path,
-        rootfs_fd,
+        physical_root_path: fsopts.root_path,
+        physical_root: rootfs_fd,
         rootfs_uuid: inspect.uuid.clone(),
         boot,
         kargs,

@@ -223,8 +223,8 @@ pub(crate) fn install_create_rootfs(
 
     // Create a temporary directory to use for mount points.  Note that we're
     // in a mount namespace, so these should not be visible on the host.
-    let rootfs = mntdir.join("rootfs");
-    std::fs::create_dir_all(&rootfs)?;
+    let physical_root_path = mntdir.join("rootfs");
+    std::fs::create_dir_all(&physical_root_path)?;
     let bootfs = mntdir.join("boot");
     std::fs::create_dir_all(bootfs)?;
 
@@ -389,11 +389,11 @@ pub(crate) fn install_create_rootfs(
         .chain(bootarg)
         .collect::<Vec<_>>();
 
-    mount::mount(&rootdev, &rootfs)?;
-    let target_rootfs = Dir::open_ambient_dir(&rootfs, cap_std::ambient_authority())?;
+    mount::mount(&rootdev, &physical_root_path)?;
+    let target_rootfs = Dir::open_ambient_dir(&physical_root_path, cap_std::ambient_authority())?;
     crate::lsm::ensure_dir_labeled(&target_rootfs, "", Some("/".into()), 0o755.into(), sepolicy)?;
-    let rootfs_fd = Dir::open_ambient_dir(&rootfs, cap_std::ambient_authority())?;
-    let bootfs = rootfs.join("boot");
+    let physical_root = Dir::open_ambient_dir(&physical_root_path, cap_std::ambient_authority())?;
+    let bootfs = physical_root_path.join("boot");
     // Create the underlying mount point directory, which should be labeled
     crate::lsm::ensure_dir_labeled(&target_rootfs, "boot", None, 0o755.into(), sepolicy)?;
     if let Some(bootdev) = bootdev {
@@ -422,8 +422,8 @@ pub(crate) fn install_create_rootfs(
     Ok(RootSetup {
         luks_device,
         device_info,
-        rootfs,
-        rootfs_fd,
+        physical_root_path,
+        physical_root,
         rootfs_uuid: Some(root_uuid.to_string()),
         boot,
         kargs,
