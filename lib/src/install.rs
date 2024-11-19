@@ -12,7 +12,7 @@ mod osbuild;
 pub(crate) mod osconfig;
 
 use std::io::Write;
-use std::os::fd::AsFd;
+use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
@@ -581,18 +581,16 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
     let sepolicy = sepolicy.as_ref();
     // Load a fd for the mounted target physical root
     let rootfs_dir = &root_setup.rootfs_fd;
-    let rootfs = root_setup.rootfs.as_path();
     let cancellable = gio::Cancellable::NONE;
 
     let stateroot = state.stateroot();
 
     let has_ostree = rootfs_dir.try_exists("ostree/repo")?;
     if !has_ostree {
-        Task::new_and_run(
-            "Initializing ostree layout",
-            "ostree",
-            ["admin", "init-fs", "--modern", rootfs.as_str()],
-        )?;
+        Task::new("Initializing ostree layout", "ostree")
+            .args(["admin", "init-fs", "--modern", "."])
+            .cwd(rootfs_dir)?
+            .run()?;
     } else {
         println!("Reusing extant ostree layout");
 
@@ -607,8 +605,7 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
     crate::lsm::ensure_dir_labeled(rootfs_dir, "", Some("/".into()), 0o755.into(), sepolicy)?;
 
     // And also label /boot AKA xbootldr, if it exists
-    let bootdir = rootfs.join("boot");
-    if bootdir.try_exists()? {
+    if rootfs_dir.try_exists("boot")? {
         crate::lsm::ensure_dir_labeled(rootfs_dir, "boot", None, 0o755.into(), sepolicy)?;
     }
 
@@ -626,7 +623,10 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
             .run()?;
     }
 
-    let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
+    let sysroot = {
+        let path = format!("/proc/self/fd/{}", rootfs_dir.as_fd().as_raw_fd());
+        ostree::Sysroot::new(Some(&gio::File::for_path(path)))
+    };
     sysroot.load(cancellable)?;
 
     let stateroot_exists = rootfs_dir.try_exists(format!("ostree/deploy/{stateroot}"))?;
@@ -661,7 +661,6 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
         )?;
     }
 
-    let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(rootfs)));
     sysroot.load(cancellable)?;
     let sysroot = SysrootLock::new_from_sysroot(&sysroot).await?;
     Ok((Storage::new(sysroot, &temp_run)?, has_ostree))
@@ -999,24 +998,29 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
 
 /// Trim, flush outstanding writes, and freeze/thaw the target mounted filesystem;
 /// these steps prepare the filesystem for its first booted use.
-pub(crate) fn finalize_filesystem(fs: &Utf8Path) -> Result<()> {
-    let fsname = fs.file_name().unwrap();
+pub(crate) fn finalize_filesystem(
+    fsname: &str,
+    root: &Dir,
+    path: impl AsRef<Utf8Path>,
+) -> Result<()> {
+    let path = path.as_ref();
     // fstrim ensures the underlying block device knows about unused space
-    Task::new_and_run(
-        format!("Trimming {fsname}"),
-        "fstrim",
-        ["--quiet-unsupported", "-v", fs.as_str()],
-    )?;
+    Task::new(format!("Trimming {fsname}"), "fstrim")
+        .args(["--quiet-unsupported", "-v", path.as_str()])
+        .cwd(root)?
+        .run()?;
     // Remounting readonly will flush outstanding writes and ensure we error out if there were background
     // writeback problems.
     Task::new(format!("Finalizing filesystem {fsname}"), "mount")
-        .args(["-o", "remount,ro", fs.as_str()])
+        .cwd(root)?
+        .args(["-o", "remount,ro", path.as_str()])
         .run()?;
     // Finally, freezing (and thawing) the filesystem will flush the journal, which means the next boot is clean.
     for a in ["-f", "-u"] {
         Task::new("Flushing filesystem journal", "fsfreeze")
             .quiet()
-            .args([a, fs.as_str()])
+            .cwd(root)?
+            .args([a, path.as_str()])
             .run()?;
     }
     Ok(())
@@ -1419,10 +1423,9 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
 
     // Finalize mounted filesystems
     if !rootfs.skip_finalize {
-        let bootfs = rootfs.boot.as_ref().map(|_| rootfs.rootfs.join("boot"));
-        let bootfs = bootfs.as_ref().map(|p| p.as_path());
-        for fs in std::iter::once(rootfs.rootfs.as_path()).chain(bootfs) {
-            finalize_filesystem(fs)?;
+        let bootfs = rootfs.boot.as_ref().map(|_| ("boot", "boot"));
+        for (fsname, fs) in std::iter::once(("root", ".")).chain(bootfs) {
+            finalize_filesystem(fsname, &rootfs.rootfs_fd, fs)?;
         }
     }
 
