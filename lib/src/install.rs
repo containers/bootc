@@ -1636,6 +1636,13 @@ pub(crate) async fn install_to_filesystem(
     opts: InstallToFilesystemOpts,
     targeting_host_root: bool,
 ) -> Result<()> {
+    // Gather global state, destructuring the provided options.
+    // IMPORTANT: We might re-execute the current process in this function (for SELinux among other things)
+    // IMPORTANT: and hence anything that is done before MUST BE IDEMPOTENT.
+    // IMPORTANT: In practice, we should only be gathering information before this point,
+    // IMPORTANT: and not performing any mutations at all.
+    let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
+    // And the last bit of state here is the fsopts, which we also destructure now.
     let mut fsopts = opts.filesystem_opts;
 
     // Check that the target is a directory
@@ -1673,13 +1680,6 @@ pub(crate) async fn install_to_filesystem(
         }
         rootfs_fd
     };
-
-    // Gather global state, destructuring the provided options.
-    // IMPORTANT: We might re-execute the current process in this function (for SELinux among other things)
-    // IMPORTANT: and hence anything that is done before MUST BE IDEMPOTENT.
-    // IMPORTANT: In practice, we should only be gathering information before this point,
-    // IMPORTANT: and not performing any mutations at all.
-    let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
 
     // Check to see if this happens to be the real host root
     if !fsopts.acknowledge_destructive {
