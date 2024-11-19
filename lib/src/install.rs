@@ -1636,40 +1636,42 @@ pub(crate) async fn install_to_filesystem(
     opts: InstallToFilesystemOpts,
     targeting_host_root: bool,
 ) -> Result<()> {
-    let fsopts = opts.filesystem_opts;
-    let root_path = &fsopts.root_path;
+    let mut fsopts = opts.filesystem_opts;
 
-    let st = root_path
-        .symlink_metadata()
-        .with_context(|| format!("Querying target filesystem {root_path}"))?;
-    if !st.is_dir() {
-        anyhow::bail!("Not a directory: {root_path}");
+    // Check that the target is a directory
+    {
+        let root_path = &fsopts.root_path;
+        let st = root_path
+            .symlink_metadata()
+            .with_context(|| format!("Querying target filesystem {root_path}"))?;
+        if !st.is_dir() {
+            anyhow::bail!("Not a directory: {root_path}");
+        }
     }
 
+    // If we're installing to an ostree root, then find the physical root from
+    // the deployment root.
     let possible_physical_root = fsopts.root_path.join("sysroot");
     let possible_ostree_dir = possible_physical_root.join("ostree");
-    let root_path = if possible_ostree_dir.exists() {
+    if possible_ostree_dir.exists() {
         tracing::debug!(
-            "ostree detected in {possible_ostree_dir}, assuming / is a deployment root and using {possible_physical_root} instead of {root_path} as target root"
+            "ostree detected in {possible_ostree_dir}, assuming target is a deployment root and using {possible_physical_root}"
         );
-        &possible_physical_root
-    } else {
-        root_path
+        fsopts.root_path = possible_physical_root;
     };
 
-    let rootfs_fd = Dir::open_ambient_dir(root_path, cap_std::ambient_authority())
-        .with_context(|| format!("Opening target root directory {root_path}"))?;
+    // Get a file descriptor for the root path
+    let rootfs_fd = {
+        let root_path = &fsopts.root_path;
+        let rootfs_fd = Dir::open_ambient_dir(&fsopts.root_path, cap_std::ambient_authority())
+            .with_context(|| format!("Opening target root directory {root_path}"))?;
 
-    tracing::debug!("Root filesystem: {root_path}");
+        tracing::debug!("Root filesystem: {root_path}");
 
-    if let Some(false) = ostree_ext::mountutil::is_mountpoint(&rootfs_fd, ".")? {
-        anyhow::bail!("Not a mountpoint: {root_path}");
-    }
-
-    let fsopts = {
-        let mut fsopts = fsopts.clone();
-        fsopts.root_path = root_path.clone();
-        fsopts
+        if let Some(false) = ostree_ext::mountutil::is_mountpoint(&rootfs_fd, ".")? {
+            anyhow::bail!("Not a mountpoint: {root_path}");
+        }
+        rootfs_fd
     };
 
     // Gather global state, destructuring the provided options.
