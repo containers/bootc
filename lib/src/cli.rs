@@ -21,6 +21,7 @@ use ostree_ext::container as ostree_container;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
 use schemars::schema_for;
+use serde::{Deserialize, Serialize};
 
 use crate::deploy::RequiredHostSpec;
 use crate::lints;
@@ -235,13 +236,54 @@ pub(crate) enum ImageCmdOpts {
     },
 }
 
+#[derive(ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ImageListType {
+    /// List all images
+    #[default]
+    All,
+    /// List only logically bound images
+    Logical,
+    /// List only host images
+    Host,
+}
+
+impl std::fmt::Display for ImageListType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
+}
+
+#[derive(ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ImageListFormat {
+    /// Human readable table format
+    #[default]
+    Table,
+    /// JSON format
+    Json,
+}
+impl std::fmt::Display for ImageListFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
+}
+
 /// Subcommands which operate on images.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub(crate) enum ImageOpts {
     /// List fetched images stored in the bootc storage.
     ///
     /// Note that these are distinct from images stored via e.g. `podman`.
-    List,
+    List {
+        /// Type of image to list
+        #[clap(long = "type")]
+        #[arg(default_value_t)]
+        list_type: ImageListType,
+        #[clap(long = "format")]
+        #[arg(default_value_t)]
+        list_format: ImageListFormat,
+    },
     /// Copy a container image from the bootc storage to `containers-storage:`.
     ///
     /// The source and target are both optional; if both are left unspecified,
@@ -886,7 +928,10 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             }
         },
         Opt::Image(opts) => match opts {
-            ImageOpts::List => crate::image::list_entrypoint().await,
+            ImageOpts::List {
+                list_type,
+                list_format,
+            } => crate::image::list_entrypoint(list_type, list_format).await,
             ImageOpts::CopyToStorage { source, target } => {
                 crate::image::push_entrypoint(source.as_deref(), target.as_deref()).await
             }

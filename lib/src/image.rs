@@ -2,33 +2,122 @@
 //!
 //! APIs for operating on container images in the bootc storage.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use bootc_utils::CommandRunExt;
+use cap_std_ext::cap_std::{self, fs::Dir};
+use clap::ValueEnum;
+use comfy_table::{presets::NOTHING, Table};
 use fn_error_context::context;
 use ostree_ext::container::{ImageReference, Transport};
+use serde::Serialize;
 
-use crate::imgstorage::Storage;
+use crate::{
+    boundimage::query_bound_images,
+    cli::{ImageListFormat, ImageListType},
+};
 
 /// The name of the image we push to containers-storage if nothing is specified.
 const IMAGE_DEFAULT: &str = "localhost/bootc";
 
-#[context("Listing images")]
-pub(crate) async fn list_entrypoint() -> Result<()> {
-    let sysroot = crate::cli::get_storage().await?;
-    let repo = &sysroot.repo();
+#[derive(Clone, Serialize, ValueEnum)]
+enum ImageListTypeColumn {
+    Host,
+    Logical,
+}
 
-    let images = ostree_ext::container::store::list_images(repo).context("Querying images")?;
-
-    println!("# Host images");
-    for image in images {
-        println!("{image}");
+impl std::fmt::Display for ImageListTypeColumn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
     }
-    println!();
+}
 
-    println!("# Logically bound images");
-    let mut listcmd = sysroot.get_ensure_imgstore()?.new_image_cmd()?;
-    listcmd.arg("list");
-    listcmd.run()?;
+#[derive(Serialize)]
+struct ImageOutput {
+    image_type: ImageListTypeColumn,
+    image: String,
+    // TODO: Add hash, size, etc? Difficult because [`ostree_ext::container::store::list_images`]
+    // only gives us the pullspec.
+}
+
+#[context("Listing host images")]
+fn list_host_images(sysroot: &crate::store::Storage) -> Result<Vec<ImageOutput>> {
+    let repo = sysroot.repo();
+    let images = ostree_ext::container::store::list_images(&repo).context("Querying images")?;
+
+    Ok(images
+        .into_iter()
+        .map(|image| ImageOutput {
+            image,
+            image_type: ImageListTypeColumn::Host,
+        })
+        .collect())
+}
+
+#[context("Listing logical images")]
+fn list_logical_images(root: &Dir) -> Result<Vec<ImageOutput>> {
+    let bound = query_bound_images(root)?;
+
+    Ok(bound
+        .into_iter()
+        .map(|image| ImageOutput {
+            image: image.image,
+            image_type: ImageListTypeColumn::Logical,
+        })
+        .collect())
+}
+
+async fn list_images(list_type: ImageListType) -> Result<Vec<ImageOutput>> {
+    let rootfs = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())
+        .context("Opening /")?;
+
+    let sysroot: Option<crate::store::Storage> =
+        if ostree_ext::container_utils::running_in_container() {
+            None
+        } else {
+            Some(crate::cli::get_storage().await?)
+        };
+
+    Ok(match (list_type, sysroot) {
+        // TODO: Should we list just logical images silently here, or error?
+        (ImageListType::All, None) => list_logical_images(&rootfs)?,
+        (ImageListType::All, Some(sysroot)) => list_host_images(&sysroot)?
+            .into_iter()
+            .chain(list_logical_images(&rootfs)?)
+            .collect(),
+        (ImageListType::Logical, _) => list_logical_images(&rootfs)?,
+        (ImageListType::Host, None) => {
+            bail!("Listing host images requires a booted bootc system")
+        }
+        (ImageListType::Host, Some(sysroot)) => list_host_images(&sysroot)?,
+    })
+}
+
+#[context("Listing images")]
+pub(crate) async fn list_entrypoint(
+    list_type: ImageListType,
+    list_format: ImageListFormat,
+) -> Result<()> {
+    let images = list_images(list_type).await?;
+
+    match list_format {
+        ImageListFormat::Table => {
+            let mut table = Table::new();
+
+            table
+                .load_preset(NOTHING)
+                .set_header(vec!["REPOSITORY", "TYPE"]);
+
+            for image in images {
+                table.add_row(vec![image.image, image.image_type.to_string()]);
+            }
+
+            println!("{table}");
+        }
+        ImageListFormat::Json => {
+            let mut stdout = std::io::stdout();
+            serde_json::to_writer_pretty(&mut stdout, &images)?;
+        }
+    }
 
     Ok(())
 }
@@ -79,7 +168,7 @@ pub(crate) async fn push_entrypoint(source: Option<&str>, target: Option<&str>) 
 /// Thin wrapper for invoking `podman image <X>` but set up for our internal
 /// image store (as distinct from /var/lib/containers default).
 pub(crate) async fn imgcmd_entrypoint(
-    storage: &Storage,
+    storage: &crate::imgstorage::Storage,
     arg: &str,
     args: &[std::ffi::OsString],
 ) -> std::result::Result<(), anyhow::Error> {
