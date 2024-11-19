@@ -5,9 +5,14 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+#[cfg(feature = "install")]
 use camino::Utf8Path;
+use cap_std_ext::cap_std::fs::Dir;
+#[cfg(feature = "install")]
 use cap_std_ext::dirext::CapStdExtDirExt;
-use cap_std_ext::{cap_std::fs::Dir, prelude::CapStdExtCommandExt};
+#[cfg(feature = "install")]
+use cap_std_ext::prelude::CapStdExtCommandExt;
+#[cfg(feature = "install")]
 use fn_error_context::context;
 use indicatif::HumanDuration;
 use libsystemd::logging::journal_print;
