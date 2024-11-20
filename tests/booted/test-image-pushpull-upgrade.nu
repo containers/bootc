@@ -83,7 +83,7 @@ RUN echo test content2 > /usr/share/blah.txt
     # Build it
     podman build -t localhost/bootc-derived .
     let booted_digest = $booted.imageDigest
-    print booted_digest = $booted_digest
+    print $"booted_digest = ($booted_digest)"
     # We should already be fetching updates from container storage
     bootc upgrade
     # Verify we staged an update
