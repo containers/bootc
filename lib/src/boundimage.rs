@@ -5,8 +5,6 @@
 //! pre-pulled (and in the future, pinned) before a new image root
 //! is considered ready.
 
-use std::num::NonZeroUsize;
-
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use cap_std_ext::cap_std::fs::Dir;
@@ -49,7 +47,7 @@ pub(crate) async fn pull_bound_images(sysroot: &Storage, deployment: &Deployment
 
 #[context("Querying bound images")]
 pub(crate) fn query_bound_images_for_deployment(
-    sysroot: &Storage,
+    sysroot: &ostree_ext::ostree::Sysroot,
     deployment: &Deployment,
 ) -> Result<Vec<BoundImage>> {
     let deployment_root = &crate::utils::deployment_fd(sysroot, deployment)?;
@@ -153,15 +151,21 @@ pub(crate) async fn pull_images(
     sysroot: &Storage,
     bound_images: Vec<crate::boundimage::BoundImage>,
 ) -> Result<()> {
-    tracing::debug!("Pulling bound images: {}", bound_images.len());
-    // Yes, the usage of NonZeroUsize here is...maybe odd looking, but I find
-    // it an elegant way to divide (empty vector, non empty vector) since
-    // we want to print the length too below.
-    let Some(n) = NonZeroUsize::new(bound_images.len()) else {
-        return Ok(());
-    };
     // Only do work like initializing the image storage if we have images to pull.
+    if bound_images.is_empty() {
+        return Ok(());
+    }
     let imgstore = sysroot.get_ensure_imgstore()?;
+    pull_images_impl(imgstore, bound_images).await
+}
+
+#[context("Pulling bound images")]
+pub(crate) async fn pull_images_impl(
+    imgstore: &crate::imgstorage::Storage,
+    bound_images: Vec<crate::boundimage::BoundImage>,
+) -> Result<()> {
+    let n = bound_images.len();
+    tracing::debug!("Pulling bound images: {n}");
     // TODO: do this in parallel
     for bound_image in bound_images {
         let image = &bound_image.image;

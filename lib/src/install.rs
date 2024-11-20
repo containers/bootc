@@ -7,6 +7,7 @@
 // This sub-module is the "basic" installer that handles creating basic block device
 // and filesystem setup.
 pub(crate) mod baseline;
+pub(crate) mod completion;
 pub(crate) mod config;
 mod osbuild;
 pub(crate) mod osconfig;
@@ -762,6 +763,7 @@ async fn install_container(
     )?;
     let kargsd = kargsd.iter().map(|s| s.as_str());
 
+    // Keep this in sync with install/completion.rs for the Anaconda fixups
     let install_config_kargs = state
         .install_config
         .as_ref()
@@ -786,6 +788,7 @@ async fn install_container(
     options.kargs = Some(kargs.as_slice());
     options.target_imgref = Some(&state.target_imgref);
     options.proxy_cfg = proxy_cfg;
+    options.skip_completion = true; // Must be set to avoid recursion!
     options.no_clean = has_ostree;
     let imgstate = crate::utils::async_task_with_spinner(
         "Deploying container image",
@@ -1383,7 +1386,7 @@ async fn install_with_sysroot(
             }
         }
         BoundImages::Unresolved(bound_images) => {
-            crate::boundimage::pull_images(sysroot, bound_images)
+            crate::boundimage::pull_images_impl(imgstore, bound_images)
                 .await
                 .context("pulling bound images")?;
         }
