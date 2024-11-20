@@ -68,6 +68,7 @@ missing_debug_implementations = "deny"
 dead_code = "deny"
 
 [workspace.lints.clippy]
+disallowed_methods = "deny"
 # These should only be in local code
 dbg_macro = "deny"
 todo = "deny"

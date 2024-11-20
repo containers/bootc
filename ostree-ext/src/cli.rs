@@ -900,7 +900,7 @@ async fn container_store(
 }
 
 fn print_column(s: &str, clen: u16, remaining: &mut terminal_size::Width) {
-    let l: u16 = s.len().try_into().unwrap();
+    let l: u16 = s.chars().count().try_into().unwrap();
     let l = l.min(remaining.0);
     print!("{}", &s[0..l as usize]);
     if clen > 0 {
