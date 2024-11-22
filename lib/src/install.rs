@@ -495,6 +495,32 @@ impl FromStr for MountSpec {
     }
 }
 
+impl InstallAleph {
+    #[context("Creating aleph data")]
+    pub(crate) fn new(
+        src_imageref: &ostree_container::OstreeImageReference,
+        imgstate: &ostree_container::store::LayeredImageState,
+        selinux_state: &SELinuxFinalState,
+    ) -> Result<Self> {
+        let uname = rustix::system::uname();
+        let labels = crate::status::labels_of_config(&imgstate.configuration);
+        let timestamp = labels
+            .and_then(|l| {
+                l.get(oci_spec::image::ANNOTATION_CREATED)
+                    .map(|s| s.as_str())
+            })
+            .and_then(crate::status::try_deserialize_timestamp);
+        let r = InstallAleph {
+            image: src_imageref.imgref.name.clone(),
+            version: imgstate.version().as_ref().map(|s| s.to_string()),
+            timestamp,
+            kernel: uname.release().to_str()?.to_string(),
+            selinux: selinux_state.to_aleph().to_string(),
+        };
+        Ok(r)
+    }
+}
+
 impl SourceInfo {
     // Inspect container information and convert it to an ostree image reference
     // that pulls from containers-storage.
@@ -842,23 +868,7 @@ async fn install_container(
         osconfig::inject_root_ssh_authorized_keys(&root, sepolicy, contents)?;
     }
 
-    let uname = rustix::system::uname();
-
-    let labels = crate::status::labels_of_config(&imgstate.configuration);
-    let timestamp = labels
-        .and_then(|l| {
-            l.get(oci_spec::image::ANNOTATION_CREATED)
-                .map(|s| s.as_str())
-        })
-        .and_then(crate::status::try_deserialize_timestamp);
-    let aleph = InstallAleph {
-        image: src_imageref.imgref.name.clone(),
-        version: imgstate.version().as_ref().map(|s| s.to_string()),
-        timestamp,
-        kernel: uname.release().to_str()?.to_string(),
-        selinux: state.selinux_state.to_aleph().to_string(),
-    };
-
+    let aleph = InstallAleph::new(&src_imageref, &imgstate, &state.selinux_state)?;
     Ok((deployment, aleph))
 }
 
