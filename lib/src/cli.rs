@@ -2,8 +2,7 @@
 //!
 //! Command line tool to manage bootable ostree-based containers.
 
-use std::ffi::CString;
-use std::ffi::OsString;
+use std::ffi::{CString, OsStr, OsString};
 use std::io::Seek;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
@@ -879,6 +878,18 @@ where
     run_from_opt(Opt::parse_including_static(args)).await
 }
 
+/// Find the base binary name from argv0 (without a full path). The empty string
+/// is never returned; instead a fallback string is used. If the input is not valid
+/// UTF-8, a default is used.
+fn callname_from_argv0(argv0: &OsStr) -> &str {
+    let default = "bootc";
+    std::path::Path::new(argv0)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default)
+}
+
 impl Opt {
     /// In some cases (e.g. systemd generator) we dispatch specifically on argv0.  This
     /// requires some special handling in clap.
@@ -890,9 +901,9 @@ impl Opt {
         let mut args = args.into_iter();
         let first = if let Some(first) = args.next() {
             let first: OsString = first.into();
-            let argv0 = first.to_str().and_then(|s| s.rsplit_once('/')).map(|s| s.1);
+            let argv0 = callname_from_argv0(&first);
             tracing::debug!("argv0={argv0:?}");
-            if matches!(argv0, Some(InternalsOpts::GENERATOR_BIN)) {
+            if argv0 == InternalsOpts::GENERATOR_BIN {
                 let base_args = ["bootc", "internals", "systemd-generator"]
                     .into_iter()
                     .map(OsString::from);
@@ -1019,6 +1030,41 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 Ok(())
             }
         },
+    }
+}
+
+#[test]
+fn test_callname() {
+    use std::os::unix::ffi::OsStrExt;
+
+    // Cases that change
+    let mapped_cases = [
+        ("", "bootc"),
+        ("/foo/bar", "bar"),
+        ("/foo/bar/", "bar"),
+        ("foo/bar", "bar"),
+        ("../foo/bar", "bar"),
+        ("usr/bin/ostree-container", "ostree-container"),
+    ];
+    for (input, output) in mapped_cases {
+        assert_eq!(
+            output,
+            callname_from_argv0(OsStr::new(input)),
+            "Handling mapped case {input}"
+        );
+    }
+
+    // Invalid UTF-8
+    assert_eq!("bootc", callname_from_argv0(OsStr::from_bytes(b"foo\x80")));
+
+    // Cases that are identical
+    let ident_cases = ["foo", "bootc"];
+    for case in ident_cases {
+        assert_eq!(
+            case,
+            callname_from_argv0(OsStr::new(case)),
+            "Handling ident case {case}"
+        );
     }
 }
 
