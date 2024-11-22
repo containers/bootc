@@ -907,6 +907,9 @@ impl Opt {
                 InternalsOpts::GENERATOR_BIN => {
                     Some(["bootc", "internals", "systemd-generator"].as_slice())
                 }
+                "ostree-container" | "ostree-ima-sign" | "ostree-provisional-repair" => {
+                    Some(["bootc", "internals", "ostree-ext"].as_slice())
+                }
                 _ => None,
             };
             if let Some(base_args) = mapped {
@@ -1133,4 +1136,31 @@ fn test_parse_ostree_ext() {
         Opt::parse_including_static(["bootc", "internals", "ostree-container"]),
         Opt::Internals(InternalsOpts::OstreeContainer { .. })
     ));
+
+    fn peel(o: Opt) -> Vec<OsString> {
+        match o {
+            Opt::Internals(InternalsOpts::OstreeExt { args }) => args,
+            o => panic!("unexpected {o:?}"),
+        }
+    }
+    let args = peel(Opt::parse_including_static([
+        "/usr/libexec/libostree/ext/ostree-ima-sign",
+        "ima-sign",
+        "--repo=foo",
+        "foo",
+        "bar",
+        "baz",
+    ]));
+    assert_eq!(
+        args.as_slice(),
+        ["ima-sign", "--repo=foo", "foo", "bar", "baz"]
+    );
+
+    let args = peel(Opt::parse_including_static([
+        "/usr/libexec/libostree/ext/ostree-container",
+        "container",
+        "image",
+        "pull",
+    ]));
+    assert_eq!(args.as_slice(), ["container", "image", "pull"]);
 }
