@@ -903,10 +903,14 @@ impl Opt {
             let first: OsString = first.into();
             let argv0 = callname_from_argv0(&first);
             tracing::debug!("argv0={argv0:?}");
-            if argv0 == InternalsOpts::GENERATOR_BIN {
-                let base_args = ["bootc", "internals", "systemd-generator"]
-                    .into_iter()
-                    .map(OsString::from);
+            let mapped = match argv0 {
+                InternalsOpts::GENERATOR_BIN => {
+                    Some(["bootc", "internals", "systemd-generator"].as_slice())
+                }
+                _ => None,
+            };
+            if let Some(base_args) = mapped {
+                let base_args = base_args.into_iter().map(OsString::from);
                 return Opt::parse_from(base_args.chain(args.map(|i| i.into())));
             }
             Some(first)
