@@ -108,6 +108,7 @@ pub(crate) fn query_bound_images(root: &Dir) -> Result<Vec<BoundImage>> {
 
 #[cfg(feature = "install")]
 impl ResolvedBoundImage {
+    #[context("resolving bound image {}", src.image)]
     pub(crate) async fn from_image(src: &BoundImage) -> Result<Self> {
         let proxy = containers_image_proxy::ImageProxy::new().await?;
         let img = proxy
@@ -148,7 +149,10 @@ fn parse_container_file(file_contents: &tini::Ini) -> Result<BoundImage> {
 }
 
 #[context("Pulling bound images")]
-pub(crate) async fn pull_images(sysroot: &Storage, bound_images: Vec<BoundImage>) -> Result<()> {
+pub(crate) async fn pull_images(
+    sysroot: &Storage,
+    bound_images: Vec<crate::boundimage::BoundImage>,
+) -> Result<()> {
     tracing::debug!("Pulling bound images: {}", bound_images.len());
     // Yes, the usage of NonZeroUsize here is...maybe odd looking, but I find
     // it an elegant way to divide (empty vector, non empty vector) since
