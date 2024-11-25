@@ -40,6 +40,7 @@ use ostree_ext::ostree;
 use ostree_ext::prelude::Cast;
 use ostree_ext::sysroot::SysrootLock;
 use rustix::fs::{FileTypeExt, MetadataExt as _};
+use rustix::thread::Pid;
 use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
@@ -56,6 +57,8 @@ use crate::utils::sigpolicy_from_opts;
 const BOOT: &str = "boot";
 /// Directory for transient runtime state
 const RUN_BOOTC: &str = "/run/bootc";
+/// The default path for the host rootfs
+const ALONGSIDE_ROOT_MOUNT: &str = "/target";
 /// This is an ext4 special directory we need to ignore.
 const LOST_AND_FOUND: &str = "lost+found";
 /// The filename of the composefs EROFS superblock; TODO move this into ostree
@@ -316,9 +319,10 @@ pub(crate) struct InstallToExistingRootOpts {
     #[clap(long)]
     pub(crate) acknowledge_destructive: bool,
 
-    /// Path to the mounted root; it's expected to invoke podman with
-    /// `-v /:/target`, then supplying this argument is unnecessary.
-    #[clap(default_value = "/target")]
+    /// Path to the mounted root; this is now not necessary to provide.
+    /// Historically it was necessary to ensure the host rootfs was mounted at here
+    /// via e.g. `-v /:/target`.
+    #[clap(default_value = ALONGSIDE_ROOT_MOUNT)]
     pub(crate) root_path: Utf8PathBuf,
 }
 
@@ -1630,6 +1634,22 @@ pub(crate) async fn install_to_filesystem(
     let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
     // And the last bit of state here is the fsopts, which we also destructure now.
     let mut fsopts = opts.filesystem_opts;
+
+    // If we're doing an alongside install, automatically set up the host rootfs
+    // mount if it wasn't done already.
+    if targeting_host_root
+        && fsopts.root_path.as_str() == ALONGSIDE_ROOT_MOUNT
+        && !fsopts.root_path.try_exists()?
+    {
+        std::fs::create_dir(ALONGSIDE_ROOT_MOUNT)?;
+        crate::mount::bind_mount_from_pidns(
+            Pid::from_raw(1).unwrap(),
+            "/".into(),
+            ALONGSIDE_ROOT_MOUNT.into(),
+            true,
+        )
+        .context("Mounting host / to {ALONGSIDE_ROOT_MOUNT}")?;
+    }
 
     // Check that the target is a directory
     {
