@@ -333,8 +333,6 @@ pub(crate) struct SourceInfo {
     pub(crate) selinux: bool,
     /// Whether the source is available in the host mount namespace
     pub(crate) in_host_mountns: bool,
-    /// Whether we were invoked with -v /var/lib/containers:/var/lib/containers
-    pub(crate) have_host_container_storage: bool,
 }
 
 // Shared read-only global state
@@ -516,38 +514,13 @@ impl SourceInfo {
         tracing::debug!("Finding digest for image ID {}", container_info.imageid);
         let digest = crate::podman::imageid_to_digest(&container_info.imageid)?;
 
-        let have_host_container_storage = Utf8Path::new(crate::podman::CONTAINER_STORAGE)
-            .try_exists()?
-            && ostree_ext::mountutil::is_mountpoint(
-                &root,
-                crate::podman::CONTAINER_STORAGE.trim_start_matches('/'),
-            )?
-            .unwrap_or_default();
-
-        // Verify up front we can do the fetch
-        if have_host_container_storage {
-            tracing::debug!("Host container storage found");
-        } else {
-            tracing::debug!(
-                "No {} mount available, checking skopeo",
-                crate::podman::CONTAINER_STORAGE
-            );
-            require_skopeo_with_containers_storage()?;
-        }
-
-        Self::new(
-            imageref,
-            Some(digest),
-            root,
-            true,
-            have_host_container_storage,
-        )
+        Self::new(imageref, Some(digest), root, true)
     }
 
     #[context("Creating source info from a given imageref")]
     pub(crate) fn from_imageref(imageref: &str, root: &Dir) -> Result<Self> {
         let imageref = ostree_container::ImageReference::try_from(imageref)?;
-        Self::new(imageref, None, root, false, false)
+        Self::new(imageref, None, root, false)
     }
 
     fn have_selinux_from_repo(root: &Dir) -> Result<bool> {
@@ -573,7 +546,6 @@ impl SourceInfo {
         digest: Option<String>,
         root: &Dir,
         in_host_mountns: bool,
-        have_host_container_storage: bool,
     ) -> Result<Self> {
         let selinux = if Path::new("/ostree/repo").try_exists()? {
             Self::have_selinux_from_repo(root)?
@@ -585,7 +557,6 @@ impl SourceInfo {
             digest,
             selinux,
             in_host_mountns,
-            have_host_container_storage,
         })
     }
 }
@@ -716,19 +687,7 @@ async fn install_container(
             }
         };
 
-        // We need to fetch the container image from the root mount namespace.  If
-        // we don't have /var/lib/containers mounted in this image, fork off skopeo
-        // in the host mountnfs.
-        let skopeo_cmd = if !state.source.have_host_container_storage {
-            Some(run_in_host_mountns("skopeo"))
-        } else {
-            None
-        };
-        let proxy_cfg = ostree_container::store::ImageProxyConfig {
-            skopeo_cmd,
-            ..Default::default()
-        };
-
+        let proxy_cfg = ostree_container::store::ImageProxyConfig::default();
         (src_imageref, Some(proxy_cfg))
     };
     let src_imageref = ostree_container::OstreeImageReference {
@@ -893,32 +852,6 @@ pub(crate) fn exec_in_host_mountns(args: &[std::ffi::OsString]) -> Result<()> {
         rustix::process::chroot("/root").context("chroot")?;
     }
     Err(Command::new(cmd).args(args).exec()).context("exec")?
-}
-
-#[context("Querying skopeo version")]
-fn require_skopeo_with_containers_storage() -> Result<()> {
-    let out = Task::new_cmd("skopeo --version", run_in_host_mountns("skopeo"))
-        .args(["--version"])
-        .quiet()
-        .read()
-        .context("Failed to run skopeo (it currently must be installed in the host root)")?;
-    let mut v = out
-        .strip_prefix("skopeo version ")
-        .map(|v| v.split('.'))
-        .ok_or_else(|| anyhow::anyhow!("Unexpected output from skopeo version"))?;
-    let major = v
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("Missing major version"))?;
-    let minor = v
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("Missing minor version"))?;
-    let (major, minor) = (major.parse::<u64>()?, minor.parse::<u64>()?);
-    let supported = major > 1 || minor > 10;
-    if supported {
-        Ok(())
-    } else {
-        anyhow::bail!("skopeo >= 1.11 is required on host")
-    }
 }
 
 pub(crate) struct RootSetup {
