@@ -1716,6 +1716,14 @@ pub(crate) async fn install_to_filesystem(
         }
     }
 
+    // Check to see if this happens to be the real host root
+    if !fsopts.acknowledge_destructive {
+        let root_path = &fsopts.root_path;
+        let rootfs_fd = Dir::open_ambient_dir(root_path, cap_std::ambient_authority())
+            .with_context(|| format!("Opening target root directory {root_path}"))?;
+        warn_on_host_root(&rootfs_fd)?;
+    }
+
     // If we're installing to an ostree root, then find the physical root from
     // the deployment root.
     let possible_physical_root = fsopts.root_path.join("sysroot");
@@ -1740,11 +1748,6 @@ pub(crate) async fn install_to_filesystem(
         }
         rootfs_fd
     };
-
-    // Check to see if this happens to be the real host root
-    if !fsopts.acknowledge_destructive {
-        warn_on_host_root(&rootfs_fd)?;
-    }
 
     match fsopts.replace {
         Some(ReplaceMode::Wipe) => {
