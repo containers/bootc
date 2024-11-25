@@ -26,6 +26,14 @@ install:
 	  done
 	install -D -m 0644 -t $(DESTDIR)/$(prefix)/lib/systemd/system systemd/*.service systemd/*.timer
 
+# Run this to also take over the functionality of `ostree container` for example.
+# Only needed for OS/distros that have callers invoking `ostree container` and not bootc.
+install-ostree-hooks:
+	install -d $(DESTDIR)$(prefix)/libexec/libostree/ext
+	for x in ostree-container ostree-ima-sign ostree-provisional-repair; do \
+	  ln -sf ../../../bin/bootc $(DESTDIR)$(prefix)/libexec/libostree/ext/$$x; \
+	done
+
 install-with-tests: install
 	install -D -m 0755 target/release/tests-integration $(DESTDIR)$(prefix)/bin/bootc-integration-tests 
 
