@@ -234,8 +234,6 @@ case "$TEST_CASE" in
             --privileged \
             --pid=host \
             --security-opt label=type:unconfined_t \
-            -v /var/lib/containers:/var/lib/containers \
-            -v /dev:/dev \
             -v .:/output \
             "$TEST_IMAGE_URL" \
             bootc install to-disk --filesystem "$ROOTFS" --generic-image --via-loopback /output/disk.raw

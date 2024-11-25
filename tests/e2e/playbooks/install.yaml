@@ -54,9 +54,7 @@
          --privileged \
          --tls-verify=false \
          --pid=host \
-         -v /dev:/dev \
          -v /:/target \
-         -v /var/lib/containers:/var/lib/containers \
          --security-opt label=type:unconfined_t \
          {{ test_image_url }} \
          bootc install to-existing-root"
