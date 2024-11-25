@@ -1269,6 +1269,8 @@ async fn prepare_install(
     tracing::debug!("Target image reference: {target_imgref}");
 
     // A bit of basic global state setup
+    crate::mount::ensure_mirrored_host_mount("/dev")?;
+    crate::mount::ensure_mirrored_host_mount("/var/lib/containers")?;
     ensure_var()?;
     setup_tmp_mounts()?;
     // Allocate a temporary directory we can use in various places to avoid
@@ -1454,12 +1456,6 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
     tracing::debug!("boot uuid={boot_uuid}");
 
-    // If we're doing an alongside install, then the /dev bootupd sees needs to be the host's.
-    ensure!(
-        crate::mount::is_same_as_host(Utf8Path::new("/dev"))?,
-        "Missing /dev mount to host /dev"
-    );
-
     let bound_images = BoundImages::from_state(state).await?;
 
     // Initialize the ostree sysroot (repo, stateroot, etc.)
@@ -1513,9 +1509,6 @@ pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
                 "Not a regular file (to be used via loopback): {}",
                 block_opts.device
             );
-        }
-        if !crate::mount::is_same_as_host(Utf8Path::new("/dev"))? {
-            anyhow::bail!("Loopback mounts (--via-loopback) require host devices (-v /dev:/dev)");
         }
     } else if !target_blockdev_meta.file_type().is_block_device() {
         anyhow::bail!("Not a block device: {}", block_opts.device);
