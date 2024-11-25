@@ -40,7 +40,6 @@ use ostree_ext::ostree;
 use ostree_ext::prelude::Cast;
 use ostree_ext::sysroot::SysrootLock;
 use rustix::fs::{FileTypeExt, MetadataExt as _};
-use rustix::thread::Pid;
 use serde::{Deserialize, Serialize};
 
 use self::baseline::InstallBlockDeviceOpts;
@@ -1641,9 +1640,10 @@ pub(crate) async fn install_to_filesystem(
         && fsopts.root_path.as_str() == ALONGSIDE_ROOT_MOUNT
         && !fsopts.root_path.try_exists()?
     {
+        tracing::debug!("Mounting host / to {ALONGSIDE_ROOT_MOUNT}");
         std::fs::create_dir(ALONGSIDE_ROOT_MOUNT)?;
         crate::mount::bind_mount_from_pidns(
-            Pid::from_raw(1).unwrap(),
+            crate::mount::PID1,
             "/".into(),
             ALONGSIDE_ROOT_MOUNT.into(),
             true,

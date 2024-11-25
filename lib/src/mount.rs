@@ -23,6 +23,14 @@ use serde::Deserialize;
 
 use crate::task::Task;
 
+/// Well known identifier for pid 1
+pub(crate) const PID1: Pid = const {
+    match Pid::from_raw(1) {
+        Some(v) => v,
+        None => panic!("Expected to parse pid1"),
+    }
+};
+
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
 #[allow(dead_code)]
@@ -266,5 +274,5 @@ pub(crate) fn ensure_mirrored_host_mount(path: impl AsRef<Utf8Path>) -> Result<(
         return Ok(());
     }
     tracing::debug!("Propagating host mount: {path}");
-    bind_mount_from_pidns(Pid::from_raw(1).unwrap(), path, path, true)
+    bind_mount_from_pidns(PID1, path, path, true)
 }
