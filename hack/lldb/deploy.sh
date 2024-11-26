@@ -11,7 +11,7 @@ sudo podman build --build-arg "sshpubkey=$(cat ~/.ssh/id_rsa.pub)" -f Containerf
 mkdir -p ~/.cache/bootc-dev/disks
 rm -f ~/.cache/bootc-dev/disks/lldb.raw
 truncate -s 10G ~/.cache/bootc-dev/disks/lldb.raw
-sudo podman run --pid=host --network=host --privileged --security-opt label=type:unconfined_t -v ~/.cache/bootc-dev/disks:/output -v /dev:/dev localhost/bootc-lldb bootc install to-disk --via-loopback --generic-image --skip-fetch-check /output/lldb.raw
+sudo podman run --pid=host --network=host --privileged --security-opt label=type:unconfined_t -v ~/.cache/bootc-dev/disks:/output localhost/bootc-lldb bootc install to-disk --via-loopback --generic-image --skip-fetch-check /output/lldb.raw
 
 # create a new VM in libvirt
 set +e
