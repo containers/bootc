@@ -1126,7 +1126,7 @@ fn test_parse_generator() {
             "/usr/lib/systemd/system/bootc-systemd-generator",
             "/run/systemd/system"
         ]),
-        Opt::Internals(InternalsOpts::SystemdGenerator { .. })
+        Opt::Internals(InternalsOpts::SystemdGenerator { normal_dir, .. }) if normal_dir == "/run/systemd/system"
     ));
 }
 
