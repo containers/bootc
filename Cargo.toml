@@ -12,6 +12,19 @@ panic = "abort"
 # We assume we're being delivered via e.g. RPM which supports split debuginfo
 debug = true
 
+[profile.thin]
+# drop bootc size when split debuginfo is not available and go a step
+# further in size optimization (when tested from 140mb, to 12mb without 
+# symbols/debuginfo, to 5.8mb with extra optimizations)
+# https://github.com/johnthagen/min-sized-rust
+# cargo build --profile=thin
+inherits = "release"
+debug = false       # Re-strip debug symbols
+strip = true        # Strip symbols from binary
+lto = true          # Use full lto to remove dead code
+opt-level = 's'     # Optimize for size with vector vectorization
+codegen-units = 1   # Reduce number of codegen units to increase optimizations
+
 [profile.releaselto]
 codegen-units = 1
 inherits = "release"
