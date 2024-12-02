@@ -1,3 +1,5 @@
+//! Main integration tests that use the public APIs.
+
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use cap_std::fs::{Dir, DirBuilder, DirBuilderExt};
