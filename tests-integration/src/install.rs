@@ -11,15 +11,7 @@ use fn_error_context::context;
 use libtest_mimic::Trial;
 use xshell::{cmd, Shell};
 
-pub(crate) const BASE_ARGS: &[&str] = &[
-    "podman",
-    "run",
-    "--rm",
-    "--privileged",
-    "--pid=host",
-    "--security-opt",
-    "label=disable",
-];
+pub(crate) const BASE_ARGS: &[&str] = &["podman", "run", "--rm", "--privileged", "--pid=host"];
 
 // Arbitrary
 const NON_DEFAULT_STATEROOT: &str = "foo";
