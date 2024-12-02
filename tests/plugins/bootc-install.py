@@ -234,7 +234,6 @@ class ProvisionBootc(tmt.steps.provision.ProvisionPlugin[BootcData]):
         tmt.utils.Command(
             "podman", "run", "--rm", "--privileged",
             "-v", f'{CONTAINER_STORAGE_DIR}:{CONTAINER_STORAGE_DIR}',
-            "--security-opt", "label=type:unconfined_t",
             "-v", f"{self.workdir}:/output",
             image_builder, "build",
             "--type", "qcow2",
