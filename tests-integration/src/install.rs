@@ -16,10 +16,6 @@ pub(crate) const BASE_ARGS: &[&str] = &[
     "run",
     "--rm",
     "--privileged",
-    "-v",
-    "/dev:/dev",
-    "-v",
-    "/var/lib/containers:/var/lib/containers",
     "--pid=host",
     "--security-opt",
     "label=disable",
@@ -149,7 +145,7 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
         Trial::test("Install and verify selinux state", move || {
             let sh = &xshell::Shell::new()?;
             reset_root(sh, image)?;
-            cmd!(sh, "sudo {BASE_ARGS...} {target_args...} {image} bootc install to-existing-root --acknowledge-destructive {generic_inst_args...}").run()?;
+            cmd!(sh, "sudo {BASE_ARGS...} {image} bootc install to-existing-root --acknowledge-destructive {generic_inst_args...}").run()?;
             generic_post_install_verification()?;
             let root = &Dir::open_ambient_dir("/ostree", cap_std::ambient_authority()).unwrap();
             let mut path = PathBuf::from(".");
@@ -159,7 +155,7 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
         Trial::test("Install to non-default stateroot", move || {
             let sh = &xshell::Shell::new()?;
             reset_root(sh, image)?;
-            cmd!(sh, "sudo {BASE_ARGS...} {target_args...} {image} bootc install to-existing-root --stateroot {NON_DEFAULT_STATEROOT} --acknowledge-destructive {generic_inst_args...}").run()?;
+            cmd!(sh, "sudo {BASE_ARGS...} {image} bootc install to-existing-root --stateroot {NON_DEFAULT_STATEROOT} --acknowledge-destructive {generic_inst_args...}").run()?;
             generic_post_install_verification()?;
             assert!(
                 Utf8Path::new(&format!("/ostree/deploy/{NON_DEFAULT_STATEROOT}")).try_exists()?
@@ -171,7 +167,7 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
             reset_root(sh, image)?;
             let empty = sh.create_temp_dir()?;
             let empty = empty.path().to_str().unwrap();
-            cmd!(sh, "sudo {BASE_ARGS...} {target_args...} -v {empty}:/usr/lib/bootc/install {image} bootc install to-existing-root {generic_inst_args...}").run()?;
+            cmd!(sh, "sudo {BASE_ARGS...} -v {empty}:/usr/lib/bootc/install {image} bootc install to-existing-root {generic_inst_args...}").run()?;
             generic_post_install_verification()?;
             Ok(())
         }),

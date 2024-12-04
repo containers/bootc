@@ -56,6 +56,8 @@ use crate::utils::sigpolicy_from_opts;
 const BOOT: &str = "boot";
 /// Directory for transient runtime state
 const RUN_BOOTC: &str = "/run/bootc";
+/// The default path for the host rootfs
+const ALONGSIDE_ROOT_MOUNT: &str = "/target";
 /// This is an ext4 special directory we need to ignore.
 const LOST_AND_FOUND: &str = "lost+found";
 /// The filename of the composefs EROFS superblock; TODO move this into ostree
@@ -316,9 +318,10 @@ pub(crate) struct InstallToExistingRootOpts {
     #[clap(long)]
     pub(crate) acknowledge_destructive: bool,
 
-    /// Path to the mounted root; it's expected to invoke podman with
-    /// `-v /:/target`, then supplying this argument is unnecessary.
-    #[clap(default_value = "/target")]
+    /// Path to the mounted root; this is now not necessary to provide.
+    /// Historically it was necessary to ensure the host rootfs was mounted at here
+    /// via e.g. `-v /:/target`.
+    #[clap(default_value = ALONGSIDE_ROOT_MOUNT)]
     pub(crate) root_path: Utf8PathBuf,
 }
 
@@ -333,8 +336,6 @@ pub(crate) struct SourceInfo {
     pub(crate) selinux: bool,
     /// Whether the source is available in the host mount namespace
     pub(crate) in_host_mountns: bool,
-    /// Whether we were invoked with -v /var/lib/containers:/var/lib/containers
-    pub(crate) have_host_container_storage: bool,
 }
 
 // Shared read-only global state
@@ -516,38 +517,13 @@ impl SourceInfo {
         tracing::debug!("Finding digest for image ID {}", container_info.imageid);
         let digest = crate::podman::imageid_to_digest(&container_info.imageid)?;
 
-        let have_host_container_storage = Utf8Path::new(crate::podman::CONTAINER_STORAGE)
-            .try_exists()?
-            && ostree_ext::mountutil::is_mountpoint(
-                &root,
-                crate::podman::CONTAINER_STORAGE.trim_start_matches('/'),
-            )?
-            .unwrap_or_default();
-
-        // Verify up front we can do the fetch
-        if have_host_container_storage {
-            tracing::debug!("Host container storage found");
-        } else {
-            tracing::debug!(
-                "No {} mount available, checking skopeo",
-                crate::podman::CONTAINER_STORAGE
-            );
-            require_skopeo_with_containers_storage()?;
-        }
-
-        Self::new(
-            imageref,
-            Some(digest),
-            root,
-            true,
-            have_host_container_storage,
-        )
+        Self::new(imageref, Some(digest), root, true)
     }
 
     #[context("Creating source info from a given imageref")]
     pub(crate) fn from_imageref(imageref: &str, root: &Dir) -> Result<Self> {
         let imageref = ostree_container::ImageReference::try_from(imageref)?;
-        Self::new(imageref, None, root, false, false)
+        Self::new(imageref, None, root, false)
     }
 
     fn have_selinux_from_repo(root: &Dir) -> Result<bool> {
@@ -573,7 +549,6 @@ impl SourceInfo {
         digest: Option<String>,
         root: &Dir,
         in_host_mountns: bool,
-        have_host_container_storage: bool,
     ) -> Result<Self> {
         let selinux = if Path::new("/ostree/repo").try_exists()? {
             Self::have_selinux_from_repo(root)?
@@ -585,7 +560,6 @@ impl SourceInfo {
             digest,
             selinux,
             in_host_mountns,
-            have_host_container_storage,
         })
     }
 }
@@ -716,19 +690,7 @@ async fn install_container(
             }
         };
 
-        // We need to fetch the container image from the root mount namespace.  If
-        // we don't have /var/lib/containers mounted in this image, fork off skopeo
-        // in the host mountnfs.
-        let skopeo_cmd = if !state.source.have_host_container_storage {
-            Some(run_in_host_mountns("skopeo"))
-        } else {
-            None
-        };
-        let proxy_cfg = ostree_container::store::ImageProxyConfig {
-            skopeo_cmd,
-            ..Default::default()
-        };
-
+        let proxy_cfg = ostree_container::store::ImageProxyConfig::default();
         (src_imageref, Some(proxy_cfg))
     };
     let src_imageref = ostree_container::OstreeImageReference {
@@ -893,32 +855,6 @@ pub(crate) fn exec_in_host_mountns(args: &[std::ffi::OsString]) -> Result<()> {
         rustix::process::chroot("/root").context("chroot")?;
     }
     Err(Command::new(cmd).args(args).exec()).context("exec")?
-}
-
-#[context("Querying skopeo version")]
-fn require_skopeo_with_containers_storage() -> Result<()> {
-    let out = Task::new_cmd("skopeo --version", run_in_host_mountns("skopeo"))
-        .args(["--version"])
-        .quiet()
-        .read()
-        .context("Failed to run skopeo (it currently must be installed in the host root)")?;
-    let mut v = out
-        .strip_prefix("skopeo version ")
-        .map(|v| v.split('.'))
-        .ok_or_else(|| anyhow::anyhow!("Unexpected output from skopeo version"))?;
-    let major = v
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("Missing major version"))?;
-    let minor = v
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("Missing minor version"))?;
-    let (major, minor) = (major.parse::<u64>()?, minor.parse::<u64>()?);
-    let supported = major > 1 || minor > 10;
-    if supported {
-        Ok(())
-    } else {
-        anyhow::bail!("skopeo >= 1.11 is required on host")
-    }
 }
 
 pub(crate) struct RootSetup {
@@ -1269,6 +1205,8 @@ async fn prepare_install(
     tracing::debug!("Target image reference: {target_imgref}");
 
     // A bit of basic global state setup
+    crate::mount::ensure_mirrored_host_mount("/dev")?;
+    crate::mount::ensure_mirrored_host_mount("/var/lib/containers")?;
     ensure_var()?;
     setup_tmp_mounts()?;
     // Allocate a temporary directory we can use in various places to avoid
@@ -1454,12 +1392,6 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         .ok_or_else(|| anyhow!("No uuid for boot/root"))?;
     tracing::debug!("boot uuid={boot_uuid}");
 
-    // If we're doing an alongside install, then the /dev bootupd sees needs to be the host's.
-    ensure!(
-        crate::mount::is_same_as_host(Utf8Path::new("/dev"))?,
-        "Missing /dev mount to host /dev"
-    );
-
     let bound_images = BoundImages::from_state(state).await?;
 
     // Initialize the ostree sysroot (repo, stateroot, etc.)
@@ -1513,9 +1445,6 @@ pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
                 "Not a regular file (to be used via loopback): {}",
                 block_opts.device
             );
-        }
-        if !crate::mount::is_same_as_host(Utf8Path::new("/dev"))? {
-            anyhow::bail!("Loopback mounts (--via-loopback) require host devices (-v /dev:/dev)");
         }
     } else if !target_blockdev_meta.file_type().is_block_device() {
         anyhow::bail!("Not a block device: {}", block_opts.device);
@@ -1704,6 +1633,23 @@ pub(crate) async fn install_to_filesystem(
     let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
     // And the last bit of state here is the fsopts, which we also destructure now.
     let mut fsopts = opts.filesystem_opts;
+
+    // If we're doing an alongside install, automatically set up the host rootfs
+    // mount if it wasn't done already.
+    if targeting_host_root
+        && fsopts.root_path.as_str() == ALONGSIDE_ROOT_MOUNT
+        && !fsopts.root_path.try_exists()?
+    {
+        tracing::debug!("Mounting host / to {ALONGSIDE_ROOT_MOUNT}");
+        std::fs::create_dir(ALONGSIDE_ROOT_MOUNT)?;
+        crate::mount::bind_mount_from_pidns(
+            crate::mount::PID1,
+            "/".into(),
+            ALONGSIDE_ROOT_MOUNT.into(),
+            true,
+        )
+        .context("Mounting host / to {ALONGSIDE_ROOT_MOUNT}")?;
+    }
 
     // Check that the target is a directory
     {
