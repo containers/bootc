@@ -1,10 +1,8 @@
-environment+:
-  TMT_PLUGINS: ./tests/plugins
 provision:
   how: bootc
-  add_deps: false
-  containerfile: tests/containerfiles/lbi/Containerfile
-  containerfile_workdir: tests/containerfiles/lbi
+  add-tmt-dependencies: false
+  container-file: tests/containerfiles/lbi/Containerfile
+  container-file-workdir: tests/containerfiles/lbi
   disk: 20
 summary: Execute logically bound images tests for installing image
 execute:
