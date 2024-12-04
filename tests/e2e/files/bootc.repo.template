@@ -1,6 +1,0 @@
-[bootc]
-name=bootc
-baseurl=https://download.copr.fedorainfracloud.org/results/REPLACE_COPR_PROJECT/REPLACE_TEST_OS-$basearch/
-enabled=1
-gpgcheck=0
-repo_gpgcheck=0

@@ -1,9 +1,0 @@
-/to-existing-root:
-  summary: bootc install to-existing-root and bootc switch test
-  test: ./bootc-install.sh
-  duration: 90m
-
-/to-disk:
-  summary: bootc install to-disk and bootc upgrade test
-  test: ./bootc-install.sh
-  duration: 90m
