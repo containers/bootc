@@ -1,10 +1,17 @@
 //! Helpers for interacting with containers at runtime.
 
-use crate::keyfileext::KeyFileExt;
-use anyhow::Result;
-use ostree::glib;
+use std::io;
 use std::io::Read;
 use std::path::Path;
+
+use anyhow::Result;
+use ocidir::cap_std::fs::Dir;
+use ostree::glib;
+
+use crate::keyfileext::KeyFileExt;
+
+/// The relative path to the stamp file which signals this is an ostree-booted system.
+pub const OSTREE_BOOTED: &str = "run/ostree-booted";
 
 // See https://github.com/coreos/rpm-ostree/pull/3285#issuecomment-999101477
 // For compatibility with older ostree, we stick this in /sysroot where
@@ -64,6 +71,17 @@ pub fn is_bare_split_xattrs() -> Result<bool> {
     }
 }
 
+/// Returns true if the system appears to have been booted via ostree.
+/// This accesses global state in /run.
+pub fn ostree_booted() -> io::Result<bool> {
+    Path::new(&format!("/{OSTREE_BOOTED}")).try_exists()
+}
+
+/// Returns true if the target root appears to have been booted via ostree.
+pub fn is_ostree_booted_in(rootfs: &Dir) -> io::Result<bool> {
+    rootfs.try_exists(OSTREE_BOOTED)
+}
+
 /// Returns `true` if the current booted filesystem appears to be an ostree-native container.
 ///
 /// This just invokes [`is_bare_split_xattrs`] and [`running_in_container`].
@@ -73,8 +91,7 @@ pub fn is_ostree_container() -> Result<bool> {
     // If we have a container-ostree repo format, then we'll assume we're
     // running in a container unless there's strong evidence not (we detect
     // we're part of a systemd unit or are in a booted ostree system).
-    let maybe_container = running_in_container()
-        || (!running_in_systemd && !Path::new("/run/ostree-booted").exists());
+    let maybe_container = running_in_container() || (!running_in_systemd && !ostree_booted()?);
     Ok(is_container_ostree && maybe_container)
 }
 
