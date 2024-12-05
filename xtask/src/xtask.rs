@@ -219,10 +219,7 @@ fn test_tmt(sh: &Shell) -> Result<()> {
             None
         };
 
-        if let Err(e) = cmd!(sh, "tmt {verbose...} run plans -n {name}")
-            .env("TMT_PLUGINS", "./tests/plugins")
-            .run()
-        {
+        if let Err(e) = cmd!(sh, "tmt {verbose...} run plans -n {name}").run() {
             // tmt annoyingly does not output errors by default
             let _ = cmd!(sh, "tmt run -l report -vvv").run();
             return Err(e.into());
