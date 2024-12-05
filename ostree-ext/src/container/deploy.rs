@@ -1,9 +1,13 @@
 //! Perform initial setup for a container image based system root
 
 use std::collections::HashSet;
+use std::os::fd::BorrowedFd;
+use std::process::Command;
 
 use anyhow::Result;
+use cap_std_ext::cmdext::CapStdExtCommandExt;
 use fn_error_context::context;
+use ocidir::cap_std::fs::Dir;
 use ostree::glib;
 
 use super::store::{gc_image_layers, LayeredImageState};
@@ -44,8 +48,17 @@ pub struct DeployOpts<'a> {
     /// it will not be necessary to remove the previous image.
     pub no_imgref: bool,
 
+    /// Do not invoke bootc completion
+    pub skip_completion: bool,
+
     /// Do not cleanup deployments
     pub no_clean: bool,
+}
+
+// Access the file descriptor for a sysroot
+#[allow(unsafe_code)]
+pub(crate) fn sysroot_fd(sysroot: &ostree::Sysroot) -> BorrowedFd {
+    unsafe { BorrowedFd::borrow_raw(sysroot.fd()) }
 }
 
 /// Write a container image to an OSTree deployment.
@@ -58,6 +71,7 @@ pub async fn deploy(
     imgref: &OstreeImageReference,
     options: Option<DeployOpts<'_>>,
 ) -> Result<Box<LayeredImageState>> {
+    let sysroot_dir = &Dir::reopen_dir(&sysroot_fd(sysroot))?;
     let cancellable = ostree::gio::Cancellable::NONE;
     let options = options.unwrap_or_default();
     let repo = &sysroot.repo();
@@ -122,6 +136,24 @@ pub async fn deploy(
             flags,
             cancellable,
         )?;
+
+        // We end up re-executing ourselves as a subprocess because
+        // otherwise right now we end up with a circular dependency between
+        // crates. We need an option to skip though so when the *main*
+        // bootc install code calls this API, we don't do this as it
+        // will have already been handled.
+        if !options.skip_completion {
+            // Note that the sysroot is provided as `.`  but we use cwd_dir to
+            // make the process current working directory the sysroot.
+            let st = Command::new("/proc/self/exe")
+                .args(["internals", "bootc-install-completion", ".", stateroot])
+                .cwd_dir(sysroot_dir.try_clone()?)
+                .status()?;
+            if !st.success() {
+                anyhow::bail!("Failed to complete bootc install");
+            }
+        }
+
         if !options.no_clean {
             sysroot.cleanup(cancellable)?;
         }

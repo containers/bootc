@@ -182,6 +182,15 @@ pub(crate) enum InstallOpts {
     /// will be wiped, but the content of the existing root will otherwise be retained, and will
     /// need to be cleaned up if desired when rebooted into the new root.
     ToExistingRoot(crate::install::InstallToExistingRootOpts),
+    /// Intended for use in environments that are performing an ostree-based installation, not bootc.
+    ///
+    /// In this scenario the installation may be missing bootc specific features such as
+    /// kernel arguments, logically bound images and more. This command can be used to attempt
+    /// to reconcile. At the current time, the only tested environment is Anaconda using `ostreecontainer`
+    /// and it is recommended to avoid usage outside of that environment. Instead, ensure your
+    /// code is using `bootc install to-filesystem` from the start.
+    #[clap(hide = true)]
+    EnsureCompletion {},
     /// Output JSON to stdout that contains the merged installation configuration
     /// as it may be relevant to calling processes using `install to-filesystem`
     /// that in particular want to discover the desired root filesystem type from the container image.
@@ -345,6 +354,15 @@ pub(crate) enum InternalsOpts {
     OstreeContainer {
         #[clap(allow_hyphen_values = true)]
         args: Vec<OsString>,
+    },
+    #[cfg(feature = "install")]
+    /// Invoked from ostree-ext to complete an installation.
+    BootcInstallCompletion {
+        /// Path to the sysroot
+        sysroot: Utf8PathBuf,
+
+        // The stateroot
+        stateroot: String,
     },
 }
 
@@ -989,6 +1007,10 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 crate::install::install_to_existing_root(opts).await
             }
             InstallOpts::PrintConfiguration => crate::install::print_configuration(),
+            InstallOpts::EnsureCompletion {} => {
+                let rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+                crate::install::completion::run_from_anaconda(rootfs).await
+            }
         },
         #[cfg(feature = "install")]
         Opt::ExecInHostMountNamespace { args } => {
@@ -1025,6 +1047,11 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             InternalsOpts::Cleanup => {
                 let sysroot = get_storage().await?;
                 crate::deploy::cleanup(&sysroot).await
+            }
+            #[cfg(feature = "install")]
+            InternalsOpts::BootcInstallCompletion { sysroot, stateroot } => {
+                let rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+                crate::install::completion::run_from_ostree(rootfs, &sysroot, &stateroot).await
             }
         },
         #[cfg(feature = "docgen")]
