@@ -200,8 +200,6 @@ fn test_tmt(sh: &Shell) -> Result<()> {
         }
     }
 
-    cmd!(sh, "cargo run -p tests-integration run-vm prepare-tmt").run()?;
-
     // pull some small images that are used for LBI installation tests
     cmd!(sh, "podman pull {TEST_IMAGES...}").run()?;
 
