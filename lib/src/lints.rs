@@ -15,7 +15,7 @@ use fn_error_context::context;
 /// if it does not exist error.
 #[context("Linting")]
 pub(crate) fn lint(root: &Dir) -> Result<()> {
-    let lints = [check_var_run, check_kernel, check_parse_kargs];
+    let lints = [check_var_run, check_kernel, check_parse_kargs, check_usretc];
     for lint in lints {
         lint(&root)?;
     }
@@ -28,6 +28,21 @@ fn check_var_run(root: &Dir) -> Result<()> {
         if !meta.is_symlink() {
             anyhow::bail!("Not a symlink: var/run");
         }
+    }
+    Ok(())
+}
+
+fn check_usretc(root: &Dir) -> Result<()> {
+    let etc_exists = root.symlink_metadata_optional("etc")?.is_some();
+    // For compatibility/conservatism don't bomb out if there's no /etc.
+    if !etc_exists {
+        return Ok(());
+    }
+    // But having both /etc and /usr/etc is not something we want to support.
+    if root.symlink_metadata_optional("usr/etc")?.is_some() {
+        anyhow::bail!(
+            "Found /usr/etc - this is a bootc implementation detail and not supported to use in containers"
+        );
     }
     Ok(())
 }
@@ -86,5 +101,19 @@ fn test_kargs() -> Result<()> {
     root.create_dir_all("usr/lib/bootc")?;
     root.write("usr/lib/bootc/kargs.d", "not a directory")?;
     assert!(check_parse_kargs(root).is_err());
+    Ok(())
+}
+
+#[test]
+fn test_usr_etc() -> Result<()> {
+    let root = &fixture()?;
+    // This one should pass
+    check_usretc(root).unwrap();
+    root.create_dir_all("etc")?;
+    root.create_dir_all("usr/etc")?;
+    assert!(check_usretc(root).is_err());
+    root.remove_dir_all("etc")?;
+    // Now we should pass again
+    check_usretc(root).unwrap();
     Ok(())
 }
