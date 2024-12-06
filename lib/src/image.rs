@@ -105,6 +105,7 @@ pub(crate) async fn list_entrypoint(
 
             table
                 .load_preset(NOTHING)
+                .set_content_arrangement(comfy_table::ContentArrangement::Dynamic)
                 .set_header(["REPOSITORY", "TYPE"]);
 
             for image in images {

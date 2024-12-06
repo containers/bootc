@@ -24,6 +24,7 @@ chrono = { workspace = true }
 olpc-cjson = "0.1.1"
 clap = { workspace = true, features = ["derive","cargo"] }
 clap_mangen = { workspace = true, optional = true }
+comfy-table = "7.1.1"
 cap-std-ext = { workspace = true, features = ["fs_utf8"] }
 flate2 = { features = ["zlib"], default-features = false, version = "1.0.20" }
 fn-error-context = { workspace = true }
@@ -44,7 +45,6 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tar = "0.4.43"
 tempfile = { workspace = true }
-terminal_size = "0.3"
 tokio = { workspace = true, features = ["io-std", "time", "process", "rt", "net"] }
 tokio-util = { workspace = true }
 tokio-stream = { features = ["sync"], version = "0.1.8" }
