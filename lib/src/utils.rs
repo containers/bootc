@@ -117,16 +117,12 @@ pub(crate) fn spawn_editor(tmpf: &tempfile::NamedTempFile) -> Result<()> {
     let argv0 = editor_args
         .next()
         .ok_or_else(|| anyhow::anyhow!("Invalid editor: {editor}"))?;
-    let status = Command::new(argv0)
+    Command::new(argv0)
         .args(editor_args)
         .arg(tmpf.path())
         .lifecycle_bind()
-        .status()
-        .context("Spawning editor")?;
-    if !status.success() {
-        anyhow::bail!("Invoking editor: {editor} failed: {status:?}");
-    }
-    Ok(())
+        .run()
+        .with_context(|| format!("Invoking editor {editor} failed"))
 }
 
 /// Convert a combination of values (likely from CLI parsing) into a signature source
