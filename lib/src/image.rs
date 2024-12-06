@@ -105,10 +105,10 @@ pub(crate) async fn list_entrypoint(
 
             table
                 .load_preset(NOTHING)
-                .set_header(vec!["REPOSITORY", "TYPE"]);
+                .set_header(["REPOSITORY", "TYPE"]);
 
             for image in images {
-                table.add_row(vec![image.image, image.image_type.to_string()]);
+                table.add_row([image.image, image.image_type.to_string()]);
             }
 
             println!("{table}");

@@ -518,7 +518,7 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
             .cmd()
             .as_ref()
             .unwrap()
-            .get(0)
+            .first()
             .as_ref()
             .unwrap()
             .as_str(),
@@ -671,7 +671,7 @@ async fn test_export_as_container_derived() -> Result<()> {
     let srcpath = src_imgref.name.as_str();
     fixture.generate_test_derived_oci(srcpath, Some(&derived_tag))?;
     let derived_imgref = ImageReference {
-        transport: src_imgref.transport.clone(),
+        transport: src_imgref.transport,
         name: format!("{}:{derived_tag}", src_imgref.name.as_str()),
     };
 

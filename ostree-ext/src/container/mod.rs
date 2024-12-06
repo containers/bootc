@@ -387,7 +387,7 @@ impl<'a> ManifestDiff<'a> {
     }
 }
 
-impl<'a> ManifestDiff<'a> {
+impl ManifestDiff<'_> {
     /// Prints the total, removed and added content between two OCI images
     pub fn print(&self) {
         let print_total = self.total;

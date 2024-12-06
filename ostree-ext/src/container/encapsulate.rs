@@ -392,7 +392,7 @@ pub struct ExportOpts<'m, 'o> {
     pub created: Option<String>,
 }
 
-impl<'m, 'o> ExportOpts<'m, 'o> {
+impl ExportOpts<'_, '_> {
     /// Return the gzip compression level to use, as configured by the export options.
     fn compression(&self) -> Compression {
         if self.skip_compression {

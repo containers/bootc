@@ -184,7 +184,7 @@ enabled = false
     for v in ["", d0, d1, d2] {
         let kf = glib::KeyFile::new();
         kf.load_from_data(v, glib::KeyFileFlags::empty()).unwrap();
-        assert_eq!(overlayfs_enabled_in_config(&kf).unwrap(), false);
+        assert!(!overlayfs_enabled_in_config(&kf).unwrap());
     }
 
     let e0 = format!("{d0}\n[root]\ntransient = true");
@@ -194,6 +194,6 @@ enabled = false
     for v in [e0, e1, e2, e3] {
         let kf = glib::KeyFile::new();
         kf.load_from_data(&v, glib::KeyFileFlags::empty()).unwrap();
-        assert_eq!(overlayfs_enabled_in_config(&kf).unwrap(), true);
+        assert!(overlayfs_enabled_in_config(&kf).unwrap());
     }
 }

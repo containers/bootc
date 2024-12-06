@@ -866,13 +866,12 @@ mod test {
             })
             .collect();
 
-        let image_manifest = oci_spec::image::ImageManifestBuilder::default()
+        oci_spec::image::ImageManifestBuilder::default()
             .schema_version(oci_spec::image::SCHEMA_VERSION)
             .config(config)
             .layers(layers)
             .build()
-            .expect("build image manifest");
-        image_manifest
+            .expect("build image manifest")
     }
 
     #[test]

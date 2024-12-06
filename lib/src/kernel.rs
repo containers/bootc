@@ -40,7 +40,7 @@ pub(crate) fn find_first_cmdline_arg<'a>(
 #[test]
 fn test_find_first() {
     let kargs = &["foo=bar", "root=/dev/vda", "blah", "root=/dev/other"];
-    let kargs = || kargs.iter().map(|&s| s);
+    let kargs = || kargs.iter().copied();
     assert_eq!(find_first_cmdline_arg(kargs(), "root"), Some("/dev/vda"));
     assert_eq!(find_first_cmdline_arg(kargs(), "nonexistent"), None);
 }

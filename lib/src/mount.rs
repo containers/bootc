@@ -163,7 +163,7 @@ pub(crate) fn open_tree_from_pidns(
         None,
     )
     .context("socketpair")?;
-    const DUMMY_DATA: &[u8] = &[b'!'];
+    const DUMMY_DATA: &[u8] = b"!";
     match unsafe { libc::fork() } {
         0 => {
             // We're in the child. At this point we know we don't have multiple threads, so we
