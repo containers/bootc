@@ -857,10 +857,10 @@ async fn edit(opts: EditOpts) -> Result<()> {
 async fn usroverlay() -> Result<()> {
     // This is just a pass-through today.  At some point we may make this a libostree API
     // or even oxidize it.
-    return Err(Command::new("ostree")
+    Err(Command::new("ostree")
         .args(["admin", "unlock"])
         .exec()
-        .into());
+        .into())
 }
 
 /// Perform process global initialization. This should be called as early as possible
@@ -931,7 +931,7 @@ impl Opt {
                 _ => None,
             };
             if let Some(base_args) = mapped {
-                let base_args = base_args.into_iter().map(OsString::from);
+                let base_args = base_args.iter().map(OsString::from);
                 return Opt::parse_from(base_args.chain(args.map(|i| i.into())));
             }
             Some(first)

@@ -136,7 +136,7 @@ impl FileDef {
         h.set_mtime(0);
         h.set_uid(self.uid.into());
         h.set_gid(self.gid.into());
-        h.set_mode(self.mode.into());
+        h.set_mode(self.mode);
         match &self.ty {
             FileDefType::Regular(data) => {
                 let data = data.as_bytes();

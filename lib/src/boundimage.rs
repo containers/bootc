@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn test_parse_spec_dir() -> Result<()> {
-        const CONTAINER_IMAGE_DIR: &'static str = "usr/share/containers/systemd";
+        const CONTAINER_IMAGE_DIR: &str = "usr/share/containers/systemd";
 
         // Empty dir should return an empty vector
         let td = &cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;

@@ -83,7 +83,7 @@ struct Renamer<'d> {
     to: &'static Utf8Path,
 }
 
-impl<'d> Renamer<'d> {
+impl Renamer<'_> {
     fn _impl_drop(&mut self) -> Result<()> {
         self.dir
             .rename(self.from, self.dir, self.to)
@@ -95,7 +95,7 @@ impl<'d> Renamer<'d> {
     }
 }
 
-impl<'d> Drop for Renamer<'d> {
+impl Drop for Renamer<'_> {
     fn drop(&mut self) {
         let _ = self._impl_drop();
     }
