@@ -2,6 +2,7 @@
 
 use std::{
     io::{Read, Seek},
+    os::unix::process::CommandExt,
     process::Command,
 };
 
@@ -14,6 +15,9 @@ pub trait CommandRunExt {
 
     /// Execute the child process.
     fn run(&mut self) -> Result<()>;
+
+    /// Ensure the child does not outlive the parent.
+    fn lifecycle_bind(&mut self) -> &mut Self;
 
     /// Execute the child process and capture its output. This uses `run` internally
     /// and will return an error if the child process exits abnormally.
@@ -82,6 +86,19 @@ impl CommandRunExt for Command {
         self.stderr(stderr.try_clone()?);
         tracing::trace!("exec: {self:?}");
         self.status()?.check_status(stderr)
+    }
+
+    #[allow(unsafe_code)]
+    fn lifecycle_bind(&mut self) -> &mut Self {
+        // SAFETY: This API is safe to call in a forked child.
+        unsafe {
+            self.pre_exec(|| {
+                rustix::process::set_parent_process_death_signal(Some(
+                    rustix::process::Signal::Term,
+                ))
+                .map_err(Into::into)
+            })
+        }
     }
 
     /// Output a debug-level log message with this command.

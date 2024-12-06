@@ -5,6 +5,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use bootc_utils::CommandRunExt;
 #[cfg(feature = "install")]
 use camino::Utf8Path;
 use cap_std_ext::cap_std::fs::Dir;
@@ -119,6 +120,7 @@ pub(crate) fn spawn_editor(tmpf: &tempfile::NamedTempFile) -> Result<()> {
     let status = Command::new(argv0)
         .args(editor_args)
         .arg(tmpf.path())
+        .lifecycle_bind()
         .status()
         .context("Spawning editor")?;
     if !status.success() {

@@ -840,7 +840,8 @@ async fn install_container(
 /// Run a command in the host mount namespace
 pub(crate) fn run_in_host_mountns(cmd: &str) -> Command {
     let mut c = Command::new("/proc/self/exe");
-    c.args(["exec-in-host-mount-namespace", cmd]);
+    c.lifecycle_bind()
+        .args(["exec-in-host-mount-namespace", cmd]);
     c
 }
 
