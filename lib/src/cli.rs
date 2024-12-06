@@ -17,6 +17,7 @@ use fn_error_context::context;
 use ostree::gio;
 use ostree_container::store::PrepareResult;
 use ostree_ext::container as ostree_container;
+use ostree_ext::container_utils::ostree_booted;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
 use schemars::schema_for;
@@ -611,9 +612,10 @@ fn prepare_for_write() -> Result<()> {
     if ostree_ext::container_utils::running_in_container() {
         anyhow::bail!("Detected container; this command requires a booted host system.");
     }
-    if !std::path::Path::new("/run/ostree-booted").exists() {
-        anyhow::bail!("This command requires an ostree-booted host system");
-    }
+    anyhow::ensure!(
+        ostree_booted()?,
+        "This command requires an ostree-booted host system"
+    );
     crate::cli::require_root()?;
     ensure_self_unshared_mount_namespace()?;
     if crate::lsm::selinux_enabled()? && !crate::lsm::selinux_ensure_install()? {

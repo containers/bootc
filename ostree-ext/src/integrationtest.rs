@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::container_utils::is_ostree_container;
+use crate::container_utils::{is_ostree_container, ostree_booted};
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
 use cap_std::fs::Dir;
@@ -21,7 +21,7 @@ use xshell::cmd;
 pub(crate) fn detectenv() -> Result<&'static str> {
     let r = if is_ostree_container()? {
         "ostree-container"
-    } else if Path::new("/run/ostree-booted").exists() {
+    } else if ostree_booted()? {
         "ostree"
     } else if crate::container_utils::running_in_container() {
         "container"

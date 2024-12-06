@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use cap_std::fs::Dir;
 use cap_std_ext::{cap_std, dirext::CapStdExtDirExt};
 use fn_error_context::context;
+use ostree_ext::container_utils::is_ostree_booted_in;
 use rustix::{fd::AsFd, fs::StatVfsMountFlags};
 
 const EDIT_UNIT: &str = "bootc-fstab-edit.service";
@@ -14,7 +15,7 @@ pub(crate) const BOOTC_EDITED_STAMP: &str = "Updated by bootc-fstab-edit.service
 #[context("bootc generator")]
 pub(crate) fn fstab_generator_impl(root: &Dir, unit_dir: &Dir) -> Result<bool> {
     // Do nothing if not ostree-booted
-    if !root.try_exists("run/ostree-booted")? {
+    if !is_ostree_booted_in(root)? {
         return Ok(false);
     }
 
@@ -105,31 +106,37 @@ fn test_generator_no_fstab() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_generator_fstab() -> Result<()> {
-    let tempdir = fixture()?;
-    let unit_dir = &tempdir.open_dir("run/systemd/system")?;
-    // Should still be a no-op
-    tempdir.atomic_write("etc/fstab", "# Some dummy fstab")?;
-    fstab_generator_impl(&tempdir, &unit_dir).unwrap();
-    assert_eq!(unit_dir.entries()?.count(), 0);
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    // Also a no-op, not booted via ostree
-    tempdir.atomic_write("etc/fstab", &format!("# {FSTAB_ANACONDA_STAMP}"))?;
-    fstab_generator_impl(&tempdir, &unit_dir).unwrap();
-    assert_eq!(unit_dir.entries()?.count(), 0);
+    use ostree_ext::container_utils::OSTREE_BOOTED;
 
-    // Now it should generate
-    tempdir.atomic_write("run/ostree-booted", "ostree booted")?;
-    fstab_generator_impl(&tempdir, &unit_dir).unwrap();
-    assert_eq!(unit_dir.entries()?.count(), 2);
+    #[test]
+    fn test_generator_fstab() -> Result<()> {
+        let tempdir = fixture()?;
+        let unit_dir = &tempdir.open_dir("run/systemd/system")?;
+        // Should still be a no-op
+        tempdir.atomic_write("etc/fstab", "# Some dummy fstab")?;
+        fstab_generator_impl(&tempdir, &unit_dir).unwrap();
+        assert_eq!(unit_dir.entries()?.count(), 0);
 
-    Ok(())
-}
+        // Also a no-op, not booted via ostree
+        tempdir.atomic_write("etc/fstab", &format!("# {FSTAB_ANACONDA_STAMP}"))?;
+        fstab_generator_impl(&tempdir, &unit_dir).unwrap();
+        assert_eq!(unit_dir.entries()?.count(), 0);
 
-#[test]
-fn test_generator_fstab_idempotent() -> Result<()> {
-    let anaconda_fstab = indoc::indoc! { "
+        // Now it should generate
+        tempdir.atomic_write(OSTREE_BOOTED, "ostree booted")?;
+        fstab_generator_impl(&tempdir, &unit_dir).unwrap();
+        assert_eq!(unit_dir.entries()?.count(), 2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generator_fstab_idempotent() -> Result<()> {
+        let anaconda_fstab = indoc::indoc! { "
 #
 # /etc/fstab
 # Created by anaconda on Tue Mar 19 12:24:29 2024
@@ -144,14 +151,15 @@ fn test_generator_fstab_idempotent() -> Result<()> {
 UUID=715be2b7-c458-49f2-acec-b2fdb53d9089 /                       xfs     ro              0 0
 UUID=341c4712-54e8-4839-8020-d94073b1dc8b /boot                   xfs     defaults        0 0
 " };
-    let tempdir = fixture()?;
-    let unit_dir = &tempdir.open_dir("run/systemd/system")?;
+        let tempdir = fixture()?;
+        let unit_dir = &tempdir.open_dir("run/systemd/system")?;
 
-    tempdir.atomic_write("etc/fstab", anaconda_fstab)?;
-    tempdir.atomic_write("run/ostree-booted", "ostree booted")?;
-    let updated = fstab_generator_impl(&tempdir, &unit_dir).unwrap();
-    assert!(!updated);
-    assert_eq!(unit_dir.entries()?.count(), 0);
+        tempdir.atomic_write("etc/fstab", anaconda_fstab)?;
+        tempdir.atomic_write(OSTREE_BOOTED, "ostree booted")?;
+        let updated = fstab_generator_impl(&tempdir, &unit_dir).unwrap();
+        assert!(!updated);
+        assert_eq!(unit_dir.entries()?.count(), 0);
 
-    Ok(())
+        Ok(())
+    }
 }

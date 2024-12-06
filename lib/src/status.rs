@@ -5,11 +5,11 @@ use std::io::Read;
 use std::io::Write;
 
 use anyhow::{Context, Result};
-use camino::Utf8Path;
 use fn_error_context::context;
 use ostree::glib;
 use ostree_container::OstreeImageReference;
 use ostree_ext::container as ostree_container;
+use ostree_ext::container_utils::ostree_booted;
 use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::oci_spec;
 use ostree_ext::ostree;
@@ -294,7 +294,7 @@ pub(crate) async fn status(opts: super::cli::StatusOpts) -> Result<()> {
         0 | 1 => {}
         o => anyhow::bail!("Unsupported format version: {o}"),
     };
-    let host = if !Utf8Path::new("/run/ostree-booted").try_exists()? {
+    let host = if !ostree_booted()? {
         Default::default()
     } else {
         let sysroot = super::cli::get_storage().await?;
