@@ -899,35 +899,15 @@ async fn container_store(
     Ok(())
 }
 
-fn print_column(s: &str, clen: u16, remaining: &mut terminal_size::Width) {
-    let l: u16 = s.chars().count().try_into().unwrap();
-    let l = l.min(remaining.0);
-    print!("{}", &s[0..l as usize]);
-    if clen > 0 {
-        // We always want two trailing spaces
-        let pad = clen.saturating_sub(l) + 2;
-        for _ in 0..pad {
-            print!(" ");
-        }
-        remaining.0 = remaining.0.checked_sub(l + pad).unwrap();
-    }
-}
-
 /// Output the container image history
 async fn container_history(repo: &ostree::Repo, imgref: &ImageReference) -> Result<()> {
     let img = crate::container::store::query_image(repo, imgref)?
         .ok_or_else(|| anyhow::anyhow!("No such image: {}", imgref))?;
-    let columns = [("ID", 20u16), ("SIZE", 10), ("CREATED BY", 0)];
-    let width = terminal_size::terminal_size()
-        .map(|x| x.0)
-        .unwrap_or(terminal_size::Width(80));
-    {
-        let mut remaining = width;
-        for (name, width) in columns.iter() {
-            print_column(name, *width, &mut remaining);
-        }
-        println!();
-    }
+    let mut table = comfy_table::Table::new();
+    table
+        .load_preset(comfy_table::presets::NOTHING)
+        .set_content_arrangement(comfy_table::ContentArrangement::Dynamic)
+        .set_header(["ID", "SIZE", "CRCEATED BY"]);
 
     let mut history = img.configuration.history().iter();
     let layers = img.manifest.layers().iter();
@@ -937,19 +917,15 @@ async fn container_history(repo: &ostree::Repo, imgref: &ImageReference) -> Resu
             .and_then(|s| s.created_by().as_deref())
             .unwrap_or("");
 
-        let mut remaining = width;
-
         let digest = layer.digest().digest();
         // Verify it's OK to slice, this should all be ASCII
         assert!(digest.is_ascii());
-        let digest_max = columns[0].1;
-        let digest = &digest[0..digest_max as usize];
-        print_column(digest, digest_max, &mut remaining);
+        let digest_max = 20usize;
+        let digest = &digest[0..digest_max];
         let size = glib::format_size(layer.size());
-        print_column(size.as_str(), columns[1].1, &mut remaining);
-        print_column(created_by, columns[2].1, &mut remaining);
-        println!();
+        table.add_row([digest, size.as_str(), created_by]);
     }
+    println!("{table}");
     Ok(())
 }
 
