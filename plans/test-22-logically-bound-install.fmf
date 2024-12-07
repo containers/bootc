@@ -1,8 +1,9 @@
 provision:
   how: bootc
-  add-tmt-dependencies: false
+  add-tmt-dependencies: true
   container-file: tests/containerfiles/lbi/Containerfile
-  container-file-workdir: tests/containerfiles/lbi
+  container-file-workdir: .
+  image-builder: quay.io/centos-bootc/bootc-image-builder:latest
   disk: 20
 summary: Execute logically bound images tests for installing image
 execute:
