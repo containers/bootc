@@ -16,11 +16,11 @@ jobs:
     container: quay.io/centos/centos:stream9
     steps:
       - run: dnf -y install git-core
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           repository: containers/bootc
           path: bootc
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           path: ostree-rs-ext
       - name: Patch bootc to use ostree-rs-ext
