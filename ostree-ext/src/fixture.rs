@@ -244,7 +244,7 @@ impl SeLabel {
         } else if rootdir == "boot" {
             SeLabel::Boot
         } else if rootdir == "etc" {
-            if p.as_str().len() % 2 == 0 {
+            if p.as_str().as_bytes().len() % 2 == 0 {
                 SeLabel::Etc
             } else {
                 SeLabel::EtcSystemConf
