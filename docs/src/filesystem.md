@@ -95,6 +95,13 @@ would require external intervention to apply.
 
 For more on configuration file best practices, see [Building](building/guidance.md).
 
+### `/usr/etc`
+
+The `/usr/etc` tree is generated client side and contains the default container image's
+view of `/etc`. This should generally be considered an internal implmentation detail
+of bootc/ostree. Do *not* explicitly put files into this location, it can create
+undefined behavior. There is a check for this in `bootc container lint`.
+
 ## `/var`
 
 Content in `/var` persists by default; it is however supported to make it or subdirectories
