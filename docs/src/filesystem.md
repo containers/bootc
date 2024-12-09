@@ -186,12 +186,14 @@ To do this, set the
 transient = true
 ```
 
-option in `prepare-root.conf`.  In particular this will allow software to
+option in `/usr/lib/ostree/prepare-root.conf`.  In particular this will allow software to
 write (transiently, i.e. until the next reboot) to all top-level directories,
 including `/usr` and `/opt`, with symlinks to `/var` for content that should
 persist.
 
 This can be combined with `etc.transient` as well (below).
+
+More on prepare-root: <https://ostreedev.github.io/ostree/man/ostree-prepare-root.html>
 
 ## Enabling transient etc
 
@@ -205,9 +207,11 @@ the
 transient = true
 ```
 
-option in `prepare-root.conf`.
+option in `/usr/lib/ostree/prepare-root.conf`.
 
 This can be combined with `root.transient` as well (above).
+
+More on prepare-root: <https://ostreedev.github.io/ostree/man/ostree-prepare-root.html>
 
 ## Enabling state overlays
 
