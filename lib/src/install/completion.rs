@@ -197,7 +197,7 @@ pub(crate) async fn run_from_anaconda(rootfs: &Dir) -> Result<()> {
     // unshare our mount namespace, so any *further* mounts aren't leaked.
     // Note that because this does a re-exec, anything *before* this point
     // should be idempotent.
-    crate::cli::require_root()?;
+    crate::cli::require_root(false)?;
     crate::cli::ensure_self_unshared_mount_namespace()?;
 
     if std::env::var_os(ANACONDA_ENV_HINT).is_none() {
@@ -245,7 +245,7 @@ pub(crate) async fn run_from_anaconda(rootfs: &Dir) -> Result<()> {
 
 /// From ostree-rs-ext, run through the rest of bootc install functionality
 pub async fn run_from_ostree(rootfs: &Dir, sysroot: &Utf8Path, stateroot: &str) -> Result<()> {
-    crate::cli::require_root()?;
+    crate::cli::require_root(false)?;
     // Load sysroot from the provided path
     let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(sysroot)));
     sysroot.load(gio::Cancellable::NONE)?;

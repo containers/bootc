@@ -1003,7 +1003,7 @@ pub(crate) fn finalize_filesystem(
 /// A heuristic check that we were invoked with --pid=host
 fn require_host_pidns() -> Result<()> {
     if rustix::process::getpid().is_init() {
-        anyhow::bail!("This command must be run with --pid=host")
+        anyhow::bail!("This command must be run with the podman --pid=host flag")
     }
     tracing::trace!("OK: we're not pid 1");
     Ok(())
@@ -1019,9 +1019,7 @@ fn require_host_userns() -> Result<()> {
         .uid();
     // We must really be in a rootless container, or in some way
     // we're not part of the host user namespace.
-    if pid1_uid != 0 {
-        anyhow::bail!("{proc1} is owned by {pid1_uid}, not zero; this command must be run in the root user namespace (e.g. not rootless podman)");
-    }
+    ensure!(pid1_uid == 0, "{proc1} is owned by {pid1_uid}, not zero; this command must be run in the root user namespace (e.g. not rootless podman)");
     tracing::trace!("OK: we're in a matching user namespace with pid1");
     Ok(())
 }
@@ -1154,8 +1152,6 @@ async fn prepare_install(
     target_opts: InstallTargetOpts,
 ) -> Result<Arc<State>> {
     tracing::trace!("Preparing install");
-    // We need full root privileges, i.e. --privileged in podman
-    crate::cli::require_root()?;
     let rootfs = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())
         .context("Opening /")?;
 
@@ -1163,9 +1159,10 @@ async fn prepare_install(
     let external_source = source_opts.source_imgref.is_some();
     let source = match source_opts.source_imgref {
         None => {
-            if !host_is_container {
-                anyhow::bail!("Either --source-imgref must be defined or this command must be executed inside a podman container.")
-            }
+            ensure!(host_is_container, "Either --source-imgref must be defined or this command must be executed inside a podman container.");
+
+            crate::cli::require_root(true)?;
+
             require_host_pidns()?;
             // Out of conservatism we only verify the host userns path when we're expecting
             // to do a self-install (e.g. not bootc-image-builder or equivalent).
@@ -1187,7 +1184,10 @@ async fn prepare_install(
 
             SourceInfo::from_container(&rootfs, &container_info)?
         }
-        Some(source) => SourceInfo::from_imageref(&source, &rootfs)?,
+        Some(source) => {
+            crate::cli::require_root(false)?;
+            SourceInfo::from_imageref(&source, &rootfs)?
+        }
     };
 
     // Parse the target CLI image reference options and create the *target* image

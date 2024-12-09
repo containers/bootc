@@ -7,7 +7,7 @@ use std::io::Seek;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use camino::Utf8PathBuf;
 use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::Dir;
@@ -576,15 +576,27 @@ pub(crate) async fn get_storage() -> Result<crate::store::Storage> {
 }
 
 #[context("Querying root privilege")]
-pub(crate) fn require_root() -> Result<()> {
-    let uid = rustix::process::getuid();
-    if !uid.is_root() {
-        anyhow::bail!("This command requires root privileges");
-    }
-    if !rustix::thread::capability_is_in_bounding_set(rustix::thread::Capability::SystemAdmin)? {
-        anyhow::bail!("This command requires full root privileges (CAP_SYS_ADMIN)");
-    }
+pub(crate) fn require_root(is_container: bool) -> Result<()> {
+    ensure!(
+        rustix::process::getuid().is_root(),
+        if is_container {
+            "The user inside the container from which you are running this command must be root"
+        } else {
+            "This command must be executed as the root user"
+        }
+    );
+
+    ensure!(
+        rustix::thread::capability_is_in_bounding_set(rustix::thread::Capability::SystemAdmin)?,
+        if is_container {
+            "The container must be executed with full privileges (e.g. --privileged flag)"
+        } else {
+            "This command requires full root privileges (CAP_SYS_ADMIN)"
+        }
+    );
+
     tracing::trace!("Verified uid 0 with CAP_SYS_ADMIN");
+
     Ok(())
 }
 
@@ -616,7 +628,7 @@ fn prepare_for_write() -> Result<()> {
         ostree_booted()?,
         "This command requires an ostree-booted host system"
     );
-    crate::cli::require_root()?;
+    crate::cli::require_root(false)?;
     ensure_self_unshared_mount_namespace()?;
     if crate::lsm::selinux_enabled()? && !crate::lsm::selinux_ensure_install()? {
         tracing::warn!("Do not have install_t capabilities");
