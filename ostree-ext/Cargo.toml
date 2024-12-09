@@ -19,6 +19,7 @@ ostree = { features = ["v2022_6"], version = "0.19.0" }
 
 # Private dependencies
 anyhow = { workspace = true }
+bootc-utils = { path = "../utils" }
 camino = { workspace = true, features = ["serde1"] }
 chrono = { workspace = true }
 olpc-cjson = "0.1.1"
