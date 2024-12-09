@@ -244,6 +244,7 @@ impl SeLabel {
         } else if rootdir == "boot" {
             SeLabel::Boot
         } else if rootdir == "etc" {
+            // Arbitrarily give some files in /etc some label and others another
             if p.as_str().as_bytes().len() % 2 == 0 {
                 SeLabel::Etc
             } else {
