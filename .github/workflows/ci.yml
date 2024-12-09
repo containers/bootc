@@ -67,8 +67,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Ensure host skopeo is disabled
-        run: sudo rm -f /bin/skopeo /usr/bin/skopeo
       - name: Free up disk space on runner
         run: sudo ./ci/clean-gha-runner.sh
       - name: Integration tests
@@ -81,6 +79,9 @@ jobs:
           sudo install -m 0755 target/release/tests-integration /usr/bin/bootc-integration-tests
           rm target -rf
           df -h /
+          # The ostree-container tests
+          sudo podman run --privileged --pid=host -v /:/run/host -v $(pwd):/src:ro -v /var/tmp:/var/tmp \
+            -v /run/dbus:/run/dbus -v /run/systemd:/run/systemd localhost/bootc /src/ostree-ext/ci/priv-integration.sh
           # Nondestructive but privileged tests
           sudo bootc-integration-tests host-privileged localhost/bootc
           # Finally the install-alongside suite

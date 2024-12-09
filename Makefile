@@ -34,14 +34,15 @@ install-ostree-hooks:
 	  ln -sf ../../../bin/bootc $(DESTDIR)$(prefix)/libexec/libostree/ext/$$x; \
 	done
 
-install-with-tests: install
+# Install the main binary, the ostree hooks, and the integration test suite.
+install-all: install install-ostree-hooks
 	install -D -m 0755 target/release/tests-integration $(DESTDIR)$(prefix)/bin/bootc-integration-tests 
 
 bin-archive: all
 	$(MAKE) install DESTDIR=tmp-install && $(TAR_REPRODUCIBLE) --zstd -C tmp-install -cf target/bootc.tar.zst . && rm tmp-install -rf
 
 test-bin-archive: all
-	$(MAKE) install-with-tests DESTDIR=tmp-install && $(TAR_REPRODUCIBLE) --zstd -C tmp-install -cf target/bootc.tar.zst . && rm tmp-install -rf
+	$(MAKE) install-all DESTDIR=tmp-install && $(TAR_REPRODUCIBLE) --zstd -C tmp-install -cf target/bootc.tar.zst . && rm tmp-install -rf
 
 test-tmt:
 	cargo xtask test-tmt

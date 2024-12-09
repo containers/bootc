@@ -128,24 +128,6 @@ jobs:
         run: install ostree-ext-cli /usr/bin && rm -v ostree-ext-cli
       - name: Integration tests
         run: ./ci/ima.sh
-  privtest:
-    name: "Privileged testing"
-    needs: build
-    runs-on: ubuntu-latest
-    container:
-      image: quay.io/fedora/fedora-coreos:testing-devel
-      options: "--privileged --pid=host -v /var/tmp:/var/tmp -v /run/dbus:/run/dbus -v /run/systemd:/run/systemd -v /:/run/host"
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Download
-        uses: actions/download-artifact@v4.1.8
-        with:
-          name: ostree-ext-cli
-      - name: Install
-        run: install ostree-ext-cli /usr/bin && rm -v ostree-ext-cli
-      - name: Integration tests
-        run: ./ci/priv-integration.sh
   privtest-cockpit:
     name: "Privileged testing (cockpit)"
     needs: build
