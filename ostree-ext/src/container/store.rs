@@ -102,7 +102,7 @@ impl ImportProgress {
 }
 
 /// Sent across a channel to track the byte-level progress of a layer fetch.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LayerProgress {
     /// Index of the layer in the manifest
     pub layer_index: usize,
@@ -193,7 +193,7 @@ pub enum PrepareResult {
 #[derive(Debug)]
 pub struct ManifestLayerState {
     /// The underlying layer descriptor.
-    pub(crate) layer: oci_image::Descriptor,
+    pub layer: oci_image::Descriptor,
     // TODO semver: Make this readonly via an accessor
     /// The ostree ref name for this layer.
     pub ostree_ref: String,
@@ -951,6 +951,10 @@ impl ImageImporter {
         // We're done with the proxy, make sure it didn't have any errors.
         proxy.finalize().await?;
         tracing::debug!("finalized proxy");
+
+        // Disconnect progress notifiers to signal we're done with fetching.
+        let _ = self.layer_byte_progress.take();
+        let _ = self.layer_progress.take();
 
         let serialized_manifest = serde_json::to_string(&import.manifest)?;
         let serialized_config = serde_json::to_string(&import.config)?;
