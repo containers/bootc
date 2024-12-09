@@ -70,7 +70,8 @@ in derived builds.
 ## `/etc`
 
 The `/etc` directory contains mutable persistent state by default; however,
-it is suppported to enable the [`etc.transient` config option](https://ostreedev.github.io/ostree/man/ostree-prepare-root.html).
+it is suppported to enable the [`etc.transient` config option](https://ostreedev.github.io/ostree/man/ostree-prepare-root.html),
+see below as well.
 
 When in persistent mode, it inherits the OSTree semantics of [performing a 3-way merge](https://ostreedev.github.io/ostree/atomic-upgrades/#assembling-a-new-deployment-directory)
 across upgrades.  In a nutshell:
@@ -189,6 +190,24 @@ option in `prepare-root.conf`.  In particular this will allow software to
 write (transiently, i.e. until the next reboot) to all top-level directories,
 including `/usr` and `/opt`, with symlinks to `/var` for content that should
 persist.
+
+This can be combined with `etc.transient` as well (below).
+
+## Enabling transient etc
+
+The default (per above) is to have `/etc` persist. If however you do
+not need to use it for any per-machine state, then enabling a transient
+`/etc` is a great way to reduce the amount of possible state drift. Set
+the
+
+```toml
+[etc]
+transient = true
+```
+
+option in `prepare-root.conf`.
+
+This can be combined with `root.transient` as well (above).
 
 ## Enabling state overlays
 
