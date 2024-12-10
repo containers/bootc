@@ -334,7 +334,7 @@ pub(crate) struct SourceInfo {
     /// The digest to use for pulls
     pub(crate) digest: Option<String>,
     /// Whether or not SELinux appears to be enabled in the source commit
-    pub(crate) selinux: bool,
+    pub(crate) _selinux: bool,
     /// Whether the source is available in the host mount namespace
     pub(crate) in_host_mountns: bool,
 }
@@ -585,7 +585,7 @@ impl SourceInfo {
         Ok(Self {
             imageref,
             digest,
-            selinux,
+            _selinux: selinux,
             in_host_mountns,
         })
     }
@@ -946,7 +946,7 @@ pub(crate) fn reexecute_self_for_selinux_if_needed(
     override_disable_selinux: bool,
 ) -> Result<SELinuxFinalState> {
     // If the target state has SELinux enabled, we need to check the host state.
-    if srcdata.selinux {
+    if false {
         let host_selinux = crate::lsm::selinux_enabled()?;
         tracing::debug!("Target has SELinux, host={host_selinux}");
         let r = if override_disable_selinux {
@@ -1028,66 +1028,6 @@ fn require_host_userns() -> Result<()> {
 // Ensure the `/var` directory exists.
 fn ensure_var() -> Result<()> {
     std::fs::create_dir_all("/var")?;
-    Ok(())
-}
-
-/// We want to have proper /tmp and /var/tmp without requiring the caller to set them up
-/// in advance by manually specifying them via `podman run -v /tmp:/tmp` etc.
-/// Unfortunately, it's quite complex right now to "gracefully" dynamically reconfigure
-/// the mount setup for a container.  See https://brauner.io/2023/02/28/mounting-into-mount-namespaces.html
-/// So the brutal hack we do here is to rely on the fact that we're running in the host
-/// pid namespace, and so the magic link for /proc/1/root will escape our mount namespace.
-/// We can't bind mount though - we need to symlink it so that each calling process
-/// will traverse the link.
-#[context("Linking tmp mounts to host")]
-pub(crate) fn setup_tmp_mounts() -> Result<()> {
-    let st = rustix::fs::statfs("/tmp")?;
-    if st.f_type == libc::TMPFS_MAGIC {
-        tracing::trace!("Already have tmpfs /tmp")
-    } else {
-        // Note we explicitly also don't want a "nosuid" tmp, because that
-        // suppresses our install_t transition
-        Task::new("Mounting tmpfs /tmp", "mount")
-            .args(["tmpfs", "-t", "tmpfs", "/tmp"])
-            .quiet()
-            .run()?;
-    }
-
-    // Point our /var/tmp at the host, via the /proc/1/root magic link
-    for path in ["/var/tmp"].map(Utf8Path::new) {
-        if path.try_exists()? {
-            let st = rustix::fs::statfs(path.as_std_path()).context(path)?;
-            if st.f_type != libc::OVERLAYFS_SUPER_MAGIC {
-                tracing::trace!("Already have {path} with f_type={}", st.f_type);
-                continue;
-            }
-        }
-        let target = format!("/proc/1/root/{path}");
-        let tmp = format!("{path}.tmp");
-        // Ensure idempotence in case we're re-executed
-        if path.is_symlink() {
-            continue;
-        }
-        tracing::debug!("Retargeting {path} to host");
-        if path.try_exists()? {
-            std::os::unix::fs::symlink(&target, &tmp)
-                .with_context(|| format!("Symlinking {target} to {tmp}"))?;
-            let cwd = rustix::fs::CWD;
-            rustix::fs::renameat_with(
-                cwd,
-                path.as_os_str(),
-                cwd,
-                &tmp,
-                rustix::fs::RenameFlags::EXCHANGE,
-            )
-            .with_context(|| format!("Exchanging {path} <=> {tmp}"))?;
-            std::fs::rename(&tmp, format!("{path}.old"))
-                .with_context(|| format!("Renaming old {tmp}"))?;
-        } else {
-            std::os::unix::fs::symlink(&target, path)
-                .with_context(|| format!("Symlinking {target} to {path}"))?;
-        };
-    }
     Ok(())
 }
 
@@ -1222,7 +1162,7 @@ async fn prepare_install(
     crate::mount::ensure_mirrored_host_mount("/dev")?;
     crate::mount::ensure_mirrored_host_mount("/var/lib/containers")?;
     ensure_var()?;
-    setup_tmp_mounts()?;
+    // setup_tmp_mounts()?;
     // Allocate a temporary directory we can use in various places to avoid
     // creating multiple.
     let tempdir = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
