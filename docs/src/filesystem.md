@@ -70,7 +70,8 @@ in derived builds.
 ## `/etc`
 
 The `/etc` directory contains mutable persistent state by default; however,
-it is suppported to enable the [`etc.transient` config option](https://ostreedev.github.io/ostree/man/ostree-prepare-root.html).
+it is suppported to enable the [`etc.transient` config option](https://ostreedev.github.io/ostree/man/ostree-prepare-root.html),
+see below as well.
 
 When in persistent mode, it inherits the OSTree semantics of [performing a 3-way merge](https://ostreedev.github.io/ostree/atomic-upgrades/#assembling-a-new-deployment-directory)
 across upgrades.  In a nutshell:
@@ -79,7 +80,7 @@ across upgrades.  In a nutshell:
 - The diff between current and previous `/etc` is applied to the new `/etc`
 - Locally modified files in `/etc` different from the default `/usr/etc` (of the same deployment) will be retained
 
-The implmentation of this defaults to being executed by `ostree-finalize-staged.service`
+The implementation of this defaults to being executed by `ostree-finalize-staged.service`
 at shutdown time, before the new bootloader entry is created.
 
 The rationale for this design is that in practice today, many components of a Linux system end up shipping
@@ -94,6 +95,13 @@ where e.g. a change to `/etc/sudoers.conf` (to give on simple example)
 would require external intervention to apply.
 
 For more on configuration file best practices, see [Building](building/guidance.md).
+
+### `/usr/etc`
+
+The `/usr/etc` tree is generated client side and contains the default container image's
+view of `/etc`. This should generally be considered an internal implementation detail
+of bootc/ostree. Do *not* explicitly put files into this location, it can create
+undefined behavior. There is a check for this in `bootc container lint`.
 
 ## `/var`
 
@@ -178,10 +186,32 @@ To do this, set the
 transient = true
 ```
 
-option in `prepare-root.conf`.  In particular this will allow software to
+option in `/usr/lib/ostree/prepare-root.conf`.  In particular this will allow software to
 write (transiently, i.e. until the next reboot) to all top-level directories,
 including `/usr` and `/opt`, with symlinks to `/var` for content that should
 persist.
+
+This can be combined with `etc.transient` as well (below).
+
+More on prepare-root: <https://ostreedev.github.io/ostree/man/ostree-prepare-root.html>
+
+## Enabling transient etc
+
+The default (per above) is to have `/etc` persist. If however you do
+not need to use it for any per-machine state, then enabling a transient
+`/etc` is a great way to reduce the amount of possible state drift. Set
+the
+
+```toml
+[etc]
+transient = true
+```
+
+option in `/usr/lib/ostree/prepare-root.conf`.
+
+This can be combined with `root.transient` as well (above).
+
+More on prepare-root: <https://ostreedev.github.io/ostree/man/ostree-prepare-root.html>
 
 ## Enabling state overlays
 

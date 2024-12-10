@@ -58,7 +58,7 @@ The flattened tree is constructed and committed into the
 `ostree/container/image` namespace.  The commit metadata also includes
 the OCI manifest and config objects.
 
-This is implmented in the [ostree-rs-ext/container module](https://docs.rs/ostree-ext/latest/ostree_ext/container/index.html).
+This is implemented in the [ostree-rs-ext/container module](https://docs.rs/ostree-ext/latest/ostree_ext/container/index.html).
 
 ### SELinux labeling
 
