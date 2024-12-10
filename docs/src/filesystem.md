@@ -80,7 +80,7 @@ across upgrades.  In a nutshell:
 - The diff between current and previous `/etc` is applied to the new `/etc`
 - Locally modified files in `/etc` different from the default `/usr/etc` (of the same deployment) will be retained
 
-The implmentation of this defaults to being executed by `ostree-finalize-staged.service`
+The implementation of this defaults to being executed by `ostree-finalize-staged.service`
 at shutdown time, before the new bootloader entry is created.
 
 The rationale for this design is that in practice today, many components of a Linux system end up shipping
@@ -99,7 +99,7 @@ For more on configuration file best practices, see [Building](building/guidance.
 ### `/usr/etc`
 
 The `/usr/etc` tree is generated client side and contains the default container image's
-view of `/etc`. This should generally be considered an internal implmentation detail
+view of `/etc`. This should generally be considered an internal implementation detail
 of bootc/ostree. Do *not* explicitly put files into this location, it can create
 undefined behavior. There is a check for this in `bootc container lint`.
 
