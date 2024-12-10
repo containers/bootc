@@ -1,0 +1,10 @@
+# Enable fsverity at install time
+FROM localhost/bootc
+RUN <<EORUN
+set -xeuo pipefail
+mkdir -p /usr/lib/bootc/install
+cat > /usr/lib/bootc/install/30-fsverity.toml <<EOF
+[install]
+fsverity = "enabled"
+EOF
+EORUN
