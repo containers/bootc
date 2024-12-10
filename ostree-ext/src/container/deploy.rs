@@ -5,6 +5,7 @@ use std::os::fd::BorrowedFd;
 use std::process::Command;
 
 use anyhow::Result;
+use bootc_utils::CommandRunExt;
 use cap_std_ext::cmdext::CapStdExtCommandExt;
 use fn_error_context::context;
 use ocidir::cap_std::fs::Dir;
@@ -148,6 +149,7 @@ pub async fn deploy(
             let st = Command::new("/proc/self/exe")
                 .args(["internals", "bootc-install-completion", ".", stateroot])
                 .cwd_dir(sysroot_dir.try_clone()?)
+                .lifecycle_bind()
                 .status()?;
             if !st.success() {
                 anyhow::bail!("Failed to complete bootc install");
