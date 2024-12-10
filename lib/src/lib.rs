@@ -41,3 +41,4 @@ pub mod spec;
 mod docgen;
 mod glyph;
 mod imgstorage;
+mod progress_jsonl;
