@@ -169,6 +169,8 @@ pub(crate) fn open_tree_from_pidns(
             // We're in the child. At this point we know we don't have multiple threads, so we
             // can safely `setns`.
 
+            drop(sock_parent);
+
             // Open up the namespace of the target process as a file descriptor, and enter it.
             let pidlink = fs::File::open(format!("/proc/{}/ns/mnt", pid.as_raw_nonzero()))?;
             rustix::thread::move_into_link_name_space(
@@ -210,6 +212,7 @@ pub(crate) fn open_tree_from_pidns(
         n => {
             // We're in the parent; create a pid (checking that n > 0).
             let pid = rustix::process::Pid::from_raw(n).unwrap();
+            drop(sock_child);
             // Receive the mount file descriptor from the child
             let mut cmsg_space = vec![0; rustix::cmsg_space!(ScmRights(1))];
             let mut cmsg_buffer = rustix::net::RecvAncillaryBuffer::new(&mut cmsg_space);
@@ -224,7 +227,7 @@ pub(crate) fn open_tree_from_pidns(
             )
             .context("recvmsg")?
             .bytes;
-            assert_eq!(nread, DUMMY_DATA.len());
+            anyhow::ensure!(nread == DUMMY_DATA.len());
             assert_eq!(buf, DUMMY_DATA);
             // And extract the file descriptor
             let r = cmsg_buffer
@@ -236,8 +239,14 @@ pub(crate) fn open_tree_from_pidns(
                 .flatten()
                 .next()
                 .ok_or_else(|| anyhow::anyhow!("Did not receive a file descriptor"))?;
-            rustix::process::waitpid(Some(pid), WaitOptions::empty())?;
-            Ok(r)
+            // SAFETY: Since we're not setting WNOHANG, this will always return Some().
+            let st =
+                rustix::process::waitpid(Some(pid), WaitOptions::empty())?.expect("Wait status");
+            if let Some(0) = st.exit_status() {
+                Ok(r)
+            } else {
+                anyhow::bail!("forked helper failed: {st:?}");
+            }
         }
     }
 }
