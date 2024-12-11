@@ -2,6 +2,7 @@
 //! see <https://jsonlines.org/>.
 
 use anyhow::Result;
+use schemars::JsonSchema;
 use serde::Serialize;
 use std::borrow::Cow;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
@@ -20,7 +21,7 @@ pub const API_VERSION: &str = "org.containers.bootc.progress/v1";
 /// An incremental update to e.g. a container image layer download.
 /// The first time a given "subtask" name is seen, a new progress bar should be created.
 /// If bytes == bytes_total, then the subtask is considered complete.
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default, Clone)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Default, Clone, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SubTaskBytes<'t> {
     /// A machine readable type for the task (used for i18n).
@@ -44,7 +45,7 @@ pub struct SubTaskBytes<'t> {
 }
 
 /// Marks the beginning and end of a dictrete step
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default, Clone)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Default, Clone, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SubTaskStep<'t> {
     /// A machine readable type for the task (used for i18n).
@@ -64,7 +65,7 @@ pub struct SubTaskStep<'t> {
 }
 
 /// An event emitted as JSON.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "PascalCase",
