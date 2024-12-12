@@ -190,7 +190,6 @@ pub(crate) enum InstallOpts {
     /// to reconcile. At the current time, the only tested environment is Anaconda using `ostreecontainer`
     /// and it is recommended to avoid usage outside of that environment. Instead, ensure your
     /// code is using `bootc install to-filesystem` from the start.
-    #[clap(hide = true)]
     EnsureCompletion {},
     /// Output JSON to stdout that contains the merged installation configuration
     /// as it may be relevant to calling processes using `install to-filesystem`

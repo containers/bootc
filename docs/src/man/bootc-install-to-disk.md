@@ -10,8 +10,8 @@ bootc-install-to-disk - Install to the target block device
 \[**\--enforce-container-sigpolicy**\] \[**\--target-ostree-remote**\]
 \[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
-\[**\--stateroot**\] \[**\--via-loopback**\] \[**-h**\|**\--help**\]
-\<*DEVICE*\>
+\[**\--bound-images**\] \[**\--stateroot**\] \[**\--via-loopback**\]
+\[**-h**\|**\--help**\] \<*DEVICE*\>
 
 # DESCRIPTION
 
@@ -130,6 +130,19 @@ boot.
 \- All bootloader types will be installed - Changes to the system
 firmware will be skipped
 
+**\--bound-images**=*BOUND_IMAGES* \[default: stored\]
+
+:   How should logically bound images be retrieved\
+
+\
+*Possible values:*
+
+> -   stored: Bound images must exist in the sources root container
+>     storage (default)
+>
+> -   pull: Bound images will be pulled and stored directly in the
+>     targets bootc container storage
+
 **\--stateroot**=*STATEROOT*
 
 :   The stateroot name to use. Defaults to \`default\`
@@ -149,4 +162,4 @@ firmware will be skipped
 
 # VERSION
 
-v1.1.0
+v1.1.2

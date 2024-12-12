@@ -10,8 +10,9 @@ bootc-install-to-existing-root - Install to the host root filesystem
 \[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
 \[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
-\[**\--stateroot**\] \[**\--acknowledge-destructive**\]
-\[**-h**\|**\--help**\] \[*ROOT_PATH*\]
+\[**\--bound-images**\] \[**\--stateroot**\]
+\[**\--acknowledge-destructive**\] \[**-h**\|**\--help**\]
+\[*ROOT_PATH*\]
 
 # DESCRIPTION
 
@@ -115,6 +116,19 @@ boot.
 \- All bootloader types will be installed - Changes to the system
 firmware will be skipped
 
+**\--bound-images**=*BOUND_IMAGES* \[default: stored\]
+
+:   How should logically bound images be retrieved\
+
+\
+*Possible values:*
+
+> -   stored: Bound images must exist in the sources root container
+>     storage (default)
+>
+> -   pull: Bound images will be pulled and stored directly in the
+>     targets bootc container storage
+
 **\--stateroot**=*STATEROOT*
 
 :   The stateroot name to use. Defaults to \`default\`
@@ -129,9 +143,10 @@ firmware will be skipped
 
 \[*ROOT_PATH*\] \[default: /target\]
 
-:   Path to the mounted root; its expected to invoke podman with \`-v
-    /:/target\`, then supplying this argument is unnecessary
+:   Path to the mounted root; this is now not necessary to provide.
+    Historically it was necessary to ensure the host rootfs was mounted
+    at here via e.g. \`-v /:/target\`
 
 # VERSION
 
-v1.1.0
+v1.1.2

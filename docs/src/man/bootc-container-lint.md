@@ -23,4 +23,4 @@ part of a build process; it will error if any problems are detected.
 
 # VERSION
 
-v1.1.0
+v1.1.2

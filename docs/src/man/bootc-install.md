@@ -10,7 +10,7 @@ bootc-install - Install the running container to a target
 
 Install the running container to a target.
 
-\## Understanding installations
+## Understanding installations
 
 OCI containers are effectively layers of tarballs with JSON for
 metadata; they cannot be booted directly. The \`bootc install\` flow is
@@ -48,6 +48,11 @@ bootc-install-to-existing-root(8)
 
 :   Install to the host root filesystem
 
+bootc-install-ensure-completion(8)
+
+:   Intended for use in environments that are performing an ostree-based
+    installation, not bootc
+
 bootc-install-print-configuration(8)
 
 :   Output JSON to stdout that contains the merged installation
@@ -61,4 +66,4 @@ bootc-install-help(8)
 
 # VERSION
 
-v1.1.0
+v1.1.2
