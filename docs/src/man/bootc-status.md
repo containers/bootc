@@ -16,13 +16,13 @@ bootc system state. If standard output is not a terminal, output a
 YAML-formatted object using a schema intended to match a Kubernetes
 resource that describes the state of the booted system.
 
-\## Parsing output via programs
+## Parsing output via programs
 
 Either the default YAML format or \`\--format=json\` can be used. Do not
 attempt to explicitly parse the output of \`\--format=humanreadable\` as
 it will very likely change over time.
 
-\## Programmatically detecting whether the system is deployed via bootc
+## Programmatically detecting whether the system is deployed via bootc
 
 Invoke e.g. \`bootc status \--json\`, and check if \`status.booted\` is
 not \`null\`.
@@ -59,4 +59,4 @@ not \`null\`.
 
 # VERSION
 
-v1.1.0
+v1.1.3

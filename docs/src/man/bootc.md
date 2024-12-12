@@ -72,4 +72,4 @@ bootc-help(8)
 
 # VERSION
 
-v1.1.0
+v1.1.3
