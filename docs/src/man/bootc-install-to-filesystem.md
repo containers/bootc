@@ -13,7 +13,8 @@ filesystem structure
 \[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
 \[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
-\[**\--stateroot**\] \[**-h**\|**\--help**\] \<*ROOT_PATH*\>
+\[**\--bound-images**\] \[**\--stateroot**\] \[**-h**\|**\--help**\]
+\<*ROOT_PATH*\>
 
 # DESCRIPTION
 
@@ -144,6 +145,19 @@ boot.
 \- All bootloader types will be installed - Changes to the system
 firmware will be skipped
 
+**\--bound-images**=*BOUND_IMAGES* \[default: stored\]
+
+:   How should logically bound images be retrieved\
+
+\
+*Possible values:*
+
+> -   stored: Bound images must exist in the sources root container
+>     storage (default)
+>
+> -   pull: Bound images will be pulled and stored directly in the
+>     targets bootc container storage
+
 **\--stateroot**=*STATEROOT*
 
 :   The stateroot name to use. Defaults to \`default\`
@@ -161,4 +175,4 @@ mounting. To override this, use \`\--root-mount-spec\`.
 
 # VERSION
 
-v1.1.0
+v1.1.3
