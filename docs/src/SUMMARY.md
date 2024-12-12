@@ -39,6 +39,10 @@
 - [`man bootc-install-to-filesystem`](man/bootc-install-to-filesystem.md)
 - [`man bootc-install-to-existing-root`](man/bootc-install-to-existing-root.md)
 
+# Bootc usage in containers
+
+- [`man bootc-container-lint`](man/bootc-container-lint.md)
+
 # Architecture
 
 - [Image layout](bootc-images.md)
