@@ -147,3 +147,18 @@ which few domains can access.
 References:
 
 - <https://github.com/ostreedev/ostree-rs-ext/issues/510>
+
+## composefs
+
+It is strongly recommended to enable the ostree composefs
+backend (but not strictly required) for bootc.
+Do so by ensuring you have this in your `/usr/lib/ostree/prepare-root.conf`:
+
+```
+[composefs]
+enabled = yes
+[sysroot]
+readonly = true
+```
+
+More in [ostree-prepare-root](https://ostreedev.github.io/ostree/man/ostree-prepare-root.html).
