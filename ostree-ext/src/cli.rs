@@ -657,6 +657,7 @@ pub async fn handle_layer_progress_print(
 pub fn print_layer_status(prep: &PreparedImport) {
     if let Some(status) = prep.format_layer_status() {
         println!("{status}");
+        let _ = std::io::stdout().flush();
     }
 }
 

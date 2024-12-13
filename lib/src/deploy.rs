@@ -21,6 +21,7 @@ use ostree_ext::ostree::{self, Sysroot};
 use ostree_ext::sysroot::SysrootLock;
 use ostree_ext::tokio_util::spawn_blocking_cancellable_flatten;
 
+use crate::progress_jsonl::{Event, ProgressWriter, SubTaskBytes, SubTaskStep, API_VERSION};
 use crate::spec::ImageReference;
 use crate::spec::{BootOrder, HostSpec};
 use crate::status::labels_of_config;
@@ -141,11 +142,20 @@ fn prefix_of_progress(p: &ImportProgress) -> &'static str {
 async fn handle_layer_progress_print(
     mut layers: tokio::sync::mpsc::Receiver<ostree_container::store::ImportProgress>,
     mut layer_bytes: tokio::sync::watch::Receiver<Option<ostree_container::store::LayerProgress>>,
+    digest: Box<str>,
     n_layers_to_fetch: usize,
+    layers_total: usize,
+    bytes_to_download: u64,
+    bytes_total: u64,
+    prog: ProgressWriter,
+    quiet: bool,
 ) {
     let start = std::time::Instant::now();
     let mut total_read = 0u64;
     let bar = indicatif::MultiProgress::new();
+    if quiet {
+        bar.set_draw_target(indicatif::ProgressDrawTarget::hidden());
+    }
     let layers_bar = bar.add(indicatif::ProgressBar::new(
         n_layers_to_fetch.try_into().unwrap(),
     ));
@@ -157,7 +167,8 @@ async fn handle_layer_progress_print(
             .template("{prefix} {bar} {pos}/{len} {wide_msg}")
             .unwrap(),
     );
-    layers_bar.set_prefix("Fetching layers");
+    let taskname = "Fetching layers";
+    layers_bar.set_prefix(taskname);
     layers_bar.set_message("");
     byte_bar.set_prefix("Fetching");
     byte_bar.set_style(
@@ -167,6 +178,9 @@ async fn handle_layer_progress_print(
                 )
                 .unwrap()
         );
+
+    let mut subtasks = vec![];
+    let mut subtask: SubTaskBytes = Default::default();
     loop {
         tokio::select! {
             // Always handle layer changes first.
@@ -174,18 +188,44 @@ async fn handle_layer_progress_print(
             layer = layers.recv() => {
                 if let Some(l) = layer {
                     let layer = descriptor_of_progress(&l);
+                    let layer_type = prefix_of_progress(&l);
+                    let short_digest = &layer.digest().digest()[0..21];
                     let layer_size = layer.size();
                     if l.is_starting() {
+                        // Reset the progress bar
                         byte_bar.reset_elapsed();
                         byte_bar.reset_eta();
                         byte_bar.set_length(layer_size);
-                        let layer_type = prefix_of_progress(&l);
-                        let short_digest = &layer.digest().digest()[0..21];
                         byte_bar.set_message(format!("{layer_type} {short_digest}"));
+
+                        subtask = SubTaskBytes {
+                            subtask: layer_type.into(),
+                            description: format!("{layer_type}: {short_digest}").clone().into(),
+                            id: format!("{short_digest}").clone().into(),
+                            bytes_cached: 0,
+                            bytes: 0,
+                            bytes_total: layer_size,
+                        };
                     } else {
                         byte_bar.set_position(layer_size);
                         layers_bar.inc(1);
                         total_read = total_read.saturating_add(layer_size);
+                        // Emit an event where bytes == total to signal completion.
+                        subtask.bytes = layer_size;
+                        subtasks.push(subtask.clone());
+                        prog.send(Event::ProgressBytes {
+                            api_version: API_VERSION.into(),
+                            task: "pulling".into(),
+                            description: format!("Pulling Image: {digest}").into(),
+                            id: (*digest).into(),
+                            bytes_cached: bytes_total - bytes_to_download,
+                            bytes: total_read,
+                            bytes_total: bytes_to_download,
+                            steps_cached: (layers_total - n_layers_to_fetch) as u64,
+                            steps: layers_bar.position(),
+                            steps_total: n_layers_to_fetch as u64,
+                            subtasks: subtasks.clone(),
+                        }).await;
                     }
                 } else {
                     // If the receiver is disconnected, then we're done
@@ -197,9 +237,26 @@ async fn handle_layer_progress_print(
                     // If the receiver is disconnected, then we're done
                     break
                 }
-                let bytes = layer_bytes.borrow();
-                if let Some(bytes) = &*bytes {
+                let bytes = {
+                    let bytes = layer_bytes.borrow_and_update();
+                    bytes.as_ref().cloned()
+                };
+                if let Some(bytes) = bytes {
                     byte_bar.set_position(bytes.fetched);
+                    subtask.bytes = byte_bar.position();
+                    prog.send_lossy(Event::ProgressBytes {
+                        api_version: API_VERSION.into(),
+                        task: "pulling".into(),
+                        description: format!("Pulling Image: {digest}").into(),
+                        id: (*digest).into(),
+                        bytes_cached: bytes_total - bytes_to_download,
+                        bytes: total_read + byte_bar.position(),
+                        bytes_total: bytes_to_download,
+                        steps_cached: (layers_total - n_layers_to_fetch) as u64,
+                        steps: layers_bar.position(),
+                        steps_total: n_layers_to_fetch as u64,
+                        subtasks: subtasks.clone().into_iter().chain([subtask.clone()]).collect(),
+                    }).await;
                 }
             }
         }
@@ -221,6 +278,27 @@ async fn handle_layer_progress_print(
     )) {
         tracing::warn!("writing to stdout: {e}");
     }
+
+    // Since the progress notifier closed, we know import has started
+    // use as a heuristic to begin import progress
+    // Cannot be lossy or it is dropped
+    prog.send(Event::ProgressSteps {
+        api_version: API_VERSION.into(),
+        task: "importing".into(),
+        description: "Importing Image".into(),
+        id: (*digest).into(),
+        steps_cached: 0,
+        steps: 0,
+        steps_total: 1,
+        subtasks: [SubTaskStep {
+            subtask: "importing".into(),
+            description: "Importing Image".into(),
+            id: "importing".into(),
+            completed: false,
+        }]
+        .into(),
+    })
+    .await;
 }
 
 /// Wrapper for pulling a container image, wiring up status output.
@@ -230,6 +308,7 @@ pub(crate) async fn pull(
     imgref: &ImageReference,
     target_imgref: Option<&OstreeImageReference>,
     quiet: bool,
+    prog: ProgressWriter,
 ) -> Result<Box<ImageState>> {
     let ostree_imgref = &OstreeImageReference::from(imgref.clone());
     let mut imp = new_importer(repo, ostree_imgref).await?;
@@ -250,20 +329,52 @@ pub(crate) async fn pull(
     ostree_ext::cli::print_layer_status(&prep);
     let layers_to_fetch = prep.layers_to_fetch().collect::<Result<Vec<_>>>()?;
     let n_layers_to_fetch = layers_to_fetch.len();
-    let printer = (!quiet).then(|| {
-        let layer_progress = imp.request_progress();
-        let layer_byte_progress = imp.request_layer_progress();
-        tokio::task::spawn(async move {
-            handle_layer_progress_print(layer_progress, layer_byte_progress, n_layers_to_fetch)
-                .await
-        })
+    let layers_total = prep.all_layers().count();
+    let bytes_to_fetch: u64 = layers_to_fetch.iter().map(|(l, _)| l.layer.size()).sum();
+    let bytes_total: u64 = prep.all_layers().map(|l| l.layer.size()).sum();
+
+    let prog_print = prog.clone();
+    let digest = prep.manifest_digest.clone();
+    let digest_imp = prep.manifest_digest.clone();
+    let layer_progress = imp.request_progress();
+    let layer_byte_progress = imp.request_layer_progress();
+    let printer = tokio::task::spawn(async move {
+        handle_layer_progress_print(
+            layer_progress,
+            layer_byte_progress,
+            digest.as_ref().into(),
+            n_layers_to_fetch,
+            layers_total,
+            bytes_to_fetch,
+            bytes_total,
+            prog_print,
+            quiet,
+        )
+        .await
     });
     let import = imp.import(prep).await;
-    if let Some(printer) = printer {
-        let _ = printer.await;
-    }
+    let _ = printer.await;
+    // Both the progress and the import are done, so import is done as well
+    prog.send(Event::ProgressSteps {
+        api_version: API_VERSION.into(),
+        task: "importing".into(),
+        description: "Importing Image".into(),
+        id: digest_imp.clone().as_ref().into(),
+        steps_cached: 0,
+        steps: 1,
+        steps_total: 1,
+        subtasks: [SubTaskStep {
+            subtask: "importing".into(),
+            description: "Importing Image".into(),
+            id: "importing".into(),
+            completed: true,
+        }]
+        .into(),
+    })
+    .await;
     let import = import?;
     let wrote_imgref = target_imgref.as_ref().unwrap_or(&ostree_imgref);
+
     if let Some(msg) =
         ostree_container::store::image_filtered_content_warning(repo, &wrote_imgref.imgref)
             .context("Image content warning")?
@@ -450,8 +561,53 @@ pub(crate) async fn stage(
     stateroot: &str,
     image: &ImageState,
     spec: &RequiredHostSpec<'_>,
+    prog: ProgressWriter,
 ) -> Result<()> {
+    let mut subtask = SubTaskStep {
+        subtask: "merging".into(),
+        description: "Merging Image".into(),
+        id: "fetching".into(),
+        completed: false,
+    };
+    let mut subtasks = vec![];
+    prog.send(Event::ProgressSteps {
+        api_version: API_VERSION.into(),
+        task: "staging".into(),
+        description: "Deploying Image".into(),
+        id: image.manifest_digest.clone().as_ref().into(),
+        steps_cached: 0,
+        steps: 0,
+        steps_total: 3,
+        subtasks: subtasks
+            .clone()
+            .into_iter()
+            .chain([subtask.clone()])
+            .collect(),
+    })
+    .await;
     let merge_deployment = sysroot.merge_deployment(Some(stateroot));
+
+    subtask.completed = true;
+    subtasks.push(subtask.clone());
+    subtask.subtask = "deploying".into();
+    subtask.id = "deploying".into();
+    subtask.description = "Deploying Image".into();
+    subtask.completed = false;
+    prog.send(Event::ProgressSteps {
+        api_version: API_VERSION.into(),
+        task: "staging".into(),
+        description: "Deploying Image".into(),
+        id: image.manifest_digest.clone().as_ref().into(),
+        steps_cached: 0,
+        steps: 1,
+        steps_total: 3,
+        subtasks: subtasks
+            .clone()
+            .into_iter()
+            .chain([subtask.clone()])
+            .collect(),
+    })
+    .await;
     let origin = origin_from_imageref(spec.image)?;
     let deployment = crate::deploy::deploy(
         sysroot,
@@ -462,14 +618,74 @@ pub(crate) async fn stage(
     )
     .await?;
 
+    subtask.completed = true;
+    subtasks.push(subtask.clone());
+    subtask.subtask = "bound_images".into();
+    subtask.id = "bound_images".into();
+    subtask.description = "Pulling Bound Images".into();
+    subtask.completed = false;
+    prog.send(Event::ProgressSteps {
+        api_version: API_VERSION.into(),
+        task: "staging".into(),
+        description: "Deploying Image".into(),
+        id: image.manifest_digest.clone().as_ref().into(),
+        steps_cached: 0,
+        steps: 1,
+        steps_total: 3,
+        subtasks: subtasks
+            .clone()
+            .into_iter()
+            .chain([subtask.clone()])
+            .collect(),
+    })
+    .await;
     crate::boundimage::pull_bound_images(sysroot, &deployment).await?;
 
+    subtask.completed = true;
+    subtasks.push(subtask.clone());
+    subtask.subtask = "cleanup".into();
+    subtask.id = "cleanup".into();
+    subtask.description = "Removing old images".into();
+    subtask.completed = false;
+    prog.send(Event::ProgressSteps {
+        api_version: API_VERSION.into(),
+        task: "staging".into(),
+        description: "Deploying Image".into(),
+        id: image.manifest_digest.clone().as_ref().into(),
+        steps_cached: 0,
+        steps: 2,
+        steps_total: 3,
+        subtasks: subtasks
+            .clone()
+            .into_iter()
+            .chain([subtask.clone()])
+            .collect(),
+    })
+    .await;
     crate::deploy::cleanup(sysroot).await?;
     println!("Queued for next boot: {:#}", spec.image);
     if let Some(version) = image.version.as_deref() {
         println!("  Version: {version}");
     }
     println!("  Digest: {}", image.manifest_digest);
+
+    subtask.completed = true;
+    subtasks.push(subtask.clone());
+    prog.send(Event::ProgressSteps {
+        api_version: API_VERSION.into(),
+        task: "staging".into(),
+        description: "Deploying Image".into(),
+        id: image.manifest_digest.clone().as_ref().into(),
+        steps_cached: 0,
+        steps: 3,
+        steps_total: 3,
+        subtasks: subtasks
+            .clone()
+            .into_iter()
+            .chain([subtask.clone()])
+            .collect(),
+    })
+    .await;
 
     Ok(())
 }

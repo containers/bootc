@@ -48,6 +48,7 @@ use crate::boundimage::{BoundImage, ResolvedBoundImage};
 use crate::containerenv::ContainerExecutionInfo;
 use crate::lsm;
 use crate::mount::Filesystem;
+use crate::progress_jsonl::ProgressWriter;
 use crate::spec::ImageReference;
 use crate::store::Storage;
 use crate::task::Task;
@@ -733,7 +734,14 @@ async fn install_container(
         let spec_imgref = ImageReference::from(src_imageref.clone());
         let repo = &sysroot.repo();
         repo.set_disable_fsync(true);
-        let r = crate::deploy::pull(repo, &spec_imgref, Some(&state.target_imgref), false).await?;
+        let r = crate::deploy::pull(
+            repo,
+            &spec_imgref,
+            Some(&state.target_imgref),
+            false,
+            ProgressWriter::default(),
+        )
+        .await?;
         repo.set_disable_fsync(false);
         r
     };
