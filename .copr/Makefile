@@ -1,5 +1,5 @@
 srpm:
-	dnf5 -y install 'dnf5-command(builddep)'
+	dnf -y install 'dnf5-command(builddep)'
 	dnf -y install dnf-utils git
 	# similar to https://github.com/actions/checkout/issues/760, but for COPR
 	git config --global --add safe.directory '*'
