@@ -148,9 +148,12 @@ can be configured off at build time via Cargo features.
 ### Using `bootc install to-filesystem`
 
 The usual expected way for an external storage system to work
-is to provide `root=<UUID>` type kernel arguments. Note that
-if a separate `/boot` is needed (e.g. for LUKS) you will also need to
-provide `--boot-mount-spec UUID=...`.
+is to provide `root=<UUID>` and `rootflags` kernel arguments
+to describe to the inital RAM disk how to find and mount the
+root partition. For more on this, see the below section
+discussing mounting the root filesystem.
+
+Note that if a separate `/boot` is needed (e.g. for LUKS) you will also need to provide `--boot-mount-spec UUID=...`.
 
 The `bootc install to-filesystem` command allows an operating
 system or distribution to ship a separate installer that creates more complex block
@@ -221,6 +224,39 @@ a different sandboxing tool (e.g. [bubblewrap](https://github.com/containers/bub
 
 This argument is mainly useful for 3rd-party tooling for building disk images from bootable
 containers (e.g. based on [osbuild](https://github.com/osbuild/osbuild)).   
+
+
+## Finding and configuring the physical root filesystem
+
+On a bootc system, the "physical root" is different from
+the "logical root" of the booted container. For more on
+that, see [filesystem](filesystem.md). This section
+is about how the physical root filesystem is discovered.
+
+Systems using systemd will often default to using
+[systemd-fstab-generator](https://www.freedesktop.org/software/systemd/man/latest/systemd-fstab-generator.html)
+and/or [systemd-gpt-auto-generator](https://www.freedesktop.org/software/systemd/man/latest/systemd-gpt-auto-generator.html#).
+Support for the latter though for the root filesystem is conditional on EFI and a bootloader implementing the bootloader interface.
+
+Outside of the discoverable partition model, a common baseline default for installers is to set `root=UUID=`
+(and optionally `rootflags=`) kernel arguments as machine specific state.
+When using `install to-filesystem`, you should provide these as explicit
+kernel arguments.
+
+Some installation tools may want to generate an `/etc/fstab`. An important
+consideration is that when composefs is on by default (as it is expected
+to be) it will no longer work to have an entry for `/` in `/etc/fstab`
+(or a systemd `.mount` unit) that handles remounting the rootfs with
+updated options after exiting the initrd.
+
+In general, prefer using the `rootflags` kernel argument for that
+use case; it ensures that the filesystem is mounted with the
+correct options to start, and avoid having an entry for `/`
+in `/etc/fstab`.
+
+The physical root is mounted at `/sysroot`. It is an option
+for legacy `/etc/fstab` references for `/` to use
+`/sysroot` by default, but `rootflags` is prefered.
 
 ## Configuring machine-local state
 
