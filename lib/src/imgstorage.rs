@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use bootc_utils::{AsyncCommandRunExt, CommandRunExt, ExitStatusExt};
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::Dir;
 use cap_std_ext::cap_tempfile::TempDir;
@@ -35,8 +35,8 @@ pub(crate) const STORAGE_ALIAS_DIR: &str = "/run/bootc/storage";
 /// We pass this via /proc/self/fd to the child process.
 const STORAGE_RUN_FD: i32 = 3;
 
-/// The path to the storage, relative to the physical system root.
-pub(crate) const SUBPATH: &str = "ostree/bootc/storage";
+/// The path to the image storage, relative to the bootc root directory.
+pub(crate) const SUBPATH: &str = "storage";
 /// The path to the "runroot" with transient runtime state; this is
 /// relative to the /run directory
 const RUNROOT: &str = "bootc/storage";
@@ -139,14 +139,15 @@ impl Storage {
     #[context("Creating imgstorage")]
     pub(crate) fn create(sysroot: &Dir, run: &Dir) -> Result<Self> {
         Self::init_globals()?;
-        let subpath = Utf8Path::new(SUBPATH);
+        let subpath = &Self::subpath();
+
         // SAFETY: We know there's a parent
         let parent = subpath.parent().unwrap();
         if !sysroot
             .try_exists(subpath)
             .with_context(|| format!("Querying {subpath}"))?
         {
-            let tmp = format!("{SUBPATH}.tmp");
+            let tmp = format!("{subpath}.tmp");
             sysroot.remove_all_optional(&tmp).context("Removing tmp")?;
             sysroot
                 .create_dir_all(parent)
@@ -174,9 +175,10 @@ impl Storage {
     pub(crate) fn open(sysroot: &Dir, run: &Dir) -> Result<Self> {
         tracing::trace!("Opening container image store");
         Self::init_globals()?;
+        let subpath = &Self::subpath();
         let storage_root = sysroot
-            .open_dir(SUBPATH)
-            .with_context(|| format!("Opening {SUBPATH}"))?;
+            .open_dir(subpath)
+            .with_context(|| format!("Opening {subpath}"))?;
         // Always auto-create this if missing
         run.create_dir_all(RUNROOT)
             .with_context(|| format!("Creating {RUNROOT}"))?;
@@ -302,6 +304,10 @@ impl Storage {
         cmd.run().await?;
         temp_runroot.close()?;
         Ok(())
+    }
+
+    fn subpath() -> Utf8PathBuf {
+        Utf8Path::new(crate::store::BOOTC_ROOT).join(SUBPATH)
     }
 }
 

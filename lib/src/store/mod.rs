@@ -15,6 +15,10 @@ use crate::spec::ImageStatus;
 
 mod ostree_container;
 
+/// The path to the bootc root directory, relative to the physical
+/// system root
+pub(crate) const BOOTC_ROOT: &str = "ostree/bootc";
+
 pub(crate) struct Storage {
     pub sysroot: SysrootLock,
     run: Dir,
