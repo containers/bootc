@@ -8,18 +8,27 @@ mod boundimage;
 pub mod cli;
 pub(crate) mod deploy;
 pub(crate) mod generator;
+mod glyph;
 mod image;
+mod imgstorage;
 pub(crate) mod journal;
+mod k8sapitypes;
 pub(crate) mod kargs;
 mod lints;
 mod lsm;
 pub(crate) mod metadata;
+mod podman;
+mod progress_jsonl;
 mod reboot;
 mod reexec;
+pub mod spec;
 mod status;
 mod store;
 mod task;
 mod utils;
+
+#[cfg(feature = "docgen")]
+mod docgen;
 
 #[cfg(feature = "install")]
 mod blockdev;
@@ -29,16 +38,7 @@ mod bootloader;
 mod containerenv;
 #[cfg(feature = "install")]
 mod install;
-mod k8sapitypes;
 #[cfg(feature = "install")]
 mod kernel;
 #[cfg(feature = "install")]
 pub(crate) mod mount;
-mod podman;
-pub mod spec;
-
-#[cfg(feature = "docgen")]
-mod docgen;
-mod glyph;
-mod imgstorage;
-mod progress_jsonl;
