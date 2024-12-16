@@ -1,0 +1,4 @@
+[Unit]
+Description=Target for bootc status changes
+Documentation=man:bootc(8)
+StopWhenUnneeded=true
