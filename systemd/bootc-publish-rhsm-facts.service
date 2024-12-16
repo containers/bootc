@@ -1,0 +1,11 @@
+[Unit]
+Description=Publish bootc facts to Red Hat Subscription Manager
+Documentation=man:bootc(8)
+ConditionPathExists=/etc/rhsm/facts
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bootc internals publish-rhsm-facts
+
+[Install]
+WantedBy=bootc-status-updated.target
