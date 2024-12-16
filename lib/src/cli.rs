@@ -750,6 +750,8 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         }
     }
     if changed {
+        sysroot.update_mtime()?;
+
         if opts.apply {
             crate::reboot::reboot()?;
         }
@@ -830,6 +832,8 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let stateroot = booted_deployment.osname();
     crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec, prog.clone()).await?;
 
+    sysroot.update_mtime()?;
+
     if opts.apply {
         crate::reboot::reboot()?;
     }
@@ -884,6 +888,8 @@ async fn edit(opts: EditOpts) -> Result<()> {
 
     let stateroot = booted_deployment.osname();
     crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec, prog.clone()).await?;
+
+    sysroot.update_mtime()?;
 
     Ok(())
 }
