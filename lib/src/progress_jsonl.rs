@@ -2,10 +2,10 @@
 //! see <https://jsonlines.org/>.
 
 use anyhow::Result;
-use fn_error_context::context;
 use serde::Serialize;
 use std::borrow::Cow;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{AsyncWriteExt, BufWriter};
@@ -131,6 +131,22 @@ pub enum Event<'t> {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RawProgressFd(RawFd);
+
+impl FromStr for RawProgressFd {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let fd = s.parse::<u32>()?;
+        // Sanity check
+        if matches!(fd, 0..=2) {
+            anyhow::bail!("Cannot use fd {fd} for progress JSON")
+        }
+        Ok(Self(fd.try_into()?))
+    }
+}
+
 #[derive(Debug)]
 struct ProgressWriterInner {
     last_write: Option<std::time::Instant>,
@@ -163,14 +179,16 @@ impl From<Sender> for ProgressWriter {
     }
 }
 
-impl ProgressWriter {
-    /// Given a raw file descriptor, create an instance of a json-lines writer.
-    #[allow(unsafe_code)]
-    #[context("Creating progress writer")]
-    pub(crate) fn from_raw_fd(fd: RawFd) -> Result<Self> {
-        unsafe { OwnedFd::from_raw_fd(fd) }.try_into()
-    }
+impl TryFrom<RawProgressFd> for ProgressWriter {
+    type Error = anyhow::Error;
 
+    #[allow(unsafe_code)]
+    fn try_from(fd: RawProgressFd) -> Result<Self> {
+        unsafe { OwnedFd::from_raw_fd(fd.0) }.try_into()
+    }
+}
+
+impl ProgressWriter {
     /// Serialize the target object to JSON as a single line
     pub(crate) async fn send_impl<T: Serialize>(&self, v: T, required: bool) -> Result<()> {
         let mut guard = self.inner.lock().await;

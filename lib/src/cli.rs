@@ -4,7 +4,6 @@
 
 use std::ffi::{CString, OsStr, OsString};
 use std::io::Seek;
-use std::os::fd::RawFd;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
@@ -26,11 +25,34 @@ use serde::{Deserialize, Serialize};
 
 use crate::deploy::RequiredHostSpec;
 use crate::lints;
-use crate::progress_jsonl;
-use crate::progress_jsonl::ProgressWriter;
+use crate::progress_jsonl::{ProgressWriter, RawProgressFd};
 use crate::spec::Host;
 use crate::spec::ImageReference;
 use crate::utils::sigpolicy_from_opts;
+
+/// Shared progress options
+#[derive(Debug, Parser, PartialEq, Eq)]
+pub(crate) struct ProgressOptions {
+    /// File descriptor number which must refer to an open pipe (anonymous or named).
+    ///
+    /// Interactive progress will be written to this file descriptor as "JSON lines"
+    /// format, where each value is separated by a newline.
+    #[clap(long)]
+    pub(crate) json_fd: Option<RawProgressFd>,
+}
+
+impl TryFrom<ProgressOptions> for ProgressWriter {
+    type Error = anyhow::Error;
+
+    fn try_from(value: ProgressOptions) -> Result<Self> {
+        let r = value
+            .json_fd
+            .map(TryInto::try_into)
+            .transpose()?
+            .unwrap_or_default();
+        Ok(r)
+    }
+}
 
 /// Perform an upgrade operation
 #[derive(Debug, Parser, PartialEq, Eq)]
@@ -54,9 +76,8 @@ pub(crate) struct UpgradeOpts {
     #[clap(long, conflicts_with = "check")]
     pub(crate) apply: bool,
 
-    /// Pipe download progress to this fd in a jsonl format.
-    #[clap(long)]
-    pub(crate) json_fd: Option<RawFd>,
+    #[clap(flatten)]
+    pub(crate) progress: ProgressOptions,
 }
 
 /// Perform an switch operation
@@ -107,9 +128,8 @@ pub(crate) struct SwitchOpts {
     /// Target image to use for the next boot.
     pub(crate) target: String,
 
-    /// Pipe download progress to this fd in a jsonl format.
-    #[clap(long)]
-    pub(crate) json_fd: Option<RawFd>,
+    #[clap(flatten)]
+    pub(crate) progress: ProgressOptions,
 }
 
 /// Options controlling rollback
@@ -653,11 +673,7 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
     let (booted_deployment, _deployments, host) =
         crate::status::get_status_require_booted(sysroot)?;
     let imgref = host.spec.image.as_ref();
-    let prog = opts
-        .json_fd
-        .map(progress_jsonl::ProgressWriter::from_raw_fd)
-        .transpose()?
-        .unwrap_or_default();
+    let prog: ProgressWriter = opts.progress.try_into()?;
 
     // If there's no specified image, let's be nice and check if the booted system is using rpm-ostree
     if imgref.is_none() {
@@ -774,11 +790,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     );
     let target = ostree_container::OstreeImageReference { sigverify, imgref };
     let target = ImageReference::from(target);
-    let prog = opts
-        .json_fd
-        .map(progress_jsonl::ProgressWriter::from_raw_fd)
-        .transpose()?
-        .unwrap_or_default();
+    let prog: ProgressWriter = opts.progress.try_into()?;
 
     // If we're doing an in-place mutation, we shortcut most of the rest of the work here
     if opts.mutate_in_place {
