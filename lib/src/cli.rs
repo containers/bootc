@@ -32,8 +32,6 @@ use crate::spec::Host;
 use crate::spec::ImageReference;
 use crate::utils::sigpolicy_from_opts;
 
-include!(concat!(env!("OUT_DIR"), "/version.rs"));
-
 /// Perform an upgrade operation
 #[derive(Debug, Parser, PartialEq, Eq)]
 pub(crate) struct UpgradeOpts {
@@ -398,7 +396,7 @@ impl InternalsOpts {
 #[derive(Debug, Parser, PartialEq, Eq)]
 #[clap(name = "bootc")]
 #[clap(rename_all = "kebab-case")]
-#[clap(version,long_version=CLAP_LONG_VERSION)]
+#[clap(version,long_version=clap::crate_version!())]
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Opt {
     /// Download and queue an updated container image to apply.

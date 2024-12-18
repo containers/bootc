@@ -9,7 +9,6 @@ version = "1.1.3"
 # For now don't bump this above what is currently shipped in RHEL9;
 # also keep in sync with the version in cli.
 rust-version = "1.75.0"
-build = "build.rs"
 
 include = ["/src", "LICENSE-APACHE", "LICENSE-MIT"]
 
