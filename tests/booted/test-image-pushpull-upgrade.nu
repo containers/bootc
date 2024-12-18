@@ -46,8 +46,16 @@ RUN echo test content > /usr/share/blah.txt
     # Just sanity check it
     let v = podman run --rm localhost/bootc-derived cat /usr/share/blah.txt | str trim
     assert equal $v "test content"
+
+    let orig_root_mtime = ls -Dl /ostree/bootc | get modified
+
     # Now, fetch it back into the bootc storage!
     bootc switch --transport containers-storage localhost/bootc-derived
+
+    # Also test that the mtime changes on modification
+    let new_root_mtime = ls -Dl /ostree/bootc | get modified
+    assert ($new_root_mtime > $orig_root_mtime)
+
     # And reboot into it
     tmt-reboot
 }
