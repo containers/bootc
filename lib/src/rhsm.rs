@@ -8,7 +8,7 @@ use serde::Serialize;
 
 const FACTS_PATH: &str = "etc/rhsm/facts/bootc.json";
 
-#[derive(Serialize, PartialEq, Debug, Default)]
+#[derive(Serialize, PartialEq, Eq, Debug, Default)]
 struct RhsmFacts {
     #[serde(rename = "bootc.booted.image")]
     booted_image: String,
