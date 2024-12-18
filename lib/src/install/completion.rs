@@ -276,7 +276,7 @@ pub(crate) async fn impl_completion(
     let deployment = &sysroot
         .merge_deployment(stateroot)
         .ok_or_else(|| anyhow::anyhow!("Failed to find deployment (stateroot={stateroot:?}"))?;
-    let sysroot_dir = Dir::reopen_dir(&crate::utils::sysroot_fd(&sysroot))?;
+    let sysroot_dir = crate::utils::sysroot_dir(&sysroot)?;
 
     // Create a subdir in /run
     let rundir = "run/bootc-install";

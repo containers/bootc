@@ -662,7 +662,7 @@ async fn initialize_ostree_root(state: &State, root_setup: &RootSetup) -> Result
         .init_osname(stateroot, cancellable)
         .context("initializing stateroot")?;
 
-    let sysroot_dir = Dir::reopen_dir(&crate::utils::sysroot_fd(&sysroot))?;
+    let sysroot_dir = crate::utils::sysroot_dir(&sysroot)?;
 
     state.tempdir.create_dir("temp-run")?;
     let temp_run = state.tempdir.open_dir("temp-run")?;

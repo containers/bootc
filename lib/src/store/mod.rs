@@ -78,7 +78,7 @@ impl Storage {
         if let Some(imgstore) = self.imgstore.get() {
             return Ok(imgstore);
         }
-        let sysroot_dir = Dir::reopen_dir(&crate::utils::sysroot_fd(&self.sysroot))?;
+        let sysroot_dir = crate::utils::sysroot_dir(&self.sysroot)?;
         let imgstore = crate::imgstorage::Storage::create(&sysroot_dir, &self.run)?;
         Ok(self.imgstore.get_or_init(|| imgstore))
     }
