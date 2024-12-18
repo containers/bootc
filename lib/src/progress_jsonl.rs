@@ -2,7 +2,7 @@
 //! see <https://jsonlines.org/>.
 
 use anyhow::Result;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
 use std::str::FromStr;
@@ -131,7 +131,8 @@ pub enum Event<'t> {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub(crate) struct RawProgressFd(RawFd);
 
 impl FromStr for RawProgressFd {
