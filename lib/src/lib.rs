@@ -42,3 +42,6 @@ mod install;
 mod kernel;
 #[cfg(feature = "install")]
 pub(crate) mod mount;
+
+#[cfg(feature = "rhsm")]
+mod rhsm;

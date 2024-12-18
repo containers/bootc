@@ -393,6 +393,9 @@ pub(crate) enum InternalsOpts {
         // The stateroot
         stateroot: String,
     },
+    #[cfg(feature = "rhsm")]
+    /// Publish subscription-manager facts to /etc/rhsm/facts/bootc.json
+    PublishRhsmFacts,
 }
 
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
@@ -766,6 +769,8 @@ async fn upgrade(opts: UpgradeOpts) -> Result<()> {
         }
     }
     if changed {
+        sysroot.update_mtime()?;
+
         if opts.apply {
             crate::reboot::reboot()?;
         }
@@ -842,6 +847,8 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
     let stateroot = booted_deployment.osname();
     crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec, prog.clone()).await?;
 
+    sysroot.update_mtime()?;
+
     if opts.apply {
         crate::reboot::reboot()?;
     }
@@ -896,6 +903,8 @@ async fn edit(opts: EditOpts) -> Result<()> {
 
     let stateroot = booted_deployment.osname();
     crate::deploy::stage(sysroot, &stateroot, &fetched, &new_spec, prog.clone()).await?;
+
+    sysroot.update_mtime()?;
 
     Ok(())
 }
@@ -1100,6 +1109,8 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 let rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
                 crate::install::completion::run_from_ostree(rootfs, &sysroot, &stateroot).await
             }
+            #[cfg(feature = "rhsm")]
+            InternalsOpts::PublishRhsmFacts => crate::rhsm::publish_facts(&root).await,
         },
         #[cfg(feature = "docgen")]
         Opt::Man(manopts) => crate::docgen::generate_manpages(&manopts.directory),
