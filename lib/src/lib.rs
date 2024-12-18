@@ -7,6 +7,7 @@
 mod boundimage;
 pub mod cli;
 pub(crate) mod deploy;
+pub(crate) mod fsck;
 pub(crate) mod generator;
 mod glyph;
 mod image;

@@ -130,6 +130,7 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
                     "grep authorized_keys etc/tmpfiles.d/bootc-root-ssh.conf"
                 )
                 .run()?;
+
                 drop(cwd);
                 Ok(())
             },
