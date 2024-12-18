@@ -36,62 +36,39 @@ struct RhsmFacts {
     available_digest: String,
 }
 
+/// Return the image reference, version and digest as owned strings.
+/// A missing version is serialized as the empty string.
+fn status_to_strings(imagestatus: &crate::spec::ImageStatus) -> (String, String, String) {
+    let image = imagestatus.image.image.clone();
+    let version = imagestatus.version.as_ref().cloned().unwrap_or_default();
+    let digest = imagestatus.image_digest.clone();
+    (image, version, digest)
+}
+
 impl From<crate::spec::HostStatus> for RhsmFacts {
     fn from(hoststatus: crate::spec::HostStatus) -> Self {
         let (booted_image, booted_version, booted_digest) = hoststatus
             .booted
             .as_ref()
-            .and_then(|boot_entry| {
-                boot_entry.image.as_ref().map(|imagestatus| {
-                    let image = imagestatus.image.image.clone();
-                    let version = imagestatus.version.as_ref().cloned().unwrap_or_default();
-                    let digest = imagestatus.image_digest.clone();
-
-                    (image, version, digest)
-                })
-            })
+            .and_then(|boot_entry| boot_entry.image.as_ref().map(status_to_strings))
             .unwrap_or_default();
 
         let (staged_image, staged_version, staged_digest) = hoststatus
             .staged
             .as_ref()
-            .and_then(|boot_entry| {
-                boot_entry.image.as_ref().map(|imagestatus| {
-                    let image = imagestatus.image.image.clone();
-                    let version = imagestatus.version.as_ref().cloned().unwrap_or_default();
-                    let digest = imagestatus.image_digest.clone();
-
-                    (image, version, digest)
-                })
-            })
+            .and_then(|boot_entry| boot_entry.image.as_ref().map(status_to_strings))
             .unwrap_or_default();
 
         let (rollback_image, rollback_version, rollback_digest) = hoststatus
             .rollback
             .as_ref()
-            .and_then(|boot_entry| {
-                boot_entry.image.as_ref().map(|imagestatus| {
-                    let image = imagestatus.image.image.clone();
-                    let version = imagestatus.version.as_ref().cloned().unwrap_or_default();
-                    let digest = imagestatus.image_digest.clone();
-
-                    (image, version, digest)
-                })
-            })
+            .and_then(|boot_entry| boot_entry.image.as_ref().map(status_to_strings))
             .unwrap_or_default();
 
         let (available_image, available_version, available_digest) = hoststatus
             .booted
             .as_ref()
-            .and_then(|boot_entry| {
-                boot_entry.cached_update.as_ref().map(|imagestatus| {
-                    let image = imagestatus.image.image.clone();
-                    let version = imagestatus.version.as_ref().cloned().unwrap_or_default();
-                    let digest = imagestatus.image_digest.clone();
-
-                    (image, version, digest)
-                })
-            })
+            .and_then(|boot_entry| boot_entry.cached_update.as_ref().map(status_to_strings))
             .unwrap_or_default();
 
         Self {
