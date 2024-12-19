@@ -2,17 +2,19 @@
 //! procedures as part of building an ostree container image.
 //! <https://github.com/ostreedev/ostree-rs-ext/issues/159>
 
-use crate::container_utils::require_ostree_container;
-use crate::mountutil::is_mountpoint;
 use anyhow::Context;
 use anyhow::Result;
 use cap_std::fs::Dir;
 use cap_std::fs::MetadataExt;
 use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt;
+use std::os::fd::AsFd;
 use std::path::Path;
 use std::path::PathBuf;
 use tokio::task;
+
+use crate::container_utils::require_ostree_container;
+use bootc_utils::mount::is_mountpoint_compat;
 
 /// Directories for which we will always remove all content.
 const FORCE_CLEAN_PATHS: &[&str] = &["run", "tmp", "var/tmp", "var/cache"];
@@ -60,7 +62,7 @@ fn clean_subdir(root: &Dir, rootdev: u64) -> Result<()> {
         }
         // Also ignore bind mounts, if we have a new enough kernel with statx()
         // that will tell us.
-        if is_mountpoint(root, &path)?.unwrap_or_default() {
+        if is_mountpoint_compat(root.as_fd(), &path)?.unwrap_or_default() {
             tracing::trace!("Skipping mount point {path:?}");
             continue;
         }

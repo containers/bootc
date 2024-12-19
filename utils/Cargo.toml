@@ -8,12 +8,14 @@ repository = "https://github.com/containers/bootc"
 
 [dependencies]
 anyhow = { workspace = true }
+cap-std-ext = { workspace = true, features = ["fs_utf8"] }
 rustix = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true, features = ["process"] }
+libc = { workspace = true }
 
 [dev-dependencies]
 similar-asserts = { workspace = true }

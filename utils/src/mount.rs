@@ -1,11 +1,9 @@
 //! Helpers for interacting with mounts.
 
-use std::os::fd::AsFd;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::path::Path;
 
 use anyhow::Result;
-use cap_std::fs::Dir;
-use cap_std_ext::cap_std;
 
 // Fix musl support
 #[cfg(target_env = "gnu")]
@@ -13,7 +11,7 @@ use libc::STATX_ATTR_MOUNT_ROOT;
 #[cfg(target_env = "musl")]
 const STATX_ATTR_MOUNT_ROOT: libc::c_int = 0x2000;
 
-fn is_mountpoint_impl_statx(root: &Dir, path: &Path) -> Result<Option<bool>> {
+fn is_mountpoint_impl_statx(root: BorrowedFd, path: &Path) -> Result<Option<bool>> {
     // https://github.com/systemd/systemd/blob/8fbf0a214e2fe474655b17a4b663122943b55db0/src/basic/mountpoint-util.c#L176
     use rustix::fs::{AtFlags, StatxFlags};
 
@@ -34,27 +32,39 @@ fn is_mountpoint_impl_statx(root: &Dir, path: &Path) -> Result<Option<bool>> {
     }
 }
 
-/// Try to (heuristically) determine if the provided path is a mount root.
-pub fn is_mountpoint(root: &Dir, path: impl AsRef<Path>) -> Result<Option<bool>> {
+/// Check if the target path is a mount point. On older systems without
+/// `statx` support or that is missing support for the `STATX_ATTR_MOUNT_ROOT`,
+/// this will return `Ok(None)`.
+pub fn is_mountpoint_compat(root: BorrowedFd, path: impl AsRef<Path>) -> Result<Option<bool>> {
     is_mountpoint_impl_statx(root, path.as_ref())
+}
+
+/// Check if the target path is a mount point.
+pub fn is_mountpoint(root: BorrowedFd, path: impl AsRef<Path>) -> Result<bool> {
+    match is_mountpoint_compat(root, path)? {
+        Some(r) => Ok(r),
+        None => anyhow::bail!("statx missing mountpoint support"),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cap_std_ext::cap_tempfile;
+    use cap_std_ext::{cap_std, cap_tempfile};
 
     #[test]
     fn test_is_mountpoint() -> Result<()> {
         let root = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-        let supported = is_mountpoint(&root, Path::new("/")).unwrap();
+        let supported = is_mountpoint_compat(root.as_fd(), Path::new("/")).unwrap();
         match supported {
             Some(r) => assert!(r),
             // If the host doesn't support statx, ignore this for now
             None => return Ok(()),
         }
         let tmpdir = cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
-        assert!(!is_mountpoint(&tmpdir, Path::new(".")).unwrap().unwrap());
+        assert!(!is_mountpoint_compat(tmpdir.as_fd(), Path::new("."))
+            .unwrap()
+            .unwrap());
         Ok(())
     }
 }
