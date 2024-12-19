@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::io::Write;
-use std::os::fd::BorrowedFd;
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
@@ -20,6 +21,7 @@ use libsystemd::logging::journal_print;
 use ostree::glib;
 use ostree_ext::container::SignatureSource;
 use ostree_ext::ostree;
+use rustix::path::Arg;
 
 /// Try to look for keys injected by e.g. rpm-ostree requesting machine-local
 /// changes; if any are present, return `true`.
@@ -54,6 +56,33 @@ pub(crate) fn deployment_fd(
     let sysroot_dir = &Dir::reopen_dir(&sysroot_fd(sysroot))?;
     let dirpath = sysroot.deployment_dirpath(deployment);
     sysroot_dir.open_dir(&dirpath).map_err(Into::into)
+}
+
+/// A thin wrapper for [`openat2`] but that retries on interruption.
+pub fn openat2_with_retry(
+    dirfd: impl AsFd,
+    path: impl AsRef<Path>,
+    oflags: rustix::fs::OFlags,
+    mode: rustix::fs::Mode,
+    resolve: rustix::fs::ResolveFlags,
+) -> rustix::io::Result<OwnedFd> {
+    let dirfd = dirfd.as_fd();
+    let path = path.as_ref();
+    // We loop forever on EAGAIN right now. The cap-std version loops just 4 times,
+    // which seems really arbitrary.
+    path.into_with_c_str(|path_c_str| 'start: loop {
+        match rustix::fs::openat2(dirfd, path_c_str, oflags, mode, resolve) {
+            Ok(file) => {
+                return Ok(file);
+            }
+            Err(rustix::io::Errno::AGAIN | rustix::io::Errno::INTR) => {
+                continue 'start;
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
+    })
 }
 
 /// Given an mount option string list like foo,bar=baz,something=else,ro parse it and find
