@@ -53,7 +53,6 @@ pub(crate) fn get_kargs_in_root(d: &Dir, sys_arch: &str) -> Result<Vec<String>> 
 }
 
 /// Load kargs.d files from the target ostree commit root
-#[cfg(feature = "install")]
 pub(crate) fn get_kargs_from_ostree_root(
     repo: &ostree::Repo,
     root: &ostree::RepoFile,
