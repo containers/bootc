@@ -2,9 +2,11 @@ use std::cell::OnceCell;
 use std::env;
 use std::ops::Deref;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use cap_std_ext::cap_std::fs::Dir;
+use cap_std_ext::dirext::CapStdExtDirExt;
 use clap::ValueEnum;
+use fn_error_context::context;
 
 use ostree_ext::container::OstreeImageReference;
 use ostree_ext::keyfileext::KeyFileExt;
@@ -14,6 +16,10 @@ use ostree_ext::sysroot::SysrootLock;
 use crate::spec::ImageStatus;
 
 mod ostree_container;
+
+/// The path to the bootc root directory, relative to the physical
+/// system root
+pub(crate) const BOOTC_ROOT: &str = "ostree/bootc";
 
 pub(crate) struct Storage {
     pub sysroot: SysrootLock,
@@ -81,6 +87,18 @@ impl Storage {
         let sysroot_dir = crate::utils::sysroot_dir(&self.sysroot)?;
         let imgstore = crate::imgstorage::Storage::create(&sysroot_dir, &self.run)?;
         Ok(self.imgstore.get_or_init(|| imgstore))
+    }
+
+    /// Update the mtime on the storage root directory
+    #[context("Updating storage root mtime")]
+    pub(crate) fn update_mtime(&self) -> Result<()> {
+        let sysroot_dir =
+            crate::utils::sysroot_dir(&self.sysroot).context("Reopen sysroot directory")?;
+
+        sysroot_dir
+            .update_timestamps(std::path::Path::new(BOOTC_ROOT))
+            .context("update_timestamps")
+            .map_err(Into::into)
     }
 }
 

@@ -747,6 +747,9 @@ pub(crate) async fn rollback(sysroot: &Storage) -> Result<()> {
     } else {
         println!("Next boot: rollback deployment");
     }
+
+    sysroot.update_mtime()?;
+
     Ok(())
 }
 

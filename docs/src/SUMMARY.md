@@ -28,6 +28,8 @@
 - [`man bootc-rollback`](man/bootc-rollback.md)
 - [`man bootc-usr-overlay`](man/bootc-usr-overlay.md)
 - [`man bootc-fetch-apply-updates.service`](man-md/bootc-fetch-apply-updates.service.md)
+- [`man bootc-status-updated.path`](man-md/bootc-status-updated.path.md)
+- [`man bootc-status-updated.target`](man-md/bootc-status-updated.target.md)
 - [Controlling bootc via API](bootc-via-api.md)
 
 # Using `bootc install`

@@ -56,6 +56,9 @@ static_assertions = { workspace = true }
 default = ["install"]
 # This feature enables `bootc install`.  Disable if you always want to use an external installer.
 install = []
+# This featuares enables `bootc internals publish-rhsm-facts` to integrate with
+# Red Hat Subscription Manager
+rhsm = []
 # Implementation detail of man page generation.
 docgen = ["clap_mangen"]
 
