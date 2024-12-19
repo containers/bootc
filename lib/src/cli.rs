@@ -22,6 +22,7 @@ use ostree_ext::keyfileext::KeyFileExt;
 use ostree_ext::ostree;
 use schemars::schema_for;
 use serde::{Deserialize, Serialize};
+use tokio::net::unix::pipe::Sender;
 
 use crate::deploy::RequiredHostSpec;
 use crate::lints;
@@ -31,26 +32,38 @@ use crate::spec::ImageReference;
 use crate::utils::sigpolicy_from_opts;
 
 /// Shared progress options
-#[derive(Debug, Parser, PartialEq, Eq)]
+#[derive(Debug, Clone, Parser, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ProgressOptions {
     /// File descriptor number which must refer to an open pipe (anonymous or named).
     ///
     /// Interactive progress will be written to this file descriptor as "JSON lines"
     /// format, where each value is separated by a newline.
-    #[clap(long)]
+    #[clap(long, conflicts_with = "progress_json")]
     pub(crate) json_fd: Option<RawProgressFd>,
+
+    /// Path to a FIFO file (named pipe).
+    ///
+    /// Interactive progress will be written to this file descriptor as "JSON lines"
+    /// format, where each value is separated by a newline.
+    #[clap(long, conflicts_with = "json_fd")]
+    pub(crate) progress_json: Option<Utf8PathBuf>,
 }
 
 impl TryFrom<ProgressOptions> for ProgressWriter {
     type Error = anyhow::Error;
 
     fn try_from(value: ProgressOptions) -> Result<Self> {
-        let r = value
-            .json_fd
-            .map(TryInto::try_into)
-            .transpose()?
-            .unwrap_or_default();
-        Ok(r)
+        if let Some(v) = value.json_fd {
+            v.try_into()
+        } else if let Some(v) = value.progress_json {
+            let f = std::fs::File::options()
+                .write(true)
+                .open(&v)
+                .with_context(|| format!("Opening progress json fifo {v}"))?;
+            Ok(Sender::from_file(f)?.into())
+        } else {
+            Ok(Default::default())
+        }
     }
 }
 
