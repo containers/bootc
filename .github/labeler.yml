@@ -1,16 +1,18 @@
 documentation:
 - changed-files:
   - any-glob-to-any-file:
-    - 'docs/*'
+    - 'docs/**'
     - README.md
 
 # Automatically bypass most CI for doc-only changes
 control/skip-ci:
 - changed-files:
   - any-glob-to-all-files:
-    - 'docs/*'
+    - 'docs/**'
     - README.md
 
 area/install:
 - changed-files:
-  - any-glob-to-any-file: 'lib/src/install*'
+  - any-glob-to-any-file:
+      - 'lib/src/install.rs'
+      - 'lib/src/install/**'
