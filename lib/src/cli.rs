@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::deploy::RequiredHostSpec;
 use crate::lints;
+use crate::mount::open_tree;
 use crate::progress_jsonl::{ProgressWriter, RawProgressFd};
 use crate::spec::Host;
 use crate::spec::ImageReference;
@@ -991,7 +992,6 @@ impl Opt {
 
 /// Internal (non-generic/monomorphized) primary CLI entrypoint
 async fn run_from_opt(opt: Opt) -> Result<()> {
-    let root = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
     match opt {
         Opt::Upgrade(opts) => upgrade(opts).await,
         Opt::Switch(opts) => switch(opts).await,
@@ -1006,8 +1006,10 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     );
                 }
 
-                lints::lint(root)?;
-                Ok(())
+                // We want to open *only* the root filesystem of the container image
+                // ie: without /sys, /proc, /etc/resolve.conf bind mounts, etc.
+                let root: Dir = open_tree("/".into(), false)?.into();
+                lints::lint(&root)
             }
         },
         Opt::Image(opts) => match opts {
@@ -1070,8 +1072,9 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 early_dir: _,
                 late_dir: _,
             } => {
+                let root = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
                 let unit_dir = &Dir::open_ambient_dir(normal_dir, cap_std::ambient_authority())?;
-                crate::generator::generator(root, unit_dir)
+                crate::generator::generator(&root, unit_dir)
             }
             InternalsOpts::OstreeExt { args } => {
                 ostree_ext::cli::run_from_iter(["ostree-ext".into()].into_iter().chain(args)).await
@@ -1084,7 +1087,10 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 )
                 .await
             }
-            InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
+            InternalsOpts::FixupEtcFstab => {
+                let root = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+                crate::deploy::fixup_etc_fstab(&root)
+            }
             InternalsOpts::PrintJsonSchema => {
                 let schema = schema_for!(crate::spec::Host);
                 let mut stdout = std::io::stdout().lock();
