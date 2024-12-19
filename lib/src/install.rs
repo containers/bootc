@@ -1711,7 +1711,7 @@ pub(crate) async fn install_to_filesystem(
 
         tracing::debug!("Root filesystem: {root_path}");
 
-        if let Some(false) = ostree_ext::mountutil::is_mountpoint(&rootfs_fd, ".")? {
+        if let Some(false) = bootc_utils::mount::is_mountpoint_compat(rootfs_fd.as_fd(), ".")? {
             anyhow::bail!("Not a mountpoint: {root_path}");
         }
         rootfs_fd
