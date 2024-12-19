@@ -1,4 +1,3 @@
-#[cfg(feature = "install")]
 use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
@@ -9,14 +8,10 @@ use anyhow::{Context, Result};
 use bootc_utils::CommandRunExt;
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_std::fs::Dir;
-#[cfg(feature = "install")]
 use cap_std::fs::{DirBuilder, OpenOptions};
-#[cfg(feature = "install")]
 use cap_std::io_lifetimes::AsFilelike;
 use cap_std_ext::cap_std;
-#[cfg(feature = "install")]
 use cap_std_ext::cap_std::fs::{Metadata, MetadataExt};
-#[cfg(feature = "install")]
 use cap_std_ext::dirext::CapStdExtDirExt;
 use fn_error_context::context;
 use ostree_ext::gio;
@@ -24,10 +19,8 @@ use ostree_ext::ostree;
 use rustix::fd::AsFd;
 
 /// The mount path for selinux
-#[cfg(feature = "install")]
 const SELINUXFS: &str = "/sys/fs/selinux";
 /// The SELinux xattr
-#[cfg(feature = "install")]
 const SELINUX_XATTR: &[u8] = b"security.selinux\0";
 const SELF_CURRENT: &str = "/proc/self/attr/current";
 
@@ -99,7 +92,6 @@ pub(crate) fn selinux_ensure_install() -> Result<bool> {
 }
 
 /// Query whether SELinux is apparently enabled in the target root
-#[cfg(feature = "install")]
 pub(crate) fn have_selinux_policy(root: &Dir) -> Result<bool> {
     // TODO use ostree::SePolicy and query policy name
     root.try_exists("etc/selinux/config").map_err(Into::into)
@@ -108,17 +100,17 @@ pub(crate) fn have_selinux_policy(root: &Dir) -> Result<bool> {
 /// A type which will reset SELinux back to enforcing mode when dropped.
 /// This is a workaround for the deep difficulties in trying to reliably
 /// gain the `mac_admin` permission (install_t).
-#[cfg(feature = "install")]
 #[must_use]
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) struct SetEnforceGuard(Option<()>);
 
-#[cfg(feature = "install")]
 impl SetEnforceGuard {
     pub(crate) fn new() -> Self {
         SetEnforceGuard(Some(()))
     }
 
+    #[allow(dead_code)]
     pub(crate) fn consume(mut self) -> Result<()> {
         // SAFETY: The option cannot have been consumed until now
         self.0.take().unwrap();
@@ -127,7 +119,6 @@ impl SetEnforceGuard {
     }
 }
 
-#[cfg(feature = "install")]
 impl Drop for SetEnforceGuard {
     fn drop(&mut self) {
         // A best-effort attempt to re-enable enforcement on drop (installation failure)
@@ -140,7 +131,6 @@ impl Drop for SetEnforceGuard {
 /// Try to enter the install_t domain, but if we can't do that, then
 /// just setenforce 0.
 #[context("Ensuring selinux install_t type")]
-#[cfg(feature = "install")]
 pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforceGuard>> {
     // If the process already has install_t, exit early
     // Note that this may re-exec the entire process
@@ -160,7 +150,6 @@ pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforce
 
 #[context("Setting SELinux permissive mode")]
 #[allow(dead_code)]
-#[cfg(feature = "install")]
 pub(crate) fn selinux_set_permissive(permissive: bool) -> Result<()> {
     let enforce_path = &Utf8Path::new(SELINUXFS).join("enforce");
     if !enforce_path.exists() {
@@ -179,7 +168,6 @@ pub(crate) fn selinux_set_permissive(permissive: bool) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "install")]
 /// Check if the ostree-formatted extended attributes include a security.selinux value.
 pub(crate) fn xattrs_have_selinux(xattrs: &ostree::glib::Variant) -> bool {
     let n = xattrs.n_children();
@@ -223,7 +211,6 @@ pub(crate) fn set_security_selinux(fd: std::os::fd::BorrowedFd, label: &[u8]) ->
 
 /// The labeling state; "unsupported" is distinct as we need to handle
 /// cases like the ESP which don't support labeling.
-#[cfg(feature = "install")]
 pub(crate) enum SELinuxLabelState {
     Unlabeled,
     Unsupported,
@@ -231,7 +218,6 @@ pub(crate) enum SELinuxLabelState {
 }
 
 /// Query the SELinux labeling for a particular path
-#[cfg(feature = "install")]
 pub(crate) fn has_security_selinux(root: &Dir, path: &Utf8Path) -> Result<SELinuxLabelState> {
     // TODO: avoid hardcoding a max size here
     let mut buf = [0u8; 2048];
@@ -244,7 +230,6 @@ pub(crate) fn has_security_selinux(root: &Dir, path: &Utf8Path) -> Result<SELinu
     }
 }
 
-#[cfg(feature = "install")]
 pub(crate) fn set_security_selinux_path(root: &Dir, path: &Utf8Path, label: &[u8]) -> Result<()> {
     // TODO: avoid hardcoding a max size here
     let fdpath = format!("/proc/self/fd/{}/", root.as_raw_fd());
@@ -258,7 +243,6 @@ pub(crate) fn set_security_selinux_path(root: &Dir, path: &Utf8Path, label: &[u8
     Ok(())
 }
 
-#[cfg(feature = "install")]
 pub(crate) fn ensure_labeled(
     root: &Dir,
     path: &Utf8Path,
@@ -277,7 +261,6 @@ pub(crate) fn ensure_labeled(
 
 /// A wrapper for creating a directory, also optionally setting a SELinux label.
 /// The provided `skip` parameter is a device/inode that we will ignore (and not traverse).
-#[cfg(feature = "install")]
 pub(crate) fn ensure_dir_labeled_recurse(
     root: &Dir,
     path: &mut Utf8PathBuf,
@@ -340,7 +323,6 @@ pub(crate) fn ensure_dir_labeled_recurse(
 }
 
 /// A wrapper for creating a directory, also optionally setting a SELinux label.
-#[cfg(feature = "install")]
 pub(crate) fn ensure_dir_labeled(
     root: &Dir,
     destname: impl AsRef<Utf8Path>,
@@ -387,7 +369,6 @@ pub(crate) fn ensure_dir_labeled(
 }
 
 /// A wrapper for atomically writing a file, also optionally setting a SELinux label.
-#[cfg(feature = "install")]
 pub(crate) fn atomic_replace_labeled<F>(
     root: &Dir,
     destname: impl AsRef<Utf8Path>,

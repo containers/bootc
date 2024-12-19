@@ -1,15 +1,20 @@
 use std::collections::HashMap;
+#[cfg(feature = "install-to-disk")]
 use std::env;
+#[cfg(feature = "install-to-disk")]
 use std::path::Path;
 use std::process::Command;
 use std::sync::OnceLock;
 
 use anyhow::{anyhow, Context, Result};
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
+#[cfg(feature = "install-to-disk")]
+use camino::Utf8PathBuf;
 use fn_error_context::context;
 use regex::Regex;
 use serde::Deserialize;
 
+#[cfg(feature = "install-to-disk")]
 use crate::install::run_in_host_mountns;
 use crate::task::Task;
 use bootc_utils::CommandRunExt;
@@ -47,6 +52,7 @@ impl Device {
         self.path.clone().unwrap_or(format!("/dev/{}", &self.name))
     }
 
+    #[allow(dead_code)]
     pub(crate) fn has_children(&self) -> bool {
         self.children.as_ref().map_or(false, |v| !v.is_empty())
     }
@@ -86,6 +92,7 @@ impl Device {
 }
 
 #[context("Failed to wipe {dev}")]
+#[cfg(feature = "install-to-disk")]
 pub(crate) fn wipefs(dev: &Utf8Path) -> Result<()> {
     Task::new_and_run(
         format!("Wiping device {dev}"),
@@ -161,6 +168,7 @@ impl PartitionTable {
     }
 
     // Find the partition with the given offset (starting at 1)
+    #[allow(dead_code)]
     pub(crate) fn find_partno(&self, partno: u32) -> Result<&Partition> {
         let r = self
             .partitions
@@ -171,6 +179,7 @@ impl PartitionTable {
 }
 
 impl Partition {
+    #[allow(dead_code)]
     pub(crate) fn path(&self) -> &Utf8Path {
         self.node.as_str().into()
     }
@@ -185,10 +194,12 @@ pub(crate) fn partitions_of(dev: &Utf8Path) -> Result<PartitionTable> {
     Ok(o.partitiontable)
 }
 
+#[cfg(feature = "install-to-disk")]
 pub(crate) struct LoopbackDevice {
     pub(crate) dev: Option<Utf8PathBuf>,
 }
 
+#[cfg(feature = "install-to-disk")]
 impl LoopbackDevice {
     // Create a new loopback block device targeting the provided file path.
     pub(crate) fn new(path: &Path) -> Result<Self> {
@@ -243,6 +254,7 @@ impl LoopbackDevice {
     }
 }
 
+#[cfg(feature = "install-to-disk")]
 impl Drop for LoopbackDevice {
     fn drop(&mut self) {
         // Best effort to unmount if we're dropped without invoking `close`
@@ -250,6 +262,7 @@ impl Drop for LoopbackDevice {
     }
 }
 
+#[cfg(feature = "install-to-disk")]
 pub(crate) fn udev_settle() -> Result<()> {
     // There's a potential window after rereading the partition table where
     // udevd hasn't yet received updates from the kernel, settle will return
@@ -311,6 +324,7 @@ pub(crate) fn find_parent_devices(device: &str) -> Result<Vec<String>> {
 }
 
 /// Parse a string into mibibytes
+#[cfg(feature = "install-to-disk")]
 pub(crate) fn parse_size_mib(mut s: &str) -> Result<u64> {
     let suffixes = [
         ("MiB", 1u64),

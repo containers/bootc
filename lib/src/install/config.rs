@@ -3,15 +3,32 @@
 //! This module handles the TOML configuration file for `bootc install`.
 
 use anyhow::{Context, Result};
+use clap::ValueEnum;
 use fn_error_context::context;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "install-to-disk")]
 use super::baseline::BlockSetup;
 
 /// Properties of the environment, such as the system architecture
 /// Left open for future properties such as `platform.id`
 pub(crate) struct EnvProperties {
     pub(crate) sys_arch: String,
+}
+
+/// A well known filesystem type.
+#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum Filesystem {
+    Xfs,
+    Ext4,
+    Btrfs,
+}
+
+impl std::fmt::Display for Filesystem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
 }
 
 /// The toplevel config entry for installation configs stored
@@ -27,7 +44,7 @@ pub(crate) struct InstallConfigurationToplevel {
 #[serde(deny_unknown_fields)]
 pub(crate) struct RootFS {
     #[serde(rename = "type")]
-    pub(crate) fstype: Option<super::baseline::Filesystem>,
+    pub(crate) fstype: Option<Filesystem>,
 }
 
 /// This structure should only define "system" or "basic" filesystems; we are
@@ -46,8 +63,9 @@ pub(crate) struct BasicFilesystems {
 #[serde(rename = "install", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) struct InstallConfiguration {
     /// Root filesystem type
-    pub(crate) root_fs_type: Option<super::baseline::Filesystem>,
+    pub(crate) root_fs_type: Option<Filesystem>,
     /// Enabled block storage configurations
+    #[cfg(feature = "install-to-disk")]
     pub(crate) block: Option<Vec<BlockSetup>>,
     pub(crate) filesystem: Option<BasicFilesystems>,
     /// Kernel arguments, applied at installation time
@@ -112,6 +130,7 @@ impl Mergeable for InstallConfiguration {
             .unwrap_or(true)
         {
             merge_basic(&mut self.root_fs_type, other.root_fs_type, env);
+            #[cfg(feature = "install-to-disk")]
             merge_basic(&mut self.block, other.block, env);
             self.filesystem.merge(other.filesystem, env);
             if let Some(other_kargs) = other.kargs {
@@ -139,6 +158,7 @@ impl InstallConfiguration {
             root.fstype = Some(*rootfs);
         }
 
+        #[cfg(feature = "install-to-disk")]
         if self.block.is_none() {
             self.block = Some(vec![BlockSetup::Direct]);
         }
@@ -154,6 +174,7 @@ impl InstallConfiguration {
         self.kargs.take();
     }
 
+    #[cfg(feature = "install-to-disk")]
     pub(crate) fn get_block_setup(&self, default: Option<BlockSetup>) -> Result<BlockSetup> {
         let valid_block_setups = self.block.as_deref().unwrap_or_default();
         let default_block = valid_block_setups.iter().next().ok_or_else(|| {
@@ -216,8 +237,6 @@ pub(crate) fn load_config() -> Result<Option<InstallConfiguration>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use super::super::baseline::Filesystem;
 
     #[test]
     /// Verify that we can parse our default config file
