@@ -4,7 +4,7 @@
 
 use std::env::consts::ARCH;
 
-use anyhow::Result;
+use anyhow::{bail, ensure, Result};
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt as _;
@@ -15,7 +15,13 @@ use fn_error_context::context;
 /// if it does not exist error.
 #[context("Linting")]
 pub(crate) fn lint(root: &Dir) -> Result<()> {
-    let lints = [check_var_run, check_kernel, check_parse_kargs, check_usretc];
+    let lints = [
+        check_var_run,
+        check_kernel,
+        check_parse_kargs,
+        check_usretc,
+        check_utf8,
+    ];
     for lint in lints {
         lint(&root)?;
     }
@@ -56,6 +62,33 @@ fn check_parse_kargs(root: &Dir) -> Result<()> {
 fn check_kernel(root: &Dir) -> Result<()> {
     let result = ostree_ext::bootabletree::find_kernel_dir_fs(&root)?;
     tracing::debug!("Found kernel: {:?}", result);
+    Ok(())
+}
+
+fn check_utf8(dir: &Dir) -> Result<()> {
+    for entry in dir.entries()? {
+        let entry = entry?;
+        let name = entry.file_name();
+
+        let Some(strname) = &name.to_str() else {
+            // will escape nicely like "abc\xFFdéf"
+            bail!("/: Found non-utf8 filename {name:?}");
+        };
+
+        let ifmt = entry.file_type()?;
+        if ifmt.is_symlink() {
+            let target = dir.read_link_contents(&name)?;
+            ensure!(
+                target.to_str().is_some(),
+                "/{strname}: Found non-utf8 symlink target"
+            );
+        } else if ifmt.is_dir() {
+            if let Err(err) = check_utf8(&entry.open_dir()?) {
+                // Try to do the path pasting only in the event of an error
+                bail!("/{strname}{err:?}");
+            }
+        }
+    }
     Ok(())
 }
 
@@ -116,4 +149,76 @@ fn test_usr_etc() -> Result<()> {
     // Now we should pass again
     check_usretc(root).unwrap();
     Ok(())
+}
+
+#[test]
+fn test_non_utf8() {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+
+    let root = &fixture().unwrap();
+
+    // Try to create some adversarial symlink situations to ensure the walk doesn't crash
+    root.create_dir("subdir").unwrap();
+    // Self-referential symlinks
+    root.symlink("self", "self").unwrap();
+    // Infinitely looping dir symlinks
+    root.symlink("..", "subdir/parent").unwrap();
+    // Broken symlinks
+    root.symlink("does-not-exist", "broken").unwrap();
+    // Out-of-scope symlinks
+    root.symlink("../../x", "escape").unwrap();
+    // Should be fine
+    check_utf8(root).unwrap();
+
+    // But this will cause an issue
+    let baddir = OsStr::from_bytes(b"subdir/2/bad\xffdir");
+    root.create_dir("subdir/2").unwrap();
+    root.create_dir(baddir).unwrap();
+    let Err(err) = check_utf8(root) else {
+        unreachable!("Didn't fail");
+    };
+    assert_eq!(
+        err.to_string(),
+        r#"/subdir/2/: Found non-utf8 filename "bad\xFFdir""#
+    );
+    root.remove_dir(baddir).unwrap(); // Get rid of the problem
+    check_utf8(root).unwrap(); // Check it
+
+    // Create a new problem in the form of a regular file
+    let badfile = OsStr::from_bytes(b"regular\xff");
+    root.write(badfile, b"Hello, world!\n").unwrap();
+    let Err(err) = check_utf8(root) else {
+        unreachable!("Didn't fail");
+    };
+    assert_eq!(
+        err.to_string(),
+        r#"/: Found non-utf8 filename "regular\xFF""#
+    );
+    root.remove_file(badfile).unwrap(); // Get rid of the problem
+    check_utf8(root).unwrap(); // Check it
+
+    // And now test invalid symlink targets
+    root.symlink(badfile, "subdir/good-name").unwrap();
+    let Err(err) = check_utf8(root) else {
+        unreachable!("Didn't fail");
+    };
+    assert_eq!(
+        err.to_string(),
+        r#"/subdir/good-name: Found non-utf8 symlink target"#
+    );
+    root.remove_file("subdir/good-name").unwrap(); // Get rid of the problem
+    check_utf8(root).unwrap(); // Check it
+
+    // Finally, test a self-referential symlink with an invalid name.
+    // We should spot the invalid name before we check the target.
+    root.symlink(badfile, badfile).unwrap();
+    let Err(err) = check_utf8(root) else {
+        unreachable!("Didn't fail");
+    };
+    assert_eq!(
+        err.to_string(),
+        r#"/: Found non-utf8 filename "regular\xFF""#
+    );
+    root.remove_file(badfile).unwrap(); // Get rid of the problem
+    check_utf8(root).unwrap(); // Check it
 }

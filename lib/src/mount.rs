@@ -146,6 +146,23 @@ pub(crate) fn is_same_as_host(path: &Utf8Path) -> Result<bool> {
     Ok(devstat.f_fsid == hostdevstat.f_fsid)
 }
 
+/// Open the named path as a new mount attached to an fd.
+#[context("Opening mount tree from pid")]
+pub(crate) fn open_tree(path: &Utf8Path, recursive: bool) -> Result<OwnedFd> {
+    // Open the target mount path as a file descriptor.
+    let recursive = if recursive {
+        OpenTreeFlags::AT_RECURSIVE
+    } else {
+        OpenTreeFlags::empty()
+    };
+    rustix::mount::open_tree(
+        rustix::fs::CWD,
+        path.as_std_path(),
+        OpenTreeFlags::OPEN_TREE_CLOEXEC | OpenTreeFlags::OPEN_TREE_CLONE | recursive,
+    )
+    .context("open_tree")
+}
+
 /// Given a pid, enter its mount namespace and acquire a file descriptor
 /// for a mount from that namespace.
 #[allow(unsafe_code)]
@@ -179,18 +196,7 @@ pub(crate) fn open_tree_from_pidns(
             )
             .context("setns")?;
 
-            // Open the target mount path as a file descriptor.
-            let recursive = if recursive {
-                OpenTreeFlags::AT_RECURSIVE
-            } else {
-                OpenTreeFlags::empty()
-            };
-            let fd = rustix::mount::open_tree(
-                rustix::fs::CWD,
-                path.as_std_path(),
-                OpenTreeFlags::OPEN_TREE_CLOEXEC | OpenTreeFlags::OPEN_TREE_CLONE | recursive,
-            )
-            .context("open_tree")?;
+            let fd = open_tree(path, recursive)?;
 
             // And send that file descriptor via fd passing over the socketpair.
             let fd = fd.as_fd();
