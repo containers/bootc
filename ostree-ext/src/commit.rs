@@ -3,7 +3,6 @@
 //! <https://github.com/ostreedev/ostree-rs-ext/issues/159>
 
 use crate::container_utils::require_ostree_container;
-use crate::mountutil::is_mountpoint;
 use anyhow::Context;
 use anyhow::Result;
 use cap_std::fs::Dir;
@@ -60,7 +59,7 @@ fn clean_subdir(root: &Dir, rootdev: u64) -> Result<()> {
         }
         // Also ignore bind mounts, if we have a new enough kernel with statx()
         // that will tell us.
-        if is_mountpoint(root, &path)?.unwrap_or_default() {
+        if root.is_mountpoint(&path)?.unwrap_or_default() {
             tracing::trace!("Skipping mount point {path:?}");
             continue;
         }
