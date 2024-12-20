@@ -1,8 +1,8 @@
 //! Integration with Red Hat Subscription Manager
 
-use anyhow::Result;
-use cap_std::fs::{Dir, OpenOptions};
-use cap_std_ext::cap_std;
+use anyhow::{Context, Result};
+use cap_std::fs::Dir;
+use cap_std_ext::{cap_std, dirext::CapStdExtDirExt};
 use fn_error_context::context;
 use serde::Serialize;
 
@@ -96,11 +96,11 @@ pub(crate) async fn publish_facts(root: &Dir) -> Result<()> {
     let (_deployments, host) = crate::status::get_status(&sysroot, booted_deployment.as_ref())?;
 
     let facts = RhsmFacts::from(host.status);
-    let mut bootc_facts_file = root.open_with(
-        FACTS_PATH,
-        OpenOptions::new().write(true).create(true).truncate(true),
-    )?;
-    serde_json::to_writer_pretty(&mut bootc_facts_file, &facts)?;
+    root.atomic_replace_with(FACTS_PATH, |w| {
+        serde_json::to_writer_pretty(w, &facts)?;
+        anyhow::Ok(())
+    })
+    .with_context(|| format!("Writing {FACTS_PATH}"))?;
     Ok(())
 }
 
