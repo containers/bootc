@@ -184,7 +184,6 @@ pub(crate) struct StatusOpts {
     pub(crate) booted: bool,
 }
 
-#[cfg(feature = "install")]
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub(crate) enum InstallOpts {
     /// Install to the target block device.
@@ -197,6 +196,7 @@ pub(crate) enum InstallOpts {
     /// in the container image, alongside any required system partitions such as
     /// the EFI system partition. Use `install to-filesystem` for anything more
     /// complex such as RAID, LVM, LUKS etc.
+    #[cfg(feature = "install-to-disk")]
     ToDisk(crate::install::InstallToDiskOpts),
     /// Install to an externally created filesystem structure.
     ///
@@ -384,7 +384,6 @@ pub(crate) enum InternalsOpts {
         #[clap(allow_hyphen_values = true)]
         args: Vec<OsString>,
     },
-    #[cfg(feature = "install")]
     /// Invoked from ostree-ext to complete an installation.
     BootcInstallCompletion {
         /// Path to the sysroot
@@ -525,7 +524,6 @@ pub(crate) enum Opt {
     /// An installation is not simply a copy of the container filesystem, but includes
     /// other setup and metadata.
     #[clap(subcommand)]
-    #[cfg(feature = "install")]
     Install(InstallOpts),
     /// Operations which can be executed as part of a container build.
     #[clap(subcommand)]
@@ -537,7 +535,6 @@ pub(crate) enum Opt {
     #[clap(subcommand, hide = true)]
     Image(ImageOpts),
     /// Execute the given command in the host mount namespace
-    #[cfg(feature = "install")]
     #[clap(hide = true)]
     ExecInHostMountNamespace {
         #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -1053,8 +1050,8 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 }
             }
         },
-        #[cfg(feature = "install")]
         Opt::Install(opts) => match opts {
+            #[cfg(feature = "install-to-disk")]
             InstallOpts::ToDisk(opts) => crate::install::install_to_disk(opts).await,
             InstallOpts::ToFilesystem(opts) => {
                 crate::install::install_to_filesystem(opts, false).await
@@ -1068,7 +1065,6 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 crate::install::completion::run_from_anaconda(rootfs).await
             }
         },
-        #[cfg(feature = "install")]
         Opt::ExecInHostMountNamespace { args } => {
             crate::install::exec_in_host_mountns(args.as_slice())
         }
@@ -1104,7 +1100,6 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 let sysroot = get_storage().await?;
                 crate::deploy::cleanup(&sysroot).await
             }
-            #[cfg(feature = "install")]
             InternalsOpts::BootcInstallCompletion { sysroot, stateroot } => {
                 let rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
                 crate::install::completion::run_from_ostree(rootfs, &sysroot, &stateroot).await

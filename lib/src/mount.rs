@@ -21,6 +21,7 @@ use rustix::{
 };
 use serde::Deserialize;
 
+#[cfg(feature = "install-to-disk")]
 use crate::task::Task;
 
 /// Well known identifier for pid 1
@@ -90,6 +91,7 @@ pub(crate) fn inspect_filesystem_by_uuid(uuid: &str) -> Result<Filesystem> {
 
 // Check if a specified device contains an already mounted filesystem
 // in the root mount namespace
+#[cfg(feature = "install-to-disk")]
 pub(crate) fn is_mounted_in_pid1_mountns(path: &str) -> Result<bool> {
     let o = run_findmnt(&["-N"], "1")?;
 
@@ -99,6 +101,7 @@ pub(crate) fn is_mounted_in_pid1_mountns(path: &str) -> Result<bool> {
 }
 
 // Recursively check a given filesystem to see if it contains an already mounted source
+#[cfg(feature = "install-to-disk")]
 pub(crate) fn is_source_mounted(path: &str, mounted_fs: &Filesystem) -> bool {
     if mounted_fs.source.contains(path) {
         return true;
@@ -116,6 +119,7 @@ pub(crate) fn is_source_mounted(path: &str, mounted_fs: &Filesystem) -> bool {
 }
 
 /// Mount a device to the target path.
+#[cfg(feature = "install-to-disk")]
 pub(crate) fn mount(dev: &str, target: &Utf8Path) -> Result<()> {
     Task::new_and_run(
         format!("Mounting {target}"),

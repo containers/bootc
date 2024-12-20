@@ -6,6 +6,7 @@
 
 // This sub-module is the "basic" installer that handles creating basic block device
 // and filesystem setup.
+#[cfg(feature = "install-to-disk")]
 pub(crate) mod baseline;
 pub(crate) mod completion;
 pub(crate) mod config;
@@ -40,9 +41,12 @@ use ostree_ext::oci_spec;
 use ostree_ext::ostree;
 use ostree_ext::prelude::Cast;
 use ostree_ext::sysroot::SysrootLock;
-use rustix::fs::{FileTypeExt, MetadataExt as _};
+#[cfg(feature = "install-to-disk")]
+use rustix::fs::FileTypeExt;
+use rustix::fs::MetadataExt as _;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "install-to-disk")]
 use self::baseline::InstallBlockDeviceOpts;
 use crate::boundimage::{BoundImage, ResolvedBoundImage};
 use crate::containerenv::ContainerExecutionInfo;
@@ -57,6 +61,7 @@ use crate::utils::sigpolicy_from_opts;
 /// The toplevel boot directory
 const BOOT: &str = "boot";
 /// Directory for transient runtime state
+#[cfg(feature = "install-to-disk")]
 const RUN_BOOTC: &str = "/run/bootc";
 /// The default path for the host rootfs
 const ALONGSIDE_ROOT_MOUNT: &str = "/target";
@@ -65,10 +70,8 @@ const LOST_AND_FOUND: &str = "lost+found";
 /// The filename of the composefs EROFS superblock; TODO move this into ostree
 const OSTREE_COMPOSEFS_SUPER: &str = ".ostree.cfs";
 /// The mount path for selinux
-#[cfg(feature = "install")]
 const SELINUXFS: &str = "/sys/fs/selinux";
 /// The mount path for uefi
-#[cfg(feature = "install")]
 const EFIVARFS: &str = "/sys/firmware/efi/efivars";
 pub(crate) const ARCH_USES_EFI: bool = cfg!(any(target_arch = "x86_64", target_arch = "aarch64"));
 
@@ -202,6 +205,7 @@ pub(crate) struct InstallConfigOpts {
     pub(crate) stateroot: Option<String>,
 }
 
+#[cfg(feature = "install-to-disk")]
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct InstallToDiskOpts {
     #[clap(flatten)]
@@ -375,6 +379,7 @@ impl State {
     }
 
     #[context("Finalizing state")]
+    #[allow(dead_code)]
     pub(crate) fn consume(self) -> Result<()> {
         self.tempdir.close()?;
         // If we had invoked `setenforce 0`, then let's re-enable it.
@@ -880,6 +885,7 @@ pub(crate) fn exec_in_host_mountns(args: &[std::ffi::OsString]) -> Result<()> {
 }
 
 pub(crate) struct RootSetup {
+    #[cfg(feature = "install-to-disk")]
     luks_device: Option<String>,
     device_info: crate::blockdev::PartitionTable,
     /// Absolute path to the location where we've mounted the physical
@@ -907,12 +913,14 @@ impl RootSetup {
     }
 
     // Drop any open file descriptors and return just the mount path and backing luks device, if any
+    #[cfg(feature = "install-to-disk")]
     fn into_storage(self) -> (Utf8PathBuf, Option<String>) {
         (self.physical_root_path, self.luks_device)
     }
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) enum SELinuxFinalState {
     /// Host and target both have SELinux, but user forced it off for target
     ForceTargetDisabled,
@@ -1449,6 +1457,7 @@ fn installation_complete() {
 
 /// Implementation of the `bootc install to-disk` CLI command.
 #[context("Installing to disk")]
+#[cfg(feature = "install-to-disk")]
 pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
     let mut block_opts = opts.block_opts;
     let target_blockdev_meta = block_opts
@@ -1845,6 +1854,7 @@ pub(crate) async fn install_to_filesystem(
     let skip_finalize =
         matches!(fsopts.replace, Some(ReplaceMode::Alongside)) || fsopts.skip_finalize;
     let mut rootfs = RootSetup {
+        #[cfg(feature = "install-to-disk")]
         luks_device: None,
         device_info,
         physical_root_path: fsopts.root_path,

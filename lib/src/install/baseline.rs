@@ -21,12 +21,14 @@ use clap::ValueEnum;
 use fn_error_context::context;
 use serde::{Deserialize, Serialize};
 
+use super::config::Filesystem;
 use super::MountSpec;
 use super::RootSetup;
 use super::State;
 use super::RUN_BOOTC;
 use super::RW_KARG;
 use crate::mount;
+#[cfg(feature = "install-to-disk")]
 use crate::mount::is_mounted_in_pid1_mountns;
 use crate::task::Task;
 
@@ -35,20 +37,6 @@ pub(crate) const BOOTPN_SIZE_MB: u32 = 510;
 pub(crate) const EFIPN_SIZE_MB: u32 = 512;
 /// The GPT type for "linux"
 pub(crate) const LINUX_PARTTYPE: &str = "0FC63DAF-8483-4772-8E79-3D69D8477DE4";
-
-#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum Filesystem {
-    Xfs,
-    Ext4,
-    Btrfs,
-}
-
-impl Display for Filesystem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.to_possible_value().unwrap().get_name().fmt(f)
-    }
-}
 
 #[derive(clap::ValueEnum, Default, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -104,6 +92,7 @@ impl BlockSetup {
     }
 }
 
+#[cfg(feature = "install-to-disk")]
 fn mkfs<'a>(
     dev: &str,
     fs: Filesystem,
@@ -143,6 +132,7 @@ fn mkfs<'a>(
 }
 
 #[context("Creating rootfs")]
+#[cfg(feature = "install-to-disk")]
 pub(crate) fn install_create_rootfs(
     state: &State,
     opts: InstallBlockDeviceOpts,

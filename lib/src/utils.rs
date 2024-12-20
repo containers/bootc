@@ -7,14 +7,10 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use bootc_utils::CommandRunExt;
-#[cfg(feature = "install")]
 use camino::Utf8Path;
 use cap_std_ext::cap_std::fs::Dir;
-#[cfg(feature = "install")]
 use cap_std_ext::dirext::CapStdExtDirExt;
-#[cfg(feature = "install")]
 use cap_std_ext::prelude::CapStdExtCommandExt;
-#[cfg(feature = "install")]
 use fn_error_context::context;
 use indicatif::HumanDuration;
 use libsystemd::logging::journal_print;
@@ -88,7 +84,6 @@ pub fn openat2_with_retry(
 /// Given an mount option string list like foo,bar=baz,something=else,ro parse it and find
 /// the first entry like $optname=
 /// This will not match a bare `optname` without an equals.
-#[cfg(feature = "install")]
 pub(crate) fn find_mount_option<'a>(
     option_string_list: &'a str,
     optname: &'_ str,
@@ -102,7 +97,6 @@ pub(crate) fn find_mount_option<'a>(
 
 /// Given a target directory, if it's a read-only mount, then remount it writable
 #[context("Opening {target} with writable mount")]
-#[cfg(feature = "install")]
 pub(crate) fn open_dir_remount_rw(root: &Dir, target: &Utf8Path) -> Result<Dir> {
     if matches!(root.is_mountpoint(target), Ok(Some(true))) {
         tracing::debug!("Target {target} is a mountpoint, remounting rw");
@@ -118,7 +112,6 @@ pub(crate) fn open_dir_remount_rw(root: &Dir, target: &Utf8Path) -> Result<Dir> 
 
 /// Given a target path, remove its immutability if present
 #[context("Removing immutable flag from {target}")]
-#[cfg(feature = "install")]
 pub(crate) fn remove_immutability(root: &Dir, target: &Utf8Path) -> Result<()> {
     use anyhow::ensure;
 
@@ -175,7 +168,6 @@ pub(crate) fn sigpolicy_from_opts(
 
 /// Output a warning message that we want to be quite visible.
 /// The process (thread) execution will be delayed for a short time.
-#[cfg(feature = "install")]
 pub(crate) fn medium_visibility_warning(s: &str) {
     anstream::eprintln!(
         "{}{s}{}",
