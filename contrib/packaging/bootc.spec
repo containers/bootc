@@ -32,6 +32,7 @@ BuildRequires: libzstd-devel
 %{_prefix}/lib/systemd/system-generators/*
 %{_prefix}/lib/bootc
 %{_unitdir}/*
+%{_docdir}/bootc/*
 %{_mandir}/man*/bootc*
 
 %prep
