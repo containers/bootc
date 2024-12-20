@@ -334,27 +334,27 @@ pub(crate) fn parse_size_mib(mut s: &str) -> Result<u64> {
     Ok(v * mul)
 }
 
-#[test]
-fn test_parse_size_mib() {
-    let ident_cases = [0, 10, 9, 1024].into_iter().map(|k| (k.to_string(), k));
-    let cases = [
-        ("0M", 0),
-        ("10M", 10),
-        ("10MiB", 10),
-        ("1G", 1024),
-        ("9G", 9216),
-        ("11T", 11 * 1024 * 1024),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_string(), v));
-    for (s, v) in ident_cases.chain(cases) {
-        assert_eq!(parse_size_mib(&s).unwrap(), v as u64, "Parsing {s}");
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_parse_size_mib() {
+        let ident_cases = [0, 10, 9, 1024].into_iter().map(|k| (k.to_string(), k));
+        let cases = [
+            ("0M", 0),
+            ("10M", 10),
+            ("10MiB", 10),
+            ("1G", 1024),
+            ("9G", 9216),
+            ("11T", 11 * 1024 * 1024),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v));
+        for (s, v) in ident_cases.chain(cases) {
+            assert_eq!(parse_size_mib(&s).unwrap(), v as u64, "Parsing {s}");
+        }
+    }
 
     #[test]
     fn test_parse_sfdisk() -> Result<()> {

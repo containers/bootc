@@ -30,7 +30,12 @@ impl Display for Glyph {
     }
 }
 
-#[test]
-fn test_glyph() {
-    assert_eq!(Glyph::BlackCircle.as_utf8(), "●");
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_glyph() {
+        assert_eq!(Glyph::BlackCircle.as_utf8(), "●");
+    }
 }
