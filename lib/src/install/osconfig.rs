@@ -50,37 +50,42 @@ pub(crate) fn inject_root_ssh_authorized_keys(
     Ok(())
 }
 
-#[test]
-fn test_inject_root_ssh_symlinked() -> Result<()> {
-    let root = &cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    // The code expects this to exist, reasonably so
-    root.create_dir("etc")?;
-    // Test with a symlink
-    root.symlink("var/roothome", "root")?;
-    inject_root_ssh_authorized_keys(root, None, "ssh-ed25519 ABCDE example@demo\n").unwrap();
+    #[test]
+    fn test_inject_root_ssh_symlinked() -> Result<()> {
+        let root = &cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
 
-    let content = root.read_to_string(format!("etc/tmpfiles.d/{ROOT_SSH_TMPFILE}"))?;
-    assert_eq!(
+        // The code expects this to exist, reasonably so
+        root.create_dir("etc")?;
+        // Test with a symlink
+        root.symlink("var/roothome", "root")?;
+        inject_root_ssh_authorized_keys(root, None, "ssh-ed25519 ABCDE example@demo\n").unwrap();
+
+        let content = root.read_to_string(format!("etc/tmpfiles.d/{ROOT_SSH_TMPFILE}"))?;
+        assert_eq!(
         content,
         "f~ /var/roothome/.ssh/authorized_keys 600 root root - c3NoLWVkMjU1MTkgQUJDREUgZXhhbXBsZUBkZW1vCg==\n"
     );
 
-    Ok(())
-}
+        Ok(())
+    }
 
-#[test]
-fn test_inject_root_ssh_dir() -> Result<()> {
-    let root = &cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+    #[test]
+    fn test_inject_root_ssh_dir() -> Result<()> {
+        let root = &cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
 
-    root.create_dir("etc")?;
-    root.create_dir("root")?;
-    inject_root_ssh_authorized_keys(root, None, "ssh-ed25519 ABCDE example@demo\n").unwrap();
+        root.create_dir("etc")?;
+        root.create_dir("root")?;
+        inject_root_ssh_authorized_keys(root, None, "ssh-ed25519 ABCDE example@demo\n").unwrap();
 
-    let content = root.read_to_string(format!("etc/tmpfiles.d/{ROOT_SSH_TMPFILE}"))?;
-    assert_eq!(
+        let content = root.read_to_string(format!("etc/tmpfiles.d/{ROOT_SSH_TMPFILE}"))?;
+        assert_eq!(
         content,
         "f~ /root/.ssh/authorized_keys 600 root root - c3NoLWVkMjU1MTkgQUJDREUgZXhhbXBsZUBkZW1vCg==\n"
     );
-    Ok(())
+        Ok(())
+    }
 }

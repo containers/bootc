@@ -140,60 +140,65 @@ impl AsyncCommandRunExt for tokio::process::Command {
     }
 }
 
-#[test]
-fn command_run_ext() {
-    // The basics
-    Command::new("true").run().unwrap();
-    assert!(Command::new("false").run().is_err());
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    // Verify we capture stderr
-    let e = Command::new("/bin/sh")
-        .args(["-c", "echo expected-this-oops-message 1>&2; exit 1"])
-        .run()
-        .err()
-        .unwrap();
-    similar_asserts::assert_eq!(
-        e.to_string(),
-        "Subprocess failed: ExitStatus(unix_wait_status(256))\nexpected-this-oops-message\n"
-    );
+    #[test]
+    fn command_run_ext() {
+        // The basics
+        Command::new("true").run().unwrap();
+        assert!(Command::new("false").run().is_err());
 
-    // Ignoring invalid UTF-8
-    let e = Command::new("/bin/sh")
-        .args([
-            "-c",
-            r"echo -e 'expected\xf5\x80\x80\x80\x80-foo\xc0bar\xc0\xc0' 1>&2; exit 1",
-        ])
-        .run()
-        .err()
-        .unwrap();
-    similar_asserts::assert_eq!(
-        e.to_string(),
-        "Subprocess failed: ExitStatus(unix_wait_status(256))\nexpected�����-foo�bar��\n"
-    );
-}
+        // Verify we capture stderr
+        let e = Command::new("/bin/sh")
+            .args(["-c", "echo expected-this-oops-message 1>&2; exit 1"])
+            .run()
+            .err()
+            .unwrap();
+        similar_asserts::assert_eq!(
+            e.to_string(),
+            "Subprocess failed: ExitStatus(unix_wait_status(256))\nexpected-this-oops-message\n"
+        );
 
-#[test]
-fn command_run_ext_json() {
-    #[derive(serde::Deserialize)]
-    struct Foo {
-        a: String,
-        b: u32,
+        // Ignoring invalid UTF-8
+        let e = Command::new("/bin/sh")
+            .args([
+                "-c",
+                r"echo -e 'expected\xf5\x80\x80\x80\x80-foo\xc0bar\xc0\xc0' 1>&2; exit 1",
+            ])
+            .run()
+            .err()
+            .unwrap();
+        similar_asserts::assert_eq!(
+            e.to_string(),
+            "Subprocess failed: ExitStatus(unix_wait_status(256))\nexpected�����-foo�bar��\n"
+        );
     }
-    let v: Foo = Command::new("echo")
-        .arg(r##"{"a": "somevalue", "b": 42}"##)
-        .run_and_parse_json()
-        .unwrap();
-    assert_eq!(v.a, "somevalue");
-    assert_eq!(v.b, 42);
-}
 
-#[tokio::test]
-async fn async_command_run_ext() {
-    use tokio::process::Command as AsyncCommand;
-    let mut success = AsyncCommand::new("true");
-    let mut fail = AsyncCommand::new("false");
-    // Run these in parallel just because we can
-    let (success, fail) = tokio::join!(success.run(), fail.run(),);
-    success.unwrap();
-    assert!(fail.is_err());
+    #[test]
+    fn command_run_ext_json() {
+        #[derive(serde::Deserialize)]
+        struct Foo {
+            a: String,
+            b: u32,
+        }
+        let v: Foo = Command::new("echo")
+            .arg(r##"{"a": "somevalue", "b": 42}"##)
+            .run_and_parse_json()
+            .unwrap();
+        assert_eq!(v.a, "somevalue");
+        assert_eq!(v.b, 42);
+    }
+
+    #[tokio::test]
+    async fn async_command_run_ext() {
+        use tokio::process::Command as AsyncCommand;
+        let mut success = AsyncCommand::new("true");
+        let mut fail = AsyncCommand::new("false");
+        // Run these in parallel just because we can
+        let (success, fail) = tokio::join!(success.run(), fail.run(),);
+        success.unwrap();
+        assert!(fail.is_err());
+    }
 }

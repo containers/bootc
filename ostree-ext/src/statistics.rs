@@ -55,55 +55,59 @@ pub(crate) fn median_absolute_deviation(data: &mut [u64]) -> Option<(f64, f64)> 
         Some((median_data, mad))
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_mean() {
-    assert_eq!(mean(&[]), None);
-    for v in [0u64, 1, 5, 100] {
-        assert_eq!(mean(&[v]), Some(v as f64));
+    #[test]
+    fn test_mean() {
+        assert_eq!(mean(&[]), None);
+        for v in [0u64, 1, 5, 100] {
+            assert_eq!(mean(&[v]), Some(v as f64));
+        }
+        assert_eq!(mean(&[0, 1]), Some(0.5));
+        assert_eq!(mean(&[0, 5, 100]), Some(35.0));
+        assert_eq!(mean(&[7, 4, 30, 14]), Some(13.75));
     }
-    assert_eq!(mean(&[0, 1]), Some(0.5));
-    assert_eq!(mean(&[0, 5, 100]), Some(35.0));
-    assert_eq!(mean(&[7, 4, 30, 14]), Some(13.75));
-}
 
-#[test]
-fn test_std_deviation() {
-    assert_eq!(std_deviation(&[]), None);
-    for v in [0u64, 1, 5, 100] {
-        assert_eq!(std_deviation(&[v]), Some(0 as f64));
+    #[test]
+    fn test_std_deviation() {
+        assert_eq!(std_deviation(&[]), None);
+        for v in [0u64, 1, 5, 100] {
+            assert_eq!(std_deviation(&[v]), Some(0 as f64));
+        }
+        assert_eq!(std_deviation(&[1, 4]), Some(1.5));
+        assert_eq!(std_deviation(&[2, 2, 2, 2]), Some(0.0));
+        assert_eq!(
+            std_deviation(&[1, 20, 300, 4000, 50000, 600000, 7000000, 80000000]),
+            Some(26193874.56387471)
+        );
     }
-    assert_eq!(std_deviation(&[1, 4]), Some(1.5));
-    assert_eq!(std_deviation(&[2, 2, 2, 2]), Some(0.0));
-    assert_eq!(
-        std_deviation(&[1, 20, 300, 4000, 50000, 600000, 7000000, 80000000]),
-        Some(26193874.56387471)
-    );
-}
 
-#[test]
-fn test_median_absolute_deviation() {
-    //Assumes sorted
-    assert_eq!(median_absolute_deviation(&mut []), None);
-    for v in [0u64, 1, 5, 100] {
-        assert_eq!(median_absolute_deviation(&mut [v]), Some((v as f64, 0.0)));
+    #[test]
+    fn test_median_absolute_deviation() {
+        //Assumes sorted
+        assert_eq!(median_absolute_deviation(&mut []), None);
+        for v in [0u64, 1, 5, 100] {
+            assert_eq!(median_absolute_deviation(&mut [v]), Some((v as f64, 0.0)));
+        }
+        assert_eq!(median_absolute_deviation(&mut [1, 4]), Some((2.5, 1.5)));
+        assert_eq!(
+            median_absolute_deviation(&mut [2, 2, 2, 2]),
+            Some((2.0, 0.0))
+        );
+        assert_eq!(
+            median_absolute_deviation(&mut [
+                1, 2, 3, 3, 4, 4, 4, 5, 5, 6, 6, 6, 7, 7, 7, 8, 9, 12, 52, 90
+            ]),
+            Some((6.0, 2.0))
+        );
+
+        //if more than half of the data has the same value, MAD = 0, thus any
+        //value different from the residual median is classified as an outlier
+        assert_eq!(
+            median_absolute_deviation(&mut [0, 1, 1, 1, 1, 1, 1, 1, 0]),
+            Some((1.0, 0.0))
+        );
     }
-    assert_eq!(median_absolute_deviation(&mut [1, 4]), Some((2.5, 1.5)));
-    assert_eq!(
-        median_absolute_deviation(&mut [2, 2, 2, 2]),
-        Some((2.0, 0.0))
-    );
-    assert_eq!(
-        median_absolute_deviation(&mut [
-            1, 2, 3, 3, 4, 4, 4, 5, 5, 6, 6, 6, 7, 7, 7, 8, 9, 12, 52, 90
-        ]),
-        Some((6.0, 2.0))
-    );
-
-    //if more than half of the data has the same value, MAD = 0, thus any
-    //value different from the residual median is classified as an outlier
-    assert_eq!(
-        median_absolute_deviation(&mut [0, 1, 1, 1, 1, 1, 1, 1, 0]),
-        Some((1.0, 0.0))
-    );
 }
