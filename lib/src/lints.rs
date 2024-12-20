@@ -3,14 +3,18 @@
 //! This module implements `bootc container lint`.
 
 use std::env::consts::ARCH;
+use std::os::unix::ffi::OsStrExt;
 
-use anyhow::{bail, ensure, Result};
+use anyhow::{bail, ensure, Context, Result};
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt as _;
 use fn_error_context::context;
 
 use crate::utils::openat2_with_retry;
+
+/// Reference to embedded default baseimage content that should exist.
+const BASEIMAGE_REF: &str = "usr/share/doc/bootc/baseimage/base";
 
 /// check for the existence of the /var/run directory
 /// if it exists we need to check that it links to /run if not error
@@ -23,6 +27,7 @@ pub(crate) fn lint(root: &Dir) -> Result<()> {
         check_parse_kargs,
         check_usretc,
         check_utf8,
+        check_baseimage_root,
     ];
     for lint in lints {
         lint(&root)?;
@@ -112,6 +117,57 @@ fn check_utf8(dir: &Dir) -> Result<()> {
                 bail!("/{strname}{err:?}");
             }
         }
+    }
+    Ok(())
+}
+
+/// Check for a few files and directories we expect in the base image.
+fn check_baseimage_root_norecurse(dir: &Dir) -> Result<()> {
+    // Check /sysroot
+    let meta = dir.symlink_metadata_optional("sysroot")?;
+    match meta {
+        Some(meta) if !meta.is_dir() => {
+            anyhow::bail!("Expected a directory for /sysroot")
+        }
+        None => anyhow::bail!("Missing /sysroot"),
+        _ => {}
+    }
+
+    // Check /ostree -> sysroot/ostree
+    let Some(meta) = dir.symlink_metadata_optional("ostree")? else {
+        anyhow::bail!("Missing ostree -> sysroot/ostree link")
+    };
+    if !meta.is_symlink() {
+        anyhow::bail!("/ostree should be a symlink");
+    }
+    let link = dir.read_link_contents("ostree")?;
+    let expected = "sysroot/ostree";
+    if link.as_os_str().as_bytes() != expected.as_bytes() {
+        anyhow::bail!("Expected /ostree -> {expected}, not {link:?}");
+    }
+
+    // Check the prepare-root config
+    let prepareroot_path = "usr/lib/ostree/prepare-root.conf";
+    let config_data = dir
+        .read_to_string(prepareroot_path)
+        .context(prepareroot_path)?;
+    let config = ostree_ext::glib::KeyFile::new();
+    config.load_from_data(&config_data, ostree_ext::glib::KeyFileFlags::empty())?;
+
+    if !ostree_ext::ostree_prepareroot::overlayfs_enabled_in_config(&config)? {
+        anyhow::bail!("{prepareroot_path} does not have composefs enabled")
+    }
+
+    Ok(())
+}
+
+/// Check ostree-related base image content.
+fn check_baseimage_root(dir: &Dir) -> Result<()> {
+    check_baseimage_root_norecurse(dir)?;
+    // If we have our own documentation with the expected root contents
+    // embedded, then check that too! Mostly just because recursion is fun.
+    if let Some(dir) = dir.open_dir_optional(BASEIMAGE_REF)? {
+        check_baseimage_root_norecurse(&dir)?;
     }
     Ok(())
 }
@@ -259,5 +315,35 @@ mod tests {
         );
         root.remove_file(badfile).unwrap(); // Get rid of the problem
         check_utf8(root).unwrap(); // Check it
+    }
+
+    #[test]
+    fn test_baseimage_root() -> Result<()> {
+        use bootc_utils::CommandRunExt;
+        use cap_std_ext::cmdext::CapStdExtCommandExt;
+        use std::path::Path;
+
+        let td = fixture()?;
+
+        // An empty root should fail our test
+        assert!(check_baseimage_root(&td).is_err());
+
+        // Copy our reference base image content from the source dir
+        let manifest = std::env::var_os("CARGO_MANIFEST_PATH").unwrap();
+        let srcdir = Path::new(&manifest)
+            .parent()
+            .unwrap()
+            .join("../baseimage/base");
+        for ent in std::fs::read_dir(srcdir)? {
+            let ent = ent?;
+            std::process::Command::new("cp")
+                .cwd_dir(td.try_clone()?)
+                .arg("-pr")
+                .arg(ent.path())
+                .arg(".")
+                .run()?;
+        }
+        check_baseimage_root(&td).unwrap();
+        Ok(())
     }
 }
