@@ -229,47 +229,52 @@ pub(crate) fn digested_pullspec(image: &str, digest: &str) -> String {
     format!("{image}@{digest}")
 }
 
-#[test]
-fn test_digested_pullspec() {
-    let digest = "ebe3bdccc041864e5a485f1e755e242535c3b83d110c0357fe57f110b73b143e";
-    assert_eq!(
-        digested_pullspec("quay.io/example/foo:bar", digest),
-        format!("quay.io/example/foo:bar@{digest}")
-    );
-    assert_eq!(
-        digested_pullspec("quay.io/example/foo@sha256:otherdigest", digest),
-        format!("quay.io/example/foo@{digest}")
-    );
-    assert_eq!(
-        digested_pullspec("quay.io/example/foo", digest),
-        format!("quay.io/example/foo@{digest}")
-    );
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_find_mount_option() {
-    const V1: &str = "rw,relatime,compress=foo,subvol=blah,fast";
-    assert_eq!(find_mount_option(V1, "subvol").unwrap(), "blah");
-    assert_eq!(find_mount_option(V1, "rw"), None);
-    assert_eq!(find_mount_option(V1, "somethingelse"), None);
-}
+    #[test]
+    fn test_digested_pullspec() {
+        let digest = "ebe3bdccc041864e5a485f1e755e242535c3b83d110c0357fe57f110b73b143e";
+        assert_eq!(
+            digested_pullspec("quay.io/example/foo:bar", digest),
+            format!("quay.io/example/foo:bar@{digest}")
+        );
+        assert_eq!(
+            digested_pullspec("quay.io/example/foo@sha256:otherdigest", digest),
+            format!("quay.io/example/foo@{digest}")
+        );
+        assert_eq!(
+            digested_pullspec("quay.io/example/foo", digest),
+            format!("quay.io/example/foo@{digest}")
+        );
+    }
 
-#[test]
-fn test_sigpolicy_from_opts() {
-    assert_eq!(
-        sigpolicy_from_opts(false, None),
-        SignatureSource::ContainerPolicy
-    );
-    assert_eq!(
-        sigpolicy_from_opts(true, None),
-        SignatureSource::ContainerPolicyAllowInsecure
-    );
-    assert_eq!(
-        sigpolicy_from_opts(false, Some("foo")),
-        SignatureSource::OstreeRemote("foo".to_owned())
-    );
-    assert_eq!(
-        sigpolicy_from_opts(true, Some("foo")),
-        SignatureSource::ContainerPolicyAllowInsecure
-    );
+    #[test]
+    fn test_find_mount_option() {
+        const V1: &str = "rw,relatime,compress=foo,subvol=blah,fast";
+        assert_eq!(find_mount_option(V1, "subvol").unwrap(), "blah");
+        assert_eq!(find_mount_option(V1, "rw"), None);
+        assert_eq!(find_mount_option(V1, "somethingelse"), None);
+    }
+
+    #[test]
+    fn test_sigpolicy_from_opts() {
+        assert_eq!(
+            sigpolicy_from_opts(false, None),
+            SignatureSource::ContainerPolicy
+        );
+        assert_eq!(
+            sigpolicy_from_opts(true, None),
+            SignatureSource::ContainerPolicyAllowInsecure
+        );
+        assert_eq!(
+            sigpolicy_from_opts(false, Some("foo")),
+            SignatureSource::OstreeRemote("foo".to_owned())
+        );
+        assert_eq!(
+            sigpolicy_from_opts(true, Some("foo")),
+            SignatureSource::ContainerPolicyAllowInsecure
+        );
+    }
 }

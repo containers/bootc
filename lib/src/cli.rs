@@ -1125,127 +1125,132 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
     }
 }
 
-#[test]
-fn test_callname() {
-    use std::os::unix::ffi::OsStrExt;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    // Cases that change
-    let mapped_cases = [
-        ("", "bootc"),
-        ("/foo/bar", "bar"),
-        ("/foo/bar/", "bar"),
-        ("foo/bar", "bar"),
-        ("../foo/bar", "bar"),
-        ("usr/bin/ostree-container", "ostree-container"),
-    ];
-    for (input, output) in mapped_cases {
-        assert_eq!(
-            output,
-            callname_from_argv0(OsStr::new(input)),
-            "Handling mapped case {input}"
-        );
-    }
+    #[test]
+    fn test_callname() {
+        use std::os::unix::ffi::OsStrExt;
 
-    // Invalid UTF-8
-    assert_eq!("bootc", callname_from_argv0(OsStr::from_bytes(b"foo\x80")));
+        // Cases that change
+        let mapped_cases = [
+            ("", "bootc"),
+            ("/foo/bar", "bar"),
+            ("/foo/bar/", "bar"),
+            ("foo/bar", "bar"),
+            ("../foo/bar", "bar"),
+            ("usr/bin/ostree-container", "ostree-container"),
+        ];
+        for (input, output) in mapped_cases {
+            assert_eq!(
+                output,
+                callname_from_argv0(OsStr::new(input)),
+                "Handling mapped case {input}"
+            );
+        }
 
-    // Cases that are identical
-    let ident_cases = ["foo", "bootc"];
-    for case in ident_cases {
-        assert_eq!(
-            case,
-            callname_from_argv0(OsStr::new(case)),
-            "Handling ident case {case}"
-        );
-    }
-}
+        // Invalid UTF-8
+        assert_eq!("bootc", callname_from_argv0(OsStr::from_bytes(b"foo\x80")));
 
-#[test]
-fn test_parse_install_args() {
-    // Verify we still process the legacy --target-no-signature-verification
-    let o = Opt::try_parse_from([
-        "bootc",
-        "install",
-        "to-filesystem",
-        "--target-no-signature-verification",
-        "/target",
-    ])
-    .unwrap();
-    let o = match o {
-        Opt::Install(InstallOpts::ToFilesystem(fsopts)) => fsopts,
-        o => panic!("Expected filesystem opts, not {o:?}"),
-    };
-    assert!(o.target_opts.target_no_signature_verification);
-    assert_eq!(o.filesystem_opts.root_path.as_str(), "/target");
-    // Ensure we default to old bound images behavior
-    assert_eq!(
-        o.config_opts.bound_images,
-        crate::install::BoundImagesOpt::Stored
-    );
-}
-
-#[test]
-fn test_parse_opts() {
-    assert!(matches!(
-        Opt::parse_including_static(["bootc", "status"]),
-        Opt::Status(StatusOpts {
-            json: false,
-            format: None,
-            format_version: None,
-            booted: false
-        })
-    ));
-    assert!(matches!(
-        Opt::parse_including_static(["bootc", "status", "--format-version=0"]),
-        Opt::Status(StatusOpts {
-            format_version: Some(0),
-            ..
-        })
-    ));
-}
-
-#[test]
-fn test_parse_generator() {
-    assert!(matches!(
-        Opt::parse_including_static([
-            "/usr/lib/systemd/system/bootc-systemd-generator",
-            "/run/systemd/system"
-        ]),
-        Opt::Internals(InternalsOpts::SystemdGenerator { normal_dir, .. }) if normal_dir == "/run/systemd/system"
-    ));
-}
-
-#[test]
-fn test_parse_ostree_ext() {
-    assert!(matches!(
-        Opt::parse_including_static(["bootc", "internals", "ostree-container"]),
-        Opt::Internals(InternalsOpts::OstreeContainer { .. })
-    ));
-
-    fn peel(o: Opt) -> Vec<OsString> {
-        match o {
-            Opt::Internals(InternalsOpts::OstreeExt { args }) => args,
-            o => panic!("unexpected {o:?}"),
+        // Cases that are identical
+        let ident_cases = ["foo", "bootc"];
+        for case in ident_cases {
+            assert_eq!(
+                case,
+                callname_from_argv0(OsStr::new(case)),
+                "Handling ident case {case}"
+            );
         }
     }
-    let args = peel(Opt::parse_including_static([
-        "/usr/libexec/libostree/ext/ostree-ima-sign",
-        "ima-sign",
-        "--repo=foo",
-        "foo",
-        "bar",
-        "baz",
-    ]));
-    assert_eq!(
-        args.as_slice(),
-        ["ima-sign", "--repo=foo", "foo", "bar", "baz"]
-    );
 
-    let args = peel(Opt::parse_including_static([
-        "/usr/libexec/libostree/ext/ostree-container",
-        "container",
-        "image",
-        "pull",
-    ]));
-    assert_eq!(args.as_slice(), ["container", "image", "pull"]);
+    #[test]
+    fn test_parse_install_args() {
+        // Verify we still process the legacy --target-no-signature-verification
+        let o = Opt::try_parse_from([
+            "bootc",
+            "install",
+            "to-filesystem",
+            "--target-no-signature-verification",
+            "/target",
+        ])
+        .unwrap();
+        let o = match o {
+            Opt::Install(InstallOpts::ToFilesystem(fsopts)) => fsopts,
+            o => panic!("Expected filesystem opts, not {o:?}"),
+        };
+        assert!(o.target_opts.target_no_signature_verification);
+        assert_eq!(o.filesystem_opts.root_path.as_str(), "/target");
+        // Ensure we default to old bound images behavior
+        assert_eq!(
+            o.config_opts.bound_images,
+            crate::install::BoundImagesOpt::Stored
+        );
+    }
+
+    #[test]
+    fn test_parse_opts() {
+        assert!(matches!(
+            Opt::parse_including_static(["bootc", "status"]),
+            Opt::Status(StatusOpts {
+                json: false,
+                format: None,
+                format_version: None,
+                booted: false
+            })
+        ));
+        assert!(matches!(
+            Opt::parse_including_static(["bootc", "status", "--format-version=0"]),
+            Opt::Status(StatusOpts {
+                format_version: Some(0),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_generator() {
+        assert!(matches!(
+            Opt::parse_including_static([
+                "/usr/lib/systemd/system/bootc-systemd-generator",
+                "/run/systemd/system"
+            ]),
+            Opt::Internals(InternalsOpts::SystemdGenerator { normal_dir, .. }) if normal_dir == "/run/systemd/system"
+        ));
+    }
+
+    #[test]
+    fn test_parse_ostree_ext() {
+        assert!(matches!(
+            Opt::parse_including_static(["bootc", "internals", "ostree-container"]),
+            Opt::Internals(InternalsOpts::OstreeContainer { .. })
+        ));
+
+        fn peel(o: Opt) -> Vec<OsString> {
+            match o {
+                Opt::Internals(InternalsOpts::OstreeExt { args }) => args,
+                o => panic!("unexpected {o:?}"),
+            }
+        }
+        let args = peel(Opt::parse_including_static([
+            "/usr/libexec/libostree/ext/ostree-ima-sign",
+            "ima-sign",
+            "--repo=foo",
+            "foo",
+            "bar",
+            "baz",
+        ]));
+        assert_eq!(
+            args.as_slice(),
+            ["ima-sign", "--repo=foo", "foo", "bar", "baz"]
+        );
+
+        let args = peel(Opt::parse_including_static([
+            "/usr/libexec/libostree/ext/ostree-container",
+            "container",
+            "image",
+            "pull",
+        ]));
+        assert_eq!(args.as_slice(), ["container", "image", "pull"]);
+    }
 }

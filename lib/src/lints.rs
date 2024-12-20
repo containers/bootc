@@ -117,143 +117,147 @@ fn check_utf8(dir: &Dir) -> Result<()> {
 }
 
 #[cfg(test)]
-fn fixture() -> Result<cap_std_ext::cap_tempfile::TempDir> {
-    let tempdir = cap_std_ext::cap_tempfile::tempdir(cap_std::ambient_authority())?;
-    Ok(tempdir)
-}
+mod tests {
+    use super::*;
 
-#[test]
-fn test_open_noxdev() -> Result<()> {
-    let root = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-    // This hard requires the host setup to have /usr/bin on the same filesystem as /
-    let usr = Dir::open_ambient_dir("/usr", cap_std::ambient_authority())?;
-    assert!(open_dir_noxdev(&usr, "bin").unwrap().is_some());
-    // Requires a mounted /proc, but that also seems ane.
-    assert!(open_dir_noxdev(&root, "proc").unwrap().is_none());
-    Ok(())
-}
+    fn fixture() -> Result<cap_std_ext::cap_tempfile::TempDir> {
+        let tempdir = cap_std_ext::cap_tempfile::tempdir(cap_std::ambient_authority())?;
+        Ok(tempdir)
+    }
 
-#[test]
-fn test_var_run() -> Result<()> {
-    let root = &fixture()?;
-    // This one should pass
-    check_var_run(root).unwrap();
-    root.create_dir_all("var/run/foo")?;
-    assert!(check_var_run(root).is_err());
-    root.remove_dir_all("var/run")?;
-    // Now we should pass again
-    check_var_run(root).unwrap();
-    Ok(())
-}
+    #[test]
+    fn test_open_noxdev() -> Result<()> {
+        let root = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+        // This hard requires the host setup to have /usr/bin on the same filesystem as /
+        let usr = Dir::open_ambient_dir("/usr", cap_std::ambient_authority())?;
+        assert!(open_dir_noxdev(&usr, "bin").unwrap().is_some());
+        // Requires a mounted /proc, but that also seems ane.
+        assert!(open_dir_noxdev(&root, "proc").unwrap().is_none());
+        Ok(())
+    }
 
-#[test]
-fn test_kernel_lint() -> Result<()> {
-    let root = &fixture()?;
-    // This one should pass
-    check_kernel(root).unwrap();
-    root.create_dir_all("usr/lib/modules/5.7.2")?;
-    root.write("usr/lib/modules/5.7.2/vmlinuz", "old vmlinuz")?;
-    root.create_dir_all("usr/lib/modules/6.3.1")?;
-    root.write("usr/lib/modules/6.3.1/vmlinuz", "new vmlinuz")?;
-    assert!(check_kernel(root).is_err());
-    root.remove_dir_all("usr/lib/modules/5.7.2")?;
-    // Now we should pass again
-    check_kernel(root).unwrap();
-    Ok(())
-}
+    #[test]
+    fn test_var_run() -> Result<()> {
+        let root = &fixture()?;
+        // This one should pass
+        check_var_run(root).unwrap();
+        root.create_dir_all("var/run/foo")?;
+        assert!(check_var_run(root).is_err());
+        root.remove_dir_all("var/run")?;
+        // Now we should pass again
+        check_var_run(root).unwrap();
+        Ok(())
+    }
 
-#[test]
-fn test_kargs() -> Result<()> {
-    let root = &fixture()?;
-    check_parse_kargs(root).unwrap();
-    root.create_dir_all("usr/lib/bootc")?;
-    root.write("usr/lib/bootc/kargs.d", "not a directory")?;
-    assert!(check_parse_kargs(root).is_err());
-    Ok(())
-}
+    #[test]
+    fn test_kernel_lint() -> Result<()> {
+        let root = &fixture()?;
+        // This one should pass
+        check_kernel(root).unwrap();
+        root.create_dir_all("usr/lib/modules/5.7.2")?;
+        root.write("usr/lib/modules/5.7.2/vmlinuz", "old vmlinuz")?;
+        root.create_dir_all("usr/lib/modules/6.3.1")?;
+        root.write("usr/lib/modules/6.3.1/vmlinuz", "new vmlinuz")?;
+        assert!(check_kernel(root).is_err());
+        root.remove_dir_all("usr/lib/modules/5.7.2")?;
+        // Now we should pass again
+        check_kernel(root).unwrap();
+        Ok(())
+    }
 
-#[test]
-fn test_usr_etc() -> Result<()> {
-    let root = &fixture()?;
-    // This one should pass
-    check_usretc(root).unwrap();
-    root.create_dir_all("etc")?;
-    root.create_dir_all("usr/etc")?;
-    assert!(check_usretc(root).is_err());
-    root.remove_dir_all("etc")?;
-    // Now we should pass again
-    check_usretc(root).unwrap();
-    Ok(())
-}
+    #[test]
+    fn test_kargs() -> Result<()> {
+        let root = &fixture()?;
+        check_parse_kargs(root).unwrap();
+        root.create_dir_all("usr/lib/bootc")?;
+        root.write("usr/lib/bootc/kargs.d", "not a directory")?;
+        assert!(check_parse_kargs(root).is_err());
+        Ok(())
+    }
 
-#[test]
-fn test_non_utf8() {
-    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+    #[test]
+    fn test_usr_etc() -> Result<()> {
+        let root = &fixture()?;
+        // This one should pass
+        check_usretc(root).unwrap();
+        root.create_dir_all("etc")?;
+        root.create_dir_all("usr/etc")?;
+        assert!(check_usretc(root).is_err());
+        root.remove_dir_all("etc")?;
+        // Now we should pass again
+        check_usretc(root).unwrap();
+        Ok(())
+    }
 
-    let root = &fixture().unwrap();
+    #[test]
+    fn test_non_utf8() {
+        use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
 
-    // Try to create some adversarial symlink situations to ensure the walk doesn't crash
-    root.create_dir("subdir").unwrap();
-    // Self-referential symlinks
-    root.symlink("self", "self").unwrap();
-    // Infinitely looping dir symlinks
-    root.symlink("..", "subdir/parent").unwrap();
-    // Broken symlinks
-    root.symlink("does-not-exist", "broken").unwrap();
-    // Out-of-scope symlinks
-    root.symlink("../../x", "escape").unwrap();
-    // Should be fine
-    check_utf8(root).unwrap();
+        let root = &fixture().unwrap();
 
-    // But this will cause an issue
-    let baddir = OsStr::from_bytes(b"subdir/2/bad\xffdir");
-    root.create_dir("subdir/2").unwrap();
-    root.create_dir(baddir).unwrap();
-    let Err(err) = check_utf8(root) else {
-        unreachable!("Didn't fail");
-    };
-    assert_eq!(
-        err.to_string(),
-        r#"/subdir/2/: Found non-utf8 filename "bad\xFFdir""#
-    );
-    root.remove_dir(baddir).unwrap(); // Get rid of the problem
-    check_utf8(root).unwrap(); // Check it
+        // Try to create some adversarial symlink situations to ensure the walk doesn't crash
+        root.create_dir("subdir").unwrap();
+        // Self-referential symlinks
+        root.symlink("self", "self").unwrap();
+        // Infinitely looping dir symlinks
+        root.symlink("..", "subdir/parent").unwrap();
+        // Broken symlinks
+        root.symlink("does-not-exist", "broken").unwrap();
+        // Out-of-scope symlinks
+        root.symlink("../../x", "escape").unwrap();
+        // Should be fine
+        check_utf8(root).unwrap();
 
-    // Create a new problem in the form of a regular file
-    let badfile = OsStr::from_bytes(b"regular\xff");
-    root.write(badfile, b"Hello, world!\n").unwrap();
-    let Err(err) = check_utf8(root) else {
-        unreachable!("Didn't fail");
-    };
-    assert_eq!(
-        err.to_string(),
-        r#"/: Found non-utf8 filename "regular\xFF""#
-    );
-    root.remove_file(badfile).unwrap(); // Get rid of the problem
-    check_utf8(root).unwrap(); // Check it
+        // But this will cause an issue
+        let baddir = OsStr::from_bytes(b"subdir/2/bad\xffdir");
+        root.create_dir("subdir/2").unwrap();
+        root.create_dir(baddir).unwrap();
+        let Err(err) = check_utf8(root) else {
+            unreachable!("Didn't fail");
+        };
+        assert_eq!(
+            err.to_string(),
+            r#"/subdir/2/: Found non-utf8 filename "bad\xFFdir""#
+        );
+        root.remove_dir(baddir).unwrap(); // Get rid of the problem
+        check_utf8(root).unwrap(); // Check it
 
-    // And now test invalid symlink targets
-    root.symlink(badfile, "subdir/good-name").unwrap();
-    let Err(err) = check_utf8(root) else {
-        unreachable!("Didn't fail");
-    };
-    assert_eq!(
-        err.to_string(),
-        r#"/subdir/good-name: Found non-utf8 symlink target"#
-    );
-    root.remove_file("subdir/good-name").unwrap(); // Get rid of the problem
-    check_utf8(root).unwrap(); // Check it
+        // Create a new problem in the form of a regular file
+        let badfile = OsStr::from_bytes(b"regular\xff");
+        root.write(badfile, b"Hello, world!\n").unwrap();
+        let Err(err) = check_utf8(root) else {
+            unreachable!("Didn't fail");
+        };
+        assert_eq!(
+            err.to_string(),
+            r#"/: Found non-utf8 filename "regular\xFF""#
+        );
+        root.remove_file(badfile).unwrap(); // Get rid of the problem
+        check_utf8(root).unwrap(); // Check it
 
-    // Finally, test a self-referential symlink with an invalid name.
-    // We should spot the invalid name before we check the target.
-    root.symlink(badfile, badfile).unwrap();
-    let Err(err) = check_utf8(root) else {
-        unreachable!("Didn't fail");
-    };
-    assert_eq!(
-        err.to_string(),
-        r#"/: Found non-utf8 filename "regular\xFF""#
-    );
-    root.remove_file(badfile).unwrap(); // Get rid of the problem
-    check_utf8(root).unwrap(); // Check it
+        // And now test invalid symlink targets
+        root.symlink(badfile, "subdir/good-name").unwrap();
+        let Err(err) = check_utf8(root) else {
+            unreachable!("Didn't fail");
+        };
+        assert_eq!(
+            err.to_string(),
+            r#"/subdir/good-name: Found non-utf8 symlink target"#
+        );
+        root.remove_file("subdir/good-name").unwrap(); // Get rid of the problem
+        check_utf8(root).unwrap(); // Check it
+
+        // Finally, test a self-referential symlink with an invalid name.
+        // We should spot the invalid name before we check the target.
+        root.symlink(badfile, badfile).unwrap();
+        let Err(err) = check_utf8(root) else {
+            unreachable!("Didn't fail");
+        };
+        assert_eq!(
+            err.to_string(),
+            r#"/: Found non-utf8 filename "regular\xFF""#
+        );
+        root.remove_file(badfile).unwrap(); // Get rid of the problem
+        check_utf8(root).unwrap(); // Check it
+    }
 }
