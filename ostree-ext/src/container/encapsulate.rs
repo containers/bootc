@@ -416,15 +416,20 @@ pub async fn encapsulate<S: AsRef<str>>(
     build_impl(repo, ostree_ref.as_ref(), config, opts, dest).await
 }
 
-#[test]
-fn test_parse_ocipath() {
-    let default = "/foo/bar";
-    let untagged = "/foo/bar:baz";
-    let tagged = "/foo/bar:baz:latest";
-    assert_eq!(parse_oci_path_and_tag(default), ("/foo/bar", None));
-    assert_eq!(
-        parse_oci_path_and_tag(tagged),
-        ("/foo/bar", Some("baz:latest"))
-    );
-    assert_eq!(parse_oci_path_and_tag(untagged), ("/foo/bar", Some("baz")));
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ocipath() {
+        let default = "/foo/bar";
+        let untagged = "/foo/bar:baz";
+        let tagged = "/foo/bar:baz:latest";
+        assert_eq!(parse_oci_path_and_tag(default), ("/foo/bar", None));
+        assert_eq!(
+            parse_oci_path_and_tag(tagged),
+            ("/foo/bar", Some("baz:latest"))
+        );
+        assert_eq!(parse_oci_path_and_tag(untagged), ("/foo/bar", Some("baz")));
+    }
 }

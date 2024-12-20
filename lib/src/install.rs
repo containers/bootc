@@ -1882,54 +1882,58 @@ pub(crate) async fn install_to_existing_root(opts: InstallToExistingRootOpts) ->
 
     install_to_filesystem(opts, true).await
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn install_opts_serializable() {
-    let c: InstallToDiskOpts = serde_json::from_value(serde_json::json!({
-        "device": "/dev/vda"
-    }))
-    .unwrap();
-    assert_eq!(c.block_opts.device, "/dev/vda");
-}
+    #[test]
+    fn install_opts_serializable() {
+        let c: InstallToDiskOpts = serde_json::from_value(serde_json::json!({
+            "device": "/dev/vda"
+        }))
+        .unwrap();
+        assert_eq!(c.block_opts.device, "/dev/vda");
+    }
 
-#[test]
-fn test_mountspec() {
-    let mut ms = MountSpec::new("/dev/vda4", "/boot");
-    assert_eq!(ms.to_fstab(), "/dev/vda4 /boot auto defaults 0 0");
-    ms.push_option("ro");
-    assert_eq!(ms.to_fstab(), "/dev/vda4 /boot auto ro 0 0");
-    ms.push_option("relatime");
-    assert_eq!(ms.to_fstab(), "/dev/vda4 /boot auto ro,relatime 0 0");
-}
+    #[test]
+    fn test_mountspec() {
+        let mut ms = MountSpec::new("/dev/vda4", "/boot");
+        assert_eq!(ms.to_fstab(), "/dev/vda4 /boot auto defaults 0 0");
+        ms.push_option("ro");
+        assert_eq!(ms.to_fstab(), "/dev/vda4 /boot auto ro 0 0");
+        ms.push_option("relatime");
+        assert_eq!(ms.to_fstab(), "/dev/vda4 /boot auto ro,relatime 0 0");
+    }
 
-#[test]
-fn test_gather_root_args() {
-    // A basic filesystem using a UUID
-    let inspect = Filesystem {
-        source: "/dev/vda4".into(),
-        target: "/".into(),
-        fstype: "xfs".into(),
-        maj_min: "252:4".into(),
-        options: "rw".into(),
-        uuid: Some("965eb3c7-5a3f-470d-aaa2-1bcf04334bc6".into()),
-        children: None,
-    };
-    let r = find_root_args_to_inherit(&[], &inspect).unwrap();
-    assert_eq!(r.mount_spec, "UUID=965eb3c7-5a3f-470d-aaa2-1bcf04334bc6");
+    #[test]
+    fn test_gather_root_args() {
+        // A basic filesystem using a UUID
+        let inspect = Filesystem {
+            source: "/dev/vda4".into(),
+            target: "/".into(),
+            fstype: "xfs".into(),
+            maj_min: "252:4".into(),
+            options: "rw".into(),
+            uuid: Some("965eb3c7-5a3f-470d-aaa2-1bcf04334bc6".into()),
+            children: None,
+        };
+        let r = find_root_args_to_inherit(&[], &inspect).unwrap();
+        assert_eq!(r.mount_spec, "UUID=965eb3c7-5a3f-470d-aaa2-1bcf04334bc6");
 
-    // In this case we take the root= from the kernel cmdline
-    let r = find_root_args_to_inherit(
-        &[
-            "root=/dev/mapper/root",
-            "rw",
-            "someother=karg",
-            "rd.lvm.lv=root",
-            "systemd.debug=1",
-        ],
-        &inspect,
-    )
-    .unwrap();
-    assert_eq!(r.mount_spec, "/dev/mapper/root");
-    assert_eq!(r.kargs.len(), 1);
-    assert_eq!(r.kargs[0], "rd.lvm.lv=root");
+        // In this case we take the root= from the kernel cmdline
+        let r = find_root_args_to_inherit(
+            &[
+                "root=/dev/mapper/root",
+                "rw",
+                "someother=karg",
+                "rd.lvm.lv=root",
+                "systemd.debug=1",
+            ],
+            &inspect,
+        )
+        .unwrap();
+        assert_eq!(r.mount_spec, "/dev/mapper/root");
+        assert_eq!(r.kargs.len(), 1);
+        assert_eq!(r.kargs[0], "rd.lvm.lv=root");
+    }
 }

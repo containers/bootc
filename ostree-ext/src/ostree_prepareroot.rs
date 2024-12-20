@@ -131,69 +131,74 @@ pub fn overlayfs_enabled_in_config(config: &glib::KeyFile) -> Result<bool> {
     Ok(root_transient || composefs.maybe_enabled())
 }
 
-#[test]
-fn test_tristate() {
-    for v in ["yes", "true", "1"] {
-        assert_eq!(Tristate::from_str(v).unwrap(), Tristate::Enabled);
-    }
-    assert_eq!(Tristate::from_str("maybe").unwrap(), Tristate::Maybe);
-    for v in ["no", "false", "0"] {
-        assert_eq!(Tristate::from_str(v).unwrap(), Tristate::Disabled);
-    }
-    for v in ["", "junk", "fal", "tr1"] {
-        assert!(Tristate::from_str(v).is_err());
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_composefs_state() {
-    assert_eq!(
-        ComposefsState::from_str("signed").unwrap(),
-        ComposefsState::Signed
-    );
-    for v in ["yes", "true", "1"] {
-        assert_eq!(
-            ComposefsState::from_str(v).unwrap(),
-            ComposefsState::Tristate(Tristate::Enabled)
-        );
+    #[test]
+    fn test_tristate() {
+        for v in ["yes", "true", "1"] {
+            assert_eq!(Tristate::from_str(v).unwrap(), Tristate::Enabled);
+        }
+        assert_eq!(Tristate::from_str("maybe").unwrap(), Tristate::Maybe);
+        for v in ["no", "false", "0"] {
+            assert_eq!(Tristate::from_str(v).unwrap(), Tristate::Disabled);
+        }
+        for v in ["", "junk", "fal", "tr1"] {
+            assert!(Tristate::from_str(v).is_err());
+        }
     }
-    assert_eq!(Tristate::from_str("maybe").unwrap(), Tristate::Maybe);
-    for v in ["no", "false", "0"] {
-        assert_eq!(
-            ComposefsState::from_str(v).unwrap(),
-            ComposefsState::Tristate(Tristate::Disabled)
-        );
-    }
-}
 
-#[test]
-fn test_overlayfs_enabled() {
-    let d0 = indoc::indoc! { r#"
+    #[test]
+    fn test_composefs_state() {
+        assert_eq!(
+            ComposefsState::from_str("signed").unwrap(),
+            ComposefsState::Signed
+        );
+        for v in ["yes", "true", "1"] {
+            assert_eq!(
+                ComposefsState::from_str(v).unwrap(),
+                ComposefsState::Tristate(Tristate::Enabled)
+            );
+        }
+        assert_eq!(Tristate::from_str("maybe").unwrap(), Tristate::Maybe);
+        for v in ["no", "false", "0"] {
+            assert_eq!(
+                ComposefsState::from_str(v).unwrap(),
+                ComposefsState::Tristate(Tristate::Disabled)
+            );
+        }
+    }
+
+    #[test]
+    fn test_overlayfs_enabled() {
+        let d0 = indoc::indoc! { r#"
 [foo]
 bar = baz
 [root]
 "# };
-    let d1 = indoc::indoc! { r#"
+        let d1 = indoc::indoc! { r#"
 [root]
 transient = false
     "# };
-    let d2 = indoc::indoc! { r#"
+        let d2 = indoc::indoc! { r#"
 [composefs]
 enabled = false
     "# };
-    for v in ["", d0, d1, d2] {
-        let kf = glib::KeyFile::new();
-        kf.load_from_data(v, glib::KeyFileFlags::empty()).unwrap();
-        assert!(!overlayfs_enabled_in_config(&kf).unwrap());
-    }
+        for v in ["", d0, d1, d2] {
+            let kf = glib::KeyFile::new();
+            kf.load_from_data(v, glib::KeyFileFlags::empty()).unwrap();
+            assert!(!overlayfs_enabled_in_config(&kf).unwrap());
+        }
 
-    let e0 = format!("{d0}\n[root]\ntransient = true");
-    let e1 = format!("{d1}\n[composefs]\nenabled = true\n[other]\nsomekey = someval");
-    let e2 = format!("{d1}\n[composefs]\nenabled = yes");
-    let e3 = format!("{d1}\n[composefs]\nenabled = signed");
-    for v in [e0, e1, e2, e3] {
-        let kf = glib::KeyFile::new();
-        kf.load_from_data(&v, glib::KeyFileFlags::empty()).unwrap();
-        assert!(overlayfs_enabled_in_config(&kf).unwrap());
+        let e0 = format!("{d0}\n[root]\ntransient = true");
+        let e1 = format!("{d1}\n[composefs]\nenabled = true\n[other]\nsomekey = someval");
+        let e2 = format!("{d1}\n[composefs]\nenabled = yes");
+        let e3 = format!("{d1}\n[composefs]\nenabled = signed");
+        for v in [e0, e1, e2, e3] {
+            let kf = glib::KeyFile::new();
+            kf.load_from_data(&v, glib::KeyFileFlags::empty()).unwrap();
+            assert!(overlayfs_enabled_in_config(&kf).unwrap());
+        }
     }
 }
