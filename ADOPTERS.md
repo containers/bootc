@@ -26,6 +26,7 @@ is to be the successor to ostree, and it is our aim to seamlessly carry forward 
 | Vendor | Apertis | 2020 | [link](https://apertis.org) | Collaborative OS platform for products
 | Vendor | Fedora Project | 2021 | [link](https://fedoraproject.org/atomic-desktops/) | An atomic desktop operating system aimed at good support for container-focused workflows
 | Vendor | Universal Blue   | 2022 | [link](https://universal-blue.org/) | The reliability of a Chromebook, but with the flexibility and power of a traditional Linux desktop
+| Vendor | Fyra Labs | 2024 | [link](https://fyralabs.com) | Bootc powers an experimental variant of Ultramarine Linux
 
 ### Adopter Types
 
