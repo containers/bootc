@@ -11,8 +11,6 @@ use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt as _;
 use fn_error_context::context;
 
-use crate::utils::openat2_with_retry;
-
 /// Reference to embedded default baseimage content that should exist.
 const BASEIMAGE_REF: &str = "usr/share/doc/bootc/baseimage/base";
 
@@ -72,25 +70,6 @@ fn check_kernel(root: &Dir) -> Result<()> {
     Ok(())
 }
 
-/// Open the target directory, but return Ok(None) if this would cross a mount point.
-fn open_dir_noxdev(
-    parent: &Dir,
-    path: impl AsRef<std::path::Path>,
-) -> std::io::Result<Option<Dir>> {
-    use rustix::fs::{Mode, OFlags, ResolveFlags};
-    match openat2_with_retry(
-        parent,
-        path,
-        OFlags::CLOEXEC | OFlags::DIRECTORY | OFlags::NOFOLLOW,
-        Mode::empty(),
-        ResolveFlags::NO_XDEV | ResolveFlags::BENEATH,
-    ) {
-        Ok(r) => Ok(Some(Dir::reopen_dir(&r)?)),
-        Err(e) if e == rustix::io::Errno::XDEV => Ok(None),
-        Err(e) => return Err(e.into()),
-    }
-}
-
 fn check_utf8(dir: &Dir) -> Result<()> {
     for entry in dir.entries()? {
         let entry = entry?;
@@ -109,7 +88,7 @@ fn check_utf8(dir: &Dir) -> Result<()> {
                 "/{strname}: Found non-utf8 symlink target"
             );
         } else if ifmt.is_dir() {
-            let Some(subdir) = open_dir_noxdev(dir, entry.file_name())? else {
+            let Some(subdir) = crate::utils::open_dir_noxdev(dir, entry.file_name())? else {
                 continue;
             };
             if let Err(err) = check_utf8(&subdir) {
@@ -179,17 +158,6 @@ mod tests {
     fn fixture() -> Result<cap_std_ext::cap_tempfile::TempDir> {
         let tempdir = cap_std_ext::cap_tempfile::tempdir(cap_std::ambient_authority())?;
         Ok(tempdir)
-    }
-
-    #[test]
-    fn test_open_noxdev() -> Result<()> {
-        let root = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
-        // This hard requires the host setup to have /usr/bin on the same filesystem as /
-        let usr = Dir::open_ambient_dir("/usr", cap_std::ambient_authority())?;
-        assert!(open_dir_noxdev(&usr, "bin").unwrap().is_some());
-        // Requires a mounted /proc, but that also seems ane.
-        assert!(open_dir_noxdev(&root, "proc").unwrap().is_none());
-        Ok(())
     }
 
     #[test]
