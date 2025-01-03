@@ -8,7 +8,7 @@ use containers_image_proxy::oci_spec;
 use oci_image::ImageManifest;
 use oci_spec::image as oci_image;
 use ocidir::oci_spec::image::{Arch, DigestAlgorithm};
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 use ostree_ext::chunking::ObjectMetaSized;
 use ostree_ext::container::{store, ManifestDiff};
 use ostree_ext::container::{
@@ -31,6 +31,12 @@ use ostree_ext::fixture::{
 
 const EXAMPLE_TAR_LAYER: &[u8] = include_bytes!("fixtures/hlinks.tar.gz");
 const TEST_REGISTRY_DEFAULT: &str = "localhost:5000";
+
+/// Check if we have skopeo
+fn check_skopeo() -> bool {
+    static HAVE_SKOPEO: OnceCell<bool> = OnceCell::new();
+    *HAVE_SKOPEO.get_or_init(|| Command::new("skopeo").arg("--help").status().is_ok())
+}
 
 #[track_caller]
 fn assert_err_contains<T>(r: Result<T>, s: impl AsRef<str>) {
@@ -624,6 +630,9 @@ async fn impl_test_container_import_export(chunked: bool) -> Result<()> {
 
 #[tokio::test]
 async fn test_export_as_container_nonderived() -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let fixture = Fixture::new_v1()?;
     // Export into an OCI directory
     let src_imgref = fixture.export_container().await.unwrap().0;
@@ -662,6 +671,9 @@ async fn test_export_as_container_nonderived() -> Result<()> {
 
 #[tokio::test]
 async fn test_export_as_container_derived() -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let fixture = Fixture::new_v1()?;
     // Export into an OCI directory
     let src_imgref = fixture.export_container().await.unwrap().0;
@@ -711,6 +723,9 @@ async fn test_export_as_container_derived() -> Result<()> {
 
 #[tokio::test]
 async fn test_unencapsulate_unbootable() -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let fixture = {
         let mut fixture = Fixture::new_base()?;
         fixture.bootable = false;
@@ -801,6 +816,9 @@ fn validate_chunked_structure(oci_path: &Utf8Path) -> Result<()> {
 
 #[tokio::test]
 async fn test_container_arch_mismatch() -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let fixture = Fixture::new_v1()?;
 
     let imgref = fixture.export_container().await.unwrap().0;
@@ -850,6 +868,9 @@ async fn test_container_arch_mismatch() -> Result<()> {
 
 #[tokio::test]
 async fn test_container_chunked() -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let nlayers = LAYERS_V0_LEN - 1;
     let mut fixture = Fixture::new_v1()?;
 
@@ -1044,6 +1065,9 @@ r usr/bin/bash bash-v0
 
 #[tokio::test]
 async fn test_container_var_content() -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let fixture = Fixture::new_v1()?;
 
     let imgref = fixture.export_container().await.unwrap().0;
@@ -1146,6 +1170,9 @@ async fn test_container_etc_hardlinked_relative() -> Result<()> {
 }
 
 async fn test_container_etc_hardlinked(absolute: bool) -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let fixture = Fixture::new_v1()?;
 
     let imgref = fixture.export_container().await.unwrap().0;
@@ -1257,6 +1284,9 @@ async fn test_container_etc_hardlinked(absolute: bool) -> Result<()> {
 
 #[tokio::test]
 async fn test_non_ostree() -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let fixture = NonOstreeFixture::new_base()?;
     let src_digest = fixture.export_container().await?.1;
 
@@ -1285,6 +1315,9 @@ async fn oci_clone(src: impl AsRef<Utf8Path>, dest: impl AsRef<Utf8Path>) -> Res
 
 #[tokio::test]
 async fn test_container_import_export_v1() {
+    if !check_skopeo() {
+        return;
+    }
     impl_test_container_import_export(false).await.unwrap();
     impl_test_container_import_export(true).await.unwrap();
 }
@@ -1292,6 +1325,9 @@ async fn test_container_import_export_v1() {
 /// But layers work via the container::write module.
 #[tokio::test]
 async fn test_container_write_derive() -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let cancellable = gio::Cancellable::NONE;
     let fixture = Fixture::new_v1()?;
     let sh = fixture.new_shell()?;
@@ -1539,6 +1575,9 @@ async fn test_container_write_derive() -> Result<()> {
 
 /// Implementation of a test case for non-gzip (i.e. zstd or zstd:chunked) compression
 async fn test_non_gzip(format: &str) -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let fixture = Fixture::new_v1()?;
     let baseimg = &fixture.export_container().await?.0;
     let basepath = &match baseimg.transport {
@@ -1592,6 +1631,9 @@ async fn test_container_zstd_chunked() -> Result<()> {
 /// We need to handle the case of modified hardlinks into /sysroot
 #[tokio::test]
 async fn test_container_write_derive_sysroot_hardlink() -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let fixture = Fixture::new_v1()?;
     let sh = fixture.new_shell()?;
     let baseimg = &fixture.export_container().await?.0;
@@ -1688,6 +1730,9 @@ async fn test_container_write_derive_sysroot_hardlink() -> Result<()> {
 // verifies that the old ostree-rs-ext code can parse the containers
 // generated by the new ostree code.
 async fn test_old_code_parses_new_export() -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let rpmostree = Utf8Path::new("/usr/bin/rpm-ostree");
     if !rpmostree.exists() {
         return Ok(());
@@ -1722,6 +1767,9 @@ async fn test_old_code_parses_new_export() -> Result<()> {
 /// Test for https://github.com/ostreedev/ostree-rs-ext/issues/655
 #[tokio::test]
 async fn test_container_xattr() -> Result<()> {
+    if !check_skopeo() {
+        return Ok(());
+    }
     let fixture = Fixture::new_v1()?;
     let sh = fixture.new_shell()?;
     let baseimg = &fixture.export_container().await?.0;
