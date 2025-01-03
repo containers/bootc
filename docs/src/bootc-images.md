@@ -1,50 +1,44 @@
 # "bootc compatible" images
 
-At the current time, it does not work to just do:
+It is a toplevel goal of this project to tightly integrate
+with the OCI ecosystem and make booting containers a normal
+activity.
 
-```Dockerfile
-FROM fedora
-RUN dnf -y install kernel
-```
+However, there are a number of basic requirements and integration
+points, some of which have distribution-specific variants.
 
-or
+Further at the current time, the bootc project makes a lot
+of use of ostree, and this can appear in the base image
+requirements.
 
-```Dockerfile
-FROM debian
-RUN apt install linux
-```
+## ostree-in-container
 
-And get an image compatible with bootc.  Supporting any base image
-is an eventual goal, however there are a few reasons why
-this doesn't yet work.  The biggest reason is SELinux
-labeling support; the underlying ostree stack currently
-handles this and requires that the "base image"
-have a pre-computed set of labels that can be used
-for any derived layers.
+With [bootc 1.1.3](https://github.com/containers/bootc/releases/tag/v1.1.3)
+or later, it is no longer required to have a `/ostree` directory
+present in the base image.
 
-# Building bootc compatible base images
+To generate container images which do include `/ostree` from scratch,
+the underlying `ostree container` tooling is designed to operate
+on an existing ostree commit, and the `ostree container encapsulate`
+command can turn the commit into an OCI image. If you already
+have a pipeline which prdouces ostree commits as an output
+(e.g. using [osbuild](https://www.osbuild.org/guides/image-builder-on-premises/building-ostree-images.html)
+ to produce `ostree` commit artifacts), then this allows a
+seamless transition to a bootc/OCI compatible ecosystem.
 
-As a corollary to base-image limitations, the build process
-for generating base images currently requires running
-through ostree tooling to generate an "ostree commit"
-which has some special formatting in the base image.
+## Higher level base image build tooling
 
-The two most common ways to do this are to either:
+A well tested tool to produce compatible base images is 
+[`rpm-ostree compose image`](https://coreos.github.io/rpm-ostree/container/#creating-base-images),
+which is used by the [Fedora base image](https://gitlab.com/fedora/bootc/base-images).
 
-  1. compose a compatible OCI image directly via [`rpm-ostree compose image`](https://coreos.github.io/rpm-ostree/container/#creating-base-images)
-  1. encapsulate an ostree commit using `rpm-ostree compose container-encapsulate`
+## Standard image content
 
-The first method is most direct, as it streamlines the process of
-creating a base image and writing to a registry. The second method
-may be preferable if you already have a build process that produces `ostree`
-commits as an output (e.g. using [osbuild](https://www.osbuild.org/guides/image-builder-on-premises/building-ostree-images.html)
-to produce `ostree` commit artifacts.)
-
-The requirement for both methods is that your initial treefile/manifest
-**MUST** include the `bootc` package in list of packages included in your compose.
-
-However, the ostree usage is an implementation detail
-and the requirement on this will be lifted in the future.
+The bootc project provides a [baseimage](../../baseimage) reference
+set of configuration files for base images. In particular at
+the current time the content defined by `base` must be used
+(or recreated). There is also suggested integration there with
+e.g. `dracut` to ensure the initramfs is set up, etc.
 
 ## Standard metadata for bootc compatible images
 
@@ -56,7 +50,7 @@ LABEL containers.bootc 1
 
 This will signal that this image is intended to be usable with `bootc`.
 
-# Deriving from existing base images
+## Deriving from existing base images
 
 It's important to emphasize that from one
 of these specially-formatted base images, every
@@ -82,12 +76,14 @@ Bootc will take care of copying the kernel/initramfs as needed from the containe
 
 Future work for supporting UKIs will follow the recommendations of the uapi-group in [Locations for Distribution-built UKIs Installed by Package Managers](https://uapi-group.org/specifications/specs/unified_kernel_image/#locations-for-distribution-built-ukis-installed-by-package-managers).
 
+The `bootc container lint` command will check this.
+
 ## The `ostree container commit` command
 
 You may find some references to this; it is no longer very useful
 and is not recommended.
 
-# The bootloader setup
+## The bootloader setup
 
 At the current time bootc relies on the [bootupd](https://github.com/coreos/bootupd/)
 project which handles bootloader installs and upgrades.  The invocation of
@@ -95,7 +91,7 @@ project which handles bootloader installs and upgrades.  The invocation of
 Additionally, `bootc upgrade` will currently not upgrade the bootloader;
 you must invoke `bootupctl update`.
 
-# SELinux
+## SELinux
 
 Container runtimes such as `podman` and `docker` commonly
 apply a "coarse" SELinux policy to running containers.
@@ -108,9 +104,9 @@ and there are no individually distinct e.g. `etc_t` and
 `usr_t` types.
 
 In contrast, with the current OSTree backend for bootc,
-when the base image is built, label metadata is included
-in special metadata files in `/sysroot/ostree` that correspond
-to components of the base image.
+it is possible to include label metadata (and precomputed ostree
+checksums) in special metadata files in `/sysroot/ostree` that correspond
+to components of the base image. This is optional as of bootc v1.1.3.
 
 File content in derived layers will be labeled using the default file
 contexts (from `/etc/selinux`). For example, you can do this (as of
@@ -152,13 +148,7 @@ References:
 
 It is strongly recommended to enable the ostree composefs
 backend (but not strictly required) for bootc.
-Do so by ensuring you have this in your `/usr/lib/ostree/prepare-root.conf`:
 
-```
-[composefs]
-enabled = yes
-[sysroot]
-readonly = true
-```
+A reference enablement file to do so is in the [baseimage/base](../../baseimage/base).
 
 More in [ostree-prepare-root](https://ostreedev.github.io/ostree/man/ostree-prepare-root.html).
