@@ -8,3 +8,5 @@ sources of content.
   a hard requirement. It's not much, just an ostree configuration
   enabling composefs, plus the default `sysroot` directory (which
   may go away in the future) and the `ostree` symlink into `sysroot`.
+- [dracut](dracut): Default/basic dracut configuration; at the current
+  time this basically just enables ostree in the initramfs.

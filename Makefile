@@ -28,6 +28,9 @@ install:
 	install -D -m 0644 -t $(DESTDIR)/$(prefix)/share/doc/bootc/baseimage/base/usr/lib/ostree/ baseimage/base/usr/lib/ostree/prepare-root.conf
 	install -d -m 755 $(DESTDIR)/$(prefix)/share/doc/bootc/baseimage/base/sysroot
 	cp -PfT baseimage/base/ostree $(DESTDIR)/$(prefix)/share/doc/bootc/baseimage/base/ostree 
+	# Ensure we've cleaned out any possibly older files
+	rm -vrf $(DESTDIR)$(prefix)/share/doc/bootc/baseimage/dracut
+	cp -Prf baseimage/dracut $(DESTDIR)$(prefix)/share/doc/bootc/baseimage/dracut
 
 # Run this to also take over the functionality of `ostree container` for example.
 # Only needed for OS/distros that have callers invoking `ostree container` and not bootc.
