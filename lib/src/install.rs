@@ -28,6 +28,7 @@ use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use cap_std::fs::{Dir, MetadataExt};
 use cap_std_ext::cap_std;
+use cap_std_ext::cap_std::fs::FileType;
 use cap_std_ext::cap_std::fs_utf8::DirEntry as DirEntryUtf8;
 use cap_std_ext::cap_tempfile::TempDir;
 use cap_std_ext::cmdext::CapStdExtCommandExt;
@@ -56,7 +57,7 @@ use crate::progress_jsonl::ProgressWriter;
 use crate::spec::ImageReference;
 use crate::store::Storage;
 use crate::task::Task;
-use crate::utils::sigpolicy_from_opts;
+use crate::utils::{open_dir_noxdev, sigpolicy_from_opts};
 
 /// The toplevel boot directory
 const BOOT: &str = "boot";
@@ -1558,14 +1559,22 @@ fn require_empty_rootdir(rootfs_fd: &Dir) -> Result<()> {
 }
 
 /// Remove all entries in a directory, but do not traverse across distinct devices.
+/// If mount_err is true, then an error is returned if a mount point is found;
+/// otherwise it is silently ignored.
 #[context("Removing entries (noxdev)")]
-fn remove_all_in_dir_no_xdev(d: &Dir) -> Result<()> {
-    let parent_dev = d.dir_metadata()?.dev();
+fn remove_all_in_dir_no_xdev(d: &Dir, mount_err: bool) -> Result<()> {
     for entry in d.entries()? {
         let entry = entry?;
-        let entry_dev = entry.metadata()?.dev();
-        if entry_dev == parent_dev {
-            d.remove_all_optional(entry.file_name())?;
+        let name = entry.file_name();
+        let etype = entry.file_type()?;
+        if etype == FileType::dir() {
+            if let Some(subdir) = open_dir_noxdev(d, &name)? {
+                remove_all_in_dir_no_xdev(&subdir, mount_err)?;
+            } else if mount_err {
+                anyhow::bail!("Found unexpected mount point {name:?}");
+            }
+        } else {
+            d.remove_file_optional(&name)?;
         }
     }
     anyhow::Ok(())
@@ -1576,13 +1585,15 @@ fn clean_boot_directories(rootfs: &Dir) -> Result<()> {
     let bootdir =
         crate::utils::open_dir_remount_rw(rootfs, BOOT.into()).context("Opening /boot")?;
     // This should not remove /boot/efi note.
-    remove_all_in_dir_no_xdev(&bootdir)?;
+    remove_all_in_dir_no_xdev(&bootdir, false)?;
+    // TODO: Discover the ESP the same way bootupd does it; we should also
+    // support not wiping the ESP.
     if ARCH_USES_EFI {
         if let Some(efidir) = bootdir
             .open_dir_optional(crate::bootloader::EFI_DIR)
             .context("Opening /boot/efi")?
         {
-            remove_all_in_dir_no_xdev(&efidir)?;
+            remove_all_in_dir_no_xdev(&efidir, false)?;
         }
     }
     Ok(())
@@ -1730,14 +1741,8 @@ pub(crate) async fn install_to_filesystem(
         Some(ReplaceMode::Wipe) => {
             let rootfs_fd = rootfs_fd.try_clone()?;
             println!("Wiping contents of root");
-            tokio::task::spawn_blocking(move || {
-                for e in rootfs_fd.entries()? {
-                    let e = e?;
-                    rootfs_fd.remove_all_optional(e.file_name())?;
-                }
-                anyhow::Ok(())
-            })
-            .await??;
+            tokio::task::spawn_blocking(move || remove_all_in_dir_no_xdev(&rootfs_fd, true))
+                .await??;
         }
         Some(ReplaceMode::Alongside) => clean_boot_directories(&rootfs_fd)?,
         None => require_empty_rootdir(&rootfs_fd)?,

@@ -110,6 +110,25 @@ pub(crate) fn open_dir_remount_rw(root: &Dir, target: &Utf8Path) -> Result<Dir> 
     root.open_dir(target).map_err(anyhow::Error::new)
 }
 
+/// Open the target directory, but return Ok(None) if this would cross a mount point.
+pub fn open_dir_noxdev(
+    parent: &Dir,
+    path: impl AsRef<std::path::Path>,
+) -> std::io::Result<Option<Dir>> {
+    use rustix::fs::{Mode, OFlags, ResolveFlags};
+    match openat2_with_retry(
+        parent,
+        path,
+        OFlags::CLOEXEC | OFlags::DIRECTORY | OFlags::NOFOLLOW,
+        Mode::empty(),
+        ResolveFlags::NO_XDEV | ResolveFlags::BENEATH,
+    ) {
+        Ok(r) => Ok(Some(Dir::reopen_dir(&r)?)),
+        Err(e) if e == rustix::io::Errno::XDEV => Ok(None),
+        Err(e) => return Err(e.into()),
+    }
+}
+
 /// Given a target path, remove its immutability if present
 #[context("Removing immutable flag from {target}")]
 pub(crate) fn remove_immutability(root: &Dir, target: &Utf8Path) -> Result<()> {
@@ -223,6 +242,8 @@ pub(crate) fn digested_pullspec(image: &str, digest: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use cap_std_ext::cap_std;
+
     use super::*;
 
     #[test]
@@ -268,5 +289,16 @@ mod tests {
             sigpolicy_from_opts(true, Some("foo")),
             SignatureSource::ContainerPolicyAllowInsecure
         );
+    }
+
+    #[test]
+    fn test_open_noxdev() -> Result<()> {
+        let root = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+        // This hard requires the host setup to have /usr/bin on the same filesystem as /
+        let usr = Dir::open_ambient_dir("/usr", cap_std::ambient_authority())?;
+        assert!(open_dir_noxdev(&usr, "bin").unwrap().is_some());
+        // Requires a mounted /proc, but that also seems ane.
+        assert!(open_dir_noxdev(&root, "proc").unwrap().is_none());
+        Ok(())
     }
 }
