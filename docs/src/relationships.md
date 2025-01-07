@@ -39,12 +39,26 @@ However, there are also plans for `bootc` to also understand Kubernetes API type
 
 Perhaps in the future we may actually support some kind of `Pod` analogue for representing the host state.  Or we may define a [CRD](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/) which can be used inside and outside of Kubernetes.
 
+## Relationship with ostree
+
+OSTree provides many things:
+1. a git-like repo for OS data from which you can check out an entire rootfs
+2. a bootloader integration layer
+3. a transport layer for pulling content over HTTP
+
+With bootc, the OSTree transport layer is not used. Instead, content is pulled
+as OCI containers using `skopeo` as mentioned above. However, this content
+is then imported into the local OSTree repo to perform a deployment checkout.
+The role of OSTree may further shrink in the future, especially as tighter
+integration with podman and composefs occurs, but it will remain an important
+part of the bootc stack (in particular the bootloader integration layer and
+management of deployment roots).
+
 ## Relationship with rpm-ostree
 
-Today both bootc and rpm-ostree use the [ostree project](https://github.com/ostreedev/ostree-rs-ext)
-as a backing model.  Hence, when using a container source,
-`rpm-ostree upgrade` and `bootc upgrade` are effectively equivalent;
-you can use either command.
+As mentioned above, bootc uses OSTree as a backing model, and so does
+rpm-ostree. Hence, when using a container source, `rpm-ostree upgrade` and
+`bootc upgrade` are effectively equivalent; you can use either command.
 
 ### Differences from rpm-ostree
 
