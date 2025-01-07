@@ -393,7 +393,7 @@ pub(crate) enum InternalsOpts {
         stateroot: String,
     },
     #[cfg(feature = "rhsm")]
-    /// Publish subscription-manager facts to /etc/rhsm/facts/bootc.json
+    /// Publish subscription-manager facts to /etc/rhsm/facts/bootc.facts
     PublishRhsmFacts,
 }
 

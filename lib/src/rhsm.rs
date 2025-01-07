@@ -6,7 +6,7 @@ use cap_std_ext::{cap_std, dirext::CapStdExtDirExt};
 use fn_error_context::context;
 use serde::Serialize;
 
-const FACTS_PATH: &str = "etc/rhsm/facts/bootc.json";
+const FACTS_PATH: &str = "etc/rhsm/facts/bootc.facts";
 
 #[derive(Serialize, PartialEq, Eq, Debug, Default)]
 struct RhsmFacts {
