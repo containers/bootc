@@ -50,7 +50,20 @@ RUN echo test content > /usr/share/blah.txt
     let orig_root_mtime = ls -Dl /ostree/bootc | get modified
 
     # Now, fetch it back into the bootc storage!
-    bootc switch --transport containers-storage localhost/bootc-derived
+    # We also test the progress API here
+    let tmpdir = mktemp -d -t bootc-progress.XXXXXX
+    let progress_fifo = $"($tmpdir)/progress.fifo"
+    let progress_json = $"($tmpdir)/progress.json"
+    mkfifo $progress_fifo
+    # nushell doesn't support & (for good reasons) so fork off a copy task via systemd-run
+    # which reads from the fifo and writes to a file
+    try { systemctl kill test-cat-progress }
+    systemd-run -u test-cat-progress -- /bin/bash -c $"exec cat ($progress_fifo) > ($progress_json)"
+    # nushell doesn't do fd passing right now either, so run via bash
+    bash -c $"bootc switch --json-fd 3 --transport containers-storage localhost/bootc-derived 3>($progress_fifo)"
+    # Now, let's do some checking of the progress json
+    let progress = open --raw $progress_json | from json -o
+    sanity_check_switch_progress_json $progress
 
     # Also test that the mtime changes on modification
     let new_root_mtime = ls -Dl /ostree/bootc | get modified
@@ -58,6 +71,31 @@ RUN echo test content > /usr/share/blah.txt
 
     # And reboot into it
     tmt-reboot
+}
+
+# This just does some basic verification of the progress JSON
+def sanity_check_switch_progress_json [data] {
+    let first = $data.0;
+    let event_count = $data | length
+    assert equal $first.type ProgressBytes
+    let steps = $first.stepsTotal
+    mut i = 0
+    for elt in $data {
+        if $elt.type != "ProgressBytes" {
+            break
+        }
+        # Bounds check steps
+        assert ($elt.steps <= $elt.stepsTotal)
+        assert equal $elt.stepsTotal $steps
+        $i += 1
+    }
+    let deploy = $data | get ($event_count - 1)
+    assert equal $deploy.steps 3
+    assert equal $deploy.stepsTotal 3
+    let deploy_tasks = $deploy.subtasks
+    assert equal ($deploy_tasks | length) 5
+    let deploy_names = $deploy_tasks | get subtask
+    assert equal $deploy_names ["merging", "deploying", "bound_images", "cleanup", "cleanup"]
 }
 
 # The second boot; verify we're in the derived image
