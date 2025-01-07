@@ -1570,6 +1570,7 @@ fn remove_all_in_dir_no_xdev(d: &Dir, mount_err: bool) -> Result<()> {
         if etype == FileType::dir() {
             if let Some(subdir) = open_dir_noxdev(d, &name)? {
                 remove_all_in_dir_no_xdev(&subdir, mount_err)?;
+                d.remove_dir(&name)?;
             } else if mount_err {
                 anyhow::bail!("Found unexpected mount point {name:?}");
             }
@@ -1950,5 +1951,23 @@ mod tests {
         assert_eq!(r.mount_spec, "/dev/mapper/root");
         assert_eq!(r.kargs.len(), 1);
         assert_eq!(r.kargs[0], "rd.lvm.lv=root");
+    }
+
+    // As this is a unit test we don't try to test mountpoints, just verify
+    // that we have the equivalent of rm -rf *
+    #[test]
+    fn test_remove_all_noxdev() -> Result<()> {
+        let td = cap_std_ext::cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+
+        td.create_dir_all("foo/bar/baz")?;
+        td.write("foo/bar/baz/test", b"sometest")?;
+        td.symlink_contents("/absolute-nonexistent-link", "somelink")?;
+        td.write("toptestfile", b"othertestcontents")?;
+
+        remove_all_in_dir_no_xdev(&td, true).unwrap();
+
+        assert_eq!(td.entries()?.count(), 0);
+
+        Ok(())
     }
 }
