@@ -50,6 +50,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "install-to-disk")]
 use self::baseline::InstallBlockDeviceOpts;
 use crate::boundimage::{BoundImage, ResolvedBoundImage};
+use crate::cli::ProgressOptions;
 use crate::containerenv::ContainerExecutionInfo;
 use crate::lsm;
 use crate::mount::Filesystem;
@@ -225,6 +226,10 @@ pub(crate) struct InstallToDiskOpts {
     #[serde(flatten)]
     pub(crate) config_opts: InstallConfigOpts,
 
+    #[clap(flatten)]
+    #[serde(flatten)]
+    pub(crate) progress_opts: ProgressOptions,
+
     /// Instead of targeting a block device, write to a file via loopback.
     #[clap(long)]
     #[serde(default)]
@@ -304,6 +309,9 @@ pub(crate) struct InstallToFilesystemOpts {
 
     #[clap(flatten)]
     pub(crate) config_opts: InstallConfigOpts,
+
+    #[clap(flatten)]
+    pub(crate) progress_opts: ProgressOptions,
 }
 
 #[derive(Debug, Clone, clap::Parser, PartialEq, Eq)]
@@ -320,6 +328,9 @@ pub(crate) struct InstallToExistingRootOpts {
 
     #[clap(flatten)]
     pub(crate) config_opts: InstallConfigOpts,
+
+    #[clap(flatten)]
+    pub(crate) progress_opts: ProgressOptions,
 
     /// Accept that this is a destructive action and skip a warning timer.
     #[clap(long)]
@@ -360,6 +371,7 @@ pub(crate) struct State {
     pub(crate) host_is_container: bool,
     /// The root filesystem of the running container
     pub(crate) container_root: Dir,
+    pub(crate) progress: ProgressWriter,
     pub(crate) tempdir: TempDir,
 }
 
@@ -745,7 +757,7 @@ async fn install_container(
             &spec_imgref,
             Some(&state.target_imgref),
             false,
-            ProgressWriter::default(),
+            state.progress.clone(),
         )
         .await?;
         repo.set_disable_fsync(false);
@@ -1168,6 +1180,7 @@ async fn prepare_install(
     config_opts: InstallConfigOpts,
     source_opts: InstallSourceOpts,
     target_opts: InstallTargetOpts,
+    progress_opts: ProgressOptions,
 ) -> Result<Arc<State>> {
     tracing::trace!("Preparing install");
     let rootfs = cap_std::fs::Dir::open_ambient_dir("/", cap_std::ambient_authority())
@@ -1282,6 +1295,8 @@ async fn prepare_install(
         .map(|p| std::fs::read_to_string(p).with_context(|| format!("Reading {p}")))
         .transpose()?;
 
+    let progress = progress_opts.try_into()?;
+
     // Create our global (read-only) state which gets wrapped in an Arc
     // so we can pass it to worker threads too. Right now this just
     // combines our command line options along with some bind mounts from the host.
@@ -1294,6 +1309,7 @@ async fn prepare_install(
         root_ssh_authorized_keys,
         container_root: rootfs,
         tempdir,
+        progress,
         host_is_container,
     });
 
@@ -1481,7 +1497,13 @@ pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
     } else if !target_blockdev_meta.file_type().is_block_device() {
         anyhow::bail!("Not a block device: {}", block_opts.device);
     }
-    let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
+    let state = prepare_install(
+        opts.config_opts,
+        opts.source_opts,
+        opts.target_opts,
+        opts.progress_opts,
+    )
+    .await?;
 
     // This is all blocking stuff
     let (mut rootfs, loopback) = {
@@ -1673,7 +1695,13 @@ pub(crate) async fn install_to_filesystem(
     // IMPORTANT: and hence anything that is done before MUST BE IDEMPOTENT.
     // IMPORTANT: In practice, we should only be gathering information before this point,
     // IMPORTANT: and not performing any mutations at all.
-    let state = prepare_install(opts.config_opts, opts.source_opts, opts.target_opts).await?;
+    let state = prepare_install(
+        opts.config_opts,
+        opts.source_opts,
+        opts.target_opts,
+        opts.progress_opts,
+    )
+    .await?;
     // And the last bit of state here is the fsopts, which we also destructure now.
     let mut fsopts = opts.filesystem_opts;
 
@@ -1894,6 +1922,7 @@ pub(crate) async fn install_to_existing_root(opts: InstallToExistingRootOpts) ->
         source_opts: opts.source_opts,
         target_opts: opts.target_opts,
         config_opts: opts.config_opts,
+        progress_opts: opts.progress_opts,
     };
 
     install_to_filesystem(opts, true).await
