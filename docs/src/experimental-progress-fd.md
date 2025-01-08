@@ -12,9 +12,8 @@ The format of data output over `--progress-fd` is [JSON Lines](https://jsonlines
 which is a series of JSON objects separated by newlines (the intermediate
 JSON content is guaranteed not to contain a literal newline).
 
-The current API version is `org.containers.bootc/progress/v1`. You can find
-the JSON schema describing this version here:
-[progress-v1.schema.json](progress-v1.schema.json).
+You can find the JSON schema describing this version here:
+[progress-v0.schema.json](progress-v0.schema.json).
 
 Deploying a new image with either switch or upgrade consists
 of three stages: `pulling`, `importing`, and `staging`. The `pulling` step

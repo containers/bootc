@@ -16,12 +16,15 @@ use tokio::sync::Mutex;
 // Maximum number of times per second that an event will be written.
 const REFRESH_HZ: u16 = 5;
 
-pub const API_VERSION: &str = "org.containers.bootc.progress/v1";
+/// Semantic version of the protocol.
+const API_VERSION: &str = "0.1.0";
 
 /// An incremental update to e.g. a container image layer download.
 /// The first time a given "subtask" name is seen, a new progress bar should be created.
 /// If bytes == bytes_total, then the subtask is considered complete.
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default, Clone, JsonSchema)]
+#[derive(
+    Debug, serde::Serialize, serde::Deserialize, Default, Clone, JsonSchema, PartialEq, Eq,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SubTaskBytes<'t> {
     /// A machine readable type for the task (used for i18n).
@@ -45,7 +48,9 @@ pub struct SubTaskBytes<'t> {
 }
 
 /// Marks the beginning and end of a dictrete step
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default, Clone, JsonSchema)]
+#[derive(
+    Debug, serde::Serialize, serde::Deserialize, Default, Clone, JsonSchema, PartialEq, Eq,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SubTaskStep<'t> {
     /// A machine readable type for the task (used for i18n).
@@ -65,18 +70,20 @@ pub struct SubTaskStep<'t> {
 }
 
 /// An event emitted as JSON.
-#[derive(Debug, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(
     tag = "type",
     rename_all = "PascalCase",
     rename_all_fields = "camelCase"
 )]
 pub enum Event<'t> {
+    Start {
+        /// The semantic version of the progress protocol.
+        #[serde(borrow)]
+        version: Cow<'t, str>,
+    },
     /// An incremental update to a container image layer download
     ProgressBytes {
-        /// The version of the progress event format.
-        #[serde(borrow)]
-        api_version: Cow<'t, str>,
         /// A machine readable type (e.g., pulling) for the task (used for i18n
         /// and UI customization).
         #[serde(borrow)]
@@ -106,9 +113,6 @@ pub enum Event<'t> {
     },
     /// An incremental update with discrete steps
     ProgressSteps {
-        /// The version of the progress event format.
-        #[serde(borrow)]
-        api_version: Cow<'t, str>,
         /// A machine readable type (e.g., pulling) for the task (used for i18n
         /// and UI customization).
         #[serde(borrow)]
@@ -150,6 +154,8 @@ impl FromStr for RawProgressFd {
 
 #[derive(Debug)]
 struct ProgressWriterInner {
+    /// true if we sent the initial Start message
+    sent_start: bool,
     last_write: Option<std::time::Instant>,
     fd: BufWriter<Sender>,
 }
@@ -171,6 +177,7 @@ impl TryFrom<OwnedFd> for ProgressWriter {
 impl From<Sender> for ProgressWriter {
     fn from(value: Sender) -> Self {
         let inner = ProgressWriterInner {
+            sent_start: false,
             last_write: None,
             fd: BufWriter::new(value),
         };
@@ -190,6 +197,18 @@ impl TryFrom<RawProgressFd> for ProgressWriter {
 }
 
 impl ProgressWriter {
+    /// Serialize the target value as a single line of JSON and write it.
+    async fn send_impl_inner<T: Serialize>(inner: &mut ProgressWriterInner, v: T) -> Result<()> {
+        // serde is guaranteed not to output newlines here
+        let buf = serde_json::to_vec(&v)?;
+        inner.fd.write_all(&buf).await?;
+        // We always end in a newline
+        inner.fd.write_all(b"\n").await?;
+        // And flush to ensure the remote side sees updates immediately
+        inner.fd.flush().await?;
+        Ok(())
+    }
+
     /// Serialize the target object to JSON as a single line
     pub(crate) async fn send_impl<T: Serialize>(&self, v: T, required: bool) -> Result<()> {
         let mut guard = self.inner.lock().await;
@@ -198,8 +217,17 @@ impl ProgressWriter {
             return Ok(());
         };
 
+        // If this is our first message, emit the Start message
+        if !inner.sent_start {
+            inner.sent_start = true;
+            let start = Event::Start {
+                version: API_VERSION.into(),
+            };
+            Self::send_impl_inner(inner, &start).await?;
+        }
+
         // For messages that can be dropped, if we already sent an update within this cycle, discard this one.
-        // TODO: Also consider querying the pipe buffer and also dropping if we can't do this write.
+        // TODO: Also consider querying the pipe buffer and also dropping if wqe can't do this write.
         let now = Instant::now();
         if !required {
             const REFRESH_MS: u32 = 1000 / REFRESH_HZ as u32;
@@ -210,22 +238,15 @@ impl ProgressWriter {
             }
         }
 
-        // SAFETY: Propagating panics from the mutex here is intentional
-        // serde is guaranteed not to output newlines here
-        let buf = serde_json::to_vec(&v)?;
-        inner.fd.write_all(&buf).await?;
-        // We always end in a newline
-        inner.fd.write_all(b"\n").await?;
-        // And flush to ensure the remote side sees updates immediately
-        inner.fd.flush().await?;
+        Self::send_impl_inner(inner, &v).await?;
         // Update the last write time
         inner.last_write = Some(now);
         Ok(())
     }
 
     /// Send an event.
-    pub(crate) async fn send<T: Serialize>(&self, v: T) {
-        if let Err(e) = self.send_impl(v, true).await {
+    pub(crate) async fn send(&self, event: Event<'_>) {
+        if let Err(e) = self.send_impl(event, true).await {
             eprintln!("Failed to write to jsonl: {}", e);
             // Stop writing to fd but let process continue
             // SAFETY: Propagating panics from the mutex here is intentional
@@ -234,8 +255,8 @@ impl ProgressWriter {
     }
 
     /// Send an event that can be dropped.
-    pub(crate) async fn send_lossy<T: Serialize>(&self, v: T) {
-        if let Err(e) = self.send_impl(v, false).await {
+    pub(crate) async fn send_lossy(&self, event: Event<'_>) {
+        if let Err(e) = self.send_impl(event, false).await {
             eprintln!("Failed to write to jsonl: {}", e);
             // Stop writing to fd but let process continue
             // SAFETY: Propagating panics from the mutex here is intentional
@@ -272,18 +293,30 @@ mod test {
     #[tokio::test]
     async fn test_jsonl() -> Result<()> {
         let testvalues = [
-            S {
-                s: "foo".into(),
-                v: 42,
+            Event::ProgressSteps {
+                task: "sometask".into(),
+                description: "somedesc".into(),
+                id: "someid".into(),
+                steps_cached: 0,
+                steps: 0,
+                steps_total: 3,
+                subtasks: Vec::new(),
             },
-            S {
-                // Test with an embedded newline to sanity check that serde doesn't write it literally
-                s: "foo\nbar".into(),
-                v: 0,
+            Event::ProgressBytes {
+                task: "sometask".into(),
+                description: "somedesc".into(),
+                id: "someid".into(),
+                bytes_cached: 0,
+                bytes: 11,
+                bytes_total: 42,
+                steps_cached: 0,
+                steps: 0,
+                steps_total: 3,
+                subtasks: Vec::new(),
             },
         ];
         let (send, recv) = tokio::net::unix::pipe::pipe()?;
-        let testvalues_sender = &testvalues;
+        let testvalues_sender = testvalues.iter().cloned();
         let sender = async move {
             let w = ProgressWriter::try_from(send)?;
             for value in testvalues_sender {
@@ -296,10 +329,18 @@ mod test {
             let tf = BufReader::new(recv);
             let mut expected = testvalues.iter();
             let mut lines = tf.lines();
+            let mut got_first = false;
             while let Some(line) = lines.next_line().await? {
-                let found: S = serde_json::from_str(&line)?;
-                let expected = expected.next().unwrap();
-                assert_eq!(&found, expected);
+                let found: Event = serde_json::from_str(&line)?;
+                let expected_value = if !got_first {
+                    got_first = true;
+                    &Event::Start {
+                        version: API_VERSION.into(),
+                    }
+                } else {
+                    expected.next().unwrap()
+                };
+                assert_eq!(&found, expected_value);
             }
             anyhow::Ok(())
         };

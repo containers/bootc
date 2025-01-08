@@ -4,10 +4,28 @@
   "description": "An event emitted as JSON.",
   "oneOf": [
     {
+      "type": "object",
+      "required": [
+        "type",
+        "version"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "Start"
+          ]
+        },
+        "version": {
+          "description": "The semantic version of the progress protocol.",
+          "type": "string"
+        }
+      }
+    },
+    {
       "description": "An incremental update to a container image layer download",
       "type": "object",
       "required": [
-        "api_version",
         "bytes",
         "bytes_cached",
         "bytes_total",
@@ -21,10 +39,6 @@
         "type"
       ],
       "properties": {
-        "api_version": {
-          "description": "The version of the progress event format.",
-          "type": "string"
-        },
         "bytes": {
           "description": "The number of bytes already fetched.",
           "type": "integer",
@@ -92,7 +106,6 @@
       "description": "An incremental update with discrete steps",
       "type": "object",
       "required": [
-        "api_version",
         "description",
         "id",
         "steps",
@@ -103,10 +116,6 @@
         "type"
       ],
       "properties": {
-        "api_version": {
-          "description": "The version of the progress event format.",
-          "type": "string"
-        },
         "description": {
           "description": "A human readable description of the task if i18n is not available.",
           "type": "string"

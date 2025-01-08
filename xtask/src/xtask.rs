@@ -149,7 +149,7 @@ fn update_generated(sh: &Shell) -> Result<()> {
     }
     for (of, target) in [
         ("host", "docs/src/host-v1.schema.json"),
-        ("progress", "docs/src/progress-v1.schema.json"),
+        ("progress", "docs/src/progress-v0.schema.json"),
     ] {
         let schema = cmd!(sh, "cargo run -q -- internals print-json-schema --of={of}").read()?;
         std::fs::write(target, &schema)?;
