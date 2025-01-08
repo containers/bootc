@@ -38,7 +38,7 @@ pub(crate) struct ProgressOptions {
     /// Interactive progress will be written to this file descriptor as "JSON lines"
     /// format, where each value is separated by a newline.
     #[clap(long)]
-    pub(crate) json_fd: Option<RawProgressFd>,
+    pub(crate) progress_fd: Option<RawProgressFd>,
 }
 
 impl TryFrom<ProgressOptions> for ProgressWriter {
@@ -46,7 +46,7 @@ impl TryFrom<ProgressOptions> for ProgressWriter {
 
     fn try_from(value: ProgressOptions) -> Result<Self> {
         let r = value
-            .json_fd
+            .progress_fd
             .map(TryInto::try_into)
             .transpose()?
             .unwrap_or_default();
