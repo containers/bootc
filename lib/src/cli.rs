@@ -37,7 +37,7 @@ pub(crate) struct ProgressOptions {
     ///
     /// Interactive progress will be written to this file descriptor as "JSON lines"
     /// format, where each value is separated by a newline.
-    #[clap(long)]
+    #[clap(long, hide = true)]
     pub(crate) progress_fd: Option<RawProgressFd>,
 }
 
