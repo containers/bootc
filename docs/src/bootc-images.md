@@ -34,7 +34,7 @@ which is used by the [Fedora base image](https://gitlab.com/fedora/bootc/base-im
 
 ## Standard image content
 
-The bootc project provides a [baseimage](../../baseimage) reference
+The bootc project provides a [baseimage](https://github.com/containers/bootc/tree/main/baseimage) reference
 set of configuration files for base images. In particular at
 the current time the content defined by `base` must be used
 (or recreated). There is also suggested integration there with
@@ -149,6 +149,6 @@ References:
 It is strongly recommended to enable the ostree composefs
 backend (but not strictly required) for bootc.
 
-A reference enablement file to do so is in the [baseimage/base](../../baseimage/base).
+A reference enablement file to do so is in the base image content referenced above.
 
 More in [ostree-prepare-root](https://ostreedev.github.io/ostree/man/ostree-prepare-root.html).
