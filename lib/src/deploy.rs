@@ -149,7 +149,7 @@ async fn handle_layer_progress_print(
     bytes_total: u64,
     prog: ProgressWriter,
     quiet: bool,
-) {
+) -> ProgressWriter {
     let start = std::time::Instant::now();
     let mut total_read = 0u64;
     let bar = indicatif::MultiProgress::new();
@@ -299,6 +299,9 @@ async fn handle_layer_progress_print(
         .into(),
     })
     .await;
+
+    // Return the writer
+    prog
 }
 
 /// Wrapper for pulling a container image, wiring up status output.
@@ -333,7 +336,6 @@ pub(crate) async fn pull(
     let bytes_to_fetch: u64 = layers_to_fetch.iter().map(|(l, _)| l.layer.size()).sum();
     let bytes_total: u64 = prep.all_layers().map(|l| l.layer.size()).sum();
 
-    let prog_print = prog.clone();
     let digest = prep.manifest_digest.clone();
     let digest_imp = prep.manifest_digest.clone();
     let layer_progress = imp.request_progress();
@@ -347,13 +349,13 @@ pub(crate) async fn pull(
             layers_total,
             bytes_to_fetch,
             bytes_total,
-            prog_print,
+            prog,
             quiet,
         )
         .await
     });
     let import = imp.import(prep).await;
-    let _ = printer.await;
+    let prog = printer.await?;
     // Both the progress and the import are done, so import is done as well
     prog.send(Event::ProgressSteps {
         api_version: API_VERSION.into(),
