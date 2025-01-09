@@ -227,7 +227,7 @@ impl ProgressWriter {
         }
 
         // For messages that can be dropped, if we already sent an update within this cycle, discard this one.
-        // TODO: Also consider querying the pipe buffer and also dropping if wqe can't do this write.
+        // TODO: Also consider querying the pipe buffer and also dropping if we can't do this write.
         let now = Instant::now();
         if !required {
             const REFRESH_MS: u32 = 1000 / REFRESH_HZ as u32;
