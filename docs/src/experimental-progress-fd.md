@@ -6,7 +6,7 @@ This is an experimental feature; tracking issue: <https://github.com/containers/
 While the `bootc status` tooling allows a client to discover the state
 of the system, during interactive changes such as `bootc upgrade`
 or `bootc switch` it is possible to monitor the status of downloads
-or other operations at a fine-grained level with `-progress-fd`.
+or other operations at a fine-grained level with `--progress-fd`.
 
 The format of data output over `--progress-fd` is [JSON Lines](https://jsonlines.org)
 which is a series of JSON objects separated by newlines (the intermediate
