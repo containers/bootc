@@ -55,6 +55,7 @@
 # Experimental features
 
 - [bootc image](experimental-bootc-image.md)
+- [--progress-fd](experimental-progress-fd.md)
 
 # More information
 

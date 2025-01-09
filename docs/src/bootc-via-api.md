@@ -7,7 +7,7 @@ are stable and will not change.
 ## Using `bootc edit` and `bootc status --json`
 
 While bootc does not depend on Kubernetes, it does currently
-also offere a Kubernetes *style* API, especially oriented
+also offer a Kubernetes *style* API, especially oriented
 towards the [spec and status and other conventions](https://kubernetes.io/docs/reference/using-api/api-concepts/).
 
 In general, most use cases of driving bootc via API are probably

@@ -21,7 +21,7 @@ use ostree_ext::ostree::{self, Sysroot};
 use ostree_ext::sysroot::SysrootLock;
 use ostree_ext::tokio_util::spawn_blocking_cancellable_flatten;
 
-use crate::progress_jsonl::{Event, ProgressWriter, SubTaskBytes, SubTaskStep, API_VERSION};
+use crate::progress_jsonl::{Event, ProgressWriter, SubTaskBytes, SubTaskStep};
 use crate::spec::ImageReference;
 use crate::spec::{BootOrder, HostSpec};
 use crate::status::labels_of_config;
@@ -149,7 +149,7 @@ async fn handle_layer_progress_print(
     bytes_total: u64,
     prog: ProgressWriter,
     quiet: bool,
-) {
+) -> ProgressWriter {
     let start = std::time::Instant::now();
     let mut total_read = 0u64;
     let bar = indicatif::MultiProgress::new();
@@ -214,7 +214,6 @@ async fn handle_layer_progress_print(
                         subtask.bytes = layer_size;
                         subtasks.push(subtask.clone());
                         prog.send(Event::ProgressBytes {
-                            api_version: API_VERSION.into(),
                             task: "pulling".into(),
                             description: format!("Pulling Image: {digest}").into(),
                             id: (*digest).into(),
@@ -245,7 +244,6 @@ async fn handle_layer_progress_print(
                     byte_bar.set_position(bytes.fetched);
                     subtask.bytes = byte_bar.position();
                     prog.send_lossy(Event::ProgressBytes {
-                        api_version: API_VERSION.into(),
                         task: "pulling".into(),
                         description: format!("Pulling Image: {digest}").into(),
                         id: (*digest).into(),
@@ -283,7 +281,6 @@ async fn handle_layer_progress_print(
     // use as a heuristic to begin import progress
     // Cannot be lossy or it is dropped
     prog.send(Event::ProgressSteps {
-        api_version: API_VERSION.into(),
         task: "importing".into(),
         description: "Importing Image".into(),
         id: (*digest).into(),
@@ -299,6 +296,9 @@ async fn handle_layer_progress_print(
         .into(),
     })
     .await;
+
+    // Return the writer
+    prog
 }
 
 /// Wrapper for pulling a container image, wiring up status output.
@@ -333,7 +333,6 @@ pub(crate) async fn pull(
     let bytes_to_fetch: u64 = layers_to_fetch.iter().map(|(l, _)| l.layer.size()).sum();
     let bytes_total: u64 = prep.all_layers().map(|l| l.layer.size()).sum();
 
-    let prog_print = prog.clone();
     let digest = prep.manifest_digest.clone();
     let digest_imp = prep.manifest_digest.clone();
     let layer_progress = imp.request_progress();
@@ -347,16 +346,15 @@ pub(crate) async fn pull(
             layers_total,
             bytes_to_fetch,
             bytes_total,
-            prog_print,
+            prog,
             quiet,
         )
         .await
     });
     let import = imp.import(prep).await;
-    let _ = printer.await;
+    let prog = printer.await?;
     // Both the progress and the import are done, so import is done as well
     prog.send(Event::ProgressSteps {
-        api_version: API_VERSION.into(),
         task: "importing".into(),
         description: "Importing Image".into(),
         id: digest_imp.clone().as_ref().into(),
@@ -571,7 +569,6 @@ pub(crate) async fn stage(
     };
     let mut subtasks = vec![];
     prog.send(Event::ProgressSteps {
-        api_version: API_VERSION.into(),
         task: "staging".into(),
         description: "Deploying Image".into(),
         id: image.manifest_digest.clone().as_ref().into(),
@@ -594,7 +591,6 @@ pub(crate) async fn stage(
     subtask.description = "Deploying Image".into();
     subtask.completed = false;
     prog.send(Event::ProgressSteps {
-        api_version: API_VERSION.into(),
         task: "staging".into(),
         description: "Deploying Image".into(),
         id: image.manifest_digest.clone().as_ref().into(),
@@ -625,7 +621,6 @@ pub(crate) async fn stage(
     subtask.description = "Pulling Bound Images".into();
     subtask.completed = false;
     prog.send(Event::ProgressSteps {
-        api_version: API_VERSION.into(),
         task: "staging".into(),
         description: "Deploying Image".into(),
         id: image.manifest_digest.clone().as_ref().into(),
@@ -648,7 +643,6 @@ pub(crate) async fn stage(
     subtask.description = "Removing old images".into();
     subtask.completed = false;
     prog.send(Event::ProgressSteps {
-        api_version: API_VERSION.into(),
         task: "staging".into(),
         description: "Deploying Image".into(),
         id: image.manifest_digest.clone().as_ref().into(),
@@ -672,7 +666,6 @@ pub(crate) async fn stage(
     subtask.completed = true;
     subtasks.push(subtask.clone());
     prog.send(Event::ProgressSteps {
-        api_version: API_VERSION.into(),
         task: "staging".into(),
         description: "Deploying Image".into(),
         id: image.manifest_digest.clone().as_ref().into(),

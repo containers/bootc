@@ -37,8 +37,8 @@ pub(crate) struct ProgressOptions {
     ///
     /// Interactive progress will be written to this file descriptor as "JSON lines"
     /// format, where each value is separated by a newline.
-    #[clap(long)]
-    pub(crate) json_fd: Option<RawProgressFd>,
+    #[clap(long, hide = true)]
+    pub(crate) progress_fd: Option<RawProgressFd>,
 }
 
 impl TryFrom<ProgressOptions> for ProgressWriter {
@@ -46,7 +46,7 @@ impl TryFrom<ProgressOptions> for ProgressWriter {
 
     fn try_from(value: ProgressOptions) -> Result<Self> {
         let r = value
-            .json_fd
+            .progress_fd
             .map(TryInto::try_into)
             .transpose()?
             .unwrap_or_default();
@@ -359,6 +359,12 @@ pub(crate) enum ImageOpts {
     Cmd(ImageCmdOpts),
 }
 
+#[derive(Debug, Clone, clap::ValueEnum, PartialEq, Eq)]
+pub(crate) enum SchemaType {
+    Host,
+    Progress,
+}
+
 /// Hidden, internal only options
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub(crate) enum InternalsOpts {
@@ -371,7 +377,10 @@ pub(crate) enum InternalsOpts {
     },
     FixupEtcFstab,
     /// Should only be used by `make update-generated`
-    PrintJsonSchema,
+    PrintJsonSchema {
+        #[clap(long)]
+        of: SchemaType,
+    },
     /// Perform cleanup actions
     Cleanup,
     /// Proxy frontend for the `ostree-ext` CLI.
@@ -1090,8 +1099,11 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 .await
             }
             InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
-            InternalsOpts::PrintJsonSchema => {
-                let schema = schema_for!(crate::spec::Host);
+            InternalsOpts::PrintJsonSchema { of } => {
+                let schema = match of {
+                    SchemaType::Host => schema_for!(crate::spec::Host),
+                    SchemaType::Progress => schema_for!(crate::progress_jsonl::Event),
+                };
                 let mut stdout = std::io::stdout().lock();
                 serde_json::to_writer_pretty(&mut stdout, &schema)?;
                 Ok(())

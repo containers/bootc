@@ -60,7 +60,7 @@ RUN echo test content > /usr/share/blah.txt
     try { systemctl kill test-cat-progress }
     systemd-run -u test-cat-progress -- /bin/bash -c $"exec cat ($progress_fifo) > ($progress_json)"
     # nushell doesn't do fd passing right now either, so run via bash
-    bash -c $"bootc switch --json-fd 3 --transport containers-storage localhost/bootc-derived 3>($progress_fifo)"
+    bash -c $"bootc switch --progress-fd 3 --transport containers-storage localhost/bootc-derived 3>($progress_fifo)"
     # Now, let's do some checking of the progress json
     let progress = open --raw $progress_json | from json -o
     sanity_check_switch_progress_json $progress
@@ -75,10 +75,12 @@ RUN echo test content > /usr/share/blah.txt
 
 # This just does some basic verification of the progress JSON
 def sanity_check_switch_progress_json [data] {
-    let first = $data.0;
     let event_count = $data | length
-    assert equal $first.type ProgressBytes
-    let steps = $first.stepsTotal
+    # The first one should always be a start event
+    let first = $data.0;
+    assert equal $first.type Start
+    let second = $data.1
+    let steps = $second.stepsTotal
     mut i = 0
     for elt in $data {
         if $elt.type != "ProgressBytes" {
