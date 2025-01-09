@@ -32,7 +32,10 @@ install:
 	cp -PfT baseimage/base/ostree $(DESTDIR)/$(prefix)/share/doc/bootc/baseimage/base/ostree 
 	# Ensure we've cleaned out any possibly older files
 	rm -vrf $(DESTDIR)$(prefix)/share/doc/bootc/baseimage/dracut
+	rm -vrf $(DESTDIR)$(prefix)/share/doc/bootc/baseimage/systemd
+	# Copy dracut and systemd config files
 	cp -Prf baseimage/dracut $(DESTDIR)$(prefix)/share/doc/bootc/baseimage/dracut
+	cp -Prf baseimage/systemd $(DESTDIR)$(prefix)/share/doc/bootc/baseimage/systemd
 
 # Run this to also take over the functionality of `ostree container` for example.
 # Only needed for OS/distros that have callers invoking `ostree container` and not bootc.
