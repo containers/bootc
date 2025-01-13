@@ -27,4 +27,4 @@ your code is using \`bootc install to-filesystem\` from the start.
 
 # VERSION
 
-v1.1.3
+v1.1.4
