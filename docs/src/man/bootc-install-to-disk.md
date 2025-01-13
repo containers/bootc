@@ -36,35 +36,36 @@ more complex such as RAID, LVM, LUKS etc.
 
 :   Target root block device setup.
 
-direct: Filesystem written directly to block device tpm2-luks: Bind
-unlock of filesystem to presence of the default tpm2 device.\
+    direct: Filesystem written directly to block device tpm2-luks: Bind
+    unlock of filesystem to presence of the default tpm2 device.\
 
-\
-\[*possible values: *direct, tpm2-luks\]
+    \
+    \[*possible values: *direct, tpm2-luks\]
 
 **\--filesystem**=*FILESYSTEM*
 
 :   Target root filesystem type\
 
-\
-\[*possible values: *xfs, ext4, btrfs\]
+    \
+    \[*possible values: *xfs, ext4, btrfs\]
 
 **\--root-size**=*ROOT_SIZE*
 
 :   Size of the root partition (default specifier: M). Allowed
     specifiers: M (mebibytes), G (gibibytes), T (tebibytes).
 
-By default, all remaining space on the disk will be used.
+    By default, all remaining space on the disk will be used.
 
 **\--source-imgref**=*SOURCE_IMGREF*
 
 :   Install the system from an explicitly given source.
 
-By default, bootc install and install-to-filesystem assumes that it runs
-in a podman container, and it takes the container image to install from
-the podmans container registry. If \--source-imgref is given, bootc uses
-it as the installation source, instead of the behaviour explained in the
-previous paragraph. See skopeo(1) for accepted formats.
+    By default, bootc install and install-to-filesystem assumes that it
+    runs in a podman container, and it takes the container image to
+    install from the podmans container registry. If \--source-imgref is
+    given, bootc uses it as the installation source, instead of the
+    behaviour explained in the previous paragraph. See skopeo(1) for
+    accepted formats.
 
 **\--target-transport**=*TARGET_TRANSPORT* \[default: registry\]
 
@@ -93,55 +94,56 @@ previous paragraph. See skopeo(1) for accepted formats.
     suppresses the check; use this when you know the issues it might
     find are addressed.
 
-A common reason this may fail is when one is using an image which
-requires registry authentication, but not embedding the pull secret in
-the image so that updates can be fetched by the installed OS \"day 2\".
+    A common reason this may fail is when one is using an image which
+    requires registry authentication, but not embedding the pull secret
+    in the image so that updates can be fetched by the installed OS
+    \"day 2\".
 
 **\--disable-selinux**
 
 :   Disable SELinux in the target (installed) system.
 
-This is currently necessary to install \*from\* a system with SELinux
-disabled but where the target does have SELinux enabled.
+    This is currently necessary to install \*from\* a system with
+    SELinux disabled but where the target does have SELinux enabled.
 
 **\--karg**=*KARG*
 
 :   Add a kernel argument. This option can be provided multiple times.
 
-Example: \--karg=nosmt \--karg=console=ttyS0,114800n8
+    Example: \--karg=nosmt \--karg=console=ttyS0,114800n8
 
 **\--root-ssh-authorized-keys**=*ROOT_SSH_AUTHORIZED_KEYS*
 
 :   The path to an \`authorized_keys\` that will be injected into the
     \`root\` account.
 
-The implementation of this uses systemd \`tmpfiles.d\`, writing to a
-file named \`/etc/tmpfiles.d/bootc-root-ssh.conf\`. This will have the
-effect that by default, the SSH credentials will be set if not present.
-The intention behind this is to allow mounting the whole \`/root\` home
-directory as a \`tmpfs\`, while still getting the SSH key replaced on
-boot.
+    The implementation of this uses systemd \`tmpfiles.d\`, writing to a
+    file named \`/etc/tmpfiles.d/bootc-root-ssh.conf\`. This will have
+    the effect that by default, the SSH credentials will be set if not
+    present. The intention behind this is to allow mounting the whole
+    \`/root\` home directory as a \`tmpfs\`, while still getting the SSH
+    key replaced on boot.
 
 **\--generic-image**
 
 :   Perform configuration changes suitable for a \"generic\" disk image.
     At the moment:
 
-\- All bootloader types will be installed - Changes to the system
-firmware will be skipped
+    \- All bootloader types will be installed - Changes to the system
+    firmware will be skipped
 
 **\--bound-images**=*BOUND_IMAGES* \[default: stored\]
 
 :   How should logically bound images be retrieved\
 
-\
-*Possible values:*
+    \
+    *Possible values:*
 
-> -   stored: Bound images must exist in the sources root container
->     storage (default)
->
-> -   pull: Bound images will be pulled and stored directly in the
->     targets bootc container storage
+    -   stored: Bound images must exist in the sources root container
+        storage (default)
+
+    -   pull: Bound images will be pulled and stored directly in the
+        targets bootc container storage
 
 **\--stateroot**=*STATEROOT*
 
@@ -162,4 +164,4 @@ firmware will be skipped
 
 # VERSION
 
-v1.1.3
+v1.1.4

@@ -35,16 +35,17 @@ the update in addition.
 
 :   Check if an update is available without applying it.
 
-This only downloads an updated manifest and image configuration (i.e.
-typically kilobyte-sized metadata) as opposed to the image layers.
+    This only downloads an updated manifest and image configuration
+    (i.e. typically kilobyte-sized metadata) as opposed to the image
+    layers.
 
 **\--apply**
 
 :   Restart or reboot into the new target image.
 
-Currently, this option always reboots. In the future this command will
-detect the case where no kernel changes are queued, and perform a
-userspace-only restart.
+    Currently, this option always reboots. In the future this command
+    will detect the case where no kernel changes are queued, and perform
+    a userspace-only restart.
 
 **-h**, **\--help**
 
@@ -52,4 +53,4 @@ userspace-only restart.
 
 # VERSION
 
-v1.1.3
+v1.1.4

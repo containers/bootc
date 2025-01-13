@@ -32,14 +32,14 @@ is currently expected to be empty by default.
 :   Source device specification for the root filesystem. For example,
     UUID=2e9f4241-229b-4202-8429-62d2302382e1
 
-If not provided, the UUID of the target filesystem will be used.
+    If not provided, the UUID of the target filesystem will be used.
 
 **\--boot-mount-spec**=*BOOT_MOUNT_SPEC*
 
 :   Mount specification for the /boot filesystem.
 
-This is optional. If \`/boot\` is detected as a mounted partition, then
-its UUID will be used.
+    This is optional. If \`/boot\` is detected as a mounted partition,
+    then its UUID will be used.
 
 **\--replace**=*REPLACE*
 
@@ -47,17 +47,17 @@ its UUID will be used.
     this is implemented. In the future, it may also be supported to set
     up an explicit \"dual boot\" system\
 
-\
-*Possible values:*
+    \
+    *Possible values:*
 
-> -   wipe: Completely wipe the contents of the target filesystem. This
->     cannot be done if the target filesystem is the one the system is
->     booted from
->
-> -   alongside: This is a destructive operation in the sense that the
->     bootloader state will have its contents wiped and replaced.
->     However, the running system (and all files) will remain in place
->     until reboot
+    -   wipe: Completely wipe the contents of the target filesystem.
+        This cannot be done if the target filesystem is the one the
+        system is booted from
+
+    -   alongside: This is a destructive operation in the sense that the
+        bootloader state will have its contents wiped and replaced.
+        However, the running system (and all files) will remain in place
+        until reboot
 
 **\--acknowledge-destructive**
 
@@ -75,11 +75,12 @@ its UUID will be used.
 
 :   Install the system from an explicitly given source.
 
-By default, bootc install and install-to-filesystem assumes that it runs
-in a podman container, and it takes the container image to install from
-the podmans container registry. If \--source-imgref is given, bootc uses
-it as the installation source, instead of the behaviour explained in the
-previous paragraph. See skopeo(1) for accepted formats.
+    By default, bootc install and install-to-filesystem assumes that it
+    runs in a podman container, and it takes the container image to
+    install from the podmans container registry. If \--source-imgref is
+    given, bootc uses it as the installation source, instead of the
+    behaviour explained in the previous paragraph. See skopeo(1) for
+    accepted formats.
 
 **\--target-transport**=*TARGET_TRANSPORT* \[default: registry\]
 
@@ -108,55 +109,56 @@ previous paragraph. See skopeo(1) for accepted formats.
     suppresses the check; use this when you know the issues it might
     find are addressed.
 
-A common reason this may fail is when one is using an image which
-requires registry authentication, but not embedding the pull secret in
-the image so that updates can be fetched by the installed OS \"day 2\".
+    A common reason this may fail is when one is using an image which
+    requires registry authentication, but not embedding the pull secret
+    in the image so that updates can be fetched by the installed OS
+    \"day 2\".
 
 **\--disable-selinux**
 
 :   Disable SELinux in the target (installed) system.
 
-This is currently necessary to install \*from\* a system with SELinux
-disabled but where the target does have SELinux enabled.
+    This is currently necessary to install \*from\* a system with
+    SELinux disabled but where the target does have SELinux enabled.
 
 **\--karg**=*KARG*
 
 :   Add a kernel argument. This option can be provided multiple times.
 
-Example: \--karg=nosmt \--karg=console=ttyS0,114800n8
+    Example: \--karg=nosmt \--karg=console=ttyS0,114800n8
 
 **\--root-ssh-authorized-keys**=*ROOT_SSH_AUTHORIZED_KEYS*
 
 :   The path to an \`authorized_keys\` that will be injected into the
     \`root\` account.
 
-The implementation of this uses systemd \`tmpfiles.d\`, writing to a
-file named \`/etc/tmpfiles.d/bootc-root-ssh.conf\`. This will have the
-effect that by default, the SSH credentials will be set if not present.
-The intention behind this is to allow mounting the whole \`/root\` home
-directory as a \`tmpfs\`, while still getting the SSH key replaced on
-boot.
+    The implementation of this uses systemd \`tmpfiles.d\`, writing to a
+    file named \`/etc/tmpfiles.d/bootc-root-ssh.conf\`. This will have
+    the effect that by default, the SSH credentials will be set if not
+    present. The intention behind this is to allow mounting the whole
+    \`/root\` home directory as a \`tmpfs\`, while still getting the SSH
+    key replaced on boot.
 
 **\--generic-image**
 
 :   Perform configuration changes suitable for a \"generic\" disk image.
     At the moment:
 
-\- All bootloader types will be installed - Changes to the system
-firmware will be skipped
+    \- All bootloader types will be installed - Changes to the system
+    firmware will be skipped
 
 **\--bound-images**=*BOUND_IMAGES* \[default: stored\]
 
 :   How should logically bound images be retrieved\
 
-\
-*Possible values:*
+    \
+    *Possible values:*
 
-> -   stored: Bound images must exist in the sources root container
->     storage (default)
->
-> -   pull: Bound images will be pulled and stored directly in the
->     targets bootc container storage
+    -   stored: Bound images must exist in the sources root container
+        storage (default)
+
+    -   pull: Bound images will be pulled and stored directly in the
+        targets bootc container storage
 
 **\--stateroot**=*STATEROOT*
 
@@ -170,9 +172,9 @@ firmware will be skipped
 
 :   Path to the mounted root filesystem.
 
-By default, the filesystem UUID will be discovered and used for
-mounting. To override this, use \`\--root-mount-spec\`.
+    By default, the filesystem UUID will be discovered and used for
+    mounting. To override this, use \`\--root-mount-spec\`.
 
 # VERSION
 
-v1.1.3
+v1.1.4

@@ -15,7 +15,7 @@ Target a new container image reference to boot.
 This is almost exactly the same operation as \`upgrade\`, but
 additionally changes the container image reference instead.
 
-## Usage
+\## Usage
 
 A common pattern is to have a management agent control operating system
 updates via container image tags; for example,
@@ -34,9 +34,9 @@ updates via container image tags; for example,
 
 :   Restart or reboot into the new target image.
 
-Currently, this option always reboots. In the future this command will
-detect the case where no kernel changes are queued, and perform a
-userspace-only restart.
+    Currently, this option always reboots. In the future this command
+    will detect the case where no kernel changes are queued, and perform
+    a userspace-only restart.
 
 **\--transport**=*TRANSPORT* \[default: registry\]
 
@@ -48,8 +48,8 @@ userspace-only restart.
 :   This is the inverse of the previous
     \`\--target-no-signature-verification\` (which is now a no-op).
 
-Enabling this option enforces that \`/etc/containers/policy.json\`
-includes a default policy which requires signatures.
+    Enabling this option enforces that \`/etc/containers/policy.json\`
+    includes a default policy which requires signatures.
 
 **\--ostree-remote**=*OSTREE_REMOTE*
 
@@ -69,4 +69,4 @@ includes a default policy which requires signatures.
 
 # VERSION
 
-v1.1.3
+v1.1.4
