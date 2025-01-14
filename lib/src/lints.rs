@@ -297,7 +297,10 @@ mod tests {
         assert!(check_baseimage_root(&td).is_err());
 
         // Copy our reference base image content from the source dir
-        let manifest = std::env::var_os("CARGO_MANIFEST_PATH").unwrap();
+        let Some(manifest) = std::env::var_os("CARGO_MANIFEST_PATH") else {
+            // This was only added in relatively recent cargo
+            return Ok(());
+        };
         let srcdir = Path::new(&manifest)
             .parent()
             .unwrap()
