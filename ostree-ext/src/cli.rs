@@ -896,6 +896,9 @@ async fn container_store(
     {
         eprintln!("{msg}")
     }
+    if let Some(ref text) = import.verify_text {
+        println!("{text}");
+    }
     println!("Wrote: {} => {}", imgref, import.merge_commit);
     Ok(())
 }
