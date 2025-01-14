@@ -121,7 +121,7 @@ pub struct LayeredImageState {
     pub merge_commit: String,
     /// The digest of the original manifest
     pub manifest_digest: Digest,
-    /// The image manfiest
+    /// The image manifest
     pub manifest: ImageManifest,
     /// The image configuration
     pub configuration: ImageConfiguration,
