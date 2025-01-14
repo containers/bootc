@@ -172,16 +172,10 @@ pub(crate) fn spawn_editor(tmpf: &tempfile::NamedTempFile) -> Result<()> {
 }
 
 /// Convert a combination of values (likely from CLI parsing) into a signature source
-pub(crate) fn sigpolicy_from_opts(
-    disable_verification: bool,
-    ostree_remote: Option<&str>,
-) -> SignatureSource {
-    if disable_verification {
-        SignatureSource::ContainerPolicyAllowInsecure
-    } else if let Some(remote) = ostree_remote {
-        SignatureSource::OstreeRemote(remote.to_owned())
-    } else {
-        SignatureSource::ContainerPolicy
+pub(crate) fn sigpolicy_from_opt(enforce_container_verification: bool) -> SignatureSource {
+    match enforce_container_verification {
+        true => SignatureSource::ContainerPolicy,
+        false => SignatureSource::ContainerPolicyAllowInsecure,
     }
 }
 
@@ -273,20 +267,9 @@ mod tests {
 
     #[test]
     fn test_sigpolicy_from_opts() {
+        assert_eq!(sigpolicy_from_opt(true), SignatureSource::ContainerPolicy);
         assert_eq!(
-            sigpolicy_from_opts(false, None),
-            SignatureSource::ContainerPolicy
-        );
-        assert_eq!(
-            sigpolicy_from_opts(true, None),
-            SignatureSource::ContainerPolicyAllowInsecure
-        );
-        assert_eq!(
-            sigpolicy_from_opts(false, Some("foo")),
-            SignatureSource::OstreeRemote("foo".to_owned())
-        );
-        assert_eq!(
-            sigpolicy_from_opts(true, Some("foo")),
+            sigpolicy_from_opt(false),
             SignatureSource::ContainerPolicyAllowInsecure
         );
     }
