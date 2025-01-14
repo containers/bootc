@@ -704,7 +704,7 @@ impl ImageImporter {
     /// Extract the base ostree commit.
     #[context("Unencapsulating base")]
     pub(crate) async fn unencapsulate_base(
-        &mut self,
+        &self,
         import: &mut store::PreparedImport,
         require_ostree: bool,
         write_refs: bool,
