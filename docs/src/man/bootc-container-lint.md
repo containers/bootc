@@ -5,7 +5,7 @@ checks as part of a container build
 
 # SYNOPSIS
 
-**bootc container lint** \[**-h**\|**\--help**\]
+**bootc container lint** \[**\--rootfs**\] \[**-h**\|**\--help**\]
 
 # DESCRIPTION
 
@@ -16,6 +16,10 @@ This is intended to be invoked via e.g. \`RUN bootc container lint\` as
 part of a build process; it will error if any problems are detected.
 
 # OPTIONS
+
+**\--rootfs**=*ROOTFS* \[default: /\]
+
+:   Operate on the provided rootfs
 
 **-h**, **\--help**
 
