@@ -121,12 +121,16 @@ pub struct LayeredImageState {
     pub merge_commit: String,
     /// The digest of the original manifest
     pub manifest_digest: Digest,
-    /// The image manfiest
+    /// The image manifest
     pub manifest: ImageManifest,
     /// The image configuration
     pub configuration: ImageConfiguration,
     /// Metadata for (cached, previously fetched) updates to the image, if any.
     pub cached_update: Option<CachedImageUpdate>,
+    /// The signature verification text from libostree for the base commit;
+    /// in the future we should probably instead just proxy a signature object
+    /// instead, but this is sufficient for now.
+    pub verify_text: Option<String>,
 }
 
 impl LayeredImageState {
@@ -230,6 +234,8 @@ pub struct PreparedImport {
     pub ostree_commit_layer: Option<ManifestLayerState>,
     /// Any further non-ostree (derived) layers.
     pub layers: Vec<ManifestLayerState>,
+    /// OSTree remote signature verification text, if enabled.
+    pub verify_text: Option<String>,
 }
 
 impl PreparedImport {
@@ -635,6 +641,7 @@ impl ImageImporter {
             ostree_layers: component_layers,
             ostree_commit_layer: commit_layer,
             layers: remaining_layers,
+            verify_text: None,
         };
         Ok(Box::new(imp))
     }
@@ -704,7 +711,7 @@ impl ImageImporter {
     /// Extract the base ostree commit.
     #[context("Unencapsulating base")]
     pub(crate) async fn unencapsulate_base(
-        &mut self,
+        &self,
         import: &mut store::PreparedImport,
         require_ostree: bool,
         write_refs: bool,
@@ -804,17 +811,19 @@ impl ImageImporter {
                     let blob = super::unencapsulate::decompressor(&media_type, blob)?;
                     let mut archive = tar::Archive::new(blob);
                     importer.import_commit(&mut archive, Some(cancellable))?;
-                    let commit = importer.finish_import_commit();
+                    let (commit, verify_text) = importer.finish_import_commit();
                     if write_refs {
                         repo.transaction_set_ref(None, &target_ref, Some(commit.as_str()));
                         tracing::debug!("Wrote {} => {}", target_ref, commit);
                     }
                     repo.mark_commit_partial(&commit, false)?;
                     txn.commit(Some(cancellable))?;
-                    Ok::<_, anyhow::Error>(commit)
+                    Ok::<_, anyhow::Error>((commit, verify_text))
                 });
-            let commit = super::unencapsulate::join_fetch(import_task, driver).await?;
+            let (commit, verify_text) =
+                super::unencapsulate::join_fetch(import_task, driver).await?;
             commit_layer.commit = Some(commit);
+            import.verify_text = verify_text;
             if let Some(p) = self.layer_progress.as_ref() {
                 p.send(ImportProgress::OstreeChunkCompleted(
                     commit_layer.layer.clone(),
@@ -977,7 +986,7 @@ impl ImageImporter {
             .unwrap_or_else(|| chrono::offset::Utc::now().timestamp() as u64);
         // Destructure to transfer ownership to thread
         let repo = self.repo;
-        let state = crate::tokio_util::spawn_blocking_cancellable_flatten(
+        let mut state = crate::tokio_util::spawn_blocking_cancellable_flatten(
             move |cancellable| -> Result<Box<LayeredImageState>> {
                 use rustix::fd::AsRawFd;
 
@@ -1090,6 +1099,8 @@ impl ImageImporter {
             },
         )
         .await?;
+        // We can at least avoid re-verifying the base commit.
+        state.verify_text = import.verify_text;
         Ok(state)
     }
 }
@@ -1220,6 +1231,8 @@ pub fn query_image_commit(repo: &ostree::Repo, commit: &str) -> Result<Box<Layer
         manifest,
         configuration,
         cached_update,
+        // we can't cross-reference with a remote here
+        verify_text: None,
     });
     tracing::debug!("Wrote merge commit {}", state.merge_commit);
     Ok(state)

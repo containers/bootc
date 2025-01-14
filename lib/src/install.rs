@@ -57,7 +57,7 @@ use crate::progress_jsonl::ProgressWriter;
 use crate::spec::ImageReference;
 use crate::store::Storage;
 use crate::task::Task;
-use crate::utils::{open_dir_noxdev, sigpolicy_from_opts};
+use crate::utils::{open_dir_noxdev, sigpolicy_from_opt};
 
 /// The toplevel boot directory
 const BOOT: &str = "boot";
@@ -111,10 +111,6 @@ pub(crate) struct InstallTargetOpts {
     #[clap(long)]
     #[serde(default)]
     pub(crate) enforce_container_sigpolicy: bool,
-
-    /// Enable verification via an ostree remote
-    #[clap(long)]
-    pub(crate) target_ostree_remote: Option<String>,
 
     /// By default, the accessiblity of the target image will be verified (just the manifest will be fetched).
     /// Specifying this option suppresses the check; use this when you know the issues it might find
@@ -1216,10 +1212,7 @@ async fn prepare_install(
             "Use of --target-no-signature-verification flag which is enabled by default"
         );
     }
-    let target_sigverify = sigpolicy_from_opts(
-        !target_opts.enforce_container_sigpolicy,
-        target_opts.target_ostree_remote.as_deref(),
-    );
+    let target_sigverify = sigpolicy_from_opt(target_opts.enforce_container_sigpolicy);
     let target_imgname = target_opts
         .target_imgref
         .as_deref()

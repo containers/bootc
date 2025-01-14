@@ -47,6 +47,7 @@ enum ImporterMode {
 pub(crate) struct Importer {
     repo: ostree::Repo,
     remote: Option<String>,
+    verify_text: Option<String>,
     // Cache of xattrs, keyed by their content checksum.
     xattrs: HashMap<String, glib::Variant>,
     // Reusable buffer for xattrs references. It maps a file checksum (.0)
@@ -165,6 +166,7 @@ impl Importer {
         Self {
             repo: repo.clone(),
             remote,
+            verify_text: None,
             buf: vec![0u8; 16384],
             xattrs: Default::default(),
             next_xattrs: None,
@@ -179,6 +181,7 @@ impl Importer {
         Self {
             repo: repo.clone(),
             remote: None,
+            verify_text: None,
             buf: vec![0u8; 16384],
             xattrs: Default::default(),
             next_xattrs: None,
@@ -676,14 +679,17 @@ impl Importer {
 
             // Now that we have both the commit and detached metadata in memory, verify that
             // the signatures in the detached metadata correctly sign the commit.
-            self.repo
-                .signature_verify_commit_data(
-                    remote,
-                    &commit.data_as_bytes(),
-                    &commitmeta.data_as_bytes(),
-                    ostree::RepoVerifyFlags::empty(),
-                )
-                .context("Verifying ostree commit in tar stream")?;
+            self.verify_text = Some(
+                self.repo
+                    .signature_verify_commit_data(
+                        remote,
+                        &commit.data_as_bytes(),
+                        &commitmeta.data_as_bytes(),
+                        ostree::RepoVerifyFlags::empty(),
+                    )
+                    .context("Verifying ostree commit in tar stream")?
+                    .into(),
+            );
 
             self.repo.mark_commit_partial(&checksum, true)?;
 
@@ -738,10 +744,10 @@ impl Importer {
         Ok(())
     }
 
-    pub(crate) fn finish_import_commit(self) -> String {
+    pub(crate) fn finish_import_commit(self) -> (String, Option<String>) {
         tracing::debug!("Import stats: {:?}", self.stats);
         match self.data {
-            ImporterMode::Commit(c) => c.unwrap(),
+            ImporterMode::Commit(c) => (c.unwrap(), self.verify_text),
             ImporterMode::ObjectSet(_) => unreachable!(),
         }
     }
@@ -821,7 +827,7 @@ pub async fn import_tar(
         let txn = repo.auto_transaction(Some(cancellable))?;
         let mut importer = Importer::new_for_commit(&repo, options.remote);
         importer.import_commit(&mut archive, Some(cancellable))?;
-        let checksum = importer.finish_import_commit();
+        let (checksum, _) = importer.finish_import_commit();
         txn.commit(Some(cancellable))?;
         repo.mark_commit_partial(&checksum, false)?;
         Ok::<_, anyhow::Error>(checksum)

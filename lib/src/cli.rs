@@ -28,7 +28,7 @@ use crate::lints;
 use crate::progress_jsonl::{ProgressWriter, RawProgressFd};
 use crate::spec::Host;
 use crate::spec::ImageReference;
-use crate::utils::sigpolicy_from_opts;
+use crate::utils::sigpolicy_from_opt;
 
 /// Shared progress options
 #[derive(Debug, Parser, PartialEq, Eq)]
@@ -110,10 +110,6 @@ pub(crate) struct SwitchOpts {
     /// default policy which requires signatures.
     #[clap(long)]
     pub(crate) enforce_container_sigpolicy: bool,
-
-    /// Enable verification via an ostree remote
-    #[clap(long)]
-    pub(crate) ostree_remote: Option<String>,
 
     /// Don't create a new deployment, but directly mutate the booted state.
     /// This is hidden because it's not something we generally expect to be done,
@@ -795,10 +791,7 @@ async fn switch(opts: SwitchOpts) -> Result<()> {
         transport,
         name: opts.target.to_string(),
     };
-    let sigverify = sigpolicy_from_opts(
-        !opts.enforce_container_sigpolicy,
-        opts.ostree_remote.as_deref(),
-    );
+    let sigverify = sigpolicy_from_opt(opts.enforce_container_sigpolicy);
     let target = ostree_container::OstreeImageReference { sigverify, imgref };
     let target = ImageReference::from(target);
     let prog: ProgressWriter = opts.progress.try_into()?;
