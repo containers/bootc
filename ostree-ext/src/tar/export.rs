@@ -347,9 +347,13 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         Ok(())
     }
 
-    /// Export xattrs to the tar stream, return whether content was written.
+    /// Export xattrs in ostree-container style format, which is a .xattrs file.
+    /// This is different from xattrs which may appear as e.g. PAX metadata, which we don't use
+    /// at the moment.
+    ///
+    /// Return whether content was written.
     #[context("Writing xattrs")]
-    fn append_xattrs(&mut self, checksum: &str, xattrs: &glib::Variant) -> Result<bool> {
+    fn append_ostree_xattrs(&mut self, checksum: &str, xattrs: &glib::Variant) -> Result<bool> {
         let xattrs_data = xattrs.data_as_bytes();
         let xattrs_data = xattrs_data.as_ref();
 
@@ -397,7 +401,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             // The xattrs objects need to be exported before the regular object they
             // refer to. Otherwise the importing logic won't have the xattrs available
             // when importing file content.
-            self.append_xattrs(checksum, &xattrs)?;
+            self.append_ostree_xattrs(checksum, &xattrs)?;
 
             if let Some(instream) = instream {
                 ensure!(meta.file_type() == gio::FileType::Regular);
