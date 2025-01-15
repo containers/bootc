@@ -241,7 +241,11 @@ pub(crate) enum ContainerOpts {
     ///
     /// This is intended to be invoked via e.g. `RUN bootc container lint` as part
     /// of a build process; it will error if any problems are detected.
-    Lint,
+    Lint {
+        /// Operate on the provided rootfs.
+        #[clap(long, default_value = "/")]
+        rootfs: Utf8PathBuf,
+    },
 }
 
 /// Subcommands which operate on images.
@@ -1007,13 +1011,13 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         Opt::Edit(opts) => edit(opts).await,
         Opt::UsrOverlay => usroverlay().await,
         Opt::Container(opts) => match opts {
-            ContainerOpts::Lint => {
+            ContainerOpts::Lint { rootfs } => {
                 if !ostree_ext::container_utils::is_ostree_container()? {
                     anyhow::bail!(
                         "Not in a ostree container, this command only verifies ostree containers."
                     );
                 }
-
+                let root = &Dir::open_ambient_dir(rootfs, cap_std::ambient_authority())?;
                 lints::lint(root)?;
                 Ok(())
             }
