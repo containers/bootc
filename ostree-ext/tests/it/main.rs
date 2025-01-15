@@ -21,7 +21,7 @@ use ostree_ext::{gio, glib};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::SystemTime;
 use xshell::cmd;
 
@@ -35,7 +35,14 @@ const TEST_REGISTRY_DEFAULT: &str = "localhost:5000";
 /// Check if we have skopeo
 fn check_skopeo() -> bool {
     static HAVE_SKOPEO: OnceCell<bool> = OnceCell::new();
-    *HAVE_SKOPEO.get_or_init(|| Command::new("skopeo").arg("--help").status().is_ok())
+    *HAVE_SKOPEO.get_or_init(|| {
+        Command::new("skopeo")
+            .arg("--help")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok()
+    })
 }
 
 #[track_caller]
