@@ -62,6 +62,22 @@ fn map_path_v1(p: &Utf8Path) -> &Utf8Path {
     }
 }
 
+/// Given two paths, which may be absolute (starting with /) or
+/// start with `./`, return true if they are equal after removing
+/// those prefixes. This is effectively "would these paths be equal"
+/// when processed as a tar entry.
+pub(crate) fn path_equivalent_for_tar(a: impl AsRef<Utf8Path>, b: impl AsRef<Utf8Path>) -> bool {
+    fn strip_prefix(p: &Utf8Path) -> &Utf8Path {
+        if let Ok(p) = p.strip_prefix("/") {
+            return p;
+        } else if let Ok(p) = p.strip_prefix("./") {
+            return p;
+        }
+        return p;
+    }
+    strip_prefix(a.as_ref()) == strip_prefix(b.as_ref())
+}
+
 struct OstreeTarWriter<'a, W: std::io::Write> {
     repo: &'a ostree::Repo,
     commit_checksum: &'a str,
@@ -496,7 +512,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
 
         // Record if the ostree commit includes /var/tmp; if so we don't need to synthesize
         // it in `append_standard_var()`.
-        if dirpath == "var/tmp" {
+        if path_equivalent_for_tar(dirpath, "var/tmp") {
             self.wrote_vartmp = true;
         }
 
@@ -723,6 +739,14 @@ pub fn update_detached_metadata<D: std::io::Write, C: IsA<gio::Cancellable>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_path_equivalent() {
+        assert!(path_equivalent_for_tar("var/tmp", "./var/tmp"));
+        assert!(path_equivalent_for_tar("./var/tmp", "var/tmp"));
+        assert!(path_equivalent_for_tar("/var/tmp", "var/tmp"));
+        assert!(!path_equivalent_for_tar("var/tmp", "var"));
+    }
 
     #[test]
     fn test_map_path() {
