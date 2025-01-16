@@ -67,7 +67,7 @@ Provides: ostree-cli(ostree-container)
 %cargo_prep -v vendor
 
 %build
-%if 0%{?rhel} == 10
+%if 0%{?fedora} || 0%{?rhel} >= 10
     %cargo_build %{?with_rhsm:-f rhsm}
 %else
     %cargo_build %{?with_rhsm:--features rhsm}
