@@ -1,5 +1,9 @@
 [licenses]
-allow = ["Apache-2.0", "Apache-2.0 WITH LLVM-exception", "MIT", "BSD-3-Clause", "BSD-2-Clause", "Unicode-DFS-2016"]
+allow = ["Apache-2.0", "Apache-2.0 WITH LLVM-exception", "MIT",
+         "BSD-3-Clause", "BSD-2-Clause", "Zlib",
+         "Unlicense", "CC0-1.0",
+         "Unicode-DFS-2016", "Unicode-3.0"]
+private = { ignore = true }
 
 [[bans.deny]]
 # We want to require FIPS validation downstream, so we use openssl
@@ -8,6 +12,4 @@ name = "ring"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = [
-    "https://github.com/ostreedev/ostree-rs-ext"
-]
+allow-git = []
