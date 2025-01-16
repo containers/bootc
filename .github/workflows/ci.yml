@@ -58,7 +58,7 @@ jobs:
     - uses: EmbarkStudios/cargo-deny-action@v2
       with:
         log-level: warn
-        command: check bans sources licenses
+        command: check -A duplicate bans sources licenses
   install-tests:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'control/skip-ci') }}
     name: "Test install"
