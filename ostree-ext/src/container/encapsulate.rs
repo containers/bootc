@@ -314,10 +314,11 @@ async fn build_impl(
         let (path, tag) = parse_oci_path_and_tag(dest.name.as_str());
         tracing::debug!("using OCI path={path} tag={tag:?}");
         if !Utf8Path::new(path).exists() {
-            std::fs::create_dir(path)?;
+            std::fs::create_dir(path).with_context(|| format!("Creating {path}"))?;
         }
-        let ocidir = Dir::open_ambient_dir(path, cap_std::ambient_authority())?;
-        let mut ocidir = OciDir::ensure(&ocidir)?;
+        let ocidir = Dir::open_ambient_dir(path, cap_std::ambient_authority())
+            .with_context(|| format!("Opening {path}"))?;
+        let mut ocidir = OciDir::ensure(&ocidir).context("Opening OCI")?;
         build_oci(repo, ostree_ref, &mut ocidir, tag, config, opts)?;
         None
     } else {
