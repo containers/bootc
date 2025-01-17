@@ -14,23 +14,51 @@ use fn_error_context::context;
 /// Reference to embedded default baseimage content that should exist.
 const BASEIMAGE_REF: &str = "usr/share/doc/bootc/baseimage/base";
 
+type LintFn = fn(&Dir) -> Result<()>;
+
+struct Lint {
+    name: &'static str,
+    f: LintFn,
+}
+
+const LINTS: &[Lint] = &[
+    Lint {
+        name: "var-run",
+        f: check_var_run,
+    },
+    Lint {
+        name: "kernel",
+        f: check_kernel,
+    },
+    Lint {
+        name: "bootc-kargs",
+        f: check_parse_kargs,
+    },
+    Lint {
+        name: "etc-usretc",
+        f: check_usretc,
+    },
+    Lint {
+        name: "utf8",
+        f: check_utf8,
+    },
+    Lint {
+        name: "baseimage-root",
+        f: check_baseimage_root,
+    },
+];
+
 /// check for the existence of the /var/run directory
 /// if it exists we need to check that it links to /run if not error
 /// if it does not exist error.
 #[context("Linting")]
 pub(crate) fn lint(root: &Dir) -> Result<()> {
-    let lints = [
-        check_var_run,
-        check_kernel,
-        check_parse_kargs,
-        check_usretc,
-        check_utf8,
-        check_baseimage_root,
-    ];
-    for lint in lints {
-        lint(&root)?;
+    for lint in LINTS {
+        (lint.f)(&root)?;
+        // We'll be quiet for now
+        tracing::debug!("OK {}", lint.name);
     }
-    println!("Checks passed: {}", lints.len());
+    println!("Checks passed: {}", LINTS.len());
     Ok(())
 }
 
