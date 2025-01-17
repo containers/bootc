@@ -47,10 +47,14 @@ pub(crate) fn overlayfs_root_enabled(root: &ostree::RepoFile) -> Result<bool> {
     }
 }
 
+/// An option which can be enabled, disabled, or possibly enabled.
 #[derive(Debug, PartialEq, Eq)]
-enum Tristate {
+pub enum Tristate {
+    /// Enabled
     Enabled,
+    /// Disabled
     Disabled,
+    /// Maybe
     Maybe,
 }
 
