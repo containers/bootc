@@ -16,34 +16,50 @@ const BASEIMAGE_REF: &str = "usr/share/doc/bootc/baseimage/base";
 
 type LintFn = fn(&Dir) -> Result<()>;
 
+/// The classification of a lint type.
+#[derive(Debug)]
+enum LintType {
+    /// If this fails, it is known to be fatal - the system will not install or
+    /// is effectively guaranteed to fail at runtime.
+    Fatal,
+}
+
 struct Lint {
     name: &'static str,
+    ty: LintType,
     f: LintFn,
 }
 
 const LINTS: &[Lint] = &[
     Lint {
         name: "var-run",
+        ty: LintType::Fatal,
         f: check_var_run,
     },
     Lint {
         name: "kernel",
+        ty: LintType::Fatal,
         f: check_kernel,
     },
     Lint {
         name: "bootc-kargs",
+        ty: LintType::Fatal,
         f: check_parse_kargs,
     },
     Lint {
         name: "etc-usretc",
+        ty: LintType::Fatal,
         f: check_usretc,
     },
     Lint {
+        // This one can be lifted in the future, see https://github.com/containers/bootc/issues/975
         name: "utf8",
+        ty: LintType::Fatal,
         f: check_utf8,
     },
     Lint {
         name: "baseimage-root",
+        ty: LintType::Fatal,
         f: check_baseimage_root,
     },
 ];
@@ -56,7 +72,7 @@ pub(crate) fn lint(root: &Dir) -> Result<()> {
     for lint in LINTS {
         (lint.f)(&root)?;
         // We'll be quiet for now
-        tracing::debug!("OK {}", lint.name);
+        tracing::debug!("OK {} (type={:?})", lint.name, lint.ty);
     }
     println!("Checks passed: {}", LINTS.len());
     Ok(())
