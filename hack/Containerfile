@@ -7,6 +7,9 @@
 # https://tmt.readthedocs.io/en/stable/
 ARG base=quay.io/centos-bootc/centos-bootc:stream9
 FROM $base as build
+# Keep this stuff before the `COPY . /build` below to ensure that the packages
+# are cached, i.e. we don't invalidate the package install stage by editing the source.
+COPY contrib /contrib
 COPY hack/build.sh /build.sh
 RUN /build.sh && rm -v /build.sh
 COPY . /build
