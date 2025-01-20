@@ -14,9 +14,6 @@ use fn_error_context::context;
 use regex::Regex;
 use serde::Deserialize;
 
-#[cfg(feature = "install-to-disk")]
-use crate::install::run_in_host_mountns;
-use crate::task::Task;
 use bootc_utils::CommandRunExt;
 
 #[derive(Debug, Deserialize)]
@@ -89,16 +86,6 @@ impl Device {
         }
         Ok(())
     }
-}
-
-#[context("Failed to wipe {dev}")]
-#[cfg(feature = "install-to-disk")]
-pub(crate) fn wipefs(dev: &Utf8Path) -> Result<()> {
-    Task::new_and_run(
-        format!("Wiping device {dev}"),
-        "wipefs",
-        ["-a", dev.as_str()],
-    )
 }
 
 #[context("Listing device {dev}")]
@@ -187,10 +174,9 @@ impl Partition {
 
 #[context("Listing partitions of {dev}")]
 pub(crate) fn partitions_of(dev: &Utf8Path) -> Result<PartitionTable> {
-    let o = Task::new_quiet("sfdisk")
+    let o: SfDiskOutput = Command::new("sfdisk")
         .args(["-J", dev.as_str()])
-        .read()?;
-    let o: SfDiskOutput = serde_json::from_str(&o).context("Parsing sfdisk output")?;
+        .run_and_parse_json()?;
     Ok(o.partitiontable)
 }
 
@@ -214,7 +200,7 @@ impl LoopbackDevice {
             Err(_e) => "off",
         };
 
-        let dev = Task::new("losetup", "losetup")
+        let dev = Command::new("losetup")
             .args([
                 "--show",
                 format!("--direct-io={direct_io}").as_str(),
@@ -222,8 +208,7 @@ impl LoopbackDevice {
                 "--find",
             ])
             .arg(path)
-            .quiet()
-            .read()?;
+            .run_get_string()?;
         let dev = Utf8PathBuf::from(dev.trim());
         tracing::debug!("Allocated loopback {dev}");
         Ok(Self { dev: Some(dev) })
@@ -242,10 +227,7 @@ impl LoopbackDevice {
             tracing::trace!("loopback device already deallocated");
             return Ok(());
         };
-        Task::new("losetup", "losetup")
-            .args(["-d", dev.as_str()])
-            .quiet()
-            .run()
+        Command::new("losetup").args(["-d", dev.as_str()]).run()
     }
 
     /// Consume this device, unmounting it.
@@ -260,21 +242,6 @@ impl Drop for LoopbackDevice {
         // Best effort to unmount if we're dropped without invoking `close`
         let _ = self.impl_close();
     }
-}
-
-#[cfg(feature = "install-to-disk")]
-pub(crate) fn udev_settle() -> Result<()> {
-    // There's a potential window after rereading the partition table where
-    // udevd hasn't yet received updates from the kernel, settle will return
-    // immediately, and lsblk won't pick up partition labels.  Try to sleep
-    // our way out of this.
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
-    let st = run_in_host_mountns("udevadm").arg("settle").status()?;
-    if !st.success() {
-        anyhow::bail!("Failed to run udevadm settle: {st:?}");
-    }
-    Ok(())
 }
 
 /// Parse key-value pairs from lsblk --pairs.
@@ -293,7 +260,7 @@ fn split_lsblk_line(line: &str) -> HashMap<String, String> {
 /// hierarchy of `device` capable of containing other partitions. So e.g. parent devices of type
 /// "part" doesn't match, but "disk" and "mpath" does.
 pub(crate) fn find_parent_devices(device: &str) -> Result<Vec<String>> {
-    let output = Task::new_quiet("lsblk")
+    let output = Command::new("lsblk")
         // Older lsblk, e.g. in CentOS 7.6, doesn't support PATH, but --paths option
         .arg("--pairs")
         .arg("--paths")
@@ -301,7 +268,7 @@ pub(crate) fn find_parent_devices(device: &str) -> Result<Vec<String>> {
         .arg("--output")
         .arg("NAME,TYPE")
         .arg(device)
-        .read()?;
+        .run_get_string()?;
     let mut parents = Vec::new();
     // skip first line, which is the device itself
     for line in output.lines().skip(1) {
