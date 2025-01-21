@@ -23,6 +23,9 @@ pub trait CommandRunExt {
     /// and will return an error if the child process exits abnormally.
     fn run_get_output(&mut self) -> Result<Box<dyn std::io::BufRead>>;
 
+    /// Execute the child process and capture its output as a string.
+    fn run_get_string(&mut self) -> Result<String>;
+
     /// Execute the child process, parsing its stdout as JSON. This uses `run` internally
     /// and will return an error if the child process exits abnormally.
     fn run_and_parse_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T>;
@@ -116,6 +119,13 @@ impl CommandRunExt for Command {
         self.run()?;
         stdout.seek(std::io::SeekFrom::Start(0)).context("seek")?;
         Ok(Box::new(std::io::BufReader::new(stdout)))
+    }
+
+    fn run_get_string(&mut self) -> Result<String> {
+        let mut s = String::new();
+        let mut o = self.run_get_output()?;
+        o.read_to_string(&mut s)?;
+        Ok(s)
     }
 
     /// Synchronously execute the child, and parse its stdout as JSON.

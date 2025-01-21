@@ -131,6 +131,31 @@ fn mkfs<'a>(
     Ok(u)
 }
 
+#[context("Failed to wipe {dev}")]
+pub(crate) fn wipefs(dev: &Utf8Path) -> Result<()> {
+    Task::new_and_run(
+        format!("Wiping device {dev}"),
+        "wipefs",
+        ["-a", dev.as_str()],
+    )
+}
+
+pub(crate) fn udev_settle() -> Result<()> {
+    // There's a potential window after rereading the partition table where
+    // udevd hasn't yet received updates from the kernel, settle will return
+    // immediately, and lsblk won't pick up partition labels.  Try to sleep
+    // our way out of this.
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    let st = super::run_in_host_mountns("udevadm")
+        .arg("settle")
+        .status()?;
+    if !st.success() {
+        anyhow::bail!("Failed to run udevadm settle: {st:?}");
+    }
+    Ok(())
+}
+
 #[context("Creating rootfs")]
 #[cfg(feature = "install-to-disk")]
 pub(crate) fn install_create_rootfs(
@@ -164,10 +189,10 @@ pub(crate) fn install_create_rootfs(
         for child in device.children.iter().flatten() {
             let child = child.path();
             println!("Wiping {child}");
-            crate::blockdev::wipefs(Utf8Path::new(&child))?;
+            wipefs(Utf8Path::new(&child))?;
         }
         println!("Wiping {dev}");
-        crate::blockdev::wipefs(dev)?;
+        wipefs(dev)?;
     } else if device.has_children() {
         anyhow::bail!(
             "Detected existing partitions on {}; use e.g. `wipefs` or --wipe if you intend to overwrite",
@@ -289,7 +314,7 @@ pub(crate) fn install_create_rootfs(
 
     // Full udev sync; it'd obviously be better to await just the devices
     // we're targeting, but this is a simple coarse hammer.
-    crate::blockdev::udev_settle()?;
+    udev_settle()?;
 
     // Re-read what we wrote into structured information
     let base_partitions = &crate::blockdev::partitions_of(&devpath)?;
