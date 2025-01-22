@@ -1,14 +1,11 @@
 use std::collections::HashMap;
-#[cfg(feature = "install-to-disk")]
 use std::env;
-#[cfg(feature = "install-to-disk")]
 use std::path::Path;
 use std::process::Command;
 use std::sync::OnceLock;
 
 use anyhow::{anyhow, Context, Result};
 use camino::Utf8Path;
-#[cfg(feature = "install-to-disk")]
 use camino::Utf8PathBuf;
 use fn_error_context::context;
 use regex::Regex;
@@ -23,34 +20,34 @@ struct DevicesOutput {
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
-pub(crate) struct Device {
-    pub(crate) name: String,
-    pub(crate) serial: Option<String>,
-    pub(crate) model: Option<String>,
-    pub(crate) partlabel: Option<String>,
-    pub(crate) children: Option<Vec<Device>>,
-    pub(crate) size: u64,
+pub struct Device {
+    pub name: String,
+    pub serial: Option<String>,
+    pub model: Option<String>,
+    pub partlabel: Option<String>,
+    pub children: Option<Vec<Device>>,
+    pub size: u64,
     #[serde(rename = "maj:min")]
-    pub(crate) maj_min: Option<String>,
+    pub maj_min: Option<String>,
     // NOTE this one is not available on older util-linux, and
     // will also not exist for whole blockdevs (as opposed to partitions).
-    pub(crate) start: Option<u64>,
+    pub start: Option<u64>,
 
     // Filesystem-related properties
-    pub(crate) label: Option<String>,
-    pub(crate) fstype: Option<String>,
-    pub(crate) path: Option<String>,
+    pub label: Option<String>,
+    pub fstype: Option<String>,
+    pub path: Option<String>,
 }
 
 impl Device {
     #[allow(dead_code)]
     // RHEL8's lsblk doesn't have PATH, so we do it
-    pub(crate) fn path(&self) -> String {
+    pub fn path(&self) -> String {
         self.path.clone().unwrap_or(format!("/dev/{}", &self.name))
     }
 
     #[allow(dead_code)]
-    pub(crate) fn has_children(&self) -> bool {
+    pub fn has_children(&self) -> bool {
         self.children.as_ref().map_or(false, |v| !v.is_empty())
     }
 
@@ -77,7 +74,7 @@ impl Device {
     }
 
     /// Older versions of util-linux may be missing some properties. Backfill them if they're missing.
-    pub(crate) fn backfill_missing(&mut self) -> Result<()> {
+    pub fn backfill_missing(&mut self) -> Result<()> {
         // Add new properties to backfill here
         self.backfill_start()?;
         // And recurse to child devices
@@ -89,7 +86,7 @@ impl Device {
 }
 
 #[context("Listing device {dev}")]
-pub(crate) fn list_dev(dev: &Utf8Path) -> Result<Device> {
+pub fn list_dev(dev: &Utf8Path) -> Result<Device> {
     let mut devs: DevicesOutput = Command::new("lsblk")
         .args(["-J", "-b", "-O"])
         .arg(dev)
@@ -111,19 +108,19 @@ struct SfDiskOutput {
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
-pub(crate) struct Partition {
-    pub(crate) node: String,
-    pub(crate) start: u64,
-    pub(crate) size: u64,
+pub struct Partition {
+    pub node: String,
+    pub start: u64,
+    pub size: u64,
     #[serde(rename = "type")]
-    pub(crate) parttype: String,
-    pub(crate) uuid: Option<String>,
-    pub(crate) name: Option<String>,
+    pub parttype: String,
+    pub uuid: Option<String>,
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum PartitionType {
+pub enum PartitionType {
     Dos,
     Gpt,
     Unknown(String),
@@ -131,32 +128,32 @@ pub(crate) enum PartitionType {
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
-pub(crate) struct PartitionTable {
-    pub(crate) label: PartitionType,
-    pub(crate) id: String,
-    pub(crate) device: String,
+pub struct PartitionTable {
+    pub label: PartitionType,
+    pub id: String,
+    pub device: String,
     // We're not using these fields
-    // pub(crate) unit: String,
-    // pub(crate) firstlba: u64,
-    // pub(crate) lastlba: u64,
-    // pub(crate) sectorsize: u64,
-    pub(crate) partitions: Vec<Partition>,
+    // pub unit: String,
+    // pub firstlba: u64,
+    // pub lastlba: u64,
+    // pub sectorsize: u64,
+    pub partitions: Vec<Partition>,
 }
 
 impl PartitionTable {
     /// Find the partition with the given device name
     #[allow(dead_code)]
-    pub(crate) fn find<'a>(&'a self, devname: &str) -> Option<&'a Partition> {
+    pub fn find<'a>(&'a self, devname: &str) -> Option<&'a Partition> {
         self.partitions.iter().find(|p| p.node.as_str() == devname)
     }
 
-    pub(crate) fn path(&self) -> &Utf8Path {
+    pub fn path(&self) -> &Utf8Path {
         self.device.as_str().into()
     }
 
     // Find the partition with the given offset (starting at 1)
     #[allow(dead_code)]
-    pub(crate) fn find_partno(&self, partno: u32) -> Result<&Partition> {
+    pub fn find_partno(&self, partno: u32) -> Result<&Partition> {
         let r = self
             .partitions
             .get(partno.checked_sub(1).expect("1 based partition offset") as usize)
@@ -167,28 +164,26 @@ impl PartitionTable {
 
 impl Partition {
     #[allow(dead_code)]
-    pub(crate) fn path(&self) -> &Utf8Path {
+    pub fn path(&self) -> &Utf8Path {
         self.node.as_str().into()
     }
 }
 
 #[context("Listing partitions of {dev}")]
-pub(crate) fn partitions_of(dev: &Utf8Path) -> Result<PartitionTable> {
+pub fn partitions_of(dev: &Utf8Path) -> Result<PartitionTable> {
     let o: SfDiskOutput = Command::new("sfdisk")
         .args(["-J", dev.as_str()])
         .run_and_parse_json()?;
     Ok(o.partitiontable)
 }
 
-#[cfg(feature = "install-to-disk")]
-pub(crate) struct LoopbackDevice {
-    pub(crate) dev: Option<Utf8PathBuf>,
+pub struct LoopbackDevice {
+    pub dev: Option<Utf8PathBuf>,
 }
 
-#[cfg(feature = "install-to-disk")]
 impl LoopbackDevice {
     // Create a new loopback block device targeting the provided file path.
-    pub(crate) fn new(path: &Path) -> Result<Self> {
+    pub fn new(path: &Path) -> Result<Self> {
         let direct_io = match env::var("BOOTC_DIRECT_IO") {
             Ok(val) => {
                 if val == "on" {
@@ -215,7 +210,7 @@ impl LoopbackDevice {
     }
 
     // Access the path to the loopback block device.
-    pub(crate) fn path(&self) -> &Utf8Path {
+    pub fn path(&self) -> &Utf8Path {
         // SAFETY: The option cannot be destructured until we are dropped
         self.dev.as_deref().unwrap()
     }
@@ -231,12 +226,11 @@ impl LoopbackDevice {
     }
 
     /// Consume this device, unmounting it.
-    pub(crate) fn close(mut self) -> Result<()> {
+    pub fn close(mut self) -> Result<()> {
         self.impl_close()
     }
 }
 
-#[cfg(feature = "install-to-disk")]
 impl Drop for LoopbackDevice {
     fn drop(&mut self) {
         // Best effort to unmount if we're dropped without invoking `close`
@@ -259,7 +253,7 @@ fn split_lsblk_line(line: &str) -> HashMap<String, String> {
 /// This is a bit fuzzy, but... this function will return every block device in the parent
 /// hierarchy of `device` capable of containing other partitions. So e.g. parent devices of type
 /// "part" doesn't match, but "disk" and "mpath" does.
-pub(crate) fn find_parent_devices(device: &str) -> Result<Vec<String>> {
+pub fn find_parent_devices(device: &str) -> Result<Vec<String>> {
     let output = Command::new("lsblk")
         // Older lsblk, e.g. in CentOS 7.6, doesn't support PATH, but --paths option
         .arg("--pairs")
@@ -291,8 +285,7 @@ pub(crate) fn find_parent_devices(device: &str) -> Result<Vec<String>> {
 }
 
 /// Parse a string into mibibytes
-#[cfg(feature = "install-to-disk")]
-pub(crate) fn parse_size_mib(mut s: &str) -> Result<u64> {
+pub fn parse_size_mib(mut s: &str) -> Result<u64> {
     let suffixes = [
         ("MiB", 1u64),
         ("M", 1u64),

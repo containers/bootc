@@ -17,6 +17,7 @@ anstream = "0.6.13"
 anstyle = "1.0.6"
 anyhow = { workspace = true }
 bootc-utils = { path = "../utils" }
+bootc-blockdev = { path = "../blockdev", package = "blockdev" }
 camino = { workspace = true, features = ["serde1"] }
 ostree-ext = { path = "../ostree-ext" }
 chrono = { workspace = true, features = ["serde"] }

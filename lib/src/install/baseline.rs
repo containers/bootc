@@ -100,7 +100,7 @@ fn mkfs<'a>(
     wipe: bool,
     opts: impl IntoIterator<Item = &'a str>,
 ) -> Result<uuid::Uuid> {
-    let devinfo = crate::blockdev::list_dev(dev.into())?;
+    let devinfo = bootc_blockdev::list_dev(dev.into())?;
     let size = ostree_ext::glib::format_size(devinfo.size);
     let u = uuid::Uuid::new_v4();
     let mut t = Task::new(
@@ -174,7 +174,7 @@ pub(crate) fn install_create_rootfs(
         .ok_or_else(|| anyhow::anyhow!("No root filesystem specified"))?;
     // Verify that the target is empty (if not already wiped in particular, but it's
     // also good to verify that the wipe worked)
-    let device = crate::blockdev::list_dev(&opts.device)?;
+    let device = bootc_blockdev::list_dev(&opts.device)?;
     // Canonicalize devpath
     let devpath: Utf8PathBuf = device.path().into();
 
@@ -228,7 +228,7 @@ pub(crate) fn install_create_rootfs(
     let root_size = opts
         .root_size
         .as_deref()
-        .map(crate::blockdev::parse_size_mib)
+        .map(bootc_blockdev::parse_size_mib)
         .transpose()
         .context("Parsing root size")?;
 
@@ -317,7 +317,7 @@ pub(crate) fn install_create_rootfs(
     udev_settle()?;
 
     // Re-read what we wrote into structured information
-    let base_partitions = &crate::blockdev::partitions_of(&devpath)?;
+    let base_partitions = &bootc_blockdev::partitions_of(&devpath)?;
 
     let root_partition = base_partitions.find_partno(rootpn)?;
     if root_partition.parttype.as_str() != LINUX_PARTTYPE {
@@ -433,7 +433,7 @@ pub(crate) fn install_create_rootfs(
         BlockSetup::Direct => None,
         BlockSetup::Tpm2Luks => Some(luks_name.to_string()),
     };
-    let device_info = crate::blockdev::partitions_of(&devpath)?;
+    let device_info = bootc_blockdev::partitions_of(&devpath)?;
     Ok(RootSetup {
         luks_device,
         device_info,

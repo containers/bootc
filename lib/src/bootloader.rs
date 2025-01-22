@@ -2,8 +2,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 
-use crate::blockdev::PartitionTable;
 use crate::task::Task;
+use bootc_blockdev::PartitionTable;
 
 /// The name of the mountpoint for efi (as a subdirectory of /boot, or at the toplevel)
 pub(crate) const EFI_DIR: &str = "efi";
@@ -69,7 +69,7 @@ pub(crate) fn install_via_zipl(device: &PartitionTable, boot_uuid: &str) -> Resu
     // Ensure that the found partition is a part of the target device
     let device_path = device.path();
 
-    let partitions = crate::blockdev::list_dev(device_path)?
+    let partitions = bootc_blockdev::list_dev(device_path)?
         .children
         .with_context(|| format!("no partition found on {device_path}"))?;
     let boot_part = partitions

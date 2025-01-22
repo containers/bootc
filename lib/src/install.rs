@@ -884,7 +884,7 @@ pub(crate) fn exec_in_host_mountns(args: &[std::ffi::OsString]) -> Result<()> {
 pub(crate) struct RootSetup {
     #[cfg(feature = "install-to-disk")]
     luks_device: Option<String>,
-    device_info: crate::blockdev::PartitionTable,
+    device_info: bootc_blockdev::PartitionTable,
     /// Absolute path to the location where we've mounted the physical
     /// root filesystem for the system we're installing.
     physical_root_path: Utf8PathBuf,
@@ -1398,13 +1398,13 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
     let rootfs = &*rootfs;
 
     match &rootfs.device_info.label {
-        crate::blockdev::PartitionType::Dos => crate::utils::medium_visibility_warning(
+        bootc_blockdev::PartitionType::Dos => crate::utils::medium_visibility_warning(
             "Installing to `dos` format partitions is not recommended",
         ),
-        crate::blockdev::PartitionType::Gpt => {
+        bootc_blockdev::PartitionType::Gpt => {
             // The only thing we should be using in general
         }
-        crate::blockdev::PartitionType::Unknown(o) => {
+        bootc_blockdev::PartitionType::Unknown(o) => {
             crate::utils::medium_visibility_warning(&format!("Unknown partition label {o}"))
         }
     }
@@ -1480,7 +1480,7 @@ pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
     let (mut rootfs, loopback) = {
         let loopback_dev = if opts.via_loopback {
             let loopback_dev =
-                crate::blockdev::LoopbackDevice::new(block_opts.device.as_std_path())?;
+                bootc_blockdev::LoopbackDevice::new(block_opts.device.as_std_path())?;
             block_opts.device = loopback_dev.path().into();
             Some(loopback_dev)
         } else {
@@ -1811,7 +1811,7 @@ pub(crate) async fn install_to_filesystem(
         let mut dev = inspect.source;
         loop {
             tracing::debug!("Finding parents for {dev}");
-            let mut parents = crate::blockdev::find_parent_devices(&dev)?.into_iter();
+            let mut parents = bootc_blockdev::find_parent_devices(&dev)?.into_iter();
             let Some(parent) = parents.next() else {
                 break;
             };
@@ -1825,7 +1825,7 @@ pub(crate) async fn install_to_filesystem(
         dev
     };
     tracing::debug!("Backing device: {backing_device}");
-    let device_info = crate::blockdev::partitions_of(Utf8Path::new(&backing_device))?;
+    let device_info = bootc_blockdev::partitions_of(Utf8Path::new(&backing_device))?;
 
     let rootarg = format!("root={}", root_info.mount_spec);
     let mut boot = if let Some(spec) = fsopts.boot_mount_spec {
