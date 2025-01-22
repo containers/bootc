@@ -2,12 +2,15 @@
 //!
 //! This module implements `bootc container lint`.
 
+use std::collections::BTreeSet;
 use std::env::consts::ARCH;
 use std::os::unix::ffi::OsStrExt;
 
 use anyhow::{Context, Result};
+use camino::{Utf8Path, Utf8PathBuf};
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
+use cap_std_ext::cap_std::fs::MetadataExt;
 use cap_std_ext::dirext::CapStdExtDirExt as _;
 use fn_error_context::context;
 
@@ -53,6 +56,8 @@ enum LintType {
     /// If this fails, it is known to be fatal - the system will not install or
     /// is effectively guaranteed to fail at runtime.
     Fatal,
+    /// This is not a fatal problem, but something you likely want to fix.
+    Warning,
 }
 
 struct Lint {
@@ -93,14 +98,20 @@ const LINTS: &[Lint] = &[
         ty: LintType::Fatal,
         f: check_baseimage_root,
     },
+    Lint {
+        name: "var-log",
+        ty: LintType::Warning,
+        f: check_varlog,
+    },
 ];
 
 /// check for the existence of the /var/run directory
 /// if it exists we need to check that it links to /run if not error
 /// if it does not exist error.
 #[context("Linting")]
-pub(crate) fn lint(root: &Dir) -> Result<()> {
+pub(crate) fn lint(root: &Dir, fatal_warnings: bool) -> Result<()> {
     let mut fatal = 0usize;
+    let mut warnings = 0usize;
     let mut passed = 0usize;
     for lint in LINTS {
         let name = lint.name;
@@ -108,9 +119,18 @@ pub(crate) fn lint(root: &Dir) -> Result<()> {
             Ok(r) => r,
             Err(e) => anyhow::bail!("Unexpected runtime error running lint {name}: {e}"),
         };
+
         if let Err(e) = r {
-            eprintln!("Failed lint: {name}: {e}");
-            fatal += 1;
+            match lint.ty {
+                LintType::Fatal => {
+                    eprintln!("Failed lint: {name}: {e}");
+                    fatal += 1;
+                }
+                LintType::Warning => {
+                    eprintln!("Lint warning: {name}: {e}");
+                    warnings += 1;
+                }
+            }
         } else {
             // We'll be quiet for now
             tracing::debug!("OK {name} (type={:?})", lint.ty);
@@ -118,6 +138,14 @@ pub(crate) fn lint(root: &Dir) -> Result<()> {
         }
     }
     println!("Checks passed: {passed}");
+    let fatal = if fatal_warnings {
+        fatal + warnings
+    } else {
+        fatal
+    };
+    if warnings > 0 {
+        println!("Warnings: {warnings}");
+    }
     if fatal > 0 {
         anyhow::bail!("Checks failed: {fatal}")
     }
@@ -239,6 +267,47 @@ fn check_baseimage_root(dir: &Dir) -> LintResult {
     lint_ok()
 }
 
+fn collect_nonempty_regfiles(
+    root: &Dir,
+    path: &Utf8Path,
+    out: &mut BTreeSet<Utf8PathBuf>,
+) -> Result<()> {
+    for entry in root.entries_utf8()? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let path = path.join(entry.file_name()?);
+        if ty.is_file() {
+            let meta = entry.metadata()?;
+            if meta.size() > 0 {
+                out.insert(path);
+            }
+        } else if ty.is_dir() {
+            let d = entry.open_dir()?;
+            collect_nonempty_regfiles(d.as_cap_std(), &path, out)?;
+        }
+    }
+    Ok(())
+}
+
+fn check_varlog(root: &Dir) -> LintResult {
+    let Some(d) = root.open_dir_optional("var/log")? else {
+        return lint_ok();
+    };
+    let mut nonempty_regfiles = BTreeSet::new();
+    collect_nonempty_regfiles(&d, "/var/log".into(), &mut nonempty_regfiles)?;
+    let mut nonempty_regfiles = nonempty_regfiles.into_iter();
+    let Some(first) = nonempty_regfiles.next() else {
+        return lint_ok();
+    };
+    let others = nonempty_regfiles.len();
+    let others = if others > 0 {
+        format!(" (and {others} more)")
+    } else {
+        "".into()
+    };
+    lint_err(format!("Found non-empty logfile: {first}{others}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,6 +367,38 @@ mod tests {
         root.remove_dir_all("etc")?;
         // Now we should pass again
         check_usretc(root).unwrap().unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn test_varlog() -> Result<()> {
+        let root = &fixture()?;
+        check_varlog(root).unwrap().unwrap();
+        root.create_dir_all("var/log")?;
+        check_varlog(root).unwrap().unwrap();
+        root.symlink_contents("../../usr/share/doc/systemd/README.logs", "var/log/README")?;
+        check_varlog(root).unwrap().unwrap();
+
+        root.atomic_write("var/log/somefile.log", "log contents")?;
+        let Err(e) = check_varlog(root).unwrap() else {
+            unreachable!()
+        };
+        assert_eq!(
+            e.to_string(),
+            "Found non-empty logfile: /var/log/somefile.log"
+        );
+
+        root.create_dir_all("var/log/someproject")?;
+        root.atomic_write("var/log/someproject/audit.log", "audit log")?;
+        root.atomic_write("var/log/someproject/info.log", "info")?;
+        let Err(e) = check_varlog(root).unwrap() else {
+            unreachable!()
+        };
+        assert_eq!(
+            e.to_string(),
+            "Found non-empty logfile: /var/log/somefile.log (and 2 more)"
+        );
+
         Ok(())
     }
 

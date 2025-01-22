@@ -245,6 +245,10 @@ pub(crate) enum ContainerOpts {
         /// Operate on the provided rootfs.
         #[clap(long, default_value = "/")]
         rootfs: Utf8PathBuf,
+
+        /// Make warnings fatal.
+        #[clap(long)]
+        fatal_warnings: bool,
     },
 }
 
@@ -1011,14 +1015,17 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
         Opt::Edit(opts) => edit(opts).await,
         Opt::UsrOverlay => usroverlay().await,
         Opt::Container(opts) => match opts {
-            ContainerOpts::Lint { rootfs } => {
+            ContainerOpts::Lint {
+                rootfs,
+                fatal_warnings,
+            } => {
                 if !ostree_ext::container_utils::is_ostree_container()? {
                     anyhow::bail!(
                         "Not in a ostree container, this command only verifies ostree containers."
                     );
                 }
                 let root = &Dir::open_ambient_dir(rootfs, cap_std::ambient_authority())?;
-                lints::lint(root)?;
+                lints::lint(root, fatal_warnings)?;
                 Ok(())
             }
         },
