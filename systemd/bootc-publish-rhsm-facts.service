@@ -9,3 +9,4 @@ ExecStart=/usr/bin/bootc internals publish-rhsm-facts
 
 [Install]
 WantedBy=bootc-status-updated.target
+WantedBy=bootc-status-updated-onboot.target
