@@ -1,5 +1,7 @@
 [Unit]
-Description=Target for bootc status changes
+Description=Target for bootc status changes on boot
 Documentation=man:bootc-status-updated.target(8)
-StopWhenUnneeded=true
 ConditionPathExists=/run/ostree-booted
+
+[Install]
+WantedBy=multi-user.target
