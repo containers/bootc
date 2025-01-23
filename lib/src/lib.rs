@@ -30,7 +30,6 @@ mod utils;
 #[cfg(feature = "docgen")]
 mod docgen;
 
-mod blockdev;
 mod bootloader;
 mod containerenv;
 mod install;

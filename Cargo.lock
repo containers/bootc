@@ -151,6 +151,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "blockdev"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "bootc-utils",
+ "camino",
+ "fn-error-context",
+ "indoc",
+ "regex",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "bootc"
 version = "0.1.9"
 dependencies = [
@@ -170,6 +185,7 @@ dependencies = [
  "anstream",
  "anstyle",
  "anyhow",
+ "blockdev",
  "bootc-utils",
  "camino",
  "cap-std-ext",

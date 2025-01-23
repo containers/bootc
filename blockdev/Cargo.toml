@@ -1,0 +1,25 @@
+[package]
+description = "Internal blockdev code"
+# Should never be published to crates.io
+publish = false
+edition = "2021"
+license = "MIT OR Apache-2.0"
+name = "blockdev"
+repository = "https://github.com/containers/bootc"
+version = "0.0.0"
+
+[dependencies]
+anyhow = { workspace = true }
+bootc-utils = { path = "../utils" }
+camino = { workspace = true, features = ["serde1"] }
+fn-error-context = { workspace = true }
+regex = "1.10.4"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+indoc = "2.0.5"
+
+[lib]
+path = "src/blockdev.rs"
