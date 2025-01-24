@@ -1,5 +1,12 @@
 [workspace]
-members = ["cli", "lib", "ostree-ext", "blockdev", "xtask", "tests-integration"]
+members = [
+    "cli",
+    "lib",
+    "ostree-ext",
+    "blockdev",
+    "xtask",
+    "tests-integration"
+]
 resolver = "2"
 
 [profile.dev]
