@@ -70,6 +70,8 @@ features = ["dox"]
 docgen = ["clap_mangen"]
 dox = ["ostree/dox"]
 internal-testing-api = ["xshell", "indoc", "similar-asserts"]
+# Enable calling back into bootc
+bootc = []
 
 [lints]
 workspace = true

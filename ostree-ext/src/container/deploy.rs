@@ -143,6 +143,9 @@ pub async fn deploy(
         // crates. We need an option to skip though so when the *main*
         // bootc install code calls this API, we don't do this as it
         // will have already been handled.
+        // Note also we do this under a feature gate to ensure rpm-ostree
+        // doesn't try to invoke this, as that won't work right now.
+        #[cfg(feature = "bootc")]
         if !options.skip_completion {
             // Note that the sysroot is provided as `.`  but we use cwd_dir to
             // make the process current working directory the sysroot.
