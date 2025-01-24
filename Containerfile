@@ -19,7 +19,8 @@ LABEL com.openshift.lifecycle-agent.seed_format_version=3
 
 RUN mkdir -p /usr/lib/bootc/install
 
-COPY --from=seed --exclude=ostree.tgz / /var/tmp/seed
+COPY --from=seed --exclude=ostree.tgz / /usr/lib/openshift/seed
 
 COPY --from=build /out/bootc.tar /tmp
 RUN tar -C / -xvf /tmp/bootc.tar && rm -vrf /tmp/*
+RUN sed -i '/PermitRootLogin no/d' /etc/ssh/sshd_config.d/40-rhcos-defaults.conf
