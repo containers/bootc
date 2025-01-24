@@ -3,6 +3,7 @@ members = [
     "cli",
     "lib",
     "ostree-ext",
+    "utils",
     "blockdev",
     "xtask",
     "tests-integration"

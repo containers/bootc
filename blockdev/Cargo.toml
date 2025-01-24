@@ -4,7 +4,7 @@ description = "Internal blockdev code"
 publish = false
 edition = "2021"
 license = "MIT OR Apache-2.0"
-name = "blockdev"
+name = "bootc-blockdev"
 repository = "https://github.com/containers/bootc"
 version = "0.0.0"
 
