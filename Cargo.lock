@@ -151,7 +151,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "blockdev"
+name = "bootc"
+version = "0.1.9"
+dependencies = [
+ "anyhow",
+ "bootc-lib",
+ "clap",
+ "log",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "bootc-blockdev"
 version = "0.0.0"
 dependencies = [
  "anyhow",
@@ -166,26 +179,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "bootc"
-version = "0.1.9"
-dependencies = [
- "anyhow",
- "bootc-lib",
- "clap",
- "log",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "bootc-lib"
 version = "1.1.4"
 dependencies = [
  "anstream",
  "anstyle",
  "anyhow",
- "blockdev",
+ "bootc-blockdev",
  "bootc-utils",
  "camino",
  "cap-std-ext",
