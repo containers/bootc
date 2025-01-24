@@ -109,7 +109,11 @@ const LINTS: &[Lint] = &[
 /// if it exists we need to check that it links to /run if not error
 /// if it does not exist error.
 #[context("Linting")]
-pub(crate) fn lint(root: &Dir, fatal_warnings: bool) -> Result<()> {
+pub(crate) fn lint(
+    root: &Dir,
+    fatal_warnings: bool,
+    mut output: impl std::io::Write,
+) -> Result<()> {
     let mut fatal = 0usize;
     let mut warnings = 0usize;
     let mut passed = 0usize;
@@ -123,11 +127,11 @@ pub(crate) fn lint(root: &Dir, fatal_warnings: bool) -> Result<()> {
         if let Err(e) = r {
             match lint.ty {
                 LintType::Fatal => {
-                    eprintln!("Failed lint: {name}: {e}");
+                    writeln!(output, "Failed lint: {name}: {e}")?;
                     fatal += 1;
                 }
                 LintType::Warning => {
-                    eprintln!("Lint warning: {name}: {e}");
+                    writeln!(output, "Lint warning: {name}: {e}")?;
                     warnings += 1;
                 }
             }
@@ -137,14 +141,14 @@ pub(crate) fn lint(root: &Dir, fatal_warnings: bool) -> Result<()> {
             passed += 1;
         }
     }
-    println!("Checks passed: {passed}");
+    writeln!(output, "Checks passed: {passed}")?;
     let fatal = if fatal_warnings {
         fatal + warnings
     } else {
         fatal
     };
     if warnings > 0 {
-        println!("Warnings: {warnings}");
+        writeln!(output, "Warnings: {warnings}")?;
     }
     if fatal > 0 {
         anyhow::bail!("Checks failed: {fatal}")
@@ -258,11 +262,15 @@ fn check_baseimage_root_norecurse(dir: &Dir) -> LintResult {
 
 /// Check ostree-related base image content.
 fn check_baseimage_root(dir: &Dir) -> LintResult {
-    check_baseimage_root_norecurse(dir)??;
+    if let Err(e) = check_baseimage_root_norecurse(dir)? {
+        return Ok(Err(e));
+    }
     // If we have our own documentation with the expected root contents
     // embedded, then check that too! Mostly just because recursion is fun.
     if let Some(dir) = dir.open_dir_optional(BASEIMAGE_REF)? {
-        check_baseimage_root_norecurse(&dir)??;
+        if let Err(e) = check_baseimage_root_norecurse(&dir)? {
+            return Ok(Err(e));
+        }
     }
     lint_ok()
 }
@@ -317,6 +325,23 @@ mod tests {
         Ok(tempdir)
     }
 
+    fn passing_fixture() -> Result<cap_std_ext::cap_tempfile::TempDir> {
+        let root = cap_std_ext::cap_tempfile::tempdir(cap_std::ambient_authority())?;
+        root.create_dir_all("usr/lib/modules/5.7.2")?;
+        root.write("usr/lib/modules/5.7.2/vmlinuz", "vmlinuz")?;
+
+        root.create_dir("sysroot")?;
+        root.symlink_contents("sysroot/ostree", "ostree")?;
+
+        const PREPAREROOT_PATH: &str = "usr/lib/ostree/prepare-root.conf";
+        const PREPAREROOT: &str =
+            include_str!("../../baseimage/base/usr/lib/ostree/prepare-root.conf");
+        root.create_dir_all(Utf8Path::new(PREPAREROOT_PATH).parent().unwrap())?;
+        root.atomic_write(PREPAREROOT_PATH, PREPAREROOT)?;
+
+        Ok(root)
+    }
+
     #[test]
     fn test_var_run() -> Result<()> {
         let root = &fixture()?;
@@ -327,6 +352,17 @@ mod tests {
         root.remove_dir_all("var/run")?;
         // Now we should pass again
         check_var_run(root).unwrap().unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn test_lint_main() -> Result<()> {
+        let root = &passing_fixture()?;
+        let mut out = Vec::new();
+        lint(root, true, &mut out).unwrap();
+        root.create_dir_all("var/run/foo")?;
+        let mut out = Vec::new();
+        assert!(lint(root, true, &mut out).is_err());
         Ok(())
     }
 
@@ -476,33 +512,13 @@ mod tests {
 
     #[test]
     fn test_baseimage_root() -> Result<()> {
-        use bootc_utils::CommandRunExt;
-        use cap_std_ext::cmdext::CapStdExtCommandExt;
-        use std::path::Path;
-
         let td = fixture()?;
 
         // An empty root should fail our test
-        assert!(check_baseimage_root(&td).is_err());
+        assert!(check_baseimage_root(&td).unwrap().is_err());
 
-        // Copy our reference base image content from the source dir
-        let Some(manifest) = std::env::var_os("CARGO_MANIFEST_PATH") else {
-            // This was only added in relatively recent cargo
-            return Ok(());
-        };
-        let srcdir = Path::new(&manifest)
-            .parent()
-            .unwrap()
-            .join("../baseimage/base");
-        for ent in std::fs::read_dir(srcdir)? {
-            let ent = ent?;
-            std::process::Command::new("cp")
-                .cwd_dir(td.try_clone()?)
-                .arg("-pr")
-                .arg(ent.path())
-                .arg(".")
-                .run()?;
-        }
+        drop(td);
+        let td = passing_fixture()?;
         check_baseimage_root(&td).unwrap().unwrap();
         Ok(())
     }

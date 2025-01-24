@@ -1025,7 +1025,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     );
                 }
                 let root = &Dir::open_ambient_dir(rootfs, cap_std::ambient_authority())?;
-                lints::lint(root, fatal_warnings)?;
+                lints::lint(root, fatal_warnings, std::io::stdout().lock())?;
                 Ok(())
             }
         },
