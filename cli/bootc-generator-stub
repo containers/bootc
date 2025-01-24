@@ -1,0 +1,5 @@
+#!/bin/bash
+# We can't actually hardlink because in Fedora (+derivatives)
+# these have different SELinux labels. xref
+# https://issues.redhat.com/browse/RHEL-76188
+exec bootc internals systemd-generator "$@"
