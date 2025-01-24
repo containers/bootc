@@ -12,8 +12,7 @@ install:
 	install -d -m 0755 $(DESTDIR)$(prefix)/lib/bootc/bound-images.d
 	install -d -m 0755 $(DESTDIR)$(prefix)/lib/bootc/kargs.d
 	ln -s /sysroot/ostree/bootc/storage $(DESTDIR)$(prefix)/lib/bootc/storage
-	install -d -m 0755 $(DESTDIR)$(prefix)/lib/systemd/system-generators/
-	ln -f $(DESTDIR)$(prefix)/bin/bootc $(DESTDIR)$(prefix)/lib/systemd/system-generators/bootc-systemd-generator
+	install -D -m 0755 cli/bootc-generator-stub $(DESTDIR)$(prefix)/lib/systemd/system-generators/bootc-systemd-generator 
 	install -d $(DESTDIR)$(prefix)/lib/bootc/install
 	# Support installing pre-generated man pages shipped in source tarball, to avoid
 	# a dependency on pandoc downstream.  But in local builds these end up in target/man,
