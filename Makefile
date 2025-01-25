@@ -9,6 +9,7 @@ all:
     
 install:
 	install -D -m 0755 -t $(DESTDIR)$(prefix)/bin target/release/bootc
+	install -D -m 0755 -t $(DESTDIR)$(prefix)/bin target/release/system-reinstall-bootc
 	install -d -m 0755 $(DESTDIR)$(prefix)/lib/bootc/bound-images.d
 	install -d -m 0755 $(DESTDIR)$(prefix)/lib/bootc/kargs.d
 	ln -s /sysroot/ostree/bootc/storage $(DESTDIR)$(prefix)/lib/bootc/storage

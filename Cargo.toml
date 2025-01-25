@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "cli",
+    "system-reinstall-bootc",
     "lib",
     "ostree-ext",
     "utils",
