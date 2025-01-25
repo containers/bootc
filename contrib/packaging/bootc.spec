@@ -62,16 +62,29 @@ Provides: ostree-cli(ostree-container)
 %description
 %{summary}
 
+%package reinstall
+Summary: Utility to reinstall the current system using bootc
+Requires: podman
+# The reinstall subpackage intentionally does not require bootc, as it pulls in many unnecessary dependencies
+
+%description reinstall
+This package provides a utility to simplify reinstalling the current system to a given bootc image.
+
 %prep
 %autosetup -p1 -a1
 %cargo_prep -v vendor
 
 %build
+# Build the main bootc binary
 %if 0%{?fedora} || 0%{?rhel} >= 10
     %cargo_build %{?with_rhsm:-f rhsm}
 %else
     %cargo_build %{?with_rhsm:--features rhsm}
 %endif
+
+# Build the bootc-reinstall binary
+%global cargo_args -p bootc-reinstall
+%cargo_build
 
 %cargo_vendor_manifest
 %cargo_license_summary
@@ -103,6 +116,9 @@ make install-ostree-hooks DESTDIR=%{?buildroot}
 %{_unitdir}/*
 %{_docdir}/bootc/*
 %{_mandir}/man*/bootc*
+
+%files reinstall
+%{_bindir}/bootc-reinstall
 
 %changelog
 %autochangelog

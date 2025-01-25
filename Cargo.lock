@@ -175,7 +175,6 @@ dependencies = [
  "log",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -218,8 +217,20 @@ dependencies = [
  "tokio-util",
  "toml",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "xshell",
+]
+
+[[package]]
+name = "bootc-reinstall"
+version = "0.1.9"
+dependencies = [
+ "anyhow",
+ "bootc-lib",
+ "clap",
+ "log",
+ "tracing",
 ]
 
 [[package]]

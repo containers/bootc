@@ -30,6 +30,8 @@ use crate::spec::Host;
 use crate::spec::ImageReference;
 use crate::utils::sigpolicy_from_opt;
 
+pub mod tracing_util;
+
 /// Shared progress options
 #[derive(Debug, Parser, PartialEq, Eq)]
 pub(crate) struct ProgressOptions {
