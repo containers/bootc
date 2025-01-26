@@ -25,12 +25,13 @@ use serde::Deserialize;
 use crate::task::Task;
 
 /// Well known identifier for pid 1
-pub(crate) const PID1: Pid = const {
+const fn get_pid1() -> Pid {
     match Pid::from_raw(1) {
         Some(v) => v,
         None => panic!("Expected to parse pid1"),
     }
-};
+}
+pub(crate) const PID1: Pid = get_pid1();
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]

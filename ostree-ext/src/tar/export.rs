@@ -23,12 +23,13 @@ pub const BARE_SPLIT_XATTRS_MODE: &str = "bare-split-xattrs";
 /// store that version as a constant.
 pub(crate) const SECURITY_SELINUX_XATTR_C: &CStr = c"security.selinux";
 /// Then derive a string version (without the NUL) from the above.
-pub(crate) const SECURITY_SELINUX_XATTR: &str = const {
+const fn get_selinux_xattr() -> &'static str {
     match SECURITY_SELINUX_XATTR_C.to_str() {
         Ok(r) => r,
         Err(_) => unreachable!(),
     }
-};
+}
+pub(crate) const SECURITY_SELINUX_XATTR: &str = get_selinux_xattr();
 
 // This is both special in the tar stream *and* it's in the ostree commit.
 const SYSROOT: &str = "sysroot";
