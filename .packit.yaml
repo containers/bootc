@@ -1,14 +1,10 @@
 ---
-specfile_path: contrib/packaging/bootc.spec
-
-files_to_sync:
-  - contrib/packaging/bootc.spec
-  - .packit.yaml
+upstream_package_name: bootc
+downstream_package_name: bootc
 
 upstream_tag_template: v{version}
 
-upstream_package_name: bootc
-downstream_package_name: bootc
+specfile_path: contrib/packaging/bootc.spec
 
 srpm_build_deps:
   - cargo
@@ -33,8 +29,6 @@ actions:
     - bash -c "ls -al contrib/packaging/"
 
 jobs:
-  # Only add CS10 and RHEL-9 RPM build test
-  # But no e2e test on CS10 and RHEL-9
   - job: copr_build
     trigger: pull_request
     targets:
@@ -68,3 +62,19 @@ jobs:
     tmt_plan: /integration
     skip_build: true
     identifier: integration-test
+
+  - job: propose_downstream
+    trigger: release
+    dist_git_branches:
+      - fedora-all
+
+  - job: koji_build
+    trigger: commit
+    dist_git_branches:
+      - fedora-all
+
+  - job: bodhi_update
+    trigger: commit
+    dist_git_branches:
+      # Fedora rawhide updates are created automatically
+      - fedora-branched
