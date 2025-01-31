@@ -3,11 +3,14 @@
 
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use std::io::Read;
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
 use camino::Utf8Path;
+use cap_std_ext::dirext::CapStdExtDirExt;
 use glib::Cast;
+use ocidir::cap_std::fs::Dir;
 use ostree::prelude::FileExt;
 use ostree::{gio, glib};
 
@@ -35,6 +38,29 @@ pub(crate) fn load_config(root: &ostree::RepoFile) -> Result<Option<glib::KeyFil
     }
     tracing::debug!("No {CONF_PATH} found");
     Ok(None)
+}
+
+/// Load the configuration from the target root.
+pub fn load_config_from_root(root: &Dir) -> Result<Option<glib::KeyFile>> {
+    for path in ["etc", "usr/lib"].into_iter().map(Utf8Path::new) {
+        let path = path.join(CONF_PATH);
+        let Some(mut f) = root.open_optional(&path)? else {
+            continue;
+        };
+        let mut contents = String::new();
+        f.read_to_string(&mut contents)?;
+        let kf = glib::KeyFile::new();
+        kf.load_from_data(&contents, glib::KeyFileFlags::NONE)
+            .with_context(|| format!("Parsing {path}"))?;
+        return Ok(Some(kf));
+    }
+    Ok(None)
+}
+
+/// Require the configuration in the target root.
+pub fn require_config_from_root(root: &Dir) -> Result<glib::KeyFile> {
+    load_config_from_root(root)?
+        .ok_or_else(|| anyhow::anyhow!("Failed to find {CONF_PATH} in /usr/lib or /etc"))
 }
 
 /// Query whether the target root has the `root.transient` key
