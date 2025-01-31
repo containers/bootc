@@ -27,6 +27,7 @@ cap-std-ext = { workspace = true, features = ["fs_utf8"] }
 hex = { workspace = true }
 fn-error-context = { workspace = true }
 indicatif = { workspace = true }
+indoc = { workspace = true }
 libc = { workspace = true }
 liboverdrop = "0.1.0"
 libsystemd = "0.7"
@@ -50,7 +51,6 @@ comfy-table = "7.1.1"
 thiserror = "2.0.11"
 
 [dev-dependencies]
-indoc = { workspace = true }
 similar-asserts = { workspace = true }
 static_assertions = { workspace = true }
 

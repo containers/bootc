@@ -10,8 +10,7 @@ filesystem structure
 \[**\--acknowledge-destructive**\] \[**\--skip-finalize**\]
 \[**\--source-imgref**\] \[**\--target-transport**\]
 \[**\--target-imgref**\] \[**\--enforce-container-sigpolicy**\]
-\[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
-\[**\--disable-selinux**\] \[**\--karg**\]
+\[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
 \[**\--bound-images**\] \[**\--stateroot**\] \[**-h**\|**\--help**\]
 \<*ROOT_PATH*\>
@@ -97,10 +96,6 @@ is currently expected to be empty by default.
     \`\--target-no-signature-verification\` (which is now a no-op).
     Enabling this option enforces that \`/etc/containers/policy.json\`
     includes a default policy which requires signatures
-
-**\--target-ostree-remote**=*TARGET_OSTREE_REMOTE*
-
-:   Enable verification via an ostree remote
 
 **\--skip-fetch-check**
 
