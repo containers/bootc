@@ -13,6 +13,8 @@ use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::MetadataExt;
 use cap_std_ext::dirext::CapStdExtDirExt as _;
 use fn_error_context::context;
+use indoc::indoc;
+use serde::Serialize;
 
 /// Reference to embedded default baseimage content that should exist.
 const BASEIMAGE_REF: &str = "usr/share/doc/bootc/baseimage/base";
@@ -51,7 +53,8 @@ impl LintError {
 type LintFn = fn(&Dir) -> LintResult;
 
 /// The classification of a lint type.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 enum LintType {
     /// If this fails, it is known to be fatal - the system will not install or
     /// is effectively guaranteed to fail at runtime.
@@ -60,10 +63,15 @@ enum LintType {
     Warning,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 struct Lint {
     name: &'static str,
+    #[serde(rename = "type")]
     ty: LintType,
+    #[serde(skip)]
     f: LintFn,
+    description: &'static str,
 }
 
 const LINTS: &[Lint] = &[
@@ -71,39 +79,72 @@ const LINTS: &[Lint] = &[
         name: "var-run",
         ty: LintType::Fatal,
         f: check_var_run,
+        description: "Check for /var/run being a physical directory; this is always a bug.",
     },
     Lint {
         name: "kernel",
         ty: LintType::Fatal,
         f: check_kernel,
+        description: indoc! { r#"
+            Check for multiple kernels, i.e. multiple directories of the form /usr/lib/modules/$kver.
+            Only one kernel is supported in an image.   
+    "# },
     },
     Lint {
         name: "bootc-kargs",
         ty: LintType::Fatal,
         f: check_parse_kargs,
+        description: "Verify syntax of /usr/lib/bootc/kargs.d.",
     },
     Lint {
         name: "etc-usretc",
         ty: LintType::Fatal,
         f: check_usretc,
+        description: indoc! { r#"
+            Verify that only one of /etc or /usr/etc exist. You should only have /etc
+            in a container image. It will cause undefined behavior to have both /etc
+            and /usr/etc.
+        "#},
     },
     Lint {
         // This one can be lifted in the future, see https://github.com/containers/bootc/issues/975
         name: "utf8",
         ty: LintType::Fatal,
         f: check_utf8,
+        description: indoc! { r#"
+            Check for non-UTF8 filenames. Currently, the ostree backend of bootc only supports
+            UTF-8 filenames. Non-UTF8 filenames will cause a fatal error.
+        "#},
     },
     Lint {
         name: "baseimage-root",
         ty: LintType::Fatal,
         f: check_baseimage_root,
+        description: indoc! { r#"
+            Check that expected files are present in the root of the filesystem; such
+            as /sysroot and a composefs configuration for ostree. More in
+            <https://containers.github.io/bootc/bootc-images.html#standard-image-content>.
+        "#},
     },
     Lint {
         name: "var-log",
         ty: LintType::Warning,
         f: check_varlog,
+        description: indoc! { r#"
+            Check for non-empty regular files in `/var/log`. It is often undesired
+            to ship log files in container images. Log files in general are usually
+            per-machine state in `/var`. Additionally, log files often include
+            timestamps, causing unreproducible container images, and may contain
+            sensitive build system information.
+        "#},
     },
 ];
+
+pub(crate) fn lint_list(output: impl std::io::Write) -> Result<()> {
+    // Dump in yaml format by default, it's readable enough
+    serde_yaml::to_writer(output, LINTS)?;
+    Ok(())
+}
 
 /// check for the existence of the /var/run directory
 /// if it exists we need to check that it links to /run if not error
@@ -521,5 +562,13 @@ mod tests {
         let td = passing_fixture()?;
         check_baseimage_root(&td).unwrap().unwrap();
         Ok(())
+    }
+
+    #[test]
+    fn test_list() {
+        let mut r = Vec::new();
+        lint_list(&mut r).unwrap();
+        let lints: Vec<serde_yaml::Value> = serde_yaml::from_slice(&r).unwrap();
+        assert_eq!(lints.len(), LINTS.len());
     }
 }

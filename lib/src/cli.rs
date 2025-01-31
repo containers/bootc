@@ -249,6 +249,13 @@ pub(crate) enum ContainerOpts {
         /// Make warnings fatal.
         #[clap(long)]
         fatal_warnings: bool,
+
+        /// Instead of executing the lints, just print all available lints.
+        /// At the current time, this will output in YAML format because it's
+        /// reasonably human friendly. However, there is no commitment to
+        /// maintaining this exact format; do not parse it via code or scripts.
+        #[clap(long)]
+        list: bool,
     },
 }
 
@@ -1018,7 +1025,11 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             ContainerOpts::Lint {
                 rootfs,
                 fatal_warnings,
+                list,
             } => {
+                if list {
+                    return lints::lint_list(std::io::stdout().lock());
+                }
                 if !ostree_ext::container_utils::is_ostree_container()? {
                     anyhow::bail!(
                         "Not in a ostree container, this command only verifies ostree containers."
