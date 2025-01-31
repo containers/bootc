@@ -44,6 +44,9 @@ In the `.container` definition, you should use:
 GlobalArgs=--storage-opt=additionalimagestore=/usr/lib/bootc/storage
 ```
 
+NOTE: Do *not* attempt to globally enable `/usr/lib/bootc/storage` in `/etc/containers/storage.conf`; only
+use the bootc storage for logically bound images, not also floating images. For more, see below.
+
 ## Pull secret
 
 Images are fetched using the global bootc pull secret by default (`/etc/ostree/auth.json`). It is not yet supported to configure `PullSecret` in these image definitions.
@@ -99,3 +102,14 @@ In the comparison below, the term "floating" will be used for non-logically boun
 
 - **Floating image:** Supported.
 - **Logically bound image:** Not supported (`bootc` cannot be invoked as non-root). Instead, it's recommended to just drop most privileges for launched logically bound containers.
+
+## Avoid using /usr/lib/bootc/storage for floating images
+
+Because images and in particular *layers* of images can be removed over time as
+the OS upgrades, if you attempt to globally enable `/usr/lib/bootc/storage`
+in the global `/etc/containers/storage.conf` that would also apply to "floating"
+container images (i.e. the default `podman run` and other runtimes), it can
+cause a bug where floating images can later fail if layers that were reused
+in the LBI storage are removed. In the future, this restriction may be lifted,
+but at the current time you can only configure this additional storage
+for logically bound images.
