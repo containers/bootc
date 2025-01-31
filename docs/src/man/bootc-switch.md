@@ -5,8 +5,8 @@ bootc-switch - Target a new container image reference to boot
 # SYNOPSIS
 
 **bootc switch** \[**\--quiet**\] \[**\--apply**\] \[**\--transport**\]
-\[**\--enforce-container-sigpolicy**\] \[**\--ostree-remote**\]
-\[**\--retain**\] \[**-h**\|**\--help**\] \<*TARGET*\>
+\[**\--enforce-container-sigpolicy**\] \[**\--retain**\]
+\[**-h**\|**\--help**\] \<*TARGET*\>
 
 # DESCRIPTION
 
@@ -50,10 +50,6 @@ updates via container image tags; for example,
 
     Enabling this option enforces that \`/etc/containers/policy.json\`
     includes a default policy which requires signatures.
-
-**\--ostree-remote**=*OSTREE_REMOTE*
-
-:   Enable verification via an ostree remote
 
 **\--retain**
 

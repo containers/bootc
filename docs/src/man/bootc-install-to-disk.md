@@ -7,8 +7,8 @@ bootc-install-to-disk - Install to the target block device
 **bootc install to-disk** \[**\--wipe**\] \[**\--block-setup**\]
 \[**\--filesystem**\] \[**\--root-size**\] \[**\--source-imgref**\]
 \[**\--target-transport**\] \[**\--target-imgref**\]
-\[**\--enforce-container-sigpolicy**\] \[**\--target-ostree-remote**\]
-\[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
+\[**\--enforce-container-sigpolicy**\] \[**\--skip-fetch-check**\]
+\[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
 \[**\--bound-images**\] \[**\--stateroot**\] \[**\--via-loopback**\]
 \[**-h**\|**\--help**\] \<*DEVICE*\>
@@ -82,10 +82,6 @@ more complex such as RAID, LVM, LUKS etc.
     \`\--target-no-signature-verification\` (which is now a no-op).
     Enabling this option enforces that \`/etc/containers/policy.json\`
     includes a default policy which requires signatures
-
-**\--target-ostree-remote**=*TARGET_OSTREE_REMOTE*
-
-:   Enable verification via an ostree remote
 
 **\--skip-fetch-check**
 

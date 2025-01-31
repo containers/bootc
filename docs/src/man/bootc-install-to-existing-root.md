@@ -7,8 +7,7 @@ bootc-install-to-existing-root - Install to the host root filesystem
 **bootc install to-existing-root** \[**\--replace**\]
 \[**\--source-imgref**\] \[**\--target-transport**\]
 \[**\--target-imgref**\] \[**\--enforce-container-sigpolicy**\]
-\[**\--target-ostree-remote**\] \[**\--skip-fetch-check**\]
-\[**\--disable-selinux**\] \[**\--karg**\]
+\[**\--skip-fetch-check**\] \[**\--disable-selinux**\] \[**\--karg**\]
 \[**\--root-ssh-authorized-keys**\] \[**\--generic-image**\]
 \[**\--bound-images**\] \[**\--stateroot**\]
 \[**\--acknowledge-destructive**\] \[**-h**\|**\--help**\]
@@ -68,10 +67,6 @@ cleaned up if desired when rebooted into the new root.
     \`\--target-no-signature-verification\` (which is now a no-op).
     Enabling this option enforces that \`/etc/containers/policy.json\`
     includes a default policy which requires signatures
-
-**\--target-ostree-remote**=*TARGET_OSTREE_REMOTE*
-
-:   Enable verification via an ostree remote
 
 **\--skip-fetch-check**
 
