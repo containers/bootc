@@ -1177,7 +1177,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             },
             InternalsOpts::Fsck => {
                 let sysroot = &get_storage().await?;
-                crate::fsck::fsck(&sysroot, std::io::stdout().lock())?;
+                crate::fsck::fsck(&sysroot, std::io::stdout().lock()).await?;
                 Ok(())
             }
             InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
