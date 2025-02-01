@@ -9,8 +9,8 @@ use std::str::FromStr;
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use cap_std_ext::dirext::CapStdExtDirExt;
-use glib::Cast;
 use ocidir::cap_std::fs::Dir;
+use ostree::glib::object::Cast;
 use ostree::prelude::FileExt;
 use ostree::{gio, glib};
 

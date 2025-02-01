@@ -8,7 +8,6 @@ use camino::Utf8PathBuf;
 use fn_error_context::context;
 use gio::glib;
 use gio::prelude::*;
-use glib::Cast;
 use glib::Variant;
 use gvariant::aligned_bytes::TryAsAligned;
 use gvariant::{gv, Marker, Structure};

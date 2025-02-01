@@ -429,7 +429,7 @@ impl Importer {
                 match &mut self.data {
                     ImporterMode::ObjectSet(_) => {
                         anyhow::bail!(
-                            "Found metadata object {}.{} in object set mode",
+                            "Found metadata object {}.{:?} in object set mode",
                             checksum,
                             objtype
                         );
