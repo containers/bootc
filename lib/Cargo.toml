@@ -23,6 +23,8 @@ ostree-ext = { path = "../ostree-ext", features = ["bootc"] }
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive","cargo"] }
 clap_mangen = { workspace = true, optional = true }
+#composefs = "0.2.0"
+composefs = { git = "https://github.com/containers/composefs-rs", rev = "55ae2e9ba72f6afda4887d746e6b98f0a1875ac4" }
 cap-std-ext = { workspace = true, features = ["fs_utf8"] }
 hex = { workspace = true }
 fn-error-context = { workspace = true }

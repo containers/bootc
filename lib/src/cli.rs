@@ -13,6 +13,7 @@ use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::Dir;
 use clap::Parser;
 use clap::ValueEnum;
+use composefs::fsverity;
 use fn_error_context::context;
 use ostree::gio;
 use ostree_container::store::PrepareResult;
@@ -376,6 +377,21 @@ pub(crate) enum SchemaType {
     Progress,
 }
 
+/// Options for consistency checking
+#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
+pub(crate) enum FsverityOpts {
+    /// Measure the fsverity digest of the target file.
+    Measure {
+        /// Path to file
+        path: Utf8PathBuf,
+    },
+    /// Enable fsverity on the target file.
+    Enable {
+        /// Ptah to file
+        path: Utf8PathBuf,
+    },
+}
+
 /// Hidden, internal only options
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub(crate) enum InternalsOpts {
@@ -392,6 +408,8 @@ pub(crate) enum InternalsOpts {
         #[clap(long)]
         of: SchemaType,
     },
+    #[clap(subcommand)]
+    Fsverity(FsverityOpts),
     /// Perform cleanup actions
     Cleanup,
     /// Proxy frontend for the `ostree-ext` CLI.
@@ -1113,6 +1131,24 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 )
                 .await
             }
+            // We don't depend on fsverity-utils today, so re-expose some helpful CLI tools.
+            InternalsOpts::Fsverity(args) => match args {
+                FsverityOpts::Measure { path } => {
+                    let fd =
+                        std::fs::File::open(&path).with_context(|| format!("Reading {path}"))?;
+                    let digest =
+                        fsverity::measure_verity_digest::<_, fsverity::Sha256HashValue>(&fd)?;
+                    let digest = hex::encode(digest);
+                    println!("{digest}");
+                    Ok(())
+                }
+                FsverityOpts::Enable { path } => {
+                    let fd =
+                        std::fs::File::open(&path).with_context(|| format!("Reading {path}"))?;
+                    fsverity::ioctl::fs_ioc_enable_verity::<_, fsverity::Sha256HashValue>(&fd)?;
+                    Ok(())
+                }
+            },
             InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
             InternalsOpts::PrintJsonSchema { of } => {
                 let schema = match of {
