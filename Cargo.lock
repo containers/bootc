@@ -2697,7 +2697,9 @@ dependencies = [
  "chrono",
  "fn-error-context",
  "mandown",
+ "tar",
  "tempfile",
+ "toml",
  "xshell",
 ]
 

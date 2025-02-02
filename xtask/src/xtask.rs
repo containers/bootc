@@ -3,7 +3,7 @@
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use anyhow::{anyhow, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -15,6 +15,13 @@ const TEST_IMAGES: &[&str] = &[
     "quay.io/curl/curl-base:latest",
     "quay.io/curl/curl:latest",
     "registry.access.redhat.com/ubi9/podman:latest",
+];
+const TAR_REPRODUCIBLE_OPTS: &[&str] = &[
+    "--sort=name",
+    "--owner=0",
+    "--group=0",
+    "--numeric-owner",
+    "--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime",
 ];
 
 fn main() {
@@ -261,6 +268,23 @@ fn git_source_date_epoch(dir: &Utf8Path) -> Result<u64> {
     Ok(r)
 }
 
+/// When using cargo-vendor-filterer --format=tar, the config generated has a bogus source
+/// directory. This edits it to refer to vendor/ as a stable relative reference.
+#[context("Editing vendor config")]
+fn edit_vendor_config(config: &str) -> Result<String> {
+    let mut config: toml::Value = toml::from_str(config)?;
+    let config = config.as_table_mut().unwrap();
+    let source_table = config.get_mut("source").unwrap();
+    let source_table = source_table.as_table_mut().unwrap();
+    let vendored_sources = source_table.get_mut("vendored-sources").unwrap();
+    let vendored_sources = vendored_sources.as_table_mut().unwrap();
+    let previous =
+        vendored_sources.insert("directory".into(), toml::Value::String("vendor".into()));
+    assert!(previous.is_some());
+
+    Ok(config.to_string())
+}
+
 #[context("Packaging")]
 fn impl_package(sh: &Shell) -> Result<Package> {
     let source_date_epoch = git_source_date_epoch(".".into())?;
@@ -269,48 +293,40 @@ fn impl_package(sh: &Shell) -> Result<Package> {
 
     let namev = format!("{NAME}-{v}");
     let p = Utf8Path::new("target").join(format!("{namev}.tar"));
-    let o = File::create(&p)?;
     let prefix = format!("{namev}/");
-    let st = Command::new("git")
-        .args([
-            "archive",
-            "--format=tar",
-            "--prefix",
-            prefix.as_str(),
-            "HEAD",
-        ])
-        .stdout(Stdio::from(o))
-        .status()?;
-    if !st.success() {
-        anyhow::bail!("Failed to run {st:?}");
-    }
-    let st = Command::new("tar")
-        .args([
-            "-r",
-            "-C",
-            "target",
-            "--sort=name",
-            "--owner=0",
-            "--group=0",
-            "--numeric-owner",
-            "--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime",
-        ])
-        .arg(format!("--transform=s,^,{prefix},"))
-        .arg(format!("--mtime=@{source_date_epoch}"))
-        .args(["-f", p.as_str(), "man"])
-        .status()
-        .context("Failed to execute tar")?;
-    if !st.success() {
-        anyhow::bail!("Failed to run {st:?}");
-    }
-    let srcpath: Utf8PathBuf = format!("{p}.zstd").into();
-    cmd!(sh, "zstd --rm -f {p} -o {srcpath}").run()?;
+    cmd!(sh, "git archive --format=tar --prefix={prefix} -o {p} HEAD").run()?;
+    // Generate the vendor directory now, as we want to embed the generated config to use
+    // it in our source.
     let vendorpath = Utf8Path::new("target").join(format!("{namev}-vendor.tar.zstd"));
-    cmd!(
+    let vendor_config = cmd!(
         sh,
         "cargo vendor-filterer --prefix=vendor --format=tar.zstd {vendorpath}"
     )
+    .read()?;
+    let vendor_config = edit_vendor_config(&vendor_config)?;
+    // Append .cargo/vendor-config.toml (a made up filename) into the tar archive.
+    {
+        let tmpdir = tempfile::tempdir_in("target")?;
+        let tmpdir_path = tmpdir.path();
+        let path = tmpdir_path.join("vendor-config.toml");
+        std::fs::write(&path, vendor_config)?;
+        let source_date_epoch = format!("{source_date_epoch}");
+        cmd!(
+            sh,
+            "tar -r -C {tmpdir_path} {TAR_REPRODUCIBLE_OPTS...} --mtime=@{source_date_epoch} --transform=s,^,{prefix}.cargo/, -f {p} vendor-config.toml"
+        )
+        .run()?;
+    }
+    // Append our generated man pages.
+    cmd!(
+        sh,
+        "tar -r -C target {TAR_REPRODUCIBLE_OPTS...} --transform=s,^,{prefix}, -f {p} man"
+    )
     .run()?;
+    // Compress with zstd
+    let srcpath: Utf8PathBuf = format!("{p}.zstd").into();
+    cmd!(sh, "zstd --rm -f {p} -o {srcpath}").run()?;
+
     Ok(Package {
         version: v,
         srcpath,
