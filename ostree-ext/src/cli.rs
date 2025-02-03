@@ -277,6 +277,17 @@ pub(crate) enum ContainerImageOpts {
         config: bool,
     },
 
+    /// Remove metadata for a cached update.
+    ClearCachedUpdate {
+        /// Path to the repository
+        #[clap(long, value_parser)]
+        repo: Utf8PathBuf,
+
+        /// Container image reference, e.g. registry:quay.io/exampleos/exampleos:latest
+        #[clap(value_parser = parse_base_imgref)]
+        imgref: ImageReference,
+    },
+
     /// Copy a pulled container image from one repo to another.
     Copy {
         /// Path to the source repository
@@ -1130,6 +1141,11 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                         serde_json::to_writer(&mut stdout, &image.manifest)?;
                     }
                     stdout.flush()?;
+                    Ok(())
+                }
+                ContainerImageOpts::ClearCachedUpdate { repo, imgref } => {
+                    let repo = parse_repo(&repo)?;
+                    crate::container::store::clear_cached_update(&repo, &imgref)?;
                     Ok(())
                 }
                 ContainerImageOpts::Remove {
