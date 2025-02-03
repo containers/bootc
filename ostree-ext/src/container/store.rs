@@ -23,9 +23,10 @@ use futures_util::TryFutureExt;
 use oci_spec::image::{
     self as oci_image, Arch, Descriptor, Digest, History, ImageConfiguration, ImageManifest,
 };
+use ostree::glib::FromVariant;
 use ostree::prelude::{Cast, FileEnumeratorExt, FileExt, ToVariant};
 use ostree::{gio, glib};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::iter::FromIterator;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -1194,6 +1195,37 @@ fn parse_cached_update(meta: &glib::VariantDict) -> Result<Option<CachedImageUpd
         config,
         manifest_digest,
     }))
+}
+
+/// Remove any cached
+#[context("Clearing cached update {imgref}")]
+pub fn clear_cached_update(repo: &ostree::Repo, imgref: &ImageReference) -> Result<()> {
+    let cancellable = gio::Cancellable::NONE;
+    let ostree_ref = ref_for_image(imgref)?;
+    let rev = repo.require_rev(&ostree_ref)?;
+    let Some(commitmeta) = repo.read_commit_detached_metadata(&rev, cancellable)? else {
+        return Ok(());
+    };
+
+    // SAFETY: We know this is an a{sv}
+    let mut commitmeta: BTreeMap<String, glib::Variant> =
+        BTreeMap::from_variant(&commitmeta).unwrap();
+    let mut changed = false;
+    for key in [
+        ImageImporter::CACHED_KEY_CONFIG,
+        ImageImporter::CACHED_KEY_MANIFEST,
+        ImageImporter::CACHED_KEY_MANIFEST_DIGEST,
+    ] {
+        if commitmeta.remove(key).is_some() {
+            changed = true;
+        }
+    }
+    if !changed {
+        return Ok(());
+    }
+    let commitmeta = glib::Variant::from(commitmeta);
+    repo.write_commit_detached_metadata(&rev, Some(&commitmeta), cancellable)?;
+    Ok(())
 }
 
 /// Query metadata for a pulled image via an OSTree commit digest.
