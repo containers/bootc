@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::env::consts::ARCH;
 use std::os::unix::ffi::OsStrExt;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
@@ -14,6 +14,7 @@ use cap_std_ext::cap_std::fs::MetadataExt;
 use cap_std_ext::dirext::CapStdExtDirExt as _;
 use fn_error_context::context;
 use indoc::indoc;
+use ostree_ext::ostree_prepareroot;
 use serde::Serialize;
 
 /// Reference to embedded default baseimage content that should exist.
@@ -286,15 +287,8 @@ fn check_baseimage_root_norecurse(dir: &Dir) -> LintResult {
         return lint_err("Expected /ostree -> {expected}, not {link:?}");
     }
 
-    // Check the prepare-root config
-    let prepareroot_path = "usr/lib/ostree/prepare-root.conf";
-    let config_data = dir
-        .read_to_string(prepareroot_path)
-        .context(prepareroot_path)?;
-    let config = ostree_ext::glib::KeyFile::new();
-    config.load_from_data(&config_data, ostree_ext::glib::KeyFileFlags::empty())?;
-
-    if !ostree_ext::ostree_prepareroot::overlayfs_enabled_in_config(&config)? {
+    let config = ostree_prepareroot::require_config_from_root(dir)?;
+    if !ostree_prepareroot::overlayfs_enabled_in_config(&config)? {
         return lint_err("{prepareroot_path} does not have composefs enabled");
     }
 

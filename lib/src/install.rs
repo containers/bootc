@@ -13,6 +13,7 @@ pub(crate) mod config;
 mod osbuild;
 pub(crate) mod osconfig;
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::process::CommandExt;
@@ -37,11 +38,11 @@ use chrono::prelude::*;
 use clap::ValueEnum;
 use fn_error_context::context;
 use ostree::gio;
-use ostree_ext::container as ostree_container;
 use ostree_ext::oci_spec;
 use ostree_ext::ostree;
 use ostree_ext::prelude::Cast;
 use ostree_ext::sysroot::SysrootLock;
+use ostree_ext::{container as ostree_container, ostree_prepareroot};
 #[cfg(feature = "install-to-disk")]
 use rustix::fs::FileTypeExt;
 use rustix::fs::MetadataExt as _;
@@ -349,6 +350,8 @@ pub(crate) struct State {
     #[allow(dead_code)]
     pub(crate) config_opts: InstallConfigOpts,
     pub(crate) target_imgref: ostree_container::OstreeImageReference,
+    #[allow(dead_code)]
+    pub(crate) prepareroot_config: HashMap<String, String>,
     pub(crate) install_config: Option<config::InstallConfiguration>,
     /// The parsed contents of the authorized_keys (not the file path)
     pub(crate) root_ssh_authorized_keys: Option<String>,
@@ -1267,6 +1270,20 @@ async fn prepare_install(
         tracing::debug!("No install configuration found");
     }
 
+    // Convert the keyfile to a hashmap because GKeyFile isnt Send for probably bad reasons.
+    let prepareroot_config = {
+        let kf = ostree_prepareroot::require_config_from_root(&rootfs)?;
+        let mut r = HashMap::new();
+        for grp in kf.groups() {
+            for key in kf.keys(&grp)? {
+                let key = key.as_str();
+                let value = kf.value(&grp, key)?;
+                r.insert(format!("{grp}.{key}"), value.to_string());
+            }
+        }
+        r
+    };
+
     // Eagerly read the file now to ensure we error out early if e.g. it doesn't exist,
     // instead of much later after we're 80% of the way through an install.
     let root_ssh_authorized_keys = config_opts
@@ -1284,6 +1301,7 @@ async fn prepare_install(
         config_opts,
         target_imgref,
         install_config,
+        prepareroot_config,
         root_ssh_authorized_keys,
         container_root: rootfs,
         tempdir,

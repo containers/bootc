@@ -51,8 +51,9 @@ jobs:
       # rawhide is basically nil.
       - fedora-rawhide-x86_64
       - fedora-rawhide-aarch64
-      - rhel-9-x86_64
-      - rhel-9-aarch64
+      # Temporarily disabled due to too old Rust...reenable post 9.6
+      # - rhel-9-x86_64
+      # - rhel-9-aarch64
 
   - job: tests
     trigger: pull_request
