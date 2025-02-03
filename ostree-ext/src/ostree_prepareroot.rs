@@ -9,6 +9,7 @@ use std::str::FromStr;
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use cap_std_ext::dirext::CapStdExtDirExt;
+use fn_error_context::context;
 use glib::Cast;
 use ocidir::cap_std::fs::Dir;
 use ostree::prelude::FileExt;
@@ -20,7 +21,8 @@ use crate::utils::ResultExt;
 
 pub(crate) const CONF_PATH: &str = "ostree/prepare-root.conf";
 
-pub(crate) fn load_config(root: &ostree::RepoFile) -> Result<Option<glib::KeyFile>> {
+/// Load the ostree prepare-root config from the given ostree repository.
+pub fn load_config(root: &ostree::RepoFile) -> Result<Option<glib::KeyFile>> {
     let cancellable = gio::Cancellable::NONE;
     let kf = glib::KeyFile::new();
     for path in ["etc", "usr/lib"].into_iter().map(Utf8Path::new) {
@@ -65,7 +67,7 @@ pub fn require_config_from_root(root: &Dir) -> Result<glib::KeyFile> {
 
 /// Query whether the target root has the `root.transient` key
 /// which sets up a transient overlayfs.
-pub(crate) fn overlayfs_root_enabled(root: &ostree::RepoFile) -> Result<bool> {
+pub fn overlayfs_root_enabled(root: &ostree::RepoFile) -> Result<bool> {
     if let Some(config) = load_config(root)? {
         overlayfs_enabled_in_config(&config)
     } else {
@@ -73,10 +75,14 @@ pub(crate) fn overlayfs_root_enabled(root: &ostree::RepoFile) -> Result<bool> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum Tristate {
+/// An option which can be enabled, disabled, or possibly enabled.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Tristate {
+    /// Enabled
     Enabled,
+    /// Disabled
     Disabled,
+    /// Maybe
     Maybe,
 }
 
@@ -110,9 +116,14 @@ impl Tristate {
     }
 }
 
+/// The state of a composefs for ostree
 #[derive(Debug, PartialEq, Eq)]
-enum ComposefsState {
+pub enum ComposefsState {
+    /// The composefs must be signed and use fsverity
     Signed,
+    /// The composefs must use fsverity
+    Verity,
+    /// The composefs may or may not be enabled.
     Tristate(Tristate),
 }
 
@@ -125,9 +136,11 @@ impl Default for ComposefsState {
 impl FromStr for ComposefsState {
     type Err = anyhow::Error;
 
+    #[context("Parsing composefs.enabled value {s}")]
     fn from_str(s: &str) -> Result<Self> {
         let r = match s {
             "signed" => Self::Signed,
+            "verity" => Self::Verity,
             o => Self::Tristate(Tristate::from_str(o)?),
         };
         Ok(r)
@@ -137,9 +150,14 @@ impl FromStr for ComposefsState {
 impl ComposefsState {
     pub(crate) fn maybe_enabled(&self) -> bool {
         match self {
-            ComposefsState::Signed => true,
+            ComposefsState::Signed | ComposefsState::Verity => true,
             ComposefsState::Tristate(t) => t.maybe_enabled(),
         }
+    }
+
+    /// This configuration requires fsverity on the target filesystem.
+    pub fn requires_fsverity(&self) -> bool {
+        matches!(self, ComposefsState::Signed | ComposefsState::Verity)
     }
 }
 
