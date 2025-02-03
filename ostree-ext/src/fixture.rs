@@ -414,7 +414,7 @@ fn build_mapping_recurse(
             gio::FileType::Directory => {
                 build_mapping_recurse(path, &child, ret)?;
             }
-            o => anyhow::bail!("Unhandled file type: {}", o),
+            o => anyhow::bail!("Unhandled file type: {o:?}"),
         }
         path.pop();
     }
@@ -725,7 +725,7 @@ impl Fixture {
         metadata.insert("version", &"42.0");
         #[allow(clippy::explicit_auto_deref)]
         if self.bootable {
-            metadata.insert(*ostree::METADATA_KEY_BOOTABLE, &true);
+            metadata.insert(ostree::METADATA_KEY_BOOTABLE, &true);
         }
         let metadata = metadata.to_variant();
         let commit = self.srcrepo.write_commit_with_time(

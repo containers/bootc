@@ -1,5 +1,5 @@
 # Build bootc from the current git into a c9s-bootc container image.
-# Use e.g. --build-arg=base=quay.io/fedora/fedora-bootc:40 to target
+# Use e.g. --build-arg=base=quay.io/fedora/fedora-bootc:41 to target
 # Fedora instead.
 #
 # You can also generate an image with cloud-init and other dependencies

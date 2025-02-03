@@ -68,7 +68,7 @@ fn commit_meta_to_labels<'a>(
     // Copy standard metadata keys `ostree.bootable` and `ostree.linux`.
     // Bootable is an odd one out in being a boolean.
     #[allow(clippy::explicit_auto_deref)]
-    if let Some(v) = meta.lookup::<bool>(*ostree::METADATA_KEY_BOOTABLE)? {
+    if let Some(v) = meta.lookup::<bool>(ostree::METADATA_KEY_BOOTABLE)? {
         labels.insert(ostree::METADATA_KEY_BOOTABLE.to_string(), v.to_string());
         labels.insert(BOOTC_LABEL.into(), "1".into());
     }

@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build container (fedora)
-        run: sudo podman build --build-arg=base=quay.io/fedora/fedora-bootc:40 -t localhost/bootc -f hack/Containerfile . 
+        run: sudo podman build --build-arg=base=quay.io/fedora/fedora-bootc:41 -t localhost/bootc -f hack/Containerfile . 
       - name: Container integration
         run: sudo podman run --rm localhost/bootc bootc-integration-tests container
   cargo-deny:
