@@ -20,10 +20,10 @@ use containers_image_proxy::{ImageProxy, OpenedImage};
 use flate2::Compression;
 use fn_error_context::context;
 use futures_util::TryFutureExt;
+use glib::prelude::*;
 use oci_spec::image::{
     self as oci_image, Arch, Descriptor, Digest, History, ImageConfiguration, ImageManifest,
 };
-use ostree::glib::FromVariant;
 use ostree::prelude::{Cast, FileEnumeratorExt, FileExt, ToVariant};
 use ostree::{gio, glib};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
