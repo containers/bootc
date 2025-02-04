@@ -70,7 +70,7 @@ in derived builds.
 ## `/etc`
 
 The `/etc` directory contains mutable persistent state by default; however,
-it is suppported to enable the [`etc.transient` config option](https://ostreedev.github.io/ostree/man/ostree-prepare-root.html),
+it is suppported (and encouraged) to enable the [`etc.transient` config option](https://ostreedev.github.io/ostree/man/ostree-prepare-root.html),
 see below as well.
 
 When in persistent mode, it inherits the OSTree semantics of [performing a 3-way merge](https://ostreedev.github.io/ostree/atomic-upgrades/#assembling-a-new-deployment-directory)
@@ -79,6 +79,10 @@ across upgrades.  In a nutshell:
 - The *new default* `/etc` is used as a base
 - The diff between current and previous `/etc` is applied to the new `/etc`
 - Locally modified files in `/etc` different from the default `/usr/etc` (of the same deployment) will be retained
+
+You can view the state via `ostree admin config-diff`. Note that the "diff"
+here is includes metadata (uid, gid, extended attributes), so changing any of those
+will also mean that updated files from the image are not applied.
 
 The implementation of this defaults to being executed by `ostree-finalize-staged.service`
 at shutdown time, before the new bootloader entry is created.
@@ -95,6 +99,10 @@ where e.g. a change to `/etc/sudoers.conf` (to give on simple example)
 would require external intervention to apply.
 
 For more on configuration file best practices, see [Building](building/guidance.md).
+
+To emphasize again, it's recommended to enable `etc.transient` if possible, though
+when using that you may need to store some machine-specific state in e.g. the
+kernel commandline if applicable.
 
 ### `/usr/etc`
 
