@@ -139,6 +139,16 @@ const LINTS: &[Lint] = &[
             sensitive build system information.
         "#},
     },
+    Lint {
+        name: "nonempty-boot",
+        ty: LintType::Warning,
+        f: check_boot,
+        description: indoc! { r#"
+            The `/boot` directory should be present, but empty. The kernel
+            content should be in /usr/lib/modules instead in the container image.
+            Any content here in the container image will be masked at runtime.
+        "#},
+    },
 ];
 
 pub(crate) fn lint_list(output: impl std::io::Write) -> Result<()> {
@@ -351,6 +361,25 @@ fn check_varlog(root: &Dir) -> LintResult {
     lint_err(format!("Found non-empty logfile: {first}{others}"))
 }
 
+fn check_boot(root: &Dir) -> LintResult {
+    let Some(d) = root.open_dir_optional("boot")? else {
+        return lint_err(format!("Missing /boot directory"));
+    };
+    let mut entries = d.entries()?;
+    let Some(ent) = entries.next() else {
+        return lint_ok();
+    };
+    let ent = ent?;
+    let first = ent.file_name();
+    let others = entries.count();
+    let others = if others > 0 {
+        format!(" (and {others} more)")
+    } else {
+        "".into()
+    };
+    lint_err(format!("Found non-empty /boot: {first:?}{others}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,6 +394,7 @@ mod tests {
         root.create_dir_all("usr/lib/modules/5.7.2")?;
         root.write("usr/lib/modules/5.7.2/vmlinuz", "vmlinuz")?;
 
+        root.create_dir("boot")?;
         root.create_dir("sysroot")?;
         root.symlink_contents("sysroot/ostree", "ostree")?;
 
@@ -469,6 +499,19 @@ mod tests {
             e.to_string(),
             "Found non-empty logfile: /var/log/somefile.log (and 2 more)"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_boot() -> Result<()> {
+        let root = &passing_fixture()?;
+        check_boot(&root).unwrap().unwrap();
+        root.create_dir("boot/somesubdir")?;
+        let Err(e) = check_boot(&root).unwrap() else {
+            unreachable!()
+        };
+        assert!(e.to_string().contains("somesubdir"));
 
         Ok(())
     }
