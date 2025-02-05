@@ -10,10 +10,8 @@ default-run = "bootc"
 
 # See https://github.com/coreos/cargo-vendor-filterer
 [package.metadata.vendor-filter]
-# This list of platforms is not intended to be exclusive, feel free
-# to extend it.  But missing a platform will only matter for the case where
-# a dependent crate is *only* built on that platform.
-platforms = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "powerpc64le-unknown-linux-gnu", "s390x-unknown-linux-gnu", "riscv64gc-unknown-linux-gnu"]
+# For now we only care about tier 1+2 Linux.  (In practice, it's unlikely there is a tier3-only Linux dependency)
+platforms = ["*-unknown-linux-gnu"]
 
 [dependencies]
 anyhow = { workspace = true }
