@@ -430,7 +430,11 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         let mode = meta.attribute_uint32("unix::mode");
         h.set_mode(self.filter_mode(mode));
         if instream.is_some() {
+            h.set_entry_type(tar::EntryType::Regular);
             h.set_size(meta.size() as u64);
+        } else {
+            h.set_entry_type(tar::EntryType::Symlink);
+            h.set_size(0);
         }
         if !self.wrote_content.contains(checksum) {
             let inserted = self.wrote_content.insert(checksum.to_string());
@@ -445,8 +449,6 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             if let Some(instream) = instream {
                 ensure!(meta.file_type() == gio::FileType::Regular);
 
-                h.set_entry_type(tar::EntryType::Regular);
-                h.set_size(meta.size() as u64);
                 let mut instream = BufReader::with_capacity(BUF_CAPACITY, instream.into_read());
                 self.out
                     .append_data(&mut h, &path, &mut instream)
@@ -461,8 +463,6 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                     .to_str()
                     .ok_or_else(|| anyhow!("Invalid UTF-8 symlink target: {target:?}"))?;
                 let context = || format!("Writing content symlink: {}", checksum);
-                h.set_entry_type(tar::EntryType::Symlink);
-                h.set_size(0);
                 // Handle //chkconfig, see above
                 if symlink_is_denormal(target) {
                     h.set_link_name_literal(target).with_context(context)?;
@@ -501,15 +501,20 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
         mut h: tar::Header,
         dest: &Utf8Path,
     ) -> Result<()> {
-        // Query the original size first
-        let size = h.size().context("Querying size for hardlink append")?;
         // Don't create hardlinks to zero-sized files, it's much more likely
         // to result in generated tar streams from container builds resulting
         // in a modified linked-to file in /sysroot, which we don't currently handle.
         // And in the case where the input is *not* zero sized, we still output
         // a hardlink of size zero, as this is what is normal.
+        let is_regular_zerosized = if h.entry_type() == tar::EntryType::Regular {
+            let size = h.size().context("Querying size for hardlink append")?;
+            size == 0
+        } else {
+            false
+        };
+        // Link sizes shoud always be zero
         h.set_size(0);
-        if h.entry_type() == tar::EntryType::Regular && size == 0 {
+        if is_regular_zerosized {
             self.out.append_data(&mut h, dest, &mut std::io::empty())?;
         } else {
             h.set_entry_type(tar::EntryType::Link);
