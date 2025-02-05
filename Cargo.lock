@@ -170,7 +170,6 @@ dependencies = [
  "anyhow",
  "bootc-lib",
  "bootc-utils",
- "clap",
  "log",
  "tokio",
  "tracing",
