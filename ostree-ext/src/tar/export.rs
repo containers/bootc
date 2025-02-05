@@ -549,7 +549,8 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                 let (objpath, h) = self.append_content(checksum)?;
                 let subpath = &dirpath.join(name);
                 let subpath = map_path(subpath);
-                self.append_content_hardlink(&objpath, h, &subpath)?;
+                self.append_content_hardlink(&objpath, h, &subpath)
+                    .with_context(|| format!("Hardlinking {checksum} to {subpath}"))?;
             }
         }
 
