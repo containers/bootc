@@ -1048,11 +1048,6 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 if list {
                     return lints::lint_list(std::io::stdout().lock());
                 }
-                if !ostree_ext::container_utils::is_ostree_container()? {
-                    anyhow::bail!(
-                        "Not in a ostree container, this command only verifies ostree containers."
-                    );
-                }
                 let root = &Dir::open_ambient_dir(rootfs, cap_std::ambient_authority())?;
                 lints::lint(root, fatal_warnings, std::io::stdout().lock())?;
                 Ok(())
