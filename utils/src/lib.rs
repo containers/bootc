@@ -3,4 +3,6 @@
 //! "core" crates.
 //!
 mod command;
+mod tracing_util;
 pub use command::*;
+pub use tracing_util::*;

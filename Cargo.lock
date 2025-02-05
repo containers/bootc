@@ -169,11 +169,11 @@ version = "0.1.9"
 dependencies = [
  "anyhow",
  "bootc-lib",
+ "bootc-utils",
  "clap",
  "log",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -249,6 +249,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

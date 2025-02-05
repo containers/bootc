@@ -14,6 +14,7 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true, features = ["process"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [dev-dependencies]
 similar-asserts = { workspace = true }
