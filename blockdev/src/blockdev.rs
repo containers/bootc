@@ -25,6 +25,8 @@ pub struct Device {
     pub serial: Option<String>,
     pub model: Option<String>,
     pub partlabel: Option<String>,
+    pub parttype: Option<String>,
+    pub partuuid: Option<String>,
     pub children: Option<Vec<Device>>,
     pub size: u64,
     #[serde(rename = "maj:min")]
@@ -328,6 +330,24 @@ mod test {
         for (s, v) in ident_cases.chain(cases) {
             assert_eq!(parse_size_mib(&s).unwrap(), v as u64, "Parsing {s}");
         }
+    }
+
+    #[test]
+    fn test_parse_lsblk() {
+        let fixture = include_str!("../tests/fixtures/lsblk.json");
+        let devs: DevicesOutput = serde_json::from_str(&fixture).unwrap();
+        let dev = devs.blockdevices.into_iter().next().unwrap();
+        let children = dev.children.as_deref().unwrap();
+        assert_eq!(children.len(), 3);
+        let first_child = &children[0];
+        assert_eq!(
+            first_child.parttype.as_deref().unwrap(),
+            "21686148-6449-6e6f-744e-656564454649"
+        );
+        assert_eq!(
+            first_child.partuuid.as_deref().unwrap(),
+            "3979e399-262f-4666-aabc-7ab5d3add2f0"
+        );
     }
 
     #[test]
