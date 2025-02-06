@@ -16,6 +16,10 @@ pub trait CommandRunExt {
     /// Execute the child process.
     fn run(&mut self) -> Result<()>;
 
+    /// Execute the child process. In case of failure, include the command and its arguments in the
+    /// error context
+    fn run_with_cmd_context(&mut self) -> Result<()>;
+
     /// Ensure the child does not outlive the parent.
     fn lifecycle_bind(&mut self) -> &mut Self;
 
@@ -132,6 +136,13 @@ impl CommandRunExt for Command {
     fn run_and_parse_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T> {
         let output = self.run_get_output()?;
         serde_json::from_reader(output).map_err(Into::into)
+    }
+
+    fn run_with_cmd_context(&mut self) -> Result<()> {
+        self.run()
+            // The [`Debug`] output of command contains a properly shell-escaped commandline
+            // representation that the user can copy paste into their shell
+            .context("Failed to run command: {self:#?}")
     }
 }
 

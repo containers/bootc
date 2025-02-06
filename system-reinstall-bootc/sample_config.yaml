@@ -1,0 +1,2 @@
+# The bootc container image to install
+bootc_image: quay.io/fedora/fedora-bootc:41
