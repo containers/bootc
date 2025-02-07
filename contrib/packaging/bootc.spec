@@ -62,12 +62,13 @@ Provides: ostree-cli(ostree-container)
 %description
 %{summary}
 
-%package reinstall
+# (-n because we don't want the subpackage name to start with bootc-)
+%package -n system-reinstall-bootc
 Summary: Utility to reinstall the current system using bootc
 Requires: podman
 # The reinstall subpackage intentionally does not require bootc, as it pulls in many unnecessary dependencies
 
-%description reinstall
+%description -n system-reinstall-bootc
 This package provides a utility to simplify reinstalling the current system to a given bootc image.
 
 %prep
@@ -123,7 +124,7 @@ make install-ostree-hooks DESTDIR=%{?buildroot}
 %{_docdir}/bootc/*
 %{_mandir}/man*/bootc*
 
-%files reinstall
+%files -n system-reinstall-bootc
 %{_bindir}/system-reinstall-bootc
 
 %changelog
