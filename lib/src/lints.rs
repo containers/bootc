@@ -76,6 +76,12 @@ pub(crate) enum WarningDisposition {
     FatalWarnings,
 }
 
+#[derive(Debug, Copy, Clone, Serialize, PartialEq, Eq)]
+pub(crate) enum RootType {
+    Running,
+    Alternative,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 struct Lint {
@@ -85,6 +91,9 @@ struct Lint {
     #[serde(skip)]
     f: LintFn,
     description: &'static str,
+    // Set if this only applies to a specific root type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    root_type: Option<RootType>,
 }
 
 impl Lint {
@@ -98,6 +107,7 @@ impl Lint {
             ty: LintType::Fatal,
             f: f,
             description: description,
+            root_type: None,
         }
     }
 
@@ -111,6 +121,7 @@ impl Lint {
             ty: LintType::Warning,
             f: f,
             description: description,
+            root_type: None,
         }
     }
 }
@@ -128,13 +139,22 @@ pub(crate) fn lint_list(output: impl std::io::Write) -> Result<()> {
 pub(crate) fn lint(
     root: &Dir,
     warning_disposition: WarningDisposition,
+    root_type: RootType,
     mut output: impl std::io::Write,
 ) -> Result<()> {
     let mut fatal = 0usize;
     let mut warnings = 0usize;
     let mut passed = 0usize;
+    let mut skipped = 0usize;
     for lint in LINTS {
         let name = lint.name;
+
+        if let Some(lint_root_type) = lint.root_type {
+            if lint_root_type != root_type {
+                skipped += 1;
+            }
+        }
+
         let r = match (lint.f)(&root) {
             Ok(r) => r,
             Err(e) => anyhow::bail!("Unexpected runtime error running lint {name}: {e}"),
@@ -158,6 +178,9 @@ pub(crate) fn lint(
         }
     }
     writeln!(output, "Checks passed: {passed}")?;
+    if skipped > 0 {
+        writeln!(output, "Checks skipped: {skipped}")?;
+    }
     let fatal = if matches!(warning_disposition, WarningDisposition::FatalWarnings) {
         fatal + warnings
     } else {
@@ -182,6 +205,30 @@ fn check_var_run(root: &Dir) -> LintResult {
     if let Some(meta) = root.symlink_metadata_optional("var/run")? {
         if !meta.is_symlink() {
             return lint_err("Not a symlink: var/run");
+        }
+    }
+    lint_ok()
+}
+
+#[distributed_slice(LINTS)]
+static LINT_BUILDAH_INJECTED: Lint = Lint {
+    name: "buildah-injected",
+    description: indoc::indoc! { "
+        Check for an invalid /etc/hostname or /etc/resolv.conf that may have been injected by
+        a container build system." },
+    ty: LintType::Warning,
+    f: check_buildah_injected,
+    // This one doesn't make sense to run looking at the running root,
+    // because we do expect /etc/hostname to be injected as
+    root_type: Some(RootType::Alternative),
+};
+fn check_buildah_injected(root: &Dir) -> LintResult {
+    const RUNTIME_INJECTED: &[&str] = &["etc/hostname", "etc/resolv.conf"];
+    for ent in RUNTIME_INJECTED {
+        if let Some(meta) = root.symlink_metadata_optional(ent)? {
+            if meta.is_file() && meta.size() == 0 {
+                return lint_err(format!("/{ent} is an empty file; this may have been synthesized by a container runtime."));
+            }
         }
     }
     lint_ok()
@@ -462,10 +509,11 @@ mod tests {
         let root = &passing_fixture()?;
         let mut out = Vec::new();
         let warnings = WarningDisposition::FatalWarnings;
-        lint(root, warnings, &mut out).unwrap();
+        let root_type = RootType::Running;
+        lint(root, warnings, root_type, &mut out).unwrap();
         root.create_dir_all("var/run/foo")?;
         let mut out = Vec::new();
-        assert!(lint(root, warnings, &mut out).is_err());
+        assert!(lint(root, warnings, root_type, &mut out).is_err());
         Ok(())
     }
 
@@ -636,6 +684,18 @@ mod tests {
         drop(td);
         let td = passing_fixture()?;
         check_baseimage_root(&td).unwrap().unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn test_buildah_injected() -> Result<()> {
+        let td = fixture()?;
+        td.create_dir("etc")?;
+        assert!(check_buildah_injected(&td).unwrap().is_ok());
+        td.write("etc/hostname", b"")?;
+        assert!(check_buildah_injected(&td).unwrap().is_err());
+        td.write("etc/hostname", b"some static hostname")?;
+        assert!(check_buildah_injected(&td).unwrap().is_ok());
         Ok(())
     }
 
