@@ -1048,8 +1048,19 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 if list {
                     return lints::lint_list(std::io::stdout().lock());
                 }
+                let warnings = if fatal_warnings {
+                    lints::WarningDisposition::FatalWarnings
+                } else {
+                    lints::WarningDisposition::AllowWarnings
+                };
+                let root_type = if rootfs == "/" {
+                    lints::RootType::Running
+                } else {
+                    lints::RootType::Alternative
+                };
+
                 let root = &Dir::open_ambient_dir(rootfs, cap_std::ambient_authority())?;
-                lints::lint(root, fatal_warnings, std::io::stdout().lock())?;
+                lints::lint(root, warnings, root_type, std::io::stdout().lock())?;
                 Ok(())
             }
         },

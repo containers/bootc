@@ -2,6 +2,9 @@
 //!
 //! This module implements `bootc container lint`.
 
+// Unfortunately needed here to work with linkme
+#![allow(unsafe_code)]
+
 use std::collections::BTreeSet;
 use std::env::consts::ARCH;
 use std::os::unix::ffi::OsStrExt;
@@ -14,6 +17,7 @@ use cap_std_ext::cap_std::fs::MetadataExt;
 use cap_std_ext::dirext::CapStdExtDirExt as _;
 use fn_error_context::context;
 use indoc::indoc;
+use linkme::distributed_slice;
 use ostree_ext::ostree_prepareroot;
 use serde::Serialize;
 
@@ -52,6 +56,8 @@ impl LintError {
 }
 
 type LintFn = fn(&Dir) -> LintResult;
+#[distributed_slice]
+pub(crate) static LINTS: [Lint];
 
 /// The classification of a lint type.
 #[derive(Debug, Serialize)]
@@ -64,6 +70,18 @@ enum LintType {
     Warning,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum WarningDisposition {
+    AllowWarnings,
+    FatalWarnings,
+}
+
+#[derive(Debug, Copy, Clone, Serialize, PartialEq, Eq)]
+pub(crate) enum RootType {
+    Running,
+    Alternative,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 struct Lint {
@@ -73,87 +91,44 @@ struct Lint {
     #[serde(skip)]
     f: LintFn,
     description: &'static str,
+    // Set if this only applies to a specific root type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    root_type: Option<RootType>,
 }
 
-const LINTS: &[Lint] = &[
-    Lint {
-        name: "var-run",
-        ty: LintType::Fatal,
-        f: check_var_run,
-        description: "Check for /var/run being a physical directory; this is always a bug.",
-    },
-    Lint {
-        name: "kernel",
-        ty: LintType::Fatal,
-        f: check_kernel,
-        description: indoc! { r#"
-            Check for multiple kernels, i.e. multiple directories of the form /usr/lib/modules/$kver.
-            Only one kernel is supported in an image.   
-    "# },
-    },
-    Lint {
-        name: "bootc-kargs",
-        ty: LintType::Fatal,
-        f: check_parse_kargs,
-        description: "Verify syntax of /usr/lib/bootc/kargs.d.",
-    },
-    Lint {
-        name: "etc-usretc",
-        ty: LintType::Fatal,
-        f: check_usretc,
-        description: indoc! { r#"
-            Verify that only one of /etc or /usr/etc exist. You should only have /etc
-            in a container image. It will cause undefined behavior to have both /etc
-            and /usr/etc.
-        "#},
-    },
-    Lint {
-        // This one can be lifted in the future, see https://github.com/containers/bootc/issues/975
-        name: "utf8",
-        ty: LintType::Fatal,
-        f: check_utf8,
-        description: indoc! { r#"
-            Check for non-UTF8 filenames. Currently, the ostree backend of bootc only supports
-            UTF-8 filenames. Non-UTF8 filenames will cause a fatal error.
-        "#},
-    },
-    Lint {
-        name: "baseimage-root",
-        ty: LintType::Fatal,
-        f: check_baseimage_root,
-        description: indoc! { r#"
-            Check that expected files are present in the root of the filesystem; such
-            as /sysroot and a composefs configuration for ostree. More in
-            <https://containers.github.io/bootc/bootc-images.html#standard-image-content>.
-        "#},
-    },
-    Lint {
-        name: "var-log",
-        ty: LintType::Warning,
-        f: check_varlog,
-        description: indoc! { r#"
-            Check for non-empty regular files in `/var/log`. It is often undesired
-            to ship log files in container images. Log files in general are usually
-            per-machine state in `/var`. Additionally, log files often include
-            timestamps, causing unreproducible container images, and may contain
-            sensitive build system information.
-        "#},
-    },
-    Lint {
-        name: "nonempty-boot",
-        ty: LintType::Warning,
-        f: check_boot,
-        description: indoc! { r#"
-            The `/boot` directory should be present, but empty. The kernel
-            content should be in /usr/lib/modules instead in the container image.
-            Any content here in the container image will be masked at runtime.
-        "#},
-    },
-];
+impl Lint {
+    pub(crate) const fn new_fatal(
+        name: &'static str,
+        description: &'static str,
+        f: LintFn,
+    ) -> Self {
+        Lint {
+            name: name,
+            ty: LintType::Fatal,
+            f: f,
+            description: description,
+            root_type: None,
+        }
+    }
+
+    pub(crate) const fn new_warning(
+        name: &'static str,
+        description: &'static str,
+        f: LintFn,
+    ) -> Self {
+        Lint {
+            name: name,
+            ty: LintType::Warning,
+            f: f,
+            description: description,
+            root_type: None,
+        }
+    }
+}
 
 pub(crate) fn lint_list(output: impl std::io::Write) -> Result<()> {
     // Dump in yaml format by default, it's readable enough
-    serde_yaml::to_writer(output, LINTS)?;
+    serde_yaml::to_writer(output, &*LINTS)?;
     Ok(())
 }
 
@@ -163,14 +138,23 @@ pub(crate) fn lint_list(output: impl std::io::Write) -> Result<()> {
 #[context("Linting")]
 pub(crate) fn lint(
     root: &Dir,
-    fatal_warnings: bool,
+    warning_disposition: WarningDisposition,
+    root_type: RootType,
     mut output: impl std::io::Write,
 ) -> Result<()> {
     let mut fatal = 0usize;
     let mut warnings = 0usize;
     let mut passed = 0usize;
+    let mut skipped = 0usize;
     for lint in LINTS {
         let name = lint.name;
+
+        if let Some(lint_root_type) = lint.root_type {
+            if lint_root_type != root_type {
+                skipped += 1;
+            }
+        }
+
         let r = match (lint.f)(&root) {
             Ok(r) => r,
             Err(e) => anyhow::bail!("Unexpected runtime error running lint {name}: {e}"),
@@ -194,7 +178,10 @@ pub(crate) fn lint(
         }
     }
     writeln!(output, "Checks passed: {passed}")?;
-    let fatal = if fatal_warnings {
+    if skipped > 0 {
+        writeln!(output, "Checks skipped: {skipped}")?;
+    }
+    let fatal = if matches!(warning_disposition, WarningDisposition::FatalWarnings) {
         fatal + warnings
     } else {
         fatal
@@ -208,6 +195,12 @@ pub(crate) fn lint(
     Ok(())
 }
 
+#[distributed_slice(LINTS)]
+static LINT_VAR_RUN: Lint = Lint::new_fatal(
+    "var-run",
+    "Check for /var/run being a physical directory; this is always a bug.",
+    check_var_run,
+);
 fn check_var_run(root: &Dir) -> LintResult {
     if let Some(meta) = root.symlink_metadata_optional("var/run")? {
         if !meta.is_symlink() {
@@ -217,6 +210,40 @@ fn check_var_run(root: &Dir) -> LintResult {
     lint_ok()
 }
 
+#[distributed_slice(LINTS)]
+static LINT_BUILDAH_INJECTED: Lint = Lint {
+    name: "buildah-injected",
+    description: indoc::indoc! { "
+        Check for an invalid /etc/hostname or /etc/resolv.conf that may have been injected by
+        a container build system." },
+    ty: LintType::Warning,
+    f: check_buildah_injected,
+    // This one doesn't make sense to run looking at the running root,
+    // because we do expect /etc/hostname to be injected as
+    root_type: Some(RootType::Alternative),
+};
+fn check_buildah_injected(root: &Dir) -> LintResult {
+    const RUNTIME_INJECTED: &[&str] = &["etc/hostname", "etc/resolv.conf"];
+    for ent in RUNTIME_INJECTED {
+        if let Some(meta) = root.symlink_metadata_optional(ent)? {
+            if meta.is_file() && meta.size() == 0 {
+                return lint_err(format!("/{ent} is an empty file; this may have been synthesized by a container runtime."));
+            }
+        }
+    }
+    lint_ok()
+}
+
+#[distributed_slice(LINTS)]
+static LINT_ETC_USRUSETC: Lint = Lint::new_fatal(
+    "etc-usretc",
+    indoc! { r#"
+Verify that only one of /etc or /usr/etc exist. You should only have /etc
+in a container image. It will cause undefined behavior to have both /etc
+and /usr/etc.
+"# },
+    check_usretc,
+);
 fn check_usretc(root: &Dir) -> LintResult {
     let etc_exists = root.symlink_metadata_optional("etc")?.is_some();
     // For compatibility/conservatism don't bomb out if there's no /etc.
@@ -233,18 +260,43 @@ fn check_usretc(root: &Dir) -> LintResult {
 }
 
 /// Validate that we can parse the /usr/lib/bootc/kargs.d files.
+#[distributed_slice(LINTS)]
+static LINT_KARGS: Lint = Lint::new_fatal(
+    "bootc-kargs",
+    "Verify syntax of /usr/lib/bootc/kargs.d.",
+    check_parse_kargs,
+);
 fn check_parse_kargs(root: &Dir) -> LintResult {
     let args = crate::kargs::get_kargs_in_root(root, ARCH)?;
     tracing::debug!("found kargs: {args:?}");
     lint_ok()
 }
 
+#[distributed_slice(LINTS)]
+static LINT_KERNEL: Lint = Lint::new_fatal(
+    "kernel",
+    indoc! { r#"
+             Check for multiple kernels, i.e. multiple directories of the form /usr/lib/modules/$kver.
+             Only one kernel is supported in an image.
+     "# },
+    check_kernel,
+);
 fn check_kernel(root: &Dir) -> LintResult {
     let result = ostree_ext::bootabletree::find_kernel_dir_fs(&root)?;
     tracing::debug!("Found kernel: {:?}", result);
     lint_ok()
 }
 
+// This one can be lifted in the future, see https://github.com/containers/bootc/issues/975
+#[distributed_slice(LINTS)]
+static LINT_UTF8: Lint = Lint::new_fatal(
+    "utf8",
+    indoc! { r#"
+Check for non-UTF8 filenames. Currently, the ostree backend of bootc only supports
+UTF-8 filenames. Non-UTF8 filenames will cause a fatal error.
+"#},
+    check_utf8,
+);
 fn check_utf8(dir: &Dir) -> LintResult {
     for entry in dir.entries()? {
         let entry = entry?;
@@ -306,6 +358,16 @@ fn check_baseimage_root_norecurse(dir: &Dir) -> LintResult {
 }
 
 /// Check ostree-related base image content.
+#[distributed_slice(LINTS)]
+static LINT_BASEIMAGE_ROOT: Lint = Lint::new_fatal(
+    "baseimage-root",
+    indoc! { r#"
+Check that expected files are present in the root of the filesystem; such
+as /sysroot and a composefs configuration for ostree. More in
+<https://containers.github.io/bootc/bootc-images.html#standard-image-content>.
+"#},
+    check_baseimage_root,
+);
 fn check_baseimage_root(dir: &Dir) -> LintResult {
     if let Err(e) = check_baseimage_root_norecurse(dir)? {
         return Ok(Err(e));
@@ -342,6 +404,18 @@ fn collect_nonempty_regfiles(
     Ok(())
 }
 
+#[distributed_slice(LINTS)]
+static LINT_VARLOG: Lint = Lint::new_warning(
+    "var-log",
+    indoc! { r#"
+Check for non-empty regular files in `/var/log`. It is often undesired
+to ship log files in container images. Log files in general are usually
+per-machine state in `/var`. Additionally, log files often include
+timestamps, causing unreproducible container images, and may contain
+sensitive build system information.
+"#},
+    check_varlog,
+);
 fn check_varlog(root: &Dir) -> LintResult {
     let Some(d) = root.open_dir_optional("var/log")? else {
         return lint_ok();
@@ -361,6 +435,16 @@ fn check_varlog(root: &Dir) -> LintResult {
     lint_err(format!("Found non-empty logfile: {first}{others}"))
 }
 
+#[distributed_slice(LINTS)]
+static LINT_NONEMPTY_BOOT: Lint = Lint::new_warning(
+    "nonempty-boot",
+    indoc! { r#"
+The `/boot` directory should be present, but empty. The kernel
+content should be in /usr/lib/modules instead in the container image.
+Any content here in the container image will be masked at runtime.
+"#},
+    check_boot,
+);
 fn check_boot(root: &Dir) -> LintResult {
     let Some(d) = root.open_dir_optional("boot")? else {
         return lint_err(format!("Missing /boot directory"));
@@ -424,10 +508,12 @@ mod tests {
     fn test_lint_main() -> Result<()> {
         let root = &passing_fixture()?;
         let mut out = Vec::new();
-        lint(root, true, &mut out).unwrap();
+        let warnings = WarningDisposition::FatalWarnings;
+        let root_type = RootType::Running;
+        lint(root, warnings, root_type, &mut out).unwrap();
         root.create_dir_all("var/run/foo")?;
         let mut out = Vec::new();
-        assert!(lint(root, true, &mut out).is_err());
+        assert!(lint(root, warnings, root_type, &mut out).is_err());
         Ok(())
     }
 
@@ -598,6 +684,18 @@ mod tests {
         drop(td);
         let td = passing_fixture()?;
         check_baseimage_root(&td).unwrap().unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn test_buildah_injected() -> Result<()> {
+        let td = fixture()?;
+        td.create_dir("etc")?;
+        assert!(check_buildah_injected(&td).unwrap().is_ok());
+        td.write("etc/hostname", b"")?;
+        assert!(check_buildah_injected(&td).unwrap().is_err());
+        td.write("etc/hostname", b"some static hostname")?;
+        assert!(check_buildah_injected(&td).unwrap().is_ok());
         Ok(())
     }
 
