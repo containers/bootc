@@ -11,12 +11,7 @@ use std::process::Command;
 use uzers::os::unix::UserExt;
 
 fn loginctl_users() -> Result<Vec<String>> {
-    let users: Value = Command::new("loginctl")
-        .arg("list-sessions")
-        .arg("--output")
-        .arg("json")
-        .run_and_parse_json()
-        .context("loginctl failed")?;
+    let users = loginctl_run_compat()?;
 
     users
         .as_array()
@@ -37,6 +32,25 @@ fn loginctl_users() -> Result<Vec<String>> {
         .chain(std::iter::once(Ok("root".to_string())))
         .collect::<Result<Vec<String>>>()
         .context("error parsing users")
+}
+
+/// Run `loginctl` with some compatibility maneuvers to get JSON output
+fn loginctl_run_compat() -> Result<Value> {
+    let mut command = Command::new("loginctl");
+    command.arg("list-sessions").arg("--output").arg("json");
+    let output = command.run_get_output().context("running loginctl")?;
+    let users: Value = match serde_json::from_reader(output) {
+        Ok(users) => users,
+        // Failing to parse means loginctl is not outputting JSON despite `--output`
+        // (https://github.com/systemd/systemd/issues/15275), we need to use the `--json` flag
+        Err(_err) => Command::new("loginctl")
+            .arg("list-sessions")
+            .arg("--json")
+            .arg("short")
+            .run_and_parse_json()
+            .context("running loginctl")?,
+    };
+    Ok(users)
 }
 
 struct UidChange {
