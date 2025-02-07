@@ -16,6 +16,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::{Dir, MetadataExt};
 use cap_std_ext::cmdext::CapStdExtCommandExt;
+use cap_std_ext::dirext::CapStdExtDirExt;
 use containers_image_proxy::{ImageProxy, OpenedImage};
 use flate2::Compression;
 use fn_error_context::context;
@@ -460,6 +461,21 @@ fn timestamp_of_manifest_or_config(
         })
         .transpose()
         .log_err_default()
+}
+
+/// Automatically clean up files that may have been injected by container
+/// builds. xref https://github.com/containers/buildah/issues/4242
+fn cleanup_root(root: &Dir) -> Result<()> {
+    const RUNTIME_INJECTED: &[&str] = &["etc/hostname", "etc/resolv.conf"];
+    for ent in RUNTIME_INJECTED {
+        if let Some(meta) = root.symlink_metadata_optional(ent)? {
+            if meta.is_file() && meta.size() == 0 {
+                tracing::debug!("Removing {ent}");
+                root.remove_file(ent)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 impl ImageImporter {
@@ -1057,6 +1073,8 @@ impl ImageImporter {
                 } else {
                     unreachable!()
                 }
+
+                cleanup_root(&td)?;
 
                 let mt = ostree::MutableTree::new();
                 repo.write_dfd_to_mtree(
@@ -1922,6 +1940,7 @@ pub(crate) fn verify_container_image(
 
 #[cfg(test)]
 mod tests {
+    use cap_std_ext::cap_tempfile;
     use oci_image::{DescriptorBuilder, MediaType, Sha256Digest};
 
     use super::*;
@@ -1940,5 +1959,29 @@ mod tests {
             .build()
             .unwrap();
         assert_eq!(ref_for_layer(&d).unwrap(), "ostree/container/blob/sha256_3A_2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae");
+    }
+
+    #[test]
+    fn test_cleanup_root() -> Result<()> {
+        let td = cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+
+        cleanup_root(&td).unwrap();
+        td.create_dir("etc")?;
+        td.write("etc/hostname", b"hostname")?;
+        cleanup_root(&td).unwrap();
+        assert!(td.try_exists("etc/hostname")?);
+        td.write("etc/hostname", b"")?;
+        cleanup_root(&td).unwrap();
+        assert!(!td.try_exists("etc/hostname")?);
+
+        td.symlink_contents("../run/systemd/stub-resolv.conf", "etc/resolv.conf")?;
+        cleanup_root(&td).unwrap();
+        assert!(td.symlink_metadata("etc/resolv.conf")?.is_symlink());
+        td.remove_file("etc/resolv.conf")?;
+        td.write("etc/resolv.conf", b"")?;
+        cleanup_root(&td).unwrap();
+        assert!(!td.try_exists("etc/resolv.conf")?);
+
+        Ok(())
     }
 }
