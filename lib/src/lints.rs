@@ -64,6 +64,12 @@ enum LintType {
     Warning,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum WarningDisposition {
+    AllowWarnings,
+    FatalWarnings,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 struct Lint {
@@ -163,7 +169,7 @@ pub(crate) fn lint_list(output: impl std::io::Write) -> Result<()> {
 #[context("Linting")]
 pub(crate) fn lint(
     root: &Dir,
-    fatal_warnings: bool,
+    warning_disposition: WarningDisposition,
     mut output: impl std::io::Write,
 ) -> Result<()> {
     let mut fatal = 0usize;
@@ -194,7 +200,7 @@ pub(crate) fn lint(
         }
     }
     writeln!(output, "Checks passed: {passed}")?;
-    let fatal = if fatal_warnings {
+    let fatal = if matches!(warning_disposition, WarningDisposition::FatalWarnings) {
         fatal + warnings
     } else {
         fatal
@@ -424,10 +430,11 @@ mod tests {
     fn test_lint_main() -> Result<()> {
         let root = &passing_fixture()?;
         let mut out = Vec::new();
-        lint(root, true, &mut out).unwrap();
+        let warnings = WarningDisposition::FatalWarnings;
+        lint(root, warnings, &mut out).unwrap();
         root.create_dir_all("var/run/foo")?;
         let mut out = Vec::new();
-        assert!(lint(root, true, &mut out).is_err());
+        assert!(lint(root, warnings, &mut out).is_err());
         Ok(())
     }
 
