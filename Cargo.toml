@@ -7,7 +7,8 @@ members = [
     "utils",
     "blockdev",
     "xtask",
-    "tests-integration"
+    "tests-integration",
+    "tmpfiles"
 ]
 resolver = "2"
 
@@ -59,6 +60,7 @@ similar-asserts = "1.5.0"
 static_assertions = "1.1.0"
 tempfile = "3.10.1"
 tracing = "0.1.40"
+thiserror = "2.0.11"
 tokio = ">= 1.37.0"
 tokio-util = { features = ["io-util"], version = "0.7.10" }
 
