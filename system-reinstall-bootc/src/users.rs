@@ -5,14 +5,20 @@ use rustix::process::geteuid;
 use rustix::process::getuid;
 use rustix::thread::set_thread_res_uid;
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::process::Command;
 use uzers::os::unix::UserExt;
 
-fn loginctl_users() -> Result<Vec<String>> {
-    let users = loginctl_run_compat()?;
+fn loginctl_users() -> Result<BTreeSet<String>> {
+    let loginctl_raw_output = loginctl_run_compat()?;
 
+    loginctl_parse(loginctl_raw_output)
+}
+
+/// See [`test::test_parse_lsblk`] for example loginctl output
+fn loginctl_parse(users: Value) -> Result<BTreeSet<String>> {
     users
         .as_array()
         .context("loginctl output is not an array")?
@@ -27,10 +33,10 @@ fn loginctl_users() -> Result<Vec<String>> {
                 .context("user name field is not a string")
                 .map(String::from)
         })
-        // Artificially add the root user to the list of users as it doesn't appear in loginctl
-        // list-sessions
+        // Artificially add the root user to the list of users as it doesn't always appear in
+        // `loginctl list-sessions`
         .chain(std::iter::once(Ok("root".to_string())))
-        .collect::<Result<Vec<String>>>()
+        .collect::<Result<_>>()
         .context("error parsing users")
 }
 
@@ -161,4 +167,20 @@ pub(crate) fn get_all_users_keys() -> Result<Vec<UserKeys>> {
     }
 
     Ok(all_users_authorized_keys)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    pub(crate) fn test_parse_lsblk() {
+        let fixture = include_str!("../tests/fixtures/loginctl.json");
+
+        let result = loginctl_parse(serde_json::from_str(fixture).unwrap()).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert!(result.contains("root"));
+        assert!(result.contains("foo-doe"));
+    }
 }
