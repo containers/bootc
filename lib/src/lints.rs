@@ -132,16 +132,19 @@ pub(crate) fn lint_list(output: impl std::io::Write) -> Result<()> {
     Ok(())
 }
 
-/// check for the existence of the /var/run directory
-/// if it exists we need to check that it links to /run if not error
-/// if it does not exist error.
-#[context("Linting")]
-pub(crate) fn lint(
+#[derive(Debug)]
+struct LintExecutionResult {
+    warnings: usize,
+    passed: usize,
+    skipped: usize,
+    fatal: usize,
+}
+
+fn lint_inner(
     root: &Dir,
-    warning_disposition: WarningDisposition,
     root_type: RootType,
     mut output: impl std::io::Write,
-) -> Result<()> {
+) -> Result<LintExecutionResult> {
     let mut fatal = 0usize;
     let mut warnings = 0usize;
     let mut passed = 0usize;
@@ -177,20 +180,40 @@ pub(crate) fn lint(
             passed += 1;
         }
     }
-    writeln!(output, "Checks passed: {passed}")?;
-    if skipped > 0 {
-        writeln!(output, "Checks skipped: {skipped}")?;
+
+    Ok(LintExecutionResult {
+        passed,
+        skipped,
+        warnings,
+        fatal,
+    })
+}
+
+/// check for the existence of the /var/run directory
+/// if it exists we need to check that it links to /run if not error
+/// if it does not exist error.
+#[context("Linting")]
+pub(crate) fn lint(
+    root: &Dir,
+    warning_disposition: WarningDisposition,
+    root_type: RootType,
+    mut output: impl std::io::Write,
+) -> Result<()> {
+    let r = lint_inner(root, root_type, &mut output)?;
+    writeln!(output, "Checks passed: {}", r.passed)?;
+    if r.skipped > 0 {
+        writeln!(output, "Checks skipped: {}", r.skipped)?;
     }
     let fatal = if matches!(warning_disposition, WarningDisposition::FatalWarnings) {
-        fatal + warnings
+        r.fatal + r.warnings
     } else {
-        fatal
+        r.fatal
     };
-    if warnings > 0 {
-        writeln!(output, "Warnings: {warnings}")?;
+    if r.warnings > 0 {
+        writeln!(output, "Warnings: {}", r.warnings)?;
     }
     if fatal > 0 {
-        anyhow::bail!("Checks failed: {fatal}")
+        anyhow::bail!("Checks failed: {}", fatal)
     }
     Ok(())
 }
@@ -514,6 +537,26 @@ mod tests {
         root.create_dir_all("var/run/foo")?;
         let mut out = Vec::new();
         assert!(lint(root, warnings, root_type, &mut out).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_lint_inner() -> Result<()> {
+        let root = &passing_fixture()?;
+        let mut out = Vec::new();
+        let root_type = RootType::Running;
+        let r = lint_inner(root, root_type, &mut out).unwrap();
+        assert_eq!(r.passed, LINTS.len());
+        assert_eq!(r.fatal, 0);
+        assert_eq!(r.skipped, 1);
+        assert_eq!(r.warnings, 0);
+        root.create_dir_all("var/run/foo")?;
+        let mut out = Vec::new();
+        let r = lint_inner(root, root_type, &mut out).unwrap();
+        assert_eq!(r.passed, LINTS.len().checked_sub(1).unwrap());
+        assert_eq!(r.fatal, 1);
+        assert_eq!(r.skipped, 1);
+        assert_eq!(r.warnings, 0);
         Ok(())
     }
 
