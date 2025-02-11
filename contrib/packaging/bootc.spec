@@ -65,11 +65,13 @@ Provides: ostree-cli(ostree-container)
 # (-n because we don't want the subpackage name to start with bootc-)
 %package -n system-reinstall-bootc
 Summary: Utility to reinstall the current system using bootc
-Requires: podman
+Recommends: podman
 # The reinstall subpackage intentionally does not require bootc, as it pulls in many unnecessary dependencies
 
 %description -n system-reinstall-bootc
 This package provides a utility to simplify reinstalling the current system to a given bootc image.
+
+%global system_reinstall_bootc_install_podman_path %{_prefix}/lib/system-reinstall-bootc/install-podman
 
 %prep
 %autosetup -p1 -a1
@@ -89,6 +91,7 @@ rm vendor-config.toml
 
 # Build the system reinstallation CLI binary
 %global cargo_args -p system-reinstall-bootc
+export SYSTEM_REINSTALL_BOOTC_INSTALL_PODMAN_PATH=%{system_reinstall_bootc_install_podman_path}
 %cargo_build
 
 %cargo_vendor_manifest
@@ -102,6 +105,12 @@ sed -i -e '/https:\/\//d' cargo-vendor.txt
 %if %{with ostree_ext}
 make install-ostree-hooks DESTDIR=%{?buildroot}
 %endif
+mkdir -p %{buildroot}/%{dirname:%{system_reinstall_bootc_install_podman_path}}
+cat >%{?buildroot}/%{system_reinstall_bootc_install_podman_path} <<EOF
+#!/bin/bash
+exec dnf -y install podman
+EOF
+chmod +x %{?buildroot}/%{system_reinstall_bootc_install_podman_path}
 
 %if %{with check}
 %check
@@ -126,6 +135,7 @@ make install-ostree-hooks DESTDIR=%{?buildroot}
 
 %files -n system-reinstall-bootc
 %{_bindir}/system-reinstall-bootc
+%{system_reinstall_bootc_install_podman_path}
 
 %changelog
 %autochangelog
