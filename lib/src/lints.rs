@@ -155,6 +155,7 @@ fn lint_inner(
         if let Some(lint_root_type) = lint.root_type {
             if lint_root_type != root_type {
                 skipped += 1;
+                continue;
             }
         }
 
@@ -546,14 +547,15 @@ mod tests {
         let mut out = Vec::new();
         let root_type = RootType::Running;
         let r = lint_inner(root, root_type, &mut out).unwrap();
-        assert_eq!(r.passed, LINTS.len());
+        let allbut_one = LINTS.len().checked_sub(1).unwrap();
+        assert_eq!(r.passed, allbut_one);
         assert_eq!(r.fatal, 0);
         assert_eq!(r.skipped, 1);
         assert_eq!(r.warnings, 0);
         root.create_dir_all("var/run/foo")?;
         let mut out = Vec::new();
         let r = lint_inner(root, root_type, &mut out).unwrap();
-        assert_eq!(r.passed, LINTS.len().checked_sub(1).unwrap());
+        assert_eq!(r.passed, allbut_one.checked_sub(1).unwrap());
         assert_eq!(r.fatal, 1);
         assert_eq!(r.skipped, 1);
         assert_eq!(r.warnings, 0);
