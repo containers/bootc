@@ -541,7 +541,7 @@ mod tests {
         let root = &passing_fixture()?;
         let mut out = Vec::new();
         let warnings = WarningDisposition::FatalWarnings;
-        let root_type = RootType::Running;
+        let root_type = RootType::Alternative;
         lint(root, warnings, root_type, [], &mut out).unwrap();
         root.create_dir_all("var/run/foo")?;
         let mut out = Vec::new();
@@ -553,31 +553,30 @@ mod tests {
     fn test_lint_inner() -> Result<()> {
         let root = &passing_fixture()?;
 
-        // Verify that all lints run except one which is skipped for non-running roots
+        // Verify that all lints run
         let mut out = Vec::new();
-        let root_type = RootType::Running;
+        let root_type = RootType::Alternative;
         let r = lint_inner(root, root_type, [], &mut out).unwrap();
-        let allbut_one = LINTS.len().checked_sub(1).unwrap();
-        assert_eq!(r.passed, allbut_one);
+        assert_eq!(r.passed, LINTS.len());
         assert_eq!(r.fatal, 0);
-        assert_eq!(r.skipped, 1);
+        assert_eq!(r.skipped, 0);
         assert_eq!(r.warnings, 0);
 
         let r = lint_inner(root, root_type, ["var-log"], &mut out).unwrap();
         // Trigger a failure in var-log
         root.create_dir_all("var/log/dnf")?;
         root.write("var/log/dnf/dnf.log", b"dummy dnf log")?;
-        assert_eq!(r.passed, allbut_one.checked_sub(1).unwrap());
-        assert_eq!(r.fatal, 0);
-        assert_eq!(r.skipped, 2);
-        assert_eq!(r.warnings, 0);
-
-        // But verify that not skipping it results in an error
-        let mut out = Vec::new();
-        let r = lint_inner(root, root_type, [], &mut out).unwrap();
-        assert_eq!(r.passed, allbut_one.checked_sub(1).unwrap());
+        assert_eq!(r.passed, LINTS.len().checked_sub(1).unwrap());
         assert_eq!(r.fatal, 0);
         assert_eq!(r.skipped, 1);
+        assert_eq!(r.warnings, 0);
+
+        // But verify that not skipping it results in a warning
+        let mut out = Vec::new();
+        let r = lint_inner(root, root_type, [], &mut out).unwrap();
+        assert_eq!(r.passed, LINTS.len().checked_sub(1).unwrap());
+        assert_eq!(r.fatal, 0);
+        assert_eq!(r.skipped, 0);
         assert_eq!(r.warnings, 1);
         Ok(())
     }
