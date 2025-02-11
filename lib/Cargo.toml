@@ -18,6 +18,7 @@ anstyle = "1.0.6"
 anyhow = { workspace = true }
 bootc-utils = { path = "../utils" }
 bootc-blockdev = { path = "../blockdev" }
+bootc-tmpfiles = { path = "../tmpfiles" }
 camino = { workspace = true, features = ["serde1"] }
 ostree-ext = { path = "../ostree-ext", features = ["bootc"] }
 chrono = { workspace = true, features = ["serde"] }
