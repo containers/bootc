@@ -140,17 +140,24 @@ struct LintExecutionResult {
     fatal: usize,
 }
 
-fn lint_inner(
+fn lint_inner<'skip>(
     root: &Dir,
     root_type: RootType,
+    skip: impl IntoIterator<Item = &'skip str>,
     mut output: impl std::io::Write,
 ) -> Result<LintExecutionResult> {
     let mut fatal = 0usize;
     let mut warnings = 0usize;
     let mut passed = 0usize;
     let mut skipped = 0usize;
+    let skip: std::collections::HashSet<_> = skip.into_iter().collect();
     for lint in LINTS {
         let name = lint.name;
+
+        if skip.contains(name) {
+            skipped += 1;
+            continue;
+        }
 
         if let Some(lint_root_type) = lint.root_type {
             if lint_root_type != root_type {
@@ -194,13 +201,14 @@ fn lint_inner(
 /// if it exists we need to check that it links to /run if not error
 /// if it does not exist error.
 #[context("Linting")]
-pub(crate) fn lint(
+pub(crate) fn lint<'skip>(
     root: &Dir,
     warning_disposition: WarningDisposition,
     root_type: RootType,
+    skip: impl IntoIterator<Item = &'skip str>,
     mut output: impl std::io::Write,
 ) -> Result<()> {
-    let r = lint_inner(root, root_type, &mut output)?;
+    let r = lint_inner(root, root_type, skip, &mut output)?;
     writeln!(output, "Checks passed: {}", r.passed)?;
     if r.skipped > 0 {
         writeln!(output, "Checks skipped: {}", r.skipped)?;
@@ -534,31 +542,43 @@ mod tests {
         let mut out = Vec::new();
         let warnings = WarningDisposition::FatalWarnings;
         let root_type = RootType::Running;
-        lint(root, warnings, root_type, &mut out).unwrap();
+        lint(root, warnings, root_type, [], &mut out).unwrap();
         root.create_dir_all("var/run/foo")?;
         let mut out = Vec::new();
-        assert!(lint(root, warnings, root_type, &mut out).is_err());
+        assert!(lint(root, warnings, root_type, [], &mut out).is_err());
         Ok(())
     }
 
     #[test]
     fn test_lint_inner() -> Result<()> {
         let root = &passing_fixture()?;
+
+        // Verify that all lints run except one which is skipped for non-running roots
         let mut out = Vec::new();
         let root_type = RootType::Running;
-        let r = lint_inner(root, root_type, &mut out).unwrap();
+        let r = lint_inner(root, root_type, [], &mut out).unwrap();
         let allbut_one = LINTS.len().checked_sub(1).unwrap();
         assert_eq!(r.passed, allbut_one);
         assert_eq!(r.fatal, 0);
         assert_eq!(r.skipped, 1);
         assert_eq!(r.warnings, 0);
-        root.create_dir_all("var/run/foo")?;
-        let mut out = Vec::new();
-        let r = lint_inner(root, root_type, &mut out).unwrap();
+
+        let r = lint_inner(root, root_type, ["var-log"], &mut out).unwrap();
+        // Trigger a failure in var-log
+        root.create_dir_all("var/log/dnf")?;
+        root.write("var/log/dnf/dnf.log", b"dummy dnf log")?;
         assert_eq!(r.passed, allbut_one.checked_sub(1).unwrap());
-        assert_eq!(r.fatal, 1);
-        assert_eq!(r.skipped, 1);
+        assert_eq!(r.fatal, 0);
+        assert_eq!(r.skipped, 2);
         assert_eq!(r.warnings, 0);
+
+        // But verify that not skipping it results in an error
+        let mut out = Vec::new();
+        let r = lint_inner(root, root_type, [], &mut out).unwrap();
+        assert_eq!(r.passed, allbut_one.checked_sub(1).unwrap());
+        assert_eq!(r.fatal, 0);
+        assert_eq!(r.skipped, 1);
+        assert_eq!(r.warnings, 1);
         Ok(())
     }
 
