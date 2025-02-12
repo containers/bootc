@@ -19,3 +19,21 @@ dnf clean all
 rm /var/log/* /var/cache /var/lib/{dnf,rpm-state,rhsm} -rf
 # And clean root's homedir
 rm /var/roothome/.config -rf
+
+# Fast track tmpfiles.d content from the base image, xref
+# https://gitlab.com/fedora/bootc/base-images/-/merge_requests/92
+if test '!' -f /usr/lib/tmpfiles.d/bootc-base-rpmstate.conf; then
+  cat >/usr/lib/tmpfiles.d/bootc-base-rpmstate.conf <<'EOF'
+# Workaround for https://bugzilla.redhat.com/show_bug.cgi?id=771713
+d /var/lib/rpm-state 0755 - - -
+EOF
+fi
+if ! grep -q -r var/roothome/buildinfo /usr/lib/tmpfiles.d; then
+  cat > /usr/lib/tmpfiles.d/bootc-contentsets.conf <<'EOF'
+# Workaround for https://github.com/konflux-ci/build-tasks-dockerfiles/pull/243
+d /var/roothome/buildinfo 0755 - - -
+d /var/roothome/buildinfo/content_manifests 0755 - - -
+# Note we don't actually try to recreate the content; this just makes the linter ignore it
+f /var/roothome/buildinfo/content_manifests/content-sets.json 0644 - - -
+EOF
+fi
