@@ -14,4 +14,8 @@ mkdir -p ~/.config/nushell
 echo '$env.config = { show_banner: false, }' > ~/.config/nushell/config.nu
 touch ~/.config/nushell/env.nu
 dnf -y install nu
-dnf clean all && rm /var/log/* -rf
+dnf clean all
+# Stock extra cleaning of logs and caches in general (mostly dnf)
+rm /var/log/* /var/cache /var/lib/dnf /var/lib/rpm-state -rf
+# And clean root's homedir
+rm /var/roothome/.config -rf

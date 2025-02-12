@@ -346,7 +346,7 @@ fn check_utf8(dir: &Dir) -> LintResult {
                 return lint_err(format!("/{strname}: Found non-utf8 symlink target"));
             }
         } else if ifmt.is_dir() {
-            let Some(subdir) = crate::utils::open_dir_noxdev(dir, entry.file_name())? else {
+            let Some(subdir) = dir.open_dir_noxdev(entry.file_name())? else {
                 continue;
             };
             if let Err(err) = check_utf8(&subdir)? {
