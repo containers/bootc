@@ -14,6 +14,7 @@ use serde::Serialize;
 use crate::{
     boundimage::query_bound_images,
     cli::{ImageListFormat, ImageListType},
+    imgstorage::ensure_floating_c_storage_initialized,
 };
 
 /// The name of the image we push to containers-storage if nothing is specified.
@@ -138,6 +139,7 @@ pub(crate) async fn push_entrypoint(source: Option<&str>, target: Option<&str>) 
             name: target.to_owned(),
         }
     } else {
+        ensure_floating_c_storage_initialized();
         ImageReference {
             transport: Transport::ContainerStorage,
             name: IMAGE_DEFAULT.to_string(),

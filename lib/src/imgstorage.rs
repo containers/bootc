@@ -119,6 +119,31 @@ fn new_podman_cmd_in(storage_root: &Dir, run_root: &Dir) -> Result<Command> {
     Ok(cmd)
 }
 
+/// Ensure that "podman" is the first thing to touch the global storage
+/// instance. This is a workaround for https://github.com/containers/bootc/pull/1101#issuecomment-2653862974
+/// Basically podman has special upgrade logic for when it is the first thing
+/// to initialize the c/storage instance it sets the networking to netavark.
+/// If it's not the first thing, then it assumes an upgrade scenario and we
+/// may be using CNI.
+///
+/// But this legacy path is triggered through us using skopeo, turning off netavark
+/// by default. Work around this by ensuring that /usr/bin/podman is
+/// always the first thing to touch c/storage (at least, when invoked by us).
+///
+/// Call this function any time we're going to write to containers-storage.
+pub(crate) fn ensure_floating_c_storage_initialized() {
+    if let Err(e) = Command::new("podman")
+        .args(["system", "info"])
+        .stdout(Stdio::null())
+        .run()
+    {
+        // Out of conservatism we don't make this operation fatal right now.
+        // If something went wrong, then we'll probably fail on a later operation
+        // anyways.
+        tracing::warn!("Failed to query podman system info: {e}");
+    }
+}
+
 impl Storage {
     /// Create a `podman image` Command instance prepared to operate on our alternative
     /// root.
