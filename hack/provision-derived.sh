@@ -16,6 +16,6 @@ touch ~/.config/nushell/env.nu
 dnf -y install nu
 dnf clean all
 # Stock extra cleaning of logs and caches in general (mostly dnf)
-rm /var/log/* /var/cache /var/lib/dnf /var/lib/rpm-state -rf
+rm /var/log/* /var/cache /var/lib/{dnf,rpm-state,rhsm} -rf
 # And clean root's homedir
 rm /var/roothome/.config -rf
