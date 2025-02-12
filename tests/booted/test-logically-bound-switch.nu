@@ -17,9 +17,6 @@ let st = bootc status --json | from json
 let booted = $st.status.booted.image
 
 def initial_setup [] {
-    # Work around https://github.com/containers/bootc/pull/1101#issuecomment-2653862974
-    # Basically things break unless "podman" initializes the c/storage instance right now.
-    podman images -q o>/dev/null
     bootc image copy-to-storage
     podman images
     podman image inspect localhost/bootc | from json
