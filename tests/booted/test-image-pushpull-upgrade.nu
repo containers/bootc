@@ -31,6 +31,10 @@ def initial_build [] {
     let td = mktemp -d
     cd $td
 
+    # Work around https://github.com/containers/bootc/pull/1101#issuecomment-2653862974
+    # Basically things break unless "podman" initializes the c/storage instance right now.
+    podman images -q o>/dev/null
+
     bootc image copy-to-storage
     let img = podman image inspect localhost/bootc | from json
 
