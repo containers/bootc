@@ -14,5 +14,6 @@ pub fn initialize_tracing() {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .event_format(format)
         .with_writer(std::io::stderr)
+        .with_max_level(tracing::Level::WARN)
         .init();
 }

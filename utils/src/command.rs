@@ -139,7 +139,9 @@ impl CommandRunExt for Command {
     }
 
     fn run_with_cmd_context(&mut self) -> Result<()> {
-        self.run()
+        self.status()?
+            .success()
+            .then_some(())
             // The [`Debug`] output of command contains a properly shell-escaped commandline
             // representation that the user can copy paste into their shell
             .context("Failed to run command: {self:#?}")

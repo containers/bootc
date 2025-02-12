@@ -1,7 +1,9 @@
-use std::process::Command;
-
 use super::ROOT_KEY_MOUNT_POINT;
 use crate::users::UserKeys;
+use anyhow::{ensure, Context, Result};
+use bootc_utils::CommandRunExt;
+use std::process::Command;
+use which::which;
 
 pub(crate) fn command(image: &str, root_key: &Option<UserKeys>) -> Command {
     let mut podman_command_and_args = [
@@ -57,4 +59,43 @@ pub(crate) fn command(image: &str, root_key: &Option<UserKeys>) -> Command {
     command.args(&all_args[1..]);
 
     command
+}
+
+/// Path to the podman installation script. Can be influenced by the build
+/// SYSTEM_REINSTALL_BOOTC_INSTALL_PODMAN_PATH parameter to override. Defaults
+/// to /usr/lib/system-reinstall-bootc/install-podman
+const fn podman_install_script_path() -> &'static str {
+    if let Some(path) = option_env!("SYSTEM_REINSTALL_BOOTC_INSTALL_PODMAN_PATH") {
+        path
+    } else {
+        "/usr/lib/system-reinstall-bootc/install-podman"
+    }
+}
+
+pub(crate) fn ensure_podman_installed() -> Result<()> {
+    if which("podman").is_ok() {
+        return Ok(());
+    }
+
+    tracing::warn!(
+        "Podman was not found on this system. It's required in order to install a bootc image."
+    );
+
+    ensure!(
+        which(podman_install_script_path()).is_ok(),
+        "Podman installation script {} not found, cannot automatically install podman. Please install it manually and try again.",
+        podman_install_script_path()
+    );
+
+    Command::new(podman_install_script_path())
+        .run_with_cmd_context()
+        .context("installing podman")?;
+
+    // Make sure the installation was actually successful
+    ensure!(
+        which("podman").is_ok(),
+        "podman still doesn't seem to be available, despite the installation. Please install it manually and try again."
+    );
+
+    Ok(())
 }

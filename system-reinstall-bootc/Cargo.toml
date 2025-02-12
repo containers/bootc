@@ -26,6 +26,7 @@ serde_json = { workspace = true }
 serde_yaml = "0.9.22"
 tracing = { workspace = true }
 uzers = "0.12.1"
+which = "7.0.2"
 
 [lints]
 workspace = true

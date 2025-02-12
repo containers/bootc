@@ -38,6 +38,10 @@ fn run() -> Result<()> {
 
     prompt::temporary_developer_protection_prompt()?;
 
+    // At this poihnt, the user has already given us permission to reinstall their system, so we
+    // feel confident with just installing podman without any further user interaction.
+    podman::ensure_podman_installed()?;
+
     reinstall_podman_command
         .run_with_cmd_context()
         .context("running reinstall command")?;
