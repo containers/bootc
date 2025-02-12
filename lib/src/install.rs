@@ -58,7 +58,7 @@ use crate::progress_jsonl::ProgressWriter;
 use crate::spec::ImageReference;
 use crate::store::Storage;
 use crate::task::Task;
-use crate::utils::{open_dir_noxdev, sigpolicy_from_opt};
+use crate::utils::sigpolicy_from_opt;
 
 /// The toplevel boot directory
 const BOOT: &str = "boot";
@@ -1579,7 +1579,7 @@ fn remove_all_in_dir_no_xdev(d: &Dir, mount_err: bool) -> Result<()> {
         let name = entry.file_name();
         let etype = entry.file_type()?;
         if etype == FileType::dir() {
-            if let Some(subdir) = open_dir_noxdev(d, &name)? {
+            if let Some(subdir) = d.open_dir_noxdev(&name)? {
                 remove_all_in_dir_no_xdev(&subdir, mount_err)?;
                 d.remove_dir(&name)?;
             } else if mount_err {
