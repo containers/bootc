@@ -337,20 +337,24 @@ fn convert_path_to_tmpfiles_d_recurse<U: uzers::Users, G: uzers::Groups>(
         }
 
         if meta.is_dir() {
-            convert_path_to_tmpfiles_d_recurse(
-                out_entries,
-                out_unsupported,
-                users,
-                groups,
-                rootfs,
-                existing,
-                prefix,
-                readonly,
-            )?;
             // SAFETY: We know this path is absolute
             let relpath = prefix.strip_prefix("/").unwrap();
-            if !readonly {
-                rootfs.remove_dir_all(relpath)?;
+            // Avoid traversing mount points by default
+            if rootfs.open_dir_noxdev(relpath)?.is_some() {
+                convert_path_to_tmpfiles_d_recurse(
+                    out_entries,
+                    out_unsupported,
+                    users,
+                    groups,
+                    rootfs,
+                    existing,
+                    prefix,
+                    readonly,
+                )?;
+                let relpath = prefix.strip_prefix("/").unwrap();
+                if !readonly {
+                    rootfs.remove_dir_all(relpath)?;
+                }
             }
         } else {
             // SAFETY: We know this path is absolute
