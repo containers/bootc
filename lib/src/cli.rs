@@ -257,6 +257,13 @@ pub(crate) enum ContainerOpts {
         /// maintaining this exact format; do not parse it via code or scripts.
         #[clap(long)]
         list: bool,
+
+        /// Skip checking the targeted lints, by name. Use `--list` to discover the set
+        /// of available lints.
+        ///
+        /// Example: --skip nonempty-boot --skip baseimage-root
+        #[clap(long)]
+        skip: Vec<String>,
     },
 }
 
@@ -1044,6 +1051,7 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 rootfs,
                 fatal_warnings,
                 list,
+                skip,
             } => {
                 if list {
                     return lints::lint_list(std::io::stdout().lock());
@@ -1060,7 +1068,8 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                 };
 
                 let root = &Dir::open_ambient_dir(rootfs, cap_std::ambient_authority())?;
-                lints::lint(root, warnings, root_type, std::io::stdout().lock())?;
+                let skip = skip.iter().map(|s| s.as_str());
+                lints::lint(root, warnings, root_type, skip, std::io::stdout().lock())?;
                 Ok(())
             }
         },
