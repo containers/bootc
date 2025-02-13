@@ -6,9 +6,11 @@ edition = "2021"
 publish = false
 
 [dependencies]
+anyhow = { workspace = true }
 camino = { workspace = true }
 fn-error-context = { workspace = true }
 cap-std-ext = { version = "4" }
+hex = "0.4"
 thiserror = { workspace = true }
 tempfile = { workspace = true }
 bootc-utils = { path = "../utils" }
@@ -16,7 +18,6 @@ rustix = { workspace = true }
 uzers = "0.12"
 
 [dev-dependencies]
-anyhow = { workspace = true }
 indoc = { workspace = true }
 similar-asserts = { workspace = true }
 

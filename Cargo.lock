@@ -246,6 +246,7 @@ dependencies = [
  "camino",
  "cap-std-ext",
  "fn-error-context",
+ "hex",
  "indoc",
  "rustix",
  "similar-asserts",
