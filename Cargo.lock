@@ -198,6 +198,7 @@ dependencies = [
  "anstyle",
  "anyhow",
  "bootc-blockdev",
+ "bootc-tmpfiles",
  "bootc-utils",
  "camino",
  "cap-std-ext",
@@ -234,6 +235,23 @@ dependencies = [
  "tracing",
  "uuid",
  "xshell",
+]
+
+[[package]]
+name = "bootc-tmpfiles"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bootc-utils",
+ "camino",
+ "cap-std-ext",
+ "fn-error-context",
+ "indoc",
+ "rustix",
+ "similar-asserts",
+ "tempfile",
+ "thiserror 2.0.11",
+ "uzers",
 ]
 
 [[package]]

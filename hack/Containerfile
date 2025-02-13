@@ -34,4 +34,4 @@ RUN tar -C / --zstd -xvf /tmp/bootc.tar.zst && rm -vrf /tmp/*
 # Also copy over arbitrary bits from the target root
 COPY --from=build /build/target/dev-rootfs/ /
 # Test our own linting
-RUN bootc container lint
+RUN bootc container lint --fatal-warnings

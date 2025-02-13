@@ -7,6 +7,7 @@
 
 use std::collections::BTreeSet;
 use std::env::consts::ARCH;
+use std::fmt::Write as WriteFmt;
 use std::os::unix::ffi::OsStrExt;
 
 use anyhow::Result;
@@ -468,6 +469,53 @@ fn check_varlog(root: &Dir) -> LintResult {
 }
 
 #[distributed_slice(LINTS)]
+static LINT_VAR_TMPFILES: Lint = Lint {
+    name: "var-tmpfiles",
+    ty: LintType::Warning,
+    description: indoc! { r#"
+Check for content in /var that does not have corresponding systemd tmpfiles.d entries.
+This can cause a problem across upgrades because content in /var from the container
+image will only be applied on the initial provisioning.
+
+Instead, it's recommended to have /var effectively empty in the container image,
+and use systemd tmpfiles.d to generate empty directories and compatibility symbolic links
+as part of each boot.
+"#},
+    f: check_var_tmpfiles,
+    root_type: Some(RootType::Running),
+};
+fn check_var_tmpfiles(_root: &Dir) -> LintResult {
+    let r = bootc_tmpfiles::find_missing_tmpfiles_current_root()?;
+    if r.tmpfiles.is_empty() && r.unsupported.is_empty() {
+        return lint_ok();
+    }
+    let mut msg = String::new();
+    if let Some((samples, rest)) =
+        bootc_utils::iterator_split_nonempty_rest_count(r.tmpfiles.iter(), 5)
+    {
+        msg.push_str("Found content in /var missing systemd tmpfiles.d entries:\n");
+        for elt in samples {
+            writeln!(msg, "  {elt}")?;
+        }
+        if rest > 0 {
+            writeln!(msg, "  ...and {} more", rest)?;
+        }
+    }
+    if let Some((samples, rest)) =
+        bootc_utils::iterator_split_nonempty_rest_count(r.unsupported.iter(), 5)
+    {
+        msg.push_str("Found non-directory/non-symlink files in /var:\n");
+        for elt in samples {
+            writeln!(msg, "  {elt:?}")?;
+        }
+        if rest > 0 {
+            writeln!(msg, "  ...and {} more", rest)?;
+        }
+    }
+    lint_err(msg)
+}
+
+#[distributed_slice(LINTS)]
 static LINT_NONEMPTY_BOOT: Lint = Lint::new_warning(
     "nonempty-boot",
     indoc! { r#"
@@ -498,7 +546,16 @@ fn check_boot(root: &Dir) -> LintResult {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
     use super::*;
+
+    static ALTROOT_LINTS: LazyLock<usize> = LazyLock::new(|| {
+        LINTS
+            .iter()
+            .filter(|lint| lint.root_type != Some(RootType::Running))
+            .count()
+    });
 
     fn fixture() -> Result<cap_std_ext::cap_tempfile::TempDir> {
         let tempdir = cap_std_ext::cap_tempfile::tempdir(cap_std::ambient_authority())?;
@@ -557,26 +614,27 @@ mod tests {
         let mut out = Vec::new();
         let root_type = RootType::Alternative;
         let r = lint_inner(root, root_type, [], &mut out).unwrap();
-        assert_eq!(r.passed, LINTS.len());
+        let running_only_lints = LINTS.len().checked_sub(*ALTROOT_LINTS).unwrap();
+        assert_eq!(r.passed, *ALTROOT_LINTS);
         assert_eq!(r.fatal, 0);
-        assert_eq!(r.skipped, 0);
+        assert_eq!(r.skipped, running_only_lints);
         assert_eq!(r.warnings, 0);
 
         let r = lint_inner(root, root_type, ["var-log"], &mut out).unwrap();
         // Trigger a failure in var-log
         root.create_dir_all("var/log/dnf")?;
         root.write("var/log/dnf/dnf.log", b"dummy dnf log")?;
-        assert_eq!(r.passed, LINTS.len().checked_sub(1).unwrap());
+        assert_eq!(r.passed, ALTROOT_LINTS.checked_sub(1).unwrap());
         assert_eq!(r.fatal, 0);
-        assert_eq!(r.skipped, 1);
+        assert_eq!(r.skipped, running_only_lints + 1);
         assert_eq!(r.warnings, 0);
 
         // But verify that not skipping it results in a warning
         let mut out = Vec::new();
         let r = lint_inner(root, root_type, [], &mut out).unwrap();
-        assert_eq!(r.passed, LINTS.len().checked_sub(1).unwrap());
+        assert_eq!(r.passed, ALTROOT_LINTS.checked_sub(1).unwrap());
         assert_eq!(r.fatal, 0);
-        assert_eq!(r.skipped, 0);
+        assert_eq!(r.skipped, running_only_lints);
         assert_eq!(r.warnings, 1);
         Ok(())
     }
