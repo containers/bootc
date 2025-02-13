@@ -198,6 +198,7 @@ dependencies = [
  "anstyle",
  "anyhow",
  "bootc-blockdev",
+ "bootc-sysusers",
  "bootc-tmpfiles",
  "bootc-utils",
  "camino",

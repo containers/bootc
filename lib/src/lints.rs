@@ -516,6 +516,56 @@ fn check_var_tmpfiles(_root: &Dir) -> LintResult {
 }
 
 #[distributed_slice(LINTS)]
+static LINT_SYSUSERS: Lint = Lint {
+    name: "sysusers",
+    ty: LintType::Warning,
+    description: indoc! { r#"
+Check for users in /etc/passwd and groups in /etc/group that do not have corresponding
+systemd sysusers.d entries in /usr/lib/sysusers.d.
+This can cause a problem across upgrades because if /etc is not transient and is locally
+modified (commonly due to local user additions), then the contents of /etc/passwd in the new container
+image may not be visible.
+
+Using systemd-sysusers to allocate users and groups will ensure that these are allocated
+on system startup alongside other users.
+
+More on this topic in <https://containers.github.io/bootc/building/users-and-groups.html>
+"#},
+    f: check_sysusers,
+    root_type: None,
+};
+fn check_sysusers(rootfs: &Dir) -> LintResult {
+    let r = bootc_sysusers::analyze(rootfs)?;
+    if r.is_empty() {
+        return lint_ok();
+    }
+    let mut msg = String::new();
+    if let Some((samples, rest)) =
+        bootc_utils::iterator_split_nonempty_rest_count(r.missing_users.iter(), 5)
+    {
+        msg.push_str("Found /etc/passwd entry without corresponding systemd sysusers.d:\n");
+        for elt in samples {
+            writeln!(msg, "  {elt}")?;
+        }
+        if rest > 0 {
+            writeln!(msg, "  ...and {} more", rest)?;
+        }
+    }
+    if let Some((samples, rest)) =
+        bootc_utils::iterator_split_nonempty_rest_count(r.missing_groups.iter(), 5)
+    {
+        msg.push_str("Found /etc/group entry without corresponding systemd sysusers.d:\n");
+        for elt in samples {
+            writeln!(msg, "  {elt}")?;
+        }
+        if rest > 0 {
+            writeln!(msg, "  ...and {} more", rest)?;
+        }
+    }
+    lint_err(msg)
+}
+
+#[distributed_slice(LINTS)]
 static LINT_NONEMPTY_BOOT: Lint = Lint::new_warning(
     "nonempty-boot",
     indoc! { r#"
