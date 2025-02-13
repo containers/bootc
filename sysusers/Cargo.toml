@@ -9,7 +9,7 @@ publish = false
 anyhow = { workspace = true }
 camino = { workspace = true }
 fn-error-context = { workspace = true }
-cap-std-ext = { version = "4" }
+cap-std-ext = { version = "4", features = ["fs_utf8"] }
 hex = "0.4"
 thiserror = { workspace = true }
 tempfile = { workspace = true }

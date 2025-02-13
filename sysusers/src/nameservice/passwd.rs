@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use anyhow::{anyhow, Context, Result};
-use std::io::{BufRead, Write};
+use cap_std_ext::cap_std::fs::Dir;
+use std::io::{BufRead, BufReader, Write};
 
 // Entry from passwd file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +76,11 @@ pub(crate) fn parse_passwd_content(content: impl BufRead) -> Result<Vec<PasswdEn
         passwds.push(entry);
     }
     Ok(passwds)
+}
+
+pub(crate) fn load_etc_passwd(rootfs: &Dir) -> Result<Vec<PasswdEntry>> {
+    let r = rootfs.open("etc/passwd").map(BufReader::new)?;
+    parse_passwd_content(r)
 }
 
 #[cfg(test)]

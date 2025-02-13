@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use anyhow::{anyhow, Context, Result};
-use std::io::{BufRead, Write};
+use cap_std_ext::cap_std::fs::Dir;
+use std::io::{BufRead, BufReader, Write};
 
 // Entry from group file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,6 +71,11 @@ pub(crate) fn parse_group_content(content: impl BufRead) -> Result<Vec<GroupEntr
         groups.push(entry);
     }
     Ok(groups)
+}
+
+pub(crate) fn load_etc_group(rootfs: &Dir) -> Result<Vec<GroupEntry>> {
+    let r = rootfs.open("etc/group").map(BufReader::new)?;
+    parse_group_content(r)
 }
 
 #[cfg(test)]
