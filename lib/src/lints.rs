@@ -11,6 +11,7 @@ use std::fmt::Write as WriteFmt;
 use std::os::unix::ffi::OsStrExt;
 
 use anyhow::Result;
+use bootc_utils::PathQuotedDisplay;
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_std::fs::Dir;
 use cap_std_ext::cap_std;
@@ -505,8 +506,8 @@ fn check_var_tmpfiles(_root: &Dir) -> LintResult {
         bootc_utils::iterator_split_nonempty_rest_count(r.unsupported.iter(), 5)
     {
         msg.push_str("Found non-directory/non-symlink files in /var:\n");
-        for elt in samples {
-            writeln!(msg, "  {elt:?}")?;
+        for elt in samples.map(PathQuotedDisplay::new) {
+            writeln!(msg, "  {elt}")?;
         }
         if rest > 0 {
             writeln!(msg, "  ...and {} more", rest)?;
