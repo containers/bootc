@@ -262,6 +262,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "shlex",
  "similar-asserts",
  "static_assertions",
  "tempfile",

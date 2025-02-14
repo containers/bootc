@@ -4,6 +4,8 @@
 //!
 mod command;
 pub use command::*;
+mod path;
+pub use path::*;
 mod iterators;
 pub use iterators::*;
 mod tracing_util;
