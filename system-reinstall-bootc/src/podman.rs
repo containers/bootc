@@ -15,6 +15,8 @@ pub(crate) fn command(image: &str, root_key: &Option<UserKeys>) -> Command {
         "--privileged",
         // The container needs to access the host's PID namespace to mount host directories
         "--pid=host",
+        // Set the UID/GID to root overwriting any possible USER directive in the Containerfile
+        "--user root:root",
         // Since https://github.com/containers/bootc/pull/919 this mount should not be needed, but
         // some reason with e.g. quay.io/fedora/fedora-bootc:41 it is still needed.
         "-v",
