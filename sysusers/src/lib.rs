@@ -201,7 +201,7 @@ pub fn read_sysusers(rootfs: &Dir) -> Result<Vec<SysusersEntry>> {
 }
 
 /// The result of analyzing /etc/{passwd,group} in a root vs systemd-sysusers.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SysusersAnalysis {
     /// Entries which are found in /etc/passwd but not present in systemd-sysusers.
     pub missing_users: BTreeSet<String>,
@@ -230,8 +230,14 @@ pub fn analyze(rootfs: &Dir) -> Result<SysusersAnalysis> {
         id: Option<u32>,
     }
 
-    let mut passwd = nameservice::passwd::load_etc_passwd(rootfs)
+    let Some(passwd) = nameservice::passwd::load_etc_passwd(rootfs)
         .map_err(|e| Error::PasswdLoadFailure(e.to_string()))?
+    else {
+        // If there's no /etc/passwd then we're done
+        return Ok(SysusersAnalysis::default());
+    };
+
+    let mut passwd = passwd
         .into_iter()
         .map(|mut e| {
             // Make the name be the map key, leaving the old value a stub
