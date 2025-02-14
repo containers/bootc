@@ -37,3 +37,10 @@ d /var/roothome/buildinfo/content_manifests 0755 - - -
 f /var/roothome/buildinfo/content_manifests/content-sets.json 0644 - - -
 EOF
 fi
+
+# And add missing sysusers.d entries
+if ! grep -q -r sudo /usr/lib/sysusers.d; then
+  cat >/usr/lib/sysusers.d/bootc-sudo-workaround.conf <<'EOF'
+g sudo 16
+EOF
+fi
