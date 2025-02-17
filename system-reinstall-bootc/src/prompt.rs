@@ -3,7 +3,7 @@ use anyhow::{ensure, Context, Result};
 
 fn prompt_single_user(user: &crate::users::UserKeys) -> Result<Vec<&crate::users::UserKeys>> {
     let prompt = format!(
-        "Found only one user ({}) with {} SSH authorized keys. Would you like to install this user in the system?",
+        "Found only one user ({}) with {} SSH authorized keys. Would you like to import it and its keys to the system?",
         user.user,
         user.num_keys(),
     );
