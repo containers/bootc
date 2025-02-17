@@ -144,7 +144,7 @@ impl CommandRunExt for Command {
             .then_some(())
             // The [`Debug`] output of command contains a properly shell-escaped commandline
             // representation that the user can copy paste into their shell
-            .context("Failed to run command: {self:#?}")
+            .context(format!("Failed to run command: {self:#?}"))
     }
 }
 
