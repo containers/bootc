@@ -11,10 +11,6 @@ pub(crate) mod users;
 
 const ROOT_KEY_MOUNT_POINT: &str = "/bootc_authorized_ssh_keys/root";
 
-const NO_SSH_PROMPT: &str = "None of the users on this system found have authorized SSH keys, if
-your image doesn't use cloud-init or other means to set up users, you may not be able to log in
-after reinstalling. Do you want to continue?";
-
 fn run() -> Result<()> {
     bootc_utils::initialize_tracing();
     tracing::trace!("starting {}", env!("CARGO_PKG_NAME"));
@@ -26,7 +22,7 @@ fn run() -> Result<()> {
 
     let root_key = &prompt::get_root_key()?;
 
-    if root_key.is_none() && !prompt::ask_yes_no(NO_SSH_PROMPT, false)? {
+    if root_key.is_none() {
         return Ok(());
     }
 
