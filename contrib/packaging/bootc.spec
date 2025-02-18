@@ -92,7 +92,17 @@ rm vendor-config.toml
 # Build the system reinstallation CLI binary
 %global cargo_args -p system-reinstall-bootc
 export SYSTEM_REINSTALL_BOOTC_INSTALL_PODMAN_PATH=%{system_reinstall_bootc_install_podman_path}
-%cargo_build
+%if 0%{?fedora} || 0%{?rhel} >= 10
+    # In cargo-rpm-macros, the cargo_build macro does flag processing,
+    # so we need to pass '--' to signify that cargo_args is not part
+    # of the macro args
+    %cargo_build -- %cargo_args
+%else
+    # Older macros from rust-toolset do *not* do flag processing, so
+    # '--' would be passed through to cargo directly, which is not
+    # what we want.
+    %cargo_build %cargo_args
+%endif
 
 %cargo_vendor_manifest
 # https://pagure.io/fedora-rust/rust-packaging/issue/33
