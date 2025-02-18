@@ -16,3 +16,8 @@ area/install:
   - any-glob-to-any-file:
       - 'lib/src/install.rs'
       - 'lib/src/install/**'
+
+area/system-reinstall-bootc:
+- changed-files:
+  - any-glob-to-any-file:
+      - 'system-reinstall-bootc/**'
