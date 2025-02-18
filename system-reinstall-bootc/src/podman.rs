@@ -80,7 +80,7 @@ pub(crate) fn ensure_podman_installed() -> Result<()> {
     }
 
     tracing::warn!(
-        "Podman was not found on this system. It's required in order to install a bootc image."
+        "Podman was not found on this system. It's required in order to install a bootc image. Attempting to install it automatically."
     );
 
     ensure!(
