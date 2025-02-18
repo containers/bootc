@@ -1,5 +1,12 @@
-use crate::users::{get_all_users_keys, UserKeys};
+use crate::{
+    prompt,
+    users::{get_all_users_keys, UserKeys},
+};
 use anyhow::{ensure, Context, Result};
+
+const NO_SSH_PROMPT: &str = "None of the users on this system found have authorized SSH keys, \
+    if your image doesn't use cloud-init or other means to set up users, \
+    you may not be able to log in after reinstalling. Do you want to continue?";
 
 fn prompt_single_user(user: &crate::users::UserKeys) -> Result<Vec<&crate::users::UserKeys>> {
     let prompt = format!(
@@ -61,6 +68,11 @@ pub(crate) fn ask_yes_no(prompt: &str, default: bool) -> Result<bool> {
 pub(crate) fn get_root_key() -> Result<Option<UserKeys>> {
     let users = get_all_users_keys()?;
     if users.is_empty() {
+        ensure!(
+            prompt::ask_yes_no(NO_SSH_PROMPT, false)?,
+            "cancelled by user"
+        );
+
         return Ok(None);
     }
 
