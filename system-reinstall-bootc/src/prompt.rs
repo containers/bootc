@@ -57,7 +57,7 @@ pub(crate) fn ask_yes_no(prompt: &str, default: bool) -> Result<bool> {
     dialoguer::Confirm::new()
         .with_prompt(prompt)
         .default(default)
-        .wait_for_newline(true)
+        .wait_for_newline(false)
         .interact()
         .context("prompting")
 }
