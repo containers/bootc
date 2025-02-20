@@ -17,10 +17,16 @@ pub(crate) fn command(image: &str, root_key: &Option<UserKeys>) -> Command {
         "--pid=host",
         // Set the UID/GID to root overwriting any possible USER directive in the Containerfile
         "--user=root:root",
-        // Since https://github.com/containers/bootc/pull/919 this mount should not be needed, but
-        // some reason with e.g. quay.io/fedora/fedora-bootc:41 it is still needed.
+        // Keep these here to support images with bootc versions prior to 1.1.5
+        // when these parameters were obsoleted
         "-v",
         "/var/lib/containers:/var/lib/containers",
+        "-v",
+        "/dev:/dev",
+        "--security-opt",
+        "label=type:unconfined_t",
+        "-v",
+        "/:/target",
     ]
     .map(String::from)
     .to_vec();
