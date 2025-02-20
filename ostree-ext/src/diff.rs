@@ -23,14 +23,14 @@ pub(crate) fn query_info_optional(
     match f.query_info(queryattrs, queryflags, cancellable) {
         Ok(i) => Ok(Some(i)),
         Err(e) => {
-            if let Some(ref e2) = e.kind::<gio::IOErrorEnum>() {
+            match e.kind::<gio::IOErrorEnum>() { Some(ref e2) => {
                 match e2 {
                     gio::IOErrorEnum::NotFound => Ok(None),
                     _ => Err(e.into()),
                 }
-            } else {
+            } _ => {
                 Err(e.into())
-            }
+            }}
         }
     }
 }

@@ -446,14 +446,14 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             self.append_ostree_xattrs(checksum, &xattrs)?;
             self.append_tarstream_xattrs(&xattrs)?;
 
-            if let Some(instream) = instream {
+            match instream { Some(instream) => {
                 ensure!(meta.file_type() == gio::FileType::Regular);
 
                 let mut instream = BufReader::with_capacity(BUF_CAPACITY, instream.into_read());
                 self.out
                     .append_data(&mut h, &path, &mut instream)
                     .with_context(|| format!("Writing regfile {}", checksum))?;
-            } else {
+            } _ => {
                 ensure!(meta.file_type() == gio::FileType::SymbolicLink);
 
                 let target = meta
@@ -474,7 +474,7 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
                         .append_link(&mut h, &path, target)
                         .with_context(context)?;
                 }
-            }
+            }}
         }
 
         Ok((path, h))

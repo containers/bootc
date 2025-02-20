@@ -66,11 +66,11 @@ pub fn require_config_from_root(root: &Dir) -> Result<glib::KeyFile> {
 /// Query whether the target root has the `root.transient` key
 /// which sets up a transient overlayfs.
 pub(crate) fn overlayfs_root_enabled(root: &ostree::RepoFile) -> Result<bool> {
-    if let Some(config) = load_config(root)? {
+    match load_config(root)? { Some(config) => {
         overlayfs_enabled_in_config(&config)
-    } else {
+    } _ => {
         Ok(false)
-    }
+    }}
 }
 
 #[derive(Debug, PartialEq, Eq)]

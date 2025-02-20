@@ -826,12 +826,12 @@ async fn install_container(
             .with_context(|| format!("Recursive SELinux relabeling of {d}"))?;
         }
 
-        if let Some(cfs_super) = root.open_optional(OSTREE_COMPOSEFS_SUPER)? {
+        match root.open_optional(OSTREE_COMPOSEFS_SUPER)? { Some(cfs_super) => {
             let label = crate::lsm::require_label(policy, "/usr".into(), 0o644)?;
             crate::lsm::set_security_selinux(cfs_super.as_fd(), label.as_bytes())?;
-        } else {
+        } _ => {
             tracing::warn!("Missing {OSTREE_COMPOSEFS_SUPER}; composefs is not enabled?");
-        }
+        }}
     }
 
     // Write the entry for /boot to /etc/fstab.  TODO: Encourage OSes to use the karg?
@@ -1531,12 +1531,12 @@ pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
     }
 
     // At this point, all other threads should be gone.
-    if let Some(state) = Arc::into_inner(state) {
+    match Arc::into_inner(state) { Some(state) => {
         state.consume()?;
-    } else {
+    } _ => {
         // This shouldn't happen...but we will make it not fatal right now
         tracing::warn!("Failed to consume state Arc");
-    }
+    }}
 
     installation_complete();
 
@@ -1579,12 +1579,12 @@ fn remove_all_in_dir_no_xdev(d: &Dir, mount_err: bool) -> Result<()> {
         let name = entry.file_name();
         let etype = entry.file_type()?;
         if etype == FileType::dir() {
-            if let Some(subdir) = d.open_dir_noxdev(&name)? {
+            match d.open_dir_noxdev(&name)? { Some(subdir) => {
                 remove_all_in_dir_no_xdev(&subdir, mount_err)?;
                 d.remove_dir(&name)?;
-            } else if mount_err {
+            } _ => if mount_err {
                 anyhow::bail!("Found unexpected mount point {name:?}");
-            }
+            }}
         } else {
             d.remove_file_optional(&name)?;
         }

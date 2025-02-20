@@ -224,7 +224,7 @@ pub(crate) async fn fetch_layer<'a>(
     transport_src: Transport,
 ) -> Result<(
     Box<dyn AsyncBufRead + Send + Unpin>,
-    impl Future<Output = Result<()>> + 'a,
+    impl Future<Output = Result<()>> + 'a + use<'a>,
     oci_image::MediaType,
 )> {
     use futures_util::future::Either;

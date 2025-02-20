@@ -79,11 +79,11 @@ pub(crate) fn parse_passwd_content(content: impl BufRead) -> Result<Vec<PasswdEn
 }
 
 pub(crate) fn load_etc_passwd(rootfs: &Dir) -> Result<Option<Vec<PasswdEntry>>> {
-    if let Some(r) = rootfs.open_optional("etc/passwd")? {
+    match rootfs.open_optional("etc/passwd")? { Some(r) => {
         parse_passwd_content(BufReader::new(r)).map(Some)
-    } else {
+    } _ => {
         Ok(None)
-    }
+    }}
 }
 
 #[cfg(test)]

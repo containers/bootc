@@ -333,17 +333,17 @@ fn manifest_data_from_commitmeta(
 }
 
 fn image_config_from_commitmeta(commit_meta: &glib::VariantDict) -> Result<ImageConfiguration> {
-    let config = if let Some(config) = commit_meta
+    let config = match commit_meta
         .lookup::<String>(META_CONFIG)?
         .filter(|v| v != "null") // Format v0 apparently old versions injected `null` here sadly...
         .map(|v| serde_json::from_str(&v).map_err(anyhow::Error::msg))
         .transpose()?
-    {
+    { Some(config) => {
         config
-    } else {
+    } _ => {
         tracing::debug!("No image configuration found");
         Default::default()
-    };
+    }};
     Ok(config)
 }
 
@@ -685,7 +685,7 @@ impl ImageImporter {
         // Query for previous stored state
 
         let (previous_state, previous_imageid) =
-            if let Some(previous_state) = try_query_image(&self.repo, &self.imgref.imgref)? {
+            match try_query_image(&self.repo, &self.imgref.imgref)? { Some(previous_state) => {
                 // If the manifest digests match, we're done.
                 if previous_state.manifest_digest == manifest_digest {
                     return Ok(PrepareResult::AlreadyPresent(previous_state));
@@ -697,9 +697,9 @@ impl ImageImporter {
                 }
                 let previous_imageid = previous_imageid.to_string();
                 (Some(previous_state), Some(previous_imageid))
-            } else {
+            } _ => {
                 (None, None)
-            };
+            }};
 
         let config = self.proxy.fetch_config(&self.proxy_img).await?;
 
@@ -1144,7 +1144,7 @@ fn try_query_image(
     imgref: &ImageReference,
 ) -> Result<Option<Box<LayeredImageState>>> {
     let ostree_ref = &ref_for_image(imgref)?;
-    if let Some(merge_rev) = repo.resolve_rev(ostree_ref, true)? {
+    match repo.resolve_rev(ostree_ref, true)? { Some(merge_rev) => {
         match query_image_commit(repo, merge_rev.as_str()) {
             Ok(r) => Ok(Some(r)),
             Err(e) => {
@@ -1152,9 +1152,9 @@ fn try_query_image(
                 Ok(None)
             }
         }
-    } else {
+    } _ => {
         Ok(None)
-    }
+    }}
 }
 
 /// Query metadata for a pulled image.
@@ -1174,13 +1174,13 @@ pub fn query_image(
 fn parse_cached_update(meta: &glib::VariantDict) -> Result<Option<CachedImageUpdate>> {
     // Try to retrieve the manifest digest key from the commit detached metadata.
     let manifest_digest =
-        if let Some(d) = meta.lookup::<String>(ImageImporter::CACHED_KEY_MANIFEST_DIGEST)? {
+        match meta.lookup::<String>(ImageImporter::CACHED_KEY_MANIFEST_DIGEST)? { Some(d) => {
             d
-        } else {
+        } _ => {
             // It's possible that something *else* wrote detached metadata, but without
             // our key; gracefully handle that.
             return Ok(None);
-        };
+        }};
     let manifest_digest = Digest::from_str(&manifest_digest)?;
     // If we found the cached manifest digest key, then we must have the manifest and config;
     // otherwise that's an error.
@@ -1782,7 +1782,7 @@ fn compare_commit_trees(
         let target_info = crate::diff::query_info_optional(&target_child, queryattrs, queryflags)
             .context("querying optional to")?;
         let is_dir = matches!(expected_info.file_type(), gio::FileType::Directory);
-        if let Some(target_info) = target_info {
+        match target_info { Some(target_info) => {
             let to_child = target_child
                 .downcast::<ostree::RepoFile>()
                 .expect("downcast");
@@ -1829,10 +1829,10 @@ fn compare_commit_trees(
                     state.verified.insert(path);
                 }
             }
-        } else {
+        } _ => {
             eprintln!("Missing {path}");
             state.unknown_corrupted.insert(path);
-        }
+        }}
     }
     Ok(())
 }

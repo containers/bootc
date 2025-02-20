@@ -783,7 +783,7 @@ pub(crate) fn switch_origin_inplace(root: &Dir, imgref: &ImageReference) -> Resu
 
     let mut ostree_deploys = root.open_dir("sysroot/ostree/deploy")?.entries()?;
     let deploydir = loop {
-        if let Some(ent) = ostree_deploys.next() {
+        match ostree_deploys.next() { Some(ent) => {
             let ent = ent?;
             if !ent.file_type()?.is_dir() {
                 continue;
@@ -795,9 +795,9 @@ pub(crate) fn switch_origin_inplace(root: &Dir, imgref: &ImageReference) -> Resu
             if let Some(d) = child_dir.open_dir_optional("deploy")? {
                 break d;
             }
-        } else {
+        } _ => {
             anyhow::bail!("Failed to find a deployment");
-        }
+        }}
     };
     let newest_deployment = find_newest_deployment_name(&deploydir)?;
     let origin_path = format!("{newest_deployment}.origin");

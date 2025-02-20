@@ -190,7 +190,7 @@ pub fn analyze_for_repair(sysroot: &SysrootLock, verbose: bool) -> Result<Repair
     let mut booted_is_likely_corrupted = false;
     let mut staged_is_likely_corrupted = false;
     for imgref in all_images {
-        if let Some(state) = container_store::query_image(repo, &imgref)? {
+        match container_store::query_image(repo, &imgref)? { Some(state) => {
             if !container_store::verify_container_image(
                 sysroot,
                 &imgref,
@@ -209,11 +209,11 @@ pub fn analyze_for_repair(sysroot: &SysrootLock, verbose: bool) -> Result<Repair
                     eprintln!("warning: staged deployment is likely corrupted");
                 }
             }
-        } else {
+        } _ => {
             // This really shouldn't happen
             eprintln!("warning: Image was removed from underneath us: {imgref}");
             std::thread::sleep(std::time::Duration::from_secs(1));
-        }
+        }}
     }
     Ok(RepairResult {
         inodes,

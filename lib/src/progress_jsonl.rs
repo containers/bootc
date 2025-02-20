@@ -269,11 +269,11 @@ impl ProgressWriter {
     pub(crate) async fn into_inner(self) -> Result<Option<Sender>> {
         // SAFETY: Propagating panics from the mutex here is intentional
         let mut mutex = self.inner.lock().await;
-        if let Some(inner) = mutex.take() {
+        match mutex.take() { Some(inner) => {
             Ok(Some(inner.fd.into_inner()))
-        } else {
+        } _ => {
             Ok(None)
-        }
+        }}
     }
 }
 

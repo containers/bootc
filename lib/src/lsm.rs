@@ -395,12 +395,12 @@ where
         // Apply the target mode bits
         rustix::fs::fchmod(fd, mode).context("fchmod")?;
         // If we have a label, apply it
-        if let Some(label) = label {
+        match label { Some(label) => {
             tracing::debug!("Setting label for {destname} to {label}");
             set_security_selinux(fd, label.as_bytes())?;
-        } else {
+        } _ => {
             tracing::debug!("No label for {destname}");
-        }
+        }}
         // Finally call the underlying writer function
         f(w)
     })

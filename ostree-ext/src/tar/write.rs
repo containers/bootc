@@ -309,13 +309,13 @@ pub(crate) fn filter_tar(
             // If this is a hardlink into /sysroot...
             if target.strip_prefix(crate::tar::REPO_PREFIX).is_ok() {
                 // And we found a previously processed modified file there
-                if let Some((mut header, data)) = changed_sysroot_objects.remove(target) {
+                match changed_sysroot_objects.remove(target) { Some((mut header, data)) => {
                     tracing::debug!("Making {path} canonical for sysroot link {target}");
                     // Make *this* entry the canonical one, consuming the temporary file data
                     dest.append_data(&mut header, path, data)?;
                     // And cache this file path as the new link target
                     new_sysroot_link_targets.insert(target.to_owned(), path.to_owned());
-                } else if let Some(real_target) = new_sysroot_link_targets.get(target) {
+                } _ => if let Some(real_target) = new_sysroot_link_targets.get(target) {
                     tracing::debug!("Relinking {path} to {real_target}");
                     // We found a 2nd (or 3rd, etc.) link into /sysroot; rewrite the link
                     // target to be the first file outside of /sysroot we found.
@@ -323,7 +323,7 @@ pub(crate) fn filter_tar(
                     dest.append_link(&mut header, path, real_target)?;
                 } else {
                     tracing::debug!("Found unhandled modified link from {path} to {target}");
-                }
+                }}
                 continue;
             }
         }
@@ -478,13 +478,13 @@ pub async fn write_tar(
                 (filtered_result, child_stdout)
             }
             Err(e) => {
-                if let Ok((_, child_stderr)) = output_copier.await {
+                match output_copier.await { Ok((_, child_stderr)) => {
                     // Avoid trailing newline
                     let child_stderr = child_stderr.trim();
                     Err(e.context(child_stderr.to_string()))?
-                } else {
+                } _ => {
                     Err(e)?
-                }
+                }}
             }
         };
     drop(sepolicy);

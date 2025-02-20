@@ -105,13 +105,13 @@ mod tests {
         am_uid0: bool,
     ) -> Result<Option<(Utf8PathBuf, String)>> {
         let r = get_global_authfile_impl(root, am_uid0)?;
-        if let Some((path, mut f)) = r {
+        match r { Some((path, mut f)) => {
             let mut s = String::new();
             f.read_to_string(&mut s)?;
             Ok(Some((path.try_into()?, s)))
-        } else {
+        } _ => {
             Ok(None)
-        }
+        }}
     }
 
     #[test]

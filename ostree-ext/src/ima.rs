@@ -113,18 +113,18 @@ impl<'a> CommitRewriter<'a> {
     fn ima_sign(&self, instream: &gio::InputStream) -> Result<HashMap<Vec<u8>, Vec<u8>>> {
         let mut tempf = tempfile::NamedTempFile::new_in(self.tempdir.path())?;
         // If we're operating on a bare repo, we can clone the file (copy_file_range) directly.
-        if let Ok(instream) = instream.clone().downcast::<gio::UnixInputStream>() {
+        match instream.clone().downcast::<gio::UnixInputStream>() { Ok(instream) => {
             use cap_std_ext::cap_std::io_lifetimes::AsFilelike;
             // View the fd as a File
             let instream_fd = unsafe { BorrowedFd::borrow_raw(instream.as_raw_fd()) };
             let instream_fd = instream_fd.as_filelike_view::<std::fs::File>();
             std::io::copy(&mut (&*instream_fd), tempf.as_file_mut())?;
-        } else {
+        } _ => {
             // If we're operating on an archive repo, then we need to uncompress
             // and recompress...
             let mut instream = instream.clone().into_read();
             let _n = std::io::copy(&mut instream, tempf.as_file_mut())?;
-        }
+        }}
         tempf.seek(std::io::SeekFrom::Start(0))?;
 
         let mut proc = Command::new("evmctl");
@@ -153,11 +153,11 @@ impl<'a> CommitRewriter<'a> {
     fn map_file(&mut self, checksum: &str) -> Result<Option<String>> {
         let cancellable = gio::Cancellable::NONE;
         let (instream, meta, xattrs) = self.repo.load_file(checksum, cancellable)?;
-        let instream = if let Some(i) = instream {
+        let instream = match instream { Some(i) => {
             i
-        } else {
+        } _ => {
             return Ok(None);
-        };
+        }};
         let mut xattrs = xattrs_to_map(&xattrs);
         let existing_sig = xattrs.remove(IMA_XATTR.as_bytes());
         if existing_sig.is_some() && !self.ima.overwrite {
@@ -204,13 +204,13 @@ impl<'a> CommitRewriter<'a> {
             let checksum = std::str::from_utf8(&hexbuf)?;
             if let Some(mapped) = self.rewritten_files.get(checksum) {
                 new_files.push((name, hex::decode(mapped)?));
-            } else if let Some(mapped) = self.map_file(checksum)? {
+            } else { match self.map_file(checksum)? { Some(mapped) => {
                 let mapped_bytes = hex::decode(&mapped)?;
                 self.rewritten_files.insert(checksum.into(), mapped);
                 new_files.push((name, mapped_bytes));
-            } else {
+            } _ => {
                 new_files.push((name, Vec::from(csum)));
-            }
+            }}}
         }
 
         let mut new_dirs = Vec::new();

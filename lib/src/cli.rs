@@ -976,7 +976,8 @@ pub fn global_init() -> Result<()> {
         // Setting the environment is thread-unsafe, but we ask calling code
         // to invoke this as early as possible. (In practice, that's just the cli's `main.rs`)
         // xref https://internals.rust-lang.org/t/synchronized-ffi-access-to-posix-environment-variable-functions/15475
-        std::env::set_var("HOME", "/root");
+        // TODO: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::set_var("HOME", "/root") };
     }
     Ok(())
 }
@@ -1012,7 +1013,7 @@ impl Opt {
         I::Item: Into<OsString> + Clone,
     {
         let mut args = args.into_iter();
-        let first = if let Some(first) = args.next() {
+        let first = match args.next() { Some(first) => {
             let first: OsString = first.into();
             let argv0 = callname_from_argv0(&first);
             tracing::debug!("argv0={argv0:?}");
@@ -1030,9 +1031,9 @@ impl Opt {
                 return Opt::parse_from(base_args.chain(args.map(|i| i.into())));
             }
             Some(first)
-        } else {
+        } _ => {
             None
-        };
+        }};
         Opt::parse_from(first.into_iter().chain(args.map(|i| i.into())))
     }
 }
