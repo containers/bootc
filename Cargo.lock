@@ -198,6 +198,7 @@ dependencies = [
  "anstyle",
  "anyhow",
  "bootc-blockdev",
+ "bootc-sysusers",
  "bootc-tmpfiles",
  "bootc-utils",
  "camino",
@@ -238,6 +239,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "bootc-sysusers"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bootc-utils",
+ "camino",
+ "cap-std-ext",
+ "fn-error-context",
+ "hex",
+ "indoc",
+ "rustix",
+ "similar-asserts",
+ "tempfile",
+ "thiserror 2.0.11",
+ "uzers",
+]
+
+[[package]]
 name = "bootc-tmpfiles"
 version = "0.1.0"
 dependencies = [
@@ -262,6 +281,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "shlex",
  "similar-asserts",
  "static_assertions",
  "tempfile",
