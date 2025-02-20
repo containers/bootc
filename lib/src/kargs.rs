@@ -230,7 +230,10 @@ match-architectures = ["x86_64", "aarch64"]
         let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
         assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
         // TODO: Audit that the environment access only happens in single-threaded code.
-        unsafe { std::env::set_var("ARCH", "aarch64") };
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("ARCH", "aarch64")
+        };
         let parsed_kargs = parse_kargs_toml(&file_content, sys_arch).unwrap();
         assert_eq!(parsed_kargs, ["console=tty0", "nosmt"]);
     }

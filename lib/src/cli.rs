@@ -977,7 +977,10 @@ pub fn global_init() -> Result<()> {
         // to invoke this as early as possible. (In practice, that's just the cli's `main.rs`)
         // xref https://internals.rust-lang.org/t/synchronized-ffi-access-to-posix-environment-variable-functions/15475
         // TODO: Audit that the environment access only happens in single-threaded code.
-        unsafe { std::env::set_var("HOME", "/root") };
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("HOME", "/root")
+        };
     }
     Ok(())
 }
