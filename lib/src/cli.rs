@@ -7,7 +7,7 @@ use std::io::Seek;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use camino::Utf8PathBuf;
 use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::Dir;
@@ -1016,27 +1016,28 @@ impl Opt {
         I::Item: Into<OsString> + Clone,
     {
         let mut args = args.into_iter();
-        let first = match args.next() { Some(first) => {
-            let first: OsString = first.into();
-            let argv0 = callname_from_argv0(&first);
-            tracing::debug!("argv0={argv0:?}");
-            let mapped = match argv0 {
-                InternalsOpts::GENERATOR_BIN => {
-                    Some(["bootc", "internals", "systemd-generator"].as_slice())
+        let first = match args.next() {
+            Some(first) => {
+                let first: OsString = first.into();
+                let argv0 = callname_from_argv0(&first);
+                tracing::debug!("argv0={argv0:?}");
+                let mapped = match argv0 {
+                    InternalsOpts::GENERATOR_BIN => {
+                        Some(["bootc", "internals", "systemd-generator"].as_slice())
+                    }
+                    "ostree-container" | "ostree-ima-sign" | "ostree-provisional-repair" => {
+                        Some(["bootc", "internals", "ostree-ext"].as_slice())
+                    }
+                    _ => None,
+                };
+                if let Some(base_args) = mapped {
+                    let base_args = base_args.iter().map(OsString::from);
+                    return Opt::parse_from(base_args.chain(args.map(|i| i.into())));
                 }
-                "ostree-container" | "ostree-ima-sign" | "ostree-provisional-repair" => {
-                    Some(["bootc", "internals", "ostree-ext"].as_slice())
-                }
-                _ => None,
-            };
-            if let Some(base_args) = mapped {
-                let base_args = base_args.iter().map(OsString::from);
-                return Opt::parse_from(base_args.chain(args.map(|i| i.into())));
+                Some(first)
             }
-            Some(first)
-        } _ => {
-            None
-        }};
+            _ => None,
+        };
         Opt::parse_from(first.into_iter().chain(args.map(|i| i.into())))
     }
 }

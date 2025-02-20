@@ -2,7 +2,7 @@
 
 use crate::chunking;
 use crate::objgv::*;
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, ensure};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
 use gio::glib;
@@ -446,35 +446,38 @@ impl<'a, W: std::io::Write> OstreeTarWriter<'a, W> {
             self.append_ostree_xattrs(checksum, &xattrs)?;
             self.append_tarstream_xattrs(&xattrs)?;
 
-            match instream { Some(instream) => {
-                ensure!(meta.file_type() == gio::FileType::Regular);
+            match instream {
+                Some(instream) => {
+                    ensure!(meta.file_type() == gio::FileType::Regular);
 
-                let mut instream = BufReader::with_capacity(BUF_CAPACITY, instream.into_read());
-                self.out
-                    .append_data(&mut h, &path, &mut instream)
-                    .with_context(|| format!("Writing regfile {}", checksum))?;
-            } _ => {
-                ensure!(meta.file_type() == gio::FileType::SymbolicLink);
-
-                let target = meta
-                    .symlink_target()
-                    .ok_or_else(|| anyhow!("Missing symlink target"))?;
-                let target = target
-                    .to_str()
-                    .ok_or_else(|| anyhow!("Invalid UTF-8 symlink target: {target:?}"))?;
-                let context = || format!("Writing content symlink: {}", checksum);
-                // Handle //chkconfig, see above
-                if symlink_is_denormal(target) {
-                    h.set_link_name_literal(target).with_context(context)?;
+                    let mut instream = BufReader::with_capacity(BUF_CAPACITY, instream.into_read());
                     self.out
-                        .append_data(&mut h, &path, &mut std::io::empty())
-                        .with_context(context)?;
-                } else {
-                    self.out
-                        .append_link(&mut h, &path, target)
-                        .with_context(context)?;
+                        .append_data(&mut h, &path, &mut instream)
+                        .with_context(|| format!("Writing regfile {}", checksum))?;
                 }
-            }}
+                _ => {
+                    ensure!(meta.file_type() == gio::FileType::SymbolicLink);
+
+                    let target = meta
+                        .symlink_target()
+                        .ok_or_else(|| anyhow!("Missing symlink target"))?;
+                    let target = target
+                        .to_str()
+                        .ok_or_else(|| anyhow!("Invalid UTF-8 symlink target: {target:?}"))?;
+                    let context = || format!("Writing content symlink: {}", checksum);
+                    // Handle //chkconfig, see above
+                    if symlink_is_denormal(target) {
+                        h.set_link_name_literal(target).with_context(context)?;
+                        self.out
+                            .append_data(&mut h, &path, &mut std::io::empty())
+                            .with_context(context)?;
+                    } else {
+                        self.out
+                            .append_link(&mut h, &path, target)
+                            .with_context(context)?;
+                    }
+                }
+            }
         }
 
         Ok((path, h))

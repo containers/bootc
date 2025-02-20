@@ -15,16 +15,13 @@ pub trait KeyFileExt {
 pub fn map_keyfile_optional<T>(res: Result<T, glib::Error>) -> Result<Option<T>, glib::Error> {
     match res {
         Ok(v) => Ok(Some(v)),
-        Err(e) => {
-            match e.kind::<glib::KeyFileError>() { Some(t) => {
-                match t {
-                    glib::KeyFileError::GroupNotFound | glib::KeyFileError::KeyNotFound => Ok(None),
-                    _ => Err(e),
-                }
-            } _ => {
-                Err(e)
-            }}
-        }
+        Err(e) => match e.kind::<glib::KeyFileError>() {
+            Some(t) => match t {
+                glib::KeyFileError::GroupNotFound | glib::KeyFileError::KeyNotFound => Ok(None),
+                _ => Err(e),
+            },
+            _ => Err(e),
+        },
     }
 }
 

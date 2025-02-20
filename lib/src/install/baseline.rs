@@ -21,12 +21,12 @@ use clap::ValueEnum;
 use fn_error_context::context;
 use serde::{Deserialize, Serialize};
 
-use super::config::Filesystem;
 use super::MountSpec;
-use super::RootSetup;
-use super::State;
 use super::RUN_BOOTC;
 use super::RW_KARG;
+use super::RootSetup;
+use super::State;
+use super::config::Filesystem;
 use crate::mount;
 #[cfg(feature = "install-to-disk")]
 use crate::mount::is_mounted_in_pid1_mountns;

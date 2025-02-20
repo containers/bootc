@@ -11,7 +11,7 @@ use fn_error_context::context;
 use ocidir::cap_std::fs::Dir;
 use ostree::glib;
 
-use super::store::{gc_image_layers, LayeredImageState};
+use super::store::{LayeredImageState, gc_image_layers};
 use super::{ImageReference, OstreeImageReference};
 use crate::container::store::PrepareResult;
 use crate::keyfileext::KeyFileExt;

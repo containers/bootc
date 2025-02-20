@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::OnceLock;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use fn_error_context::context;

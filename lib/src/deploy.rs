@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::io::{BufRead, Write};
 
 use anyhow::Ok;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use cap_std::fs::{Dir, MetadataExt};
 use cap_std_ext::cap_std;
 use cap_std_ext::dirext::CapStdExtDirExt;
@@ -783,21 +783,24 @@ pub(crate) fn switch_origin_inplace(root: &Dir, imgref: &ImageReference) -> Resu
 
     let mut ostree_deploys = root.open_dir("sysroot/ostree/deploy")?.entries()?;
     let deploydir = loop {
-        match ostree_deploys.next() { Some(ent) => {
-            let ent = ent?;
-            if !ent.file_type()?.is_dir() {
-                continue;
+        match ostree_deploys.next() {
+            Some(ent) => {
+                let ent = ent?;
+                if !ent.file_type()?.is_dir() {
+                    continue;
+                }
+                tracing::debug!("Checking {:?}", ent.file_name());
+                let child_dir = ent
+                    .open_dir()
+                    .with_context(|| format!("Opening dir {:?}", ent.file_name()))?;
+                if let Some(d) = child_dir.open_dir_optional("deploy")? {
+                    break d;
+                }
             }
-            tracing::debug!("Checking {:?}", ent.file_name());
-            let child_dir = ent
-                .open_dir()
-                .with_context(|| format!("Opening dir {:?}", ent.file_name()))?;
-            if let Some(d) = child_dir.open_dir_optional("deploy")? {
-                break d;
+            _ => {
+                anyhow::bail!("Failed to find a deployment");
             }
-        } _ => {
-            anyhow::bail!("Failed to find a deployment");
-        }}
+        }
     };
     let newest_deployment = find_newest_deployment_name(&deploydir)?;
     let origin_path = format!("{newest_deployment}.origin");

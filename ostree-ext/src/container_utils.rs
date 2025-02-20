@@ -53,22 +53,22 @@ pub fn is_bare_split_xattrs() -> Result<bool> {
     match open_optional(V1_REPO_CONFIG)
         .transpose()
         .or_else(|| open_optional(V0_REPO_CONFIG).transpose())
-    { Some(configf) => {
-        let configf = configf?;
-        let mut bufr = std::io::BufReader::new(configf);
-        let mut s = String::new();
-        bufr.read_to_string(&mut s)?;
-        let kf = glib::KeyFile::new();
-        kf.load_from_data(&s, glib::KeyFileFlags::NONE)?;
-        let r = match kf.optional_string("core", "mode")? { Some(mode) => {
-            mode == crate::tar::BARE_SPLIT_XATTRS_MODE
-        } _ => {
-            false
-        }};
-        Ok(r)
-    } _ => {
-        Ok(false)
-    }}
+    {
+        Some(configf) => {
+            let configf = configf?;
+            let mut bufr = std::io::BufReader::new(configf);
+            let mut s = String::new();
+            bufr.read_to_string(&mut s)?;
+            let kf = glib::KeyFile::new();
+            kf.load_from_data(&s, glib::KeyFileFlags::NONE)?;
+            let r = match kf.optional_string("core", "mode")? {
+                Some(mode) => mode == crate::tar::BARE_SPLIT_XATTRS_MODE,
+                _ => false,
+            };
+            Ok(r)
+        }
+        _ => Ok(false),
+    }
 }
 
 /// Returns true if the system appears to have been booted via ostree.

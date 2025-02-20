@@ -75,11 +75,12 @@ fn clean_subdir(root: &Dir, rootdev: u64) -> Result<()> {
 
 fn clean_paths_in(root: &Dir, rootdev: u64) -> Result<()> {
     for path in FORCE_CLEAN_PATHS {
-        let subdir = match root.open_dir_optional(path)? { Some(subdir) => {
-            subdir
-        } _ => {
-            continue;
-        }};
+        let subdir = match root.open_dir_optional(path)? {
+            Some(subdir) => subdir,
+            _ => {
+                continue;
+            }
+        };
         clean_subdir(&subdir, rootdev).with_context(|| format!("Cleaning {path}"))?;
     }
     Ok(())

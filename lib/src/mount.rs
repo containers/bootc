@@ -6,7 +6,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use bootc_utils::CommandRunExt;
 use camino::Utf8Path;
 use fn_error_context::context;

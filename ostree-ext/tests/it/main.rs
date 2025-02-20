@@ -12,10 +12,10 @@ use oci_spec::image as oci_image;
 use ocidir::oci_spec::image::{Arch, DigestAlgorithm};
 use once_cell::sync::{Lazy, OnceCell};
 use ostree_ext::chunking::ObjectMetaSized;
-use ostree_ext::container::{store, ManifestDiff};
 use ostree_ext::container::{
     Config, ExportOpts, ImageReference, OstreeImageReference, SignatureSource, Transport,
 };
+use ostree_ext::container::{ManifestDiff, store};
 use ostree_ext::prelude::{Cast, FileExt};
 use ostree_ext::tar::TarImportOptions;
 use ostree_ext::{fixture, ostree_manual};
@@ -28,7 +28,7 @@ use std::time::SystemTime;
 use xshell::cmd;
 
 use ostree_ext::fixture::{
-    FileDef, Fixture, NonOstreeFixture, CONTENTS_CHECKSUM_V0, LAYERS_V0_LEN, PKGS_V0_LEN,
+    CONTENTS_CHECKSUM_V0, FileDef, Fixture, LAYERS_V0_LEN, NonOstreeFixture, PKGS_V0_LEN,
 };
 
 const EXAMPLE_TAR_LAYER: &[u8] = include_bytes!("fixtures/hlinks.tar.gz");
@@ -800,11 +800,13 @@ async fn test_unencapsulate_unbootable() -> Result<()> {
     .context("exporting")?;
     assert!(srcoci_path.exists());
 
-    assert!(fixture
-        .destrepo()
-        .resolve_rev(fixture.testref(), true)
-        .unwrap()
-        .is_none());
+    assert!(
+        fixture
+            .destrepo()
+            .resolve_rev(fixture.testref(), true)
+            .unwrap()
+            .is_none()
+    );
 
     let target = ostree_ext::container::unencapsulate(fixture.destrepo(), &srcoci_unverified)
         .await
@@ -932,9 +934,11 @@ async fn test_container_chunked() -> Result<()> {
 
     let mut imp =
         store::ImageImporter::new(fixture.destrepo(), &imgref, Default::default()).await?;
-    assert!(store::query_image(fixture.destrepo(), &imgref.imgref)
-        .unwrap()
-        .is_none());
+    assert!(
+        store::query_image(fixture.destrepo(), &imgref.imgref)
+            .unwrap()
+            .is_none()
+    );
     let prep = match imp.prepare().await.context("Init prep derived")? {
         store::PrepareResult::AlreadyPresent(_) => panic!("should not be already imported"),
         store::PrepareResult::Ready(r) => r,
@@ -951,14 +955,16 @@ async fn test_container_chunked() -> Result<()> {
     assert_eq!(digest, expected_digest);
     {
         let mut layer_history = prep.layers_with_history();
-        assert!(layer_history
-            .next()
-            .unwrap()?
-            .1
-            .created_by()
-            .as_ref()
-            .unwrap()
-            .starts_with("ostree export"));
+        assert!(
+            layer_history
+                .next()
+                .unwrap()?
+                .1
+                .created_by()
+                .as_ref()
+                .unwrap()
+                .starts_with("ostree export")
+        );
         assert_eq!(
             layer_history
                 .next()
@@ -1165,9 +1171,11 @@ async fn test_container_var_content() -> Result<()> {
         ostree_manual::repo_file_read_to_string(&varfile)?,
         junk_var_data
     );
-    assert!(!ostree_root
-        .child("var/lib/foo")
-        .query_exists(gio::Cancellable::NONE));
+    assert!(
+        !ostree_root
+            .child("var/lib/foo")
+            .query_exists(gio::Cancellable::NONE)
+    );
 
     assert!(
         store::image_filtered_content_warning(fixture.destrepo(), &derived_imgref.imgref)
@@ -1195,9 +1203,11 @@ async fn test_container_var_content() -> Result<()> {
         .downcast::<ostree::RepoFile>()
         .unwrap();
     assert!(!varfile.query_exists(gio::Cancellable::NONE));
-    assert!(ostree_root
-        .child("var/lib/foo")
-        .query_exists(gio::Cancellable::NONE));
+    assert!(
+        ostree_root
+            .child("var/lib/foo")
+            .query_exists(gio::Cancellable::NONE)
+    );
     Ok(())
 }
 
@@ -1551,13 +1561,15 @@ async fn test_container_write_derive() -> Result<()> {
     )
     .read()?;
     assert_eq!(c.as_str(), "newderivedfile v1");
-    assert!(cmd!(
-        sh,
-        "ostree --repo=dest/repo ls {merge_commit} /usr/bin/newderivedfile3"
-    )
-    .ignore_stderr()
-    .run()
-    .is_err());
+    assert!(
+        cmd!(
+            sh,
+            "ostree --repo=dest/repo ls {merge_commit} /usr/bin/newderivedfile3"
+        )
+        .ignore_stderr()
+        .run()
+        .is_err()
+    );
 
     // And there should be no changes on upgrade again.
     let mut imp =
@@ -1691,7 +1703,9 @@ async fn test_container_write_derive_sysroot_hardlink() -> Result<()> {
         derived_path,
         |w| {
             let mut tar = tar::Builder::new(w);
-            let objpath = Utf8Path::new("sysroot/ostree/repo/objects/60/feb13e826d2f9b62490ab24cea0f4a2d09615fb57027e55f713c18c59f4796.file");
+            let objpath = Utf8Path::new(
+                "sysroot/ostree/repo/objects/60/feb13e826d2f9b62490ab24cea0f4a2d09615fb57027e55f713c18c59f4796.file",
+            );
             let d = objpath.parent().unwrap();
             fn mkparents<F: std::io::Write>(
                 t: &mut tar::Builder<F>,
@@ -1840,14 +1854,15 @@ async fn test_container_xattr() -> Result<()> {
         let v = arping_ostree_xattrs.data_as_bytes();
         let v = v.try_as_aligned().unwrap();
         let v = gvariant::gv!("a(ayay)").cast(v);
-        assert!(v
-            .iter()
-            .find(|entry| {
-                let k = entry.to_tuple().0;
-                let k = std::ffi::CStr::from_bytes_with_nul(k).unwrap();
-                k.to_str().ok() == Some("security.capability")
-            })
-            .is_some());
+        assert!(
+            v.iter()
+                .find(|entry| {
+                    let k = entry.to_tuple().0;
+                    let k = std::ffi::CStr::from_bytes_with_nul(k).unwrap();
+                    k.to_str().ok() == Some("security.capability")
+                })
+                .is_some()
+        );
     }
 
     // Build a derived image

@@ -14,7 +14,7 @@ use crate::container::{COMPONENT_SEPARATOR, CONTENT_ANNOTATION};
 use crate::objectsource::{ContentID, ObjectMeta, ObjectMetaMap, ObjectSourceMeta};
 use crate::objgv::*;
 use crate::statistics;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use camino::Utf8PathBuf;
 use containers_image_proxy::oci_spec;
 use gvariant::aligned_bytes::TryAsAligned;

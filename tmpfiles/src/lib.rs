@@ -475,10 +475,16 @@ mod tests {
     #[test]
     fn test_tmpfiles_entry_get_path() {
         let cases = [
-              ("z /dev/kvm          0666 - kvm -", "/dev/kvm"),
-              ("d /run/lock/lvm 0700 root root -", "/run/lock/lvm"),
-              ("a+      /var/lib/tpm2-tss/system/keystore   -    -    -     -           default:group:tss:rwx", "/var/lib/tpm2-tss/system/keystore"),
-              ("d \"/run/file with spaces/foo\" 0700 root root -", "/run/file with spaces/foo"),
+            ("z /dev/kvm          0666 - kvm -", "/dev/kvm"),
+            ("d /run/lock/lvm 0700 root root -", "/run/lock/lvm"),
+            (
+                "a+      /var/lib/tpm2-tss/system/keystore   -    -    -     -           default:group:tss:rwx",
+                "/var/lib/tpm2-tss/system/keystore",
+            ),
+            (
+                "d \"/run/file with spaces/foo\" 0700 root root -",
+                "/run/file with spaces/foo",
+            ),
             (
                 r#"d /spaces\x20\x20here/foo 0700 root root -"#,
                 "/spaces  here/foo",

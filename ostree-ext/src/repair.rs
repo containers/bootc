@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use cap_std::fs::{Dir, MetadataExt};
 use cap_std_ext::cap_std;
 use fn_error_context::context;
@@ -190,30 +190,33 @@ pub fn analyze_for_repair(sysroot: &SysrootLock, verbose: bool) -> Result<Repair
     let mut booted_is_likely_corrupted = false;
     let mut staged_is_likely_corrupted = false;
     for imgref in all_images {
-        match container_store::query_image(repo, &imgref)? { Some(state) => {
-            if !container_store::verify_container_image(
-                sysroot,
-                &imgref,
-                &state,
-                &inodes.collisions,
-                verbose,
-            )? {
-                eprintln!("warning: Corrupted image {imgref}");
-                likely_corrupted_container_image_merges.push(imgref.to_string());
-                let merge_commit = state.merge_commit.as_str();
-                if booted_checksum == Some(merge_commit) {
-                    booted_is_likely_corrupted = true;
-                    eprintln!("warning: booted deployment is likely corrupted");
-                } else if staged_checksum == Some(merge_commit) {
-                    staged_is_likely_corrupted = true;
-                    eprintln!("warning: staged deployment is likely corrupted");
+        match container_store::query_image(repo, &imgref)? {
+            Some(state) => {
+                if !container_store::verify_container_image(
+                    sysroot,
+                    &imgref,
+                    &state,
+                    &inodes.collisions,
+                    verbose,
+                )? {
+                    eprintln!("warning: Corrupted image {imgref}");
+                    likely_corrupted_container_image_merges.push(imgref.to_string());
+                    let merge_commit = state.merge_commit.as_str();
+                    if booted_checksum == Some(merge_commit) {
+                        booted_is_likely_corrupted = true;
+                        eprintln!("warning: booted deployment is likely corrupted");
+                    } else if staged_checksum == Some(merge_commit) {
+                        staged_is_likely_corrupted = true;
+                        eprintln!("warning: staged deployment is likely corrupted");
+                    }
                 }
             }
-        } _ => {
-            // This really shouldn't happen
-            eprintln!("warning: Image was removed from underneath us: {imgref}");
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }}
+            _ => {
+                // This really shouldn't happen
+                eprintln!("warning: Image was removed from underneath us: {imgref}");
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
     }
     Ok(RepairResult {
         inodes,
