@@ -360,6 +360,40 @@ fn check_utf8(dir: &Dir) -> LintResult {
     lint_ok()
 }
 
+fn check_prepareroot_composefs_norecurse(dir: &Dir) -> LintResult {
+    let path = ostree_ext::ostree_prepareroot::CONF_PATH;
+    let Some(config) = ostree_prepareroot::load_config_from_root(dir)? else {
+        return lint_err(format!("{path} is not present to enable composefs"));
+    };
+    if !ostree_prepareroot::overlayfs_enabled_in_config(&config)? {
+        return lint_err(format!("{path} does not have composefs enabled"));
+    }
+    lint_ok()
+}
+
+#[distributed_slice(LINTS)]
+static LINT_COMPOSEFS: Lint = Lint::new_warning(
+    "baseimage-composefs",
+    indoc! { r#"
+Check that composefs is enabled for ostree. More in
+<https://ostreedev.github.io/ostree/composefs/>.
+"#},
+    check_composefs,
+);
+fn check_composefs(dir: &Dir) -> LintResult {
+    if let Err(e) = check_prepareroot_composefs_norecurse(dir)? {
+        return Ok(Err(e));
+    }
+    // If we have our own documentation with the expected root contents
+    // embedded, then check that too! Mostly just because recursion is fun.
+    if let Some(dir) = dir.open_dir_optional(BASEIMAGE_REF)? {
+        if let Err(e) = check_prepareroot_composefs_norecurse(&dir)? {
+            return Ok(Err(e));
+        }
+    }
+    lint_ok()
+}
+
 /// Check for a few files and directories we expect in the base image.
 fn check_baseimage_root_norecurse(dir: &Dir) -> LintResult {
     // Check /sysroot
@@ -380,12 +414,7 @@ fn check_baseimage_root_norecurse(dir: &Dir) -> LintResult {
     let link = dir.read_link_contents("ostree")?;
     let expected = "sysroot/ostree";
     if link.as_os_str().as_bytes() != expected.as_bytes() {
-        return lint_err("Expected /ostree -> {expected}, not {link:?}");
-    }
-
-    let config = ostree_prepareroot::require_config_from_root(dir)?;
-    if !ostree_prepareroot::overlayfs_enabled_in_config(&config)? {
-        return lint_err("{prepareroot_path} does not have composefs enabled");
+        return lint_err(format!("Expected /ostree -> {expected}, not {link:?}"));
     }
 
     lint_ok()
@@ -857,6 +886,26 @@ mod tests {
         drop(td);
         let td = passing_fixture()?;
         check_baseimage_root(&td).unwrap().unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn test_composefs() -> Result<()> {
+        let td = fixture()?;
+
+        // An empty root should fail our test
+        assert!(check_composefs(&td).unwrap().is_err());
+
+        drop(td);
+        let td = passing_fixture()?;
+        check_baseimage_root(&td).unwrap().unwrap();
+
+        td.write(
+            "usr/lib/ostree/prepare-root.conf",
+            b"[composefs]\nenabled = false",
+        )?;
+        assert!(check_composefs(&td).unwrap().is_err());
+
         Ok(())
     }
 
