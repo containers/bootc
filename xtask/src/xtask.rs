@@ -5,10 +5,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::Command;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use camino::{Utf8Path, Utf8PathBuf};
 use fn_error_context::context;
-use xshell::{cmd, Shell};
+use xshell::{Shell, cmd};
 
 const NAME: &str = "bootc";
 const TEST_IMAGES: &[&str] = &[

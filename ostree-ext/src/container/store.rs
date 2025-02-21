@@ -11,7 +11,7 @@ use crate::logging::system_repo_journal_print;
 use crate::refescape;
 use crate::sysroot::SysrootLock;
 use crate::utils::ResultExt;
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_std_ext::cap_std;
 use cap_std_ext::cap_std::fs::{Dir, MetadataExt};
@@ -333,16 +333,17 @@ fn manifest_data_from_commitmeta(
 }
 
 fn image_config_from_commitmeta(commit_meta: &glib::VariantDict) -> Result<ImageConfiguration> {
-    let config = if let Some(config) = commit_meta
+    let config = match commit_meta
         .lookup::<String>(META_CONFIG)?
         .filter(|v| v != "null") // Format v0 apparently old versions injected `null` here sadly...
         .map(|v| serde_json::from_str(&v).map_err(anyhow::Error::msg))
         .transpose()?
     {
-        config
-    } else {
-        tracing::debug!("No image configuration found");
-        Default::default()
+        Some(config) => config,
+        _ => {
+            tracing::debug!("No image configuration found");
+            Default::default()
+        }
     };
     Ok(config)
 }
@@ -668,7 +669,9 @@ impl ImageImporter {
     pub(crate) async fn prepare_internal(&mut self, verify_layers: bool) -> Result<PrepareResult> {
         match &self.imgref.sigverify {
             SignatureSource::ContainerPolicy if skopeo::container_policy_is_default_insecure()? => {
-                return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
+                return Err(anyhow!(
+                    "containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"
+                ));
             }
             SignatureSource::OstreeRemote(_) if verify_layers => {
                 return Err(anyhow!(
@@ -685,20 +688,21 @@ impl ImageImporter {
         // Query for previous stored state
 
         let (previous_state, previous_imageid) =
-            if let Some(previous_state) = try_query_image(&self.repo, &self.imgref.imgref)? {
-                // If the manifest digests match, we're done.
-                if previous_state.manifest_digest == manifest_digest {
-                    return Ok(PrepareResult::AlreadyPresent(previous_state));
+            match try_query_image(&self.repo, &self.imgref.imgref)? {
+                Some(previous_state) => {
+                    // If the manifest digests match, we're done.
+                    if previous_state.manifest_digest == manifest_digest {
+                        return Ok(PrepareResult::AlreadyPresent(previous_state));
+                    }
+                    // Failing that, if they have the same imageID, we're also done.
+                    let previous_imageid = previous_state.manifest.config().digest();
+                    if previous_imageid == new_imageid {
+                        return Ok(PrepareResult::AlreadyPresent(previous_state));
+                    }
+                    let previous_imageid = previous_imageid.to_string();
+                    (Some(previous_state), Some(previous_imageid))
                 }
-                // Failing that, if they have the same imageID, we're also done.
-                let previous_imageid = previous_state.manifest.config().digest();
-                if previous_imageid == new_imageid {
-                    return Ok(PrepareResult::AlreadyPresent(previous_state));
-                }
-                let previous_imageid = previous_imageid.to_string();
-                (Some(previous_state), Some(previous_imageid))
-            } else {
-                (None, None)
+                _ => (None, None),
             };
 
         let config = self.proxy.fetch_config(&self.proxy_img).await?;
@@ -737,7 +741,9 @@ impl ImageImporter {
         if matches!(self.imgref.sigverify, SignatureSource::ContainerPolicy)
             && skopeo::container_policy_is_default_insecure()?
         {
-            return Err(anyhow!("containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"));
+            return Err(anyhow!(
+                "containers-policy.json specifies a default of `insecureAcceptAnything`; refusing usage"
+            ));
         }
         let remote = match &self.imgref.sigverify {
             SignatureSource::OstreeRemote(remote) => Some(remote.clone()),
@@ -1144,16 +1150,15 @@ fn try_query_image(
     imgref: &ImageReference,
 ) -> Result<Option<Box<LayeredImageState>>> {
     let ostree_ref = &ref_for_image(imgref)?;
-    if let Some(merge_rev) = repo.resolve_rev(ostree_ref, true)? {
-        match query_image_commit(repo, merge_rev.as_str()) {
+    match repo.resolve_rev(ostree_ref, true)? {
+        Some(merge_rev) => match query_image_commit(repo, merge_rev.as_str()) {
             Ok(r) => Ok(Some(r)),
             Err(e) => {
                 eprintln!("error: failed to query image commit: {e}");
                 Ok(None)
             }
-        }
-    } else {
-        Ok(None)
+        },
+        _ => Ok(None),
     }
 }
 
@@ -1173,14 +1178,14 @@ pub fn query_image(
 /// Given detached commit metadata, parse the data that we serialized for a pending update (if any).
 fn parse_cached_update(meta: &glib::VariantDict) -> Result<Option<CachedImageUpdate>> {
     // Try to retrieve the manifest digest key from the commit detached metadata.
-    let manifest_digest =
-        if let Some(d) = meta.lookup::<String>(ImageImporter::CACHED_KEY_MANIFEST_DIGEST)? {
-            d
-        } else {
+    let manifest_digest = match meta.lookup::<String>(ImageImporter::CACHED_KEY_MANIFEST_DIGEST)? {
+        Some(d) => d,
+        _ => {
             // It's possible that something *else* wrote detached metadata, but without
             // our key; gracefully handle that.
             return Ok(None);
-        };
+        }
+    };
     let manifest_digest = Digest::from_str(&manifest_digest)?;
     // If we found the cached manifest digest key, then we must have the manifest and config;
     // otherwise that's an error.
@@ -1782,56 +1787,59 @@ fn compare_commit_trees(
         let target_info = crate::diff::query_info_optional(&target_child, queryattrs, queryflags)
             .context("querying optional to")?;
         let is_dir = matches!(expected_info.file_type(), gio::FileType::Directory);
-        if let Some(target_info) = target_info {
-            let to_child = target_child
-                .downcast::<ostree::RepoFile>()
-                .expect("downcast");
-            to_child.ensure_resolved()?;
-            let from_child = expected_child
-                .downcast::<ostree::RepoFile>()
-                .expect("downcast");
-            from_child.ensure_resolved()?;
+        match target_info {
+            Some(target_info) => {
+                let to_child = target_child
+                    .downcast::<ostree::RepoFile>()
+                    .expect("downcast");
+                to_child.ensure_resolved()?;
+                let from_child = expected_child
+                    .downcast::<ostree::RepoFile>()
+                    .expect("downcast");
+                from_child.ensure_resolved()?;
 
-            if is_dir {
-                let from_contents_checksum = from_child.tree_get_contents_checksum();
-                let to_contents_checksum = to_child.tree_get_contents_checksum();
-                if from_contents_checksum != to_contents_checksum {
-                    let subpath = Utf8PathBuf::from(format!("{}/", path));
-                    compare_commit_trees(
-                        repo,
-                        &subpath,
-                        &from_child,
-                        &to_child,
-                        exact,
-                        colliding_inodes,
-                        state,
-                    )?;
-                }
-            } else {
-                let from_checksum = from_child.checksum();
-                let to_checksum = to_child.checksum();
-                let matches = if exact {
-                    from_checksum == to_checksum
-                } else {
-                    compare_file_info(&target_info, &expected_info)
-                };
-                if !matches {
-                    let from_inode = inode_of_object(repo, &from_checksum)?;
-                    let to_inode = inode_of_object(repo, &to_checksum)?;
-                    if colliding_inodes.contains(&from_inode)
-                        || colliding_inodes.contains(&to_inode)
-                    {
-                        state.inode_corrupted.insert(path);
-                    } else {
-                        state.unknown_corrupted.insert(path);
+                if is_dir {
+                    let from_contents_checksum = from_child.tree_get_contents_checksum();
+                    let to_contents_checksum = to_child.tree_get_contents_checksum();
+                    if from_contents_checksum != to_contents_checksum {
+                        let subpath = Utf8PathBuf::from(format!("{}/", path));
+                        compare_commit_trees(
+                            repo,
+                            &subpath,
+                            &from_child,
+                            &to_child,
+                            exact,
+                            colliding_inodes,
+                            state,
+                        )?;
                     }
                 } else {
-                    state.verified.insert(path);
+                    let from_checksum = from_child.checksum();
+                    let to_checksum = to_child.checksum();
+                    let matches = if exact {
+                        from_checksum == to_checksum
+                    } else {
+                        compare_file_info(&target_info, &expected_info)
+                    };
+                    if !matches {
+                        let from_inode = inode_of_object(repo, &from_checksum)?;
+                        let to_inode = inode_of_object(repo, &to_checksum)?;
+                        if colliding_inodes.contains(&from_inode)
+                            || colliding_inodes.contains(&to_inode)
+                        {
+                            state.inode_corrupted.insert(path);
+                        } else {
+                            state.unknown_corrupted.insert(path);
+                        }
+                    } else {
+                        state.verified.insert(path);
+                    }
                 }
             }
-        } else {
-            eprintln!("Missing {path}");
-            state.unknown_corrupted.insert(path);
+            _ => {
+                eprintln!("Missing {path}");
+                state.unknown_corrupted.insert(path);
+            }
         }
     }
     Ok(())
@@ -1958,7 +1966,10 @@ mod tests {
             )
             .build()
             .unwrap();
-        assert_eq!(ref_for_layer(&d).unwrap(), "ostree/container/blob/sha256_3A_2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae");
+        assert_eq!(
+            ref_for_layer(&d).unwrap(),
+            "ostree/container/blob/sha256_3A_2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+        );
     }
 
     #[test]

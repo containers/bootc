@@ -261,7 +261,9 @@ fn check_buildah_injected(root: &Dir) -> LintResult {
     for ent in RUNTIME_INJECTED {
         if let Some(meta) = root.symlink_metadata_optional(ent)? {
             if meta.is_file() && meta.size() == 0 {
-                return lint_err(format!("/{ent} is an empty file; this may have been synthesized by a container runtime."));
+                return lint_err(format!(
+                    "/{ent} is an empty file; this may have been synthesized by a container runtime."
+                ));
             }
         }
     }
@@ -287,7 +289,7 @@ fn check_usretc(root: &Dir) -> LintResult {
     // But having both /etc and /usr/etc is not something we want to support.
     if root.symlink_metadata_optional("usr/etc")?.is_some() {
         return lint_err(
-            "Found /usr/etc - this is a bootc implementation detail and not supported to use in containers"
+            "Found /usr/etc - this is a bootc implementation detail and not supported to use in containers",
         );
     }
     lint_ok()

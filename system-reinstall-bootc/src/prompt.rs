@@ -1,8 +1,8 @@
 use crate::{
     prompt,
-    users::{get_all_users_keys, UserKeys},
+    users::{UserKeys, get_all_users_keys},
 };
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 
 const NO_SSH_PROMPT: &str = "None of the users on this system found have authorized SSH keys, \
     if your image doesn't use cloud-init or other means to set up users, \

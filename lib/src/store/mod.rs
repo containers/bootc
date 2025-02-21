@@ -104,16 +104,16 @@ impl Storage {
 
 impl ContainerImageStore for ostree::Deployment {
     fn store<'a>(&self) -> Result<Option<Box<dyn ContainerImageStoreImpl>>> {
-        if let Some(origin) = self.origin().as_ref() {
-            if let Some(store) = origin.optional_string("bootc", "backend")? {
-                let store =
-                    crate::spec::Store::from_str(&store, true).map_err(anyhow::Error::msg)?;
-                Ok(Some(load(store)))
-            } else {
-                Ok(None)
-            }
-        } else {
-            Ok(None)
+        match self.origin().as_ref() {
+            Some(origin) => match origin.optional_string("bootc", "backend")? {
+                Some(store) => {
+                    let store =
+                        crate::spec::Store::from_str(&store, true).map_err(anyhow::Error::msg)?;
+                    Ok(Some(load(store)))
+                }
+                _ => Ok(None),
+            },
+            _ => Ok(None),
         }
     }
 }

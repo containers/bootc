@@ -23,7 +23,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, ensure};
 use bootc_utils::CommandRunExt;
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
@@ -826,11 +826,14 @@ async fn install_container(
             .with_context(|| format!("Recursive SELinux relabeling of {d}"))?;
         }
 
-        if let Some(cfs_super) = root.open_optional(OSTREE_COMPOSEFS_SUPER)? {
-            let label = crate::lsm::require_label(policy, "/usr".into(), 0o644)?;
-            crate::lsm::set_security_selinux(cfs_super.as_fd(), label.as_bytes())?;
-        } else {
-            tracing::warn!("Missing {OSTREE_COMPOSEFS_SUPER}; composefs is not enabled?");
+        match root.open_optional(OSTREE_COMPOSEFS_SUPER)? {
+            Some(cfs_super) => {
+                let label = crate::lsm::require_label(policy, "/usr".into(), 0o644)?;
+                crate::lsm::set_security_selinux(cfs_super.as_fd(), label.as_bytes())?;
+            }
+            _ => {
+                tracing::warn!("Missing {OSTREE_COMPOSEFS_SUPER}; composefs is not enabled?");
+            }
         }
     }
 
@@ -1036,7 +1039,10 @@ fn require_host_userns() -> Result<()> {
         .uid();
     // We must really be in a rootless container, or in some way
     // we're not part of the host user namespace.
-    ensure!(pid1_uid == 0, "{proc1} is owned by {pid1_uid}, not zero; this command must be run in the root user namespace (e.g. not rootless podman)");
+    ensure!(
+        pid1_uid == 0,
+        "{proc1} is owned by {pid1_uid}, not zero; this command must be run in the root user namespace (e.g. not rootless podman)"
+    );
     tracing::trace!("OK: we're in a matching user namespace with pid1");
     Ok(())
 }
@@ -1176,7 +1182,10 @@ async fn prepare_install(
     let external_source = source_opts.source_imgref.is_some();
     let source = match source_opts.source_imgref {
         None => {
-            ensure!(host_is_container, "Either --source-imgref must be defined or this command must be executed inside a podman container.");
+            ensure!(
+                host_is_container,
+                "Either --source-imgref must be defined or this command must be executed inside a podman container."
+            );
 
             crate::cli::require_root(true)?;
 
@@ -1531,11 +1540,14 @@ pub(crate) async fn install_to_disk(mut opts: InstallToDiskOpts) -> Result<()> {
     }
 
     // At this point, all other threads should be gone.
-    if let Some(state) = Arc::into_inner(state) {
-        state.consume()?;
-    } else {
-        // This shouldn't happen...but we will make it not fatal right now
-        tracing::warn!("Failed to consume state Arc");
+    match Arc::into_inner(state) {
+        Some(state) => {
+            state.consume()?;
+        }
+        _ => {
+            // This shouldn't happen...but we will make it not fatal right now
+            tracing::warn!("Failed to consume state Arc");
+        }
     }
 
     installation_complete();
@@ -1579,11 +1591,16 @@ fn remove_all_in_dir_no_xdev(d: &Dir, mount_err: bool) -> Result<()> {
         let name = entry.file_name();
         let etype = entry.file_type()?;
         if etype == FileType::dir() {
-            if let Some(subdir) = d.open_dir_noxdev(&name)? {
-                remove_all_in_dir_no_xdev(&subdir, mount_err)?;
-                d.remove_dir(&name)?;
-            } else if mount_err {
-                anyhow::bail!("Found unexpected mount point {name:?}");
+            match d.open_dir_noxdev(&name)? {
+                Some(subdir) => {
+                    remove_all_in_dir_no_xdev(&subdir, mount_err)?;
+                    d.remove_dir(&name)?;
+                }
+                _ => {
+                    if mount_err {
+                        anyhow::bail!("Found unexpected mount point {name:?}");
+                    }
+                }
             }
         } else {
             d.remove_file_optional(&name)?;

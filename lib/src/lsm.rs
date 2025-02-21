@@ -143,7 +143,9 @@ pub(crate) fn selinux_ensure_install_or_setenforce() -> Result<Option<SetEnforce
         Some(SetEnforceGuard::new())
     } else {
         let current = get_current_security_context()?;
-        anyhow::bail!("Failed to enter install_t (running as {current}) - use BOOTC_SETENFORCE0_FALLBACK=1 to override");
+        anyhow::bail!(
+            "Failed to enter install_t (running as {current}) - use BOOTC_SETENFORCE0_FALLBACK=1 to override"
+        );
     };
     Ok(g)
 }
@@ -395,11 +397,14 @@ where
         // Apply the target mode bits
         rustix::fs::fchmod(fd, mode).context("fchmod")?;
         // If we have a label, apply it
-        if let Some(label) = label {
-            tracing::debug!("Setting label for {destname} to {label}");
-            set_security_selinux(fd, label.as_bytes())?;
-        } else {
-            tracing::debug!("No label for {destname}");
+        match label {
+            Some(label) => {
+                tracing::debug!("Setting label for {destname} to {label}");
+                set_security_selinux(fd, label.as_bytes())?;
+            }
+            _ => {
+                tracing::debug!("No label for {destname}");
+            }
         }
         // Finally call the underlying writer function
         f(w)

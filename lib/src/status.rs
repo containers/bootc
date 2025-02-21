@@ -131,26 +131,34 @@ fn boot_entry_from_deployment(
             cached_update,
         },
         incompatible,
-    ) = if let Some(origin) = deployment.origin().as_ref() {
-        let incompatible = crate::utils::origin_has_rpmostree_stuff(origin);
-        let (store, cached_imagestatus) = if incompatible {
-            // If there are local changes, we can't represent it as a bootc compatible image.
-            (None, CachedImageStatus::default())
-        } else if let Some(image) = get_image_origin(origin)? {
-            let store = deployment.store()?;
-            let store = store.as_ref().unwrap_or(&sysroot.store);
-            let spec = Some(store.spec());
-            let status = store.imagestatus(sysroot, deployment, image)?;
+    ) = match deployment.origin().as_ref() {
+        Some(origin) => {
+            let incompatible = crate::utils::origin_has_rpmostree_stuff(origin);
+            let (store, cached_imagestatus) = if incompatible {
+                // If there are local changes, we can't represent it as a bootc compatible image.
+                (None, CachedImageStatus::default())
+            } else {
+                match get_image_origin(origin)? {
+                    Some(image) => {
+                        let store = deployment.store()?;
+                        let store = store.as_ref().unwrap_or(&sysroot.store);
+                        let spec = Some(store.spec());
+                        let status = store.imagestatus(sysroot, deployment, image)?;
 
-            (spec, status)
-        } else {
-            // The deployment isn't using a container image
-            (None, CachedImageStatus::default())
-        };
-        (store, cached_imagestatus, incompatible)
-    } else {
-        // The deployment has no origin at all (this generally shouldn't happen)
-        (None, CachedImageStatus::default(), false)
+                        (spec, status)
+                    }
+                    _ => {
+                        // The deployment isn't using a container image
+                        (None, CachedImageStatus::default())
+                    }
+                }
+            };
+            (store, cached_imagestatus, incompatible)
+        }
+        _ => {
+            // The deployment has no origin at all (this generally shouldn't happen)
+            (None, CachedImageStatus::default(), false)
+        }
     };
 
     let r = BootEntry {

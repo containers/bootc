@@ -58,10 +58,11 @@ fn read_dir_optional(
 /// The target directory will have a `vmlinuz` file representing the kernel binary.
 pub fn find_kernel_dir_fs(root: &Dir) -> Result<Option<Utf8PathBuf>> {
     let mut r = None;
-    let entries = if let Some(entries) = read_dir_optional(root, MODULES)? {
-        entries
-    } else {
-        return Ok(None);
+    let entries = match read_dir_optional(root, MODULES)? {
+        Some(entries) => entries,
+        _ => {
+            return Ok(None);
+        }
     };
     for child in entries {
         let child = &child?;

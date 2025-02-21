@@ -50,24 +50,24 @@ pub(crate) fn open_optional(path: impl AsRef<Path>) -> std::io::Result<Option<st
 /// Returns `true` if the current root filesystem has an ostree repository in `bare-split-xattrs` mode.
 /// This will be the case in a running ostree-native container.
 pub fn is_bare_split_xattrs() -> Result<bool> {
-    if let Some(configf) = open_optional(V1_REPO_CONFIG)
+    match open_optional(V1_REPO_CONFIG)
         .transpose()
         .or_else(|| open_optional(V0_REPO_CONFIG).transpose())
     {
-        let configf = configf?;
-        let mut bufr = std::io::BufReader::new(configf);
-        let mut s = String::new();
-        bufr.read_to_string(&mut s)?;
-        let kf = glib::KeyFile::new();
-        kf.load_from_data(&s, glib::KeyFileFlags::NONE)?;
-        let r = if let Some(mode) = kf.optional_string("core", "mode")? {
-            mode == crate::tar::BARE_SPLIT_XATTRS_MODE
-        } else {
-            false
-        };
-        Ok(r)
-    } else {
-        Ok(false)
+        Some(configf) => {
+            let configf = configf?;
+            let mut bufr = std::io::BufReader::new(configf);
+            let mut s = String::new();
+            bufr.read_to_string(&mut s)?;
+            let kf = glib::KeyFile::new();
+            kf.load_from_data(&s, glib::KeyFileFlags::NONE)?;
+            let r = match kf.optional_string("core", "mode")? {
+                Some(mode) => mode == crate::tar::BARE_SPLIT_XATTRS_MODE,
+                _ => false,
+            };
+            Ok(r)
+        }
+        _ => Ok(false),
     }
 }
 

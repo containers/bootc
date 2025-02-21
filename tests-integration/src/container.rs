@@ -3,7 +3,7 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use fn_error_context::context;
 use libtest_mimic::Trial;
-use xshell::{cmd, Shell};
+use xshell::{Shell, cmd};
 
 fn new_test(description: &'static str, f: fn() -> anyhow::Result<()>) -> libtest_mimic::Trial {
     Trial::test(description, move || f().map_err(Into::into))

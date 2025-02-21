@@ -1,6 +1,6 @@
 use super::ROOT_KEY_MOUNT_POINT;
 use crate::users::UserKeys;
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use bootc_utils::CommandRunExt;
 use std::process::Command;
 use which::which;
