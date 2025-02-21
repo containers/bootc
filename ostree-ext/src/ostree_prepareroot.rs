@@ -18,7 +18,8 @@ use crate::keyfileext::KeyFileExt;
 use crate::ostree_manual;
 use crate::utils::ResultExt;
 
-pub(crate) const CONF_PATH: &str = "ostree/prepare-root.conf";
+/// The relative path to ostree-prepare-root's config.
+pub const CONF_PATH: &str = "ostree/prepare-root.conf";
 
 pub(crate) fn load_config(root: &ostree::RepoFile) -> Result<Option<glib::KeyFile>> {
     let cancellable = gio::Cancellable::NONE;

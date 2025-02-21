@@ -380,12 +380,13 @@ fn check_baseimage_root_norecurse(dir: &Dir) -> LintResult {
     let link = dir.read_link_contents("ostree")?;
     let expected = "sysroot/ostree";
     if link.as_os_str().as_bytes() != expected.as_bytes() {
-        return lint_err("Expected /ostree -> {expected}, not {link:?}");
+        return lint_err(format!("Expected /ostree -> {expected}, not {link:?}"));
     }
 
     let config = ostree_prepareroot::require_config_from_root(dir)?;
     if !ostree_prepareroot::overlayfs_enabled_in_config(&config)? {
-        return lint_err("{prepareroot_path} does not have composefs enabled");
+        let path = ostree_ext::ostree_prepareroot::CONF_PATH;
+        return lint_err(format!("{path} does not have composefs enabled"));
     }
 
     lint_ok()
