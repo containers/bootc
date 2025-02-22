@@ -6,7 +6,9 @@ mod nameservice;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader};
+use std::num::ParseIntError;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use camino::Utf8Path;
 use cap_std_ext::dirext::{CapStdExtDirExt, CapStdExtDirExtUtf8};
@@ -36,6 +38,34 @@ pub enum Error {
 /// The type of Result.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// In sysusers, a user can refer to a group via name or number
+#[derive(Debug, PartialEq, Eq)]
+pub enum GroupReference {
+    /// A numeric reference
+    Numeric(u32),
+    /// A named reference
+    Name(String),
+}
+
+impl From<u32> for GroupReference {
+    fn from(value: u32) -> Self {
+        Self::Numeric(value)
+    }
+}
+
+impl FromStr for GroupReference {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let r = if s.chars().all(|c| matches!(c, '0'..='9')) {
+            Self::Numeric(u32::from_str(s)?)
+        } else {
+            Self::Name(s.to_owned())
+        };
+        Ok(r)
+    }
+}
+
 /// A parsed sysusers.d entry
 #[derive(Debug, PartialEq, Eq)]
 #[allow(missing_docs)]
@@ -44,7 +74,7 @@ pub enum SysusersEntry {
     User {
         name: String,
         uid: Option<u32>,
-        pgid: Option<u32>,
+        pgid: Option<GroupReference>,
         gecos: String,
         home: Option<String>,
         shell: Option<String>,
@@ -181,9 +211,13 @@ pub fn read_sysusers(rootfs: &Dir) -> Result<Vec<SysusersEntry>> {
                     found_users.insert(name.clone());
                     found_groups.insert(name.clone());
                     // Users implicitly create a group with the same name
+                    let pgid = pgid.as_ref().and_then(|g| match g {
+                        GroupReference::Numeric(n) => Some(*n),
+                        GroupReference::Name(_) => None,
+                    });
                     result.push(SysusersEntry::Group {
                         name: name.clone(),
-                        id: pgid.clone(),
+                        id: pgid,
                     });
                     result.push(e);
                 }
@@ -222,7 +256,7 @@ pub fn analyze(rootfs: &Dir) -> Result<SysusersAnalysis> {
         #[allow(dead_code)]
         uid: Option<u32>,
         #[allow(dead_code)]
-        pgid: Option<u32>,
+        pgid: Option<GroupReference>,
     }
 
     struct SysgroupData {
@@ -351,18 +385,26 @@ mod tests {
         g nobody 65534
     "##};
 
+    /// Non-default sysusers found in the wild
+    const OTHER_SYSUSERS_REF: &str = indoc! { r#"
+        u qemu 107:qemu "qemu user" - -
+    "#};
+
+    fn parse_all(s: &str) -> impl Iterator<Item = SysusersEntry> + use<'_> {
+        s.lines()
+            .filter(|line| !(line.is_empty() || line.starts_with('#')))
+            .map(|line| SysusersEntry::parse(line).unwrap().unwrap())
+    }
+
     #[test]
     fn test_sysusers_parse() -> Result<()> {
-        let mut entries = SYSUSERS_REF
-            .lines()
-            .filter(|line| !(line.is_empty() || line.starts_with('#')))
-            .map(|line| SysusersEntry::parse(line).unwrap().unwrap());
+        let mut entries = parse_all(SYSUSERS_REF);
         assert_eq!(
             entries.next().unwrap(),
             SysusersEntry::User {
                 name: "root".into(),
                 uid: Some(0),
-                pgid: Some(0),
+                pgid: Some(0.into()),
                 gecos: "Super User".into(),
                 home: Some("/root".into()),
                 shell: Some("/bin/bash".into())
@@ -373,7 +415,7 @@ mod tests {
             SysusersEntry::User {
                 name: "root".into(),
                 uid: Some(0),
-                pgid: Some(0),
+                pgid: Some(0.into()),
                 gecos: "Super User".into(),
                 home: Some("/root".into()),
                 shell: None
@@ -384,7 +426,7 @@ mod tests {
             SysusersEntry::User {
                 name: "bin".into(),
                 uid: Some(1),
-                pgid: Some(1),
+                pgid: Some(1.into()),
                 gecos: "bin".into(),
                 home: Some("/bin".into()),
                 shell: None
@@ -396,13 +438,28 @@ mod tests {
             SysusersEntry::User {
                 name: "adm".into(),
                 uid: Some(3),
-                pgid: Some(4),
+                pgid: Some(4.into()),
                 gecos: "adm".into(),
                 home: Some("/var/adm".into()),
                 shell: None
             }
         );
         assert_eq!(entries.count(), 9);
+
+        let mut entries = parse_all(OTHER_SYSUSERS_REF);
+        assert_eq!(
+            entries.next().unwrap(),
+            SysusersEntry::User {
+                name: "qemu".into(),
+                uid: Some(107),
+                pgid: Some(GroupReference::Name("qemu".into())),
+                gecos: "qemu user".into(),
+                home: None,
+                shell: None
+            }
+        );
+        assert_eq!(entries.count(), 0);
+
         Ok(())
     }
 
