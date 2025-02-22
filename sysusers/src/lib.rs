@@ -142,7 +142,11 @@ impl SysusersEntry {
                     .or_else(|| id.map(|id| (id, id)))
                     .map(|(uid, gid)| (Some(uid), Some(gid)))
                     .unwrap_or((None, None));
-                let uid = uid.map(|id| id.parse()).transpose().map_err(|_| err())?;
+                let uid = uid
+                    .filter(|&v| v != "-")
+                    .map(|id| id.parse())
+                    .transpose()
+                    .map_err(|_| err())?;
                 let pgid = pgid.map(|id| id.parse()).transpose().map_err(|_| err())?;
                 let (gecos, s) = Self::next_token_owned(s).ok_or_else(err.clone())?;
                 let (home, s) = Self::next_optional_token_owned(s).unwrap_or_default();
@@ -388,6 +392,7 @@ mod tests {
     /// Non-default sysusers found in the wild
     const OTHER_SYSUSERS_REF: &str = indoc! { r#"
         u qemu 107:qemu "qemu user" - -
+        u vboxadd -:1 - /var/run/vboxadd -
     "#};
 
     fn parse_all(s: &str) -> impl Iterator<Item = SysusersEntry> + use<'_> {
@@ -455,6 +460,17 @@ mod tests {
                 pgid: Some(GroupReference::Name("qemu".into())),
                 gecos: "qemu user".into(),
                 home: None,
+                shell: None
+            }
+        );
+        assert_eq!(
+            entries.next().unwrap(),
+            SysusersEntry::User {
+                name: "vboxadd".into(),
+                uid: None,
+                pgid: Some(1.into()),
+                gecos: "-".into(),
+                home: Some("/var/run/vboxadd".into()),
                 shell: None
             }
         );
