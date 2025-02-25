@@ -5,6 +5,7 @@ use rustix::process::geteuid;
 use rustix::process::getuid;
 use rustix::thread::set_thread_res_uid;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::fmt::Formatter;
@@ -102,10 +103,44 @@ impl Display for UserKeys {
     }
 }
 
+#[derive(Debug)]
+struct SshdConfig<'a> {
+    authorized_keys_files: Vec<&'a str>,
+    authorized_keys_command: &'a str,
+    authorized_keys_command_user: &'a str,
+}
+
+impl<'a> SshdConfig<'a> {
+    pub fn parse(sshd_output: &'a str) -> Result<SshdConfig<'a>> {
+        let config = sshd_output
+            .lines()
+            .filter_map(|line| line.split_once(' '))
+            .collect::<BTreeMap<&str, &str>>();
+
+        let authorized_keys_files: Vec<&str> = config
+            .get("authorizedkeysfile")
+            .unwrap_or(&"none")
+            .split_whitespace()
+            .collect();
+        let authorized_keys_command = config.get("authorizedkeyscommand").unwrap_or(&"none");
+        let authorized_keys_command_user =
+            config.get("authorizedkeyscommanduser").unwrap_or(&"none");
+
+        Ok(Self {
+            authorized_keys_files,
+            authorized_keys_command,
+            authorized_keys_command_user,
+        })
+    }
+}
+
 pub(crate) fn get_all_users_keys() -> Result<Vec<UserKeys>> {
     let loginctl_user_names = loginctl_users().context("enumerate users")?;
 
     let mut all_users_authorized_keys = Vec::new();
+
+    let sshd_config = SshdConfig::parse()?;
+    tracing::debug!("parsed sshd config: {:?}", sshd_config);
 
     for user_name in loginctl_user_names {
         let user_info = uzers::get_user_by_name(user_name.as_str())
