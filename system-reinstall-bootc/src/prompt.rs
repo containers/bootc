@@ -1,7 +1,4 @@
-use crate::{
-    prompt,
-    users::{get_all_users_keys, UserKeys},
-};
+use crate::{prompt, users::get_all_users_keys};
 use anyhow::{ensure, Context, Result};
 
 const NO_SSH_PROMPT: &str = "None of the users on this system found have authorized SSH keys, \
@@ -10,7 +7,9 @@ const NO_SSH_PROMPT: &str = "None of the users on this system found have authori
 
 fn prompt_single_user(user: &crate::users::UserKeys) -> Result<Vec<&crate::users::UserKeys>> {
     let prompt = format!(
-        "Found only one user ({}) with {} SSH authorized keys. Would you like to import it and its keys to the system?",
+        "Found only one user ({}) with {} SSH authorized keys.\n\
+            Would you like to import its SSH authorized keys\n\
+            into the root user on the new bootc system?",
         user.user,
         user.num_keys(),
     );
@@ -25,7 +24,10 @@ fn prompt_user_selection(
 
     // TODO: Handle https://github.com/console-rs/dialoguer/issues/77
     let selected_user_indices: Vec<usize> = dialoguer::MultiSelect::new()
-        .with_prompt("Select the users you want to install in the system (along with their authorized SSH keys)")
+        .with_prompt(
+            "Select which user's SSH authorized keys you want to\n\
+            import into the root user of the new bootc system",
+        )
         .items(&keys)
         .interact()?;
 
@@ -62,10 +64,14 @@ pub(crate) fn ask_yes_no(prompt: &str, default: bool) -> Result<bool> {
         .context("prompting")
 }
 
-/// For now we only support the root user. This function returns the root user's SSH
-/// authorized_keys. In the future, when bootc supports multiple users, this function will need to
-/// be updated to return the SSH authorized_keys for all the users selected by the user.
-pub(crate) fn get_root_key() -> Result<Option<UserKeys>> {
+/// Gather authorized keys for all user's of the host system
+/// prompt the user to select which users's keys will be imported
+/// into the target system's root user's authorized_keys file
+///
+/// The keys are stored in a temporary file which is passed to
+/// the podman run invocation to be used by
+/// `bootc install to-existing-root --root-ssh-authorized-keys`
+pub(crate) fn get_ssh_keys(temp_key_file_path: &str) -> Result<()> {
     let users = get_all_users_keys()?;
     if users.is_empty() {
         ensure!(
@@ -73,7 +79,7 @@ pub(crate) fn get_root_key() -> Result<Option<UserKeys>> {
             "cancelled by user"
         );
 
-        return Ok(None);
+        return Ok(());
     }
 
     let selected_users = if users.len() == 1 {
@@ -82,12 +88,13 @@ pub(crate) fn get_root_key() -> Result<Option<UserKeys>> {
         prompt_user_selection(&users)?
     };
 
-    ensure!(
-        selected_users.iter().all(|x| x.user == "root"),
-        "Only importing the root user keys is supported for now"
-    );
+    let keys = selected_users
+        .into_iter()
+        .map(|user_key| user_key.authorized_keys.as_str())
+        .collect::<Vec<&str>>()
+        .join("\n");
 
-    let root_key = selected_users.into_iter().find(|x| x.user == "root");
+    std::fs::write(temp_key_file_path, keys.as_bytes())?;
 
-    Ok(root_key.cloned())
+    Ok(())
 }

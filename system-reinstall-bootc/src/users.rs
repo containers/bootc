@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use bootc_utils::CommandRunExt;
+use bootc_utils::PathQuotedDisplay;
 use rustix::fs::Uid;
 use rustix::process::geteuid;
 use rustix::process::getuid;
@@ -9,6 +10,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::os::unix::process::CommandExt;
 use std::process::Command;
 use uzers::os::unix::UserExt;
 
@@ -83,7 +85,6 @@ impl Drop for UidChange {
 pub(crate) struct UserKeys {
     pub(crate) user: String,
     pub(crate) authorized_keys: String,
-    pub(crate) authorized_keys_path: String,
 }
 
 impl UserKeys {
@@ -134,51 +135,94 @@ impl<'a> SshdConfig<'a> {
     }
 }
 
+fn get_keys_from_files(user: &uzers::User, keyfiles: &Vec<&str>) -> Result<String> {
+    let home_dir = user.home_dir();
+    let mut user_authorized_keys = String::new();
+
+    for keyfile in keyfiles {
+        let user_authorized_keys_path = home_dir.join(keyfile);
+
+        if !user_authorized_keys_path.exists() {
+            tracing::debug!(
+                "Skipping authorized key file {} for user {} because it doesn't exist",
+                PathQuotedDisplay::new(&user_authorized_keys_path),
+                user.name().to_string_lossy()
+            );
+            continue;
+        }
+
+        // Safety: The UID should be valid because we got it from uzers
+        #[allow(unsafe_code)]
+        let user_uid = unsafe { Uid::from_raw(user.uid()) };
+
+        // Change the effective uid for this scope, to avoid accidentally reading files we
+        // shouldn't through symlinks
+        let _uid_change = UidChange::new(user_uid)?;
+
+        let key = std::fs::read_to_string(&user_authorized_keys_path)
+            .context("Failed to read user's authorized keys")?;
+        user_authorized_keys.push_str(key.as_str());
+        user_authorized_keys.push('\n');
+    }
+
+    Ok(user_authorized_keys)
+}
+
+fn get_keys_from_command(command: &str, command_user: &str) -> Result<String> {
+    let user_config = uzers::get_user_by_name(command_user).context(format!(
+        "authorized_keys_command_user {} not found",
+        command_user
+    ))?;
+
+    let mut cmd = Command::new(command);
+    cmd.uid(user_config.uid());
+    let output = cmd
+        .run_get_string()
+        .context(format!("running authorized_keys_command {}", command))?;
+    Ok(output)
+}
+
 pub(crate) fn get_all_users_keys() -> Result<Vec<UserKeys>> {
     let loginctl_user_names = loginctl_users().context("enumerate users")?;
 
     let mut all_users_authorized_keys = Vec::new();
 
-    let sshd_config = SshdConfig::parse()?;
+    let sshd_output = Command::new("sshd")
+        .arg("-T")
+        .run_get_string()
+        .context("running sshd -T")?;
+    tracing::trace!("sshd output:\n {}", sshd_output);
+
+    let sshd_config = SshdConfig::parse(sshd_output.as_str())?;
     tracing::debug!("parsed sshd config: {:?}", sshd_config);
 
     for user_name in loginctl_user_names {
         let user_info = uzers::get_user_by_name(user_name.as_str())
             .context(format!("user {} not found", user_name))?;
 
-        let home_dir = user_info.home_dir();
-        let user_authorized_keys_path = home_dir.join(".ssh/authorized_keys");
-
-        if !user_authorized_keys_path.exists() {
-            tracing::debug!(
-                "Skipping user {} because it doesn't have an SSH authorized_keys file",
-                user_info.name().to_string_lossy()
-            );
-            continue;
+        let mut user_authorized_keys = String::new();
+        if !sshd_config.authorized_keys_files.is_empty() {
+            let keys = get_keys_from_files(&user_info, &sshd_config.authorized_keys_files)?;
+            user_authorized_keys.push_str(keys.as_str());
         }
+
+        if sshd_config.authorized_keys_command != "none" {
+            let keys = get_keys_from_command(
+                &sshd_config.authorized_keys_command,
+                &sshd_config.authorized_keys_command_user,
+            )?;
+            user_authorized_keys.push_str(keys.as_str());
+        };
 
         let user_name = user_info
             .name()
             .to_str()
             .context("user name is not valid utf-8")?;
 
-        let user_authorized_keys = {
-            // Safety: The UID should be valid because we got it from uzers
-            #[allow(unsafe_code)]
-            let user_uid = unsafe { Uid::from_raw(user_info.uid()) };
-
-            // Change the effective uid for this scope, to avoid accidentally reading files we
-            // shouldn't through symlinks
-            let _uid_change = UidChange::new(user_uid)?;
-
-            std::fs::read_to_string(&user_authorized_keys_path)
-                .context("Failed to read user's authorized keys")?
-        };
-
         if user_authorized_keys.trim().is_empty() {
             tracing::debug!(
-                "Skipping user {} because it has an empty SSH authorized_keys file",
-                user_info.name().to_string_lossy()
+                "Skipping user {} because it has no SSH authorized_keys",
+                user_name
             );
             continue;
         }
@@ -186,12 +230,9 @@ pub(crate) fn get_all_users_keys() -> Result<Vec<UserKeys>> {
         let user_keys = UserKeys {
             user: user_name.to_string(),
             authorized_keys: user_authorized_keys,
-            authorized_keys_path: user_authorized_keys_path
-                .to_str()
-                .context("user's authorized_keys path is not valid utf-8")?
-                .to_string(),
         };
 
+        tracing::trace!("Found user keys: {:?}", user_keys);
         tracing::debug!(
             "Found user {} with {} SSH authorized_keys",
             user_keys.user,
