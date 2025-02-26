@@ -62,16 +62,7 @@ This is implemented in the [ostree-rs-ext/container module](https://docs.rs/ostr
 
 ### SELinux labeling
 
-A major wrinkle is supporting SELinux labeling.  The labeling configuration
-is defined as regular expressions included in `/etc/selinux/$policy/contexts/`.
-
-The current implementation relies on the fact that SELinux labels for
-base images were pre-computed.  The first step is to check out the "ostree base"
-layers for the base image.
-
-All derived layers have labels computed from the base image policy.  This
-causes a known bug where derived layers can't include custom policy:
-<https://github.com/ostreedev/ostree-rs-ext/issues/510>
+See the SELinux section of [Image layout](bootc-images.md).
 
 ### Origin files
 
