@@ -126,6 +126,11 @@ impl Lint {
             root_type: None,
         }
     }
+
+    const fn set_root_type(mut self, v: RootType) -> Self {
+        self.root_type = Some(v);
+        self
+    }
 }
 
 pub(crate) fn lint_list(output: impl std::io::Write) -> Result<()> {
@@ -245,17 +250,16 @@ fn check_var_run(root: &Dir) -> LintResult {
 }
 
 #[distributed_slice(LINTS)]
-static LINT_BUILDAH_INJECTED: Lint = Lint {
-    name: "buildah-injected",
-    description: indoc::indoc! { "
+static LINT_BUILDAH_INJECTED: Lint = Lint::new_warning(
+    "buildah-injected",
+    indoc::indoc! { "
         Check for an invalid /etc/hostname or /etc/resolv.conf that may have been injected by
         a container build system." },
-    ty: LintType::Warning,
-    f: check_buildah_injected,
-    // This one doesn't make sense to run looking at the running root,
-    // because we do expect /etc/hostname to be injected as
-    root_type: Some(RootType::Alternative),
-};
+    check_buildah_injected,
+)
+// This one doesn't make sense to run looking at the running root,
+// because we do expect /etc/hostname to be injected as
+.set_root_type(RootType::Alternative);
 fn check_buildah_injected(root: &Dir) -> LintResult {
     const RUNTIME_INJECTED: &[&str] = &["etc/hostname", "etc/resolv.conf"];
     for ent in RUNTIME_INJECTED {
@@ -499,10 +503,9 @@ fn check_varlog(root: &Dir) -> LintResult {
 }
 
 #[distributed_slice(LINTS)]
-static LINT_VAR_TMPFILES: Lint = Lint {
-    name: "var-tmpfiles",
-    ty: LintType::Warning,
-    description: indoc! { r#"
+static LINT_VAR_TMPFILES: Lint = Lint::new_warning(
+    "var-tmpfiles",
+    indoc! { r#"
 Check for content in /var that does not have corresponding systemd tmpfiles.d entries.
 This can cause a problem across upgrades because content in /var from the container
 image will only be applied on the initial provisioning.
@@ -511,9 +514,9 @@ Instead, it's recommended to have /var effectively empty in the container image,
 and use systemd tmpfiles.d to generate empty directories and compatibility symbolic links
 as part of each boot.
 "#},
-    f: check_var_tmpfiles,
-    root_type: Some(RootType::Running),
-};
+    check_var_tmpfiles,
+)
+.set_root_type(RootType::Running);
 fn check_var_tmpfiles(_root: &Dir) -> LintResult {
     let r = bootc_tmpfiles::find_missing_tmpfiles_current_root()?;
     if r.tmpfiles.is_empty() && r.unsupported.is_empty() {
@@ -546,10 +549,9 @@ fn check_var_tmpfiles(_root: &Dir) -> LintResult {
 }
 
 #[distributed_slice(LINTS)]
-static LINT_SYSUSERS: Lint = Lint {
-    name: "sysusers",
-    ty: LintType::Warning,
-    description: indoc! { r#"
+static LINT_SYSUSERS: Lint = Lint::new_warning(
+    "sysusers",
+    indoc! { r#"
 Check for users in /etc/passwd and groups in /etc/group that do not have corresponding
 systemd sysusers.d entries in /usr/lib/sysusers.d.
 This can cause a problem across upgrades because if /etc is not transient and is locally
@@ -560,10 +562,9 @@ Using systemd-sysusers to allocate users and groups will ensure that these are a
 on system startup alongside other users.
 
 More on this topic in <https://containers.github.io/bootc/building/users-and-groups.html>
-"#},
-    f: check_sysusers,
-    root_type: None,
-};
+"# },
+    check_sysusers,
+);
 fn check_sysusers(rootfs: &Dir) -> LintResult {
     let r = bootc_sysusers::analyze(rootfs)?;
     if r.is_empty() {
