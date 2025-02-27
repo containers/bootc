@@ -2209,6 +2209,7 @@ dependencies = [
  "bootc-utils",
  "clap",
  "dialoguer",
+ "indoc",
  "log",
  "openssh-keys",
  "rustix",

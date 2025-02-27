@@ -6,13 +6,13 @@ const NO_SSH_PROMPT: &str = "None of the users on this system found have authori
     you may not be able to log in after reinstalling. Do you want to continue?";
 
 fn prompt_single_user(user: &crate::users::UserKeys) -> Result<Vec<&crate::users::UserKeys>> {
-    let prompt = format!(
-        "Found only one user ({}) with {} SSH authorized keys.\n\
-            Would you like to import its SSH authorized keys\n\
-            into the root user on the new bootc system?",
-        user.user,
-        user.num_keys(),
-    );
+    let prompt = indoc::formatdoc! {
+        "Found only one user ({user}) with {num_keys} SSH authorized keys.
+        Would you like to import its SSH authorized keys
+        into the root user on the new bootc system?",
+        user = user.user,
+        num_keys = user.num_keys(),
+    };
     let answer = ask_yes_no(&prompt, true)?;
     Ok(if answer { vec![&user] } else { vec![] })
 }
@@ -24,10 +24,10 @@ fn prompt_user_selection(
 
     // TODO: Handle https://github.com/console-rs/dialoguer/issues/77
     let selected_user_indices: Vec<usize> = dialoguer::MultiSelect::new()
-        .with_prompt(
-            "Select which user's SSH authorized keys you want to\n\
+        .with_prompt(indoc::indoc! {
+            "Select which user's SSH authorized keys you want to
             import into the root user of the new bootc system",
-        )
+        })
         .items(&keys)
         .interact()?;
 
