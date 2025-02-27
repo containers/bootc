@@ -20,13 +20,17 @@ fn run() -> Result<()> {
 
     let config = config::ReinstallConfig::load().context("loading config")?;
 
-    let root_key = &prompt::get_root_key()?;
+    let ssh_key_file = tempfile::NamedTempFile::new()?;
+    let ssh_key_file_path = ssh_key_file
+        .path()
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("unable to create authorized_key temp file"))?;
 
-    if root_key.is_none() {
-        return Ok(());
-    }
+    tracing::trace!("ssh_key_file_path: {}", ssh_key_file_path);
 
-    let mut reinstall_podman_command = podman::command(&config.bootc_image, root_key);
+    prompt::get_ssh_keys(ssh_key_file_path)?;
+
+    let mut reinstall_podman_command = podman::command(&config.bootc_image, ssh_key_file_path);
 
     println!();
 
