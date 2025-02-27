@@ -1,6 +1,5 @@
 use crate::{prompt, users::get_all_users_keys};
 use anyhow::{ensure, Context, Result};
-use openssh_keys::PublicKey;
 
 const NO_SSH_PROMPT: &str = "None of the users on this system found have authorized SSH keys, \
     if your image doesn't use cloud-init or other means to set up users, \
@@ -92,9 +91,14 @@ pub(crate) fn get_ssh_keys(temp_key_file_path: &str) -> Result<()> {
     let keys = selected_users
         .into_iter()
         .flat_map(|user| &user.authorized_keys)
-        .collect::<Vec<&PublicKey>>()
-        .into_iter()
-        .map(|key| key.to_key_format() + "\n")
+        .map(|key| {
+            let mut key_copy = key.clone();
+
+            // These options could contain a command which will
+            // cause the new bootc system to be inaccessible.
+            key_copy.options = None;
+            key_copy.to_key_format() + "\n"
+        })
         .collect::<String>();
 
     tracing::trace!("keys: {:?}", keys);
