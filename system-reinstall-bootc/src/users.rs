@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use bootc_utils::CommandRunExt;
 use bootc_utils::PathQuotedDisplay;
+use openssh_keys::PublicKey;
 use rustix::fs::Uid;
 use rustix::process::geteuid;
 use rustix::process::getuid;
@@ -10,6 +11,8 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::fs::File;
+use std::io::BufReader;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 use uzers::os::unix::UserExt;
@@ -84,12 +87,12 @@ impl Drop for UidChange {
 #[derive(Clone, Debug)]
 pub(crate) struct UserKeys {
     pub(crate) user: String,
-    pub(crate) authorized_keys: String,
+    pub(crate) authorized_keys: Vec<PublicKey>,
 }
 
 impl UserKeys {
     pub(crate) fn num_keys(&self) -> usize {
-        self.authorized_keys.lines().count()
+        self.authorized_keys.len()
     }
 }
 
@@ -135,9 +138,9 @@ impl<'a> SshdConfig<'a> {
     }
 }
 
-fn get_keys_from_files(user: &uzers::User, keyfiles: &Vec<&str>) -> Result<String> {
+fn get_keys_from_files(user: &uzers::User, keyfiles: &Vec<&str>) -> Result<Vec<PublicKey>> {
     let home_dir = user.home_dir();
-    let mut user_authorized_keys = String::new();
+    let mut user_authorized_keys: Vec<PublicKey> = Vec::new();
 
     for keyfile in keyfiles {
         let user_authorized_keys_path = home_dir.join(keyfile);
@@ -159,16 +162,16 @@ fn get_keys_from_files(user: &uzers::User, keyfiles: &Vec<&str>) -> Result<Strin
         // shouldn't through symlinks
         let _uid_change = UidChange::new(user_uid)?;
 
-        let key = std::fs::read_to_string(&user_authorized_keys_path)
+        let file = File::open(user_authorized_keys_path)
             .context("Failed to read user's authorized keys")?;
-        user_authorized_keys.push_str(key.as_str());
-        user_authorized_keys.push('\n');
+        let mut keys = PublicKey::read_keys(BufReader::new(file))?;
+        user_authorized_keys.append(&mut keys);
     }
 
     Ok(user_authorized_keys)
 }
 
-fn get_keys_from_command(command: &str, command_user: &str) -> Result<String> {
+fn get_keys_from_command(command: &str, command_user: &str) -> Result<Vec<PublicKey>> {
     let user_config = uzers::get_user_by_name(command_user).context(format!(
         "authorized_keys_command_user {} not found",
         command_user
@@ -177,9 +180,10 @@ fn get_keys_from_command(command: &str, command_user: &str) -> Result<String> {
     let mut cmd = Command::new(command);
     cmd.uid(user_config.uid());
     let output = cmd
-        .run_get_string()
+        .run_get_output()
         .context(format!("running authorized_keys_command {}", command))?;
-    Ok(output)
+    let keys = PublicKey::read_keys(output)?;
+    Ok(keys)
 }
 
 pub(crate) fn get_all_users_keys() -> Result<Vec<UserKeys>> {
@@ -200,18 +204,18 @@ pub(crate) fn get_all_users_keys() -> Result<Vec<UserKeys>> {
         let user_info = uzers::get_user_by_name(user_name.as_str())
             .context(format!("user {} not found", user_name))?;
 
-        let mut user_authorized_keys = String::new();
+        let mut user_authorized_keys: Vec<PublicKey> = Vec::new();
         if !sshd_config.authorized_keys_files.is_empty() {
-            let keys = get_keys_from_files(&user_info, &sshd_config.authorized_keys_files)?;
-            user_authorized_keys.push_str(keys.as_str());
+            let mut keys = get_keys_from_files(&user_info, &sshd_config.authorized_keys_files)?;
+            user_authorized_keys.append(&mut keys);
         }
 
         if sshd_config.authorized_keys_command != "none" {
-            let keys = get_keys_from_command(
+            let mut keys = get_keys_from_command(
                 &sshd_config.authorized_keys_command,
                 &sshd_config.authorized_keys_command_user,
             )?;
-            user_authorized_keys.push_str(keys.as_str());
+            user_authorized_keys.append(&mut keys);
         };
 
         let user_name = user_info
@@ -219,7 +223,7 @@ pub(crate) fn get_all_users_keys() -> Result<Vec<UserKeys>> {
             .to_str()
             .context("user name is not valid utf-8")?;
 
-        if user_authorized_keys.trim().is_empty() {
+        if user_authorized_keys.is_empty() {
             tracing::debug!(
                 "Skipping user {} because it has no SSH authorized_keys",
                 user_name
@@ -232,7 +236,6 @@ pub(crate) fn get_all_users_keys() -> Result<Vec<UserKeys>> {
             authorized_keys: user_authorized_keys,
         };
 
-        tracing::trace!("Found user keys: {:?}", user_keys);
         tracing::debug!(
             "Found user {} with {} SSH authorized_keys",
             user_keys.user,
