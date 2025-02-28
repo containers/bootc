@@ -1062,7 +1062,7 @@ impl Cli {
             _ => tracing::Level::TRACE, // -vvv or more
         };
 
-        bootc_utils::update_tracing(log_level);
+        bootc_utils::update_tracing_log_level(log_level);
 
         cli
     }
@@ -1370,15 +1370,16 @@ mod tests {
 mod tracing_tests {
     #![allow(unsafe_code)]
 
-    use bootc_utils::{initialize_tracing, update_tracing};
+    use bootc_utils::{initialize_tracing, update_tracing_log_level};
     use nix::unistd::{close, dup, dup2, pipe};
     use std::fs::File;
     use std::io::{self, Read};
     use std::os::unix::io::{AsRawFd, FromRawFd};
-    use std::sync::Once;
+    use std::sync::{Mutex, Once};
 
     // Ensure logging is initialized once to prevent conflicts across tests
     static INIT: Once = Once::new();
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     /// Helper function to initialize tracing for tests
     fn init_tracing_for_tests() {
@@ -1421,6 +1422,8 @@ mod tracing_tests {
 
     #[test]
     fn test_default_tracing() {
+        let _lock = TEST_MUTEX.lock().unwrap(); // Ensure sequential execution
+
         init_tracing_for_tests();
 
         let output = capture_stderr(|| {
@@ -1435,9 +1438,10 @@ mod tracing_tests {
 
     #[test]
     fn test_update_tracing() {
+        let _lock = TEST_MUTEX.lock().unwrap(); // Ensure sequential execution
+
         init_tracing_for_tests();
-        std::env::remove_var("RUST_LOG");
-        update_tracing(tracing::Level::TRACE);
+        update_tracing_log_level(tracing::Level::TRACE);
 
         let output = capture_stderr(|| {
             tracing::info!("Info message to stderr");
@@ -1461,10 +1465,12 @@ mod tracing_tests {
 
     #[test]
     fn test_update_tracing_respects_rust_log() {
+        let _lock = TEST_MUTEX.lock().unwrap(); // Ensure sequential execution
+
         init_tracing_for_tests();
         // Set RUST_LOG before initializing(not possible in this test) or after updating tracing
         std::env::set_var("RUST_LOG", "info");
-        update_tracing(tracing::Level::DEBUG);
+        update_tracing_log_level(tracing::Level::DEBUG);
 
         let output = capture_stderr(|| {
             tracing::info!("Info message to stderr");
@@ -1479,5 +1485,7 @@ mod tracing_tests {
             !output.contains("Debug message to stderr"),
             "Expected DEBUG message found"
         );
+
+        std::env::remove_var("RUST_LOG");
     }
 }

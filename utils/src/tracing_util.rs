@@ -40,7 +40,7 @@ pub fn initialize_tracing() {
 }
 
 /// Update tracing log level dynamically.
-pub fn update_tracing(log_level: Level) {
+pub fn update_tracing_log_level(log_level: Level) {
     if let Some(handle) = TRACING_RELOAD_HANDLE.get() {
         // Create new filter. Use `RUST_LOG` if available
         let new_filter = EnvFilter::try_from_default_env()
