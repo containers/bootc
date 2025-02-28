@@ -161,6 +161,26 @@ storage or filesystem setups, but reuses the "top half" of the logic.
 For example, a goal is to change [Anaconda](https://github.com/rhinstaller/anaconda/)
 to use this.
 
+#### Postprocessing after to-filesystem
+
+Some installation tools may want to inject additional data, such as adding
+an `/etc/hostname` into the target root. At the current time, bootc does
+not offer a direct API to do this. However, the backend for bootc is
+ostree, and it is possible to enumerate the deployments via ostree APIs.
+
+We hope to provide a bootc-supported method to find the deployment in
+the future.
+
+However, for tools that do perform any changes, there is a new
+`bootc install finalize` command which is optional, but recommended
+to run as the penultimate step before unmounting the target filesystem.
+
+This command will perform some basic sanity checks and may also
+perform fixups on the target root. For example, a direction
+currently for bootc is to stop using `/etc/fstab`. While `install finalize`
+does not do this today, in the future it may automatically migrate
+`etc/fstab` to `rootflags` kernel arguments.
+
 ### Using `bootc install to-disk --via-loopback`
 
 Because every `bootc` system comes with an opinionated default installation
