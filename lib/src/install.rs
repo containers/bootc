@@ -1452,6 +1452,9 @@ async fn install_to_filesystem_impl(state: &State, rootfs: &mut RootSetup) -> Re
         // descriptors.
     }
 
+    // Run this on every install as the penultimate step
+    install_finalize(&rootfs.physical_root_path).await?;
+
     // Finalize mounted filesystems
     if !rootfs.skip_finalize {
         let bootfs = rootfs.boot.as_ref().map(|_| ("boot", "boot"));
@@ -1909,6 +1912,24 @@ pub(crate) async fn install_to_existing_root(opts: InstallToExistingRootOpts) ->
 
     install_to_filesystem(opts, true).await
 }
+
+/// Implementation of `bootc install finalize`.
+pub(crate) async fn install_finalize(target: &Utf8Path) -> Result<()> {
+    crate::cli::require_root(false)?;
+    let sysroot = ostree::Sysroot::new(Some(&gio::File::for_path(target)));
+    sysroot.load(gio::Cancellable::NONE)?;
+    let deployments = sysroot.deployments();
+    // Verify we find a deployment
+    if deployments.is_empty() {
+        anyhow::bail!("Failed to find deployment in {target}");
+    }
+
+    // For now that's it! We expect to add more validation/postprocessing
+    // later, such as munging `etc/fstab` if needed. See
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
