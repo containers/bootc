@@ -59,15 +59,22 @@ test-bin-archive: all
 test-tmt:
 	cargo xtask test-tmt
 
-# Checks extra rust things (formatting, a few extra rust warnings, and select clippy lints)
+# This gates CI by default. Note that for clippy, we gate on
+# only the clippy correctness and suspicious lints, plus a select
+# set of default rustc warnings.
+# We intentionally don't gate on this for local builds in cargo.toml
+# because it impedes iteration speed.
+CLIPPY_CONFIG = -A clippy::all -D clippy::correctness -D clippy::suspicious -Dunused_imports -Ddead_code
 validate-rust:
 	cargo fmt -- --check -l
-	cargo check
-	(cd lib && cargo check --no-default-features)
 	cargo test --no-run
-	cargo clippy -- -D clippy::correctness -D clippy::suspicious
+	(cd lib && cargo check --no-default-features)
+	cargo clippy -- $(CLIPPY_CONFIG)
 	env RUSTDOCFLAGS='-D warnings' cargo doc --lib
 .PHONY: validate-rust
+fix-rust:
+	cargo clippy --fix --allow-dirty -- $(CLIPPY_CONFIG)
+.PHONY: fix-rust
 
 validate: validate-rust
 	ruff check

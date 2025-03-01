@@ -209,6 +209,12 @@ pub(crate) enum InstallOpts {
     /// will be wiped, but the content of the existing root will otherwise be retained, and will
     /// need to be cleaned up if desired when rebooted into the new root.
     ToExistingRoot(crate::install::InstallToExistingRootOpts),
+    /// Execute this as the penultimate step of an installation using `install to-filesystem`.
+    ///
+    Finalize {
+        /// Path to the mounted root filesystem.
+        root_path: Utf8PathBuf,
+    },
     /// Intended for use in environments that are performing an ostree-based installation, not bootc.
     ///
     /// In this scenario the installation may be missing bootc specific features such as
@@ -1120,6 +1126,9 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
             InstallOpts::EnsureCompletion {} => {
                 let rootfs = &Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
                 crate::install::completion::run_from_anaconda(rootfs).await
+            }
+            InstallOpts::Finalize { root_path } => {
+                crate::install::install_finalize(&root_path).await
             }
         },
         Opt::ExecInHostMountNamespace { args } => {

@@ -104,6 +104,13 @@ pub(crate) fn run_alongside(image: &str, mut testargs: libtest_mimic::Arguments)
                 std::fs::write(&tmp_keys, b"ssh-ed25519 ABC0123 testcase@example.com")?;
                 cmd!(sh, "sudo {BASE_ARGS...} {target_args...} -v {tmp_keys}:/test_authorized_keys {image} bootc install to-filesystem {generic_inst_args...} --acknowledge-destructive --karg=foo=bar --replace=alongside --root-ssh-authorized-keys=/test_authorized_keys /target").run()?;
 
+                // Also test install finalize here
+                cmd!(
+                    sh,
+                    "sudo {BASE_ARGS...} {target_args...} {image} bootc install finalize /target"
+                )
+                .run()?;
+
                 generic_post_install_verification()?;
 
                 // Test kargs injected via CLI
