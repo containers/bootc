@@ -1,10 +1,12 @@
+use crate::prompt;
+
 use super::ROOT_KEY_MOUNT_POINT;
 use anyhow::{ensure, Context, Result};
 use bootc_utils::CommandRunExt;
 use std::process::Command;
 use which::which;
 
-pub(crate) fn command(image: &str, ssh_key_file: &str) -> Command {
+pub(crate) fn reinstall_command(image: &str, ssh_key_file: &str) -> Command {
     let mut podman_command_and_args = [
         // We use podman to run the bootc container. This might change in the future to remove the
         // podman dependency.
@@ -62,6 +64,12 @@ pub(crate) fn command(image: &str, ssh_key_file: &str) -> Command {
     command
 }
 
+pub(crate) fn pull_image_command(image: &str) -> Command {
+    let mut command = Command::new("podman");
+    command.args(["pull", image]);
+    command
+}
+
 /// Path to the podman installation script. Can be influenced by the build
 /// SYSTEM_REINSTALL_BOOTC_INSTALL_PODMAN_PATH parameter to override. Defaults
 /// to /usr/lib/system-reinstall-bootc/install-podman
@@ -78,9 +86,7 @@ pub(crate) fn ensure_podman_installed() -> Result<()> {
         return Ok(());
     }
 
-    tracing::warn!(
-        "Podman was not found on this system. It's required in order to install a bootc image. Attempting to install it automatically."
-    );
+    prompt::ask_yes_no("Podman was not found on this system. It's required in order to install a bootc image. Do you want to install it now?", true)?;
 
     ensure!(
         which(podman_install_script_path()).is_ok(),
