@@ -1,3 +1,5 @@
+use crate::prompt;
+
 use super::ROOT_KEY_MOUNT_POINT;
 use anyhow::{ensure, Context, Result};
 use bootc_utils::CommandRunExt;
@@ -84,9 +86,7 @@ pub(crate) fn ensure_podman_installed() -> Result<()> {
         return Ok(());
     }
 
-    tracing::warn!(
-        "Podman was not found on this system. It's required in order to install a bootc image. Attempting to install it automatically."
-    );
+    prompt::ask_yes_no("Podman was not found on this system. It's required in order to install a bootc image. Do you want to install it now?", true)?;
 
     ensure!(
         which(podman_install_script_path()).is_ok(),
