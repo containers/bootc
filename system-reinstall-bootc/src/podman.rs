@@ -4,7 +4,7 @@ use bootc_utils::CommandRunExt;
 use std::process::Command;
 use which::which;
 
-pub(crate) fn command(image: &str, ssh_key_file: &str) -> Command {
+pub(crate) fn reinstall_command(image: &str, ssh_key_file: &str) -> Command {
     let mut podman_command_and_args = [
         // We use podman to run the bootc container. This might change in the future to remove the
         // podman dependency.
@@ -59,6 +59,12 @@ pub(crate) fn command(image: &str, ssh_key_file: &str) -> Command {
     let mut command = Command::new(&all_args[0]);
     command.args(&all_args[1..]);
 
+    command
+}
+
+pub(crate) fn pull_image_command(image: &str) -> Command {
+    let mut command = Command::new("podman");
+    command.args(["pull", image]);
     command
 }
 
