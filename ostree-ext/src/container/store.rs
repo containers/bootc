@@ -466,7 +466,7 @@ fn timestamp_of_manifest_or_config(
 /// Automatically clean up files that may have been injected by container
 /// builds. xref https://github.com/containers/buildah/issues/4242
 fn cleanup_root(root: &Dir) -> Result<()> {
-    const RUNTIME_INJECTED: &[&str] = &["etc/hostname", "etc/resolv.conf"];
+    const RUNTIME_INJECTED: &[&str] = &["usr/etc/hostname", "usr/etc/resolv.conf"];
     for ent in RUNTIME_INJECTED {
         if let Some(meta) = root.symlink_metadata_optional(ent)? {
             if meta.is_file() && meta.size() == 0 {
@@ -1055,6 +1055,8 @@ impl ImageImporter {
                     .with_context(|| format!("Checking out layer {commit}"))?;
                 }
 
+                let root_dir = td.open_dir(rootpath)?;
+
                 let modifier =
                     ostree::RepoCommitModifier::new(ostree::RepoCommitModifierFlags::CONSUME, None);
                 modifier.set_devino_cache(&devino);
@@ -1062,8 +1064,7 @@ impl ImageImporter {
                 // the derived layers include custom policy. Just relabel everything
                 // in this case.
                 if have_derived_layers {
-                    let rootpath = td.open_dir(rootpath)?;
-                    let sepolicy = ostree::SePolicy::new_at(rootpath.as_raw_fd(), cancellable)?;
+                    let sepolicy = ostree::SePolicy::new_at(root_dir.as_raw_fd(), cancellable)?;
                     tracing::debug!("labeling from merged tree");
                     modifier.set_sepolicy(Some(&sepolicy));
                 } else if let Some(base) = base_commit.as_ref() {
@@ -1074,7 +1075,7 @@ impl ImageImporter {
                     unreachable!()
                 }
 
-                cleanup_root(&td)?;
+                cleanup_root(&root_dir)?;
 
                 let mt = ostree::MutableTree::new();
                 repo.write_dfd_to_mtree(
@@ -1965,23 +1966,24 @@ mod tests {
     #[test]
     fn test_cleanup_root() -> Result<()> {
         let td = cap_tempfile::TempDir::new(cap_std::ambient_authority())?;
+        let usretc = "usr/etc";
+        cleanup_root(&td).unwrap();
+        td.create_dir_all(usretc)?;
+        let usretc = &td.open_dir(usretc)?;
+        usretc.write("hostname", b"hostname")?;
+        cleanup_root(&td).unwrap();
+        assert!(usretc.try_exists("hostname")?);
+        usretc.write("hostname", b"")?;
+        cleanup_root(&td).unwrap();
+        assert!(!td.try_exists("hostname")?);
 
+        usretc.symlink_contents("../run/systemd/stub-resolv.conf", "resolv.conf")?;
         cleanup_root(&td).unwrap();
-        td.create_dir("etc")?;
-        td.write("etc/hostname", b"hostname")?;
+        assert!(usretc.symlink_metadata("resolv.conf")?.is_symlink());
+        usretc.remove_file("resolv.conf")?;
+        usretc.write("resolv.conf", b"")?;
         cleanup_root(&td).unwrap();
-        assert!(td.try_exists("etc/hostname")?);
-        td.write("etc/hostname", b"")?;
-        cleanup_root(&td).unwrap();
-        assert!(!td.try_exists("etc/hostname")?);
-
-        td.symlink_contents("../run/systemd/stub-resolv.conf", "etc/resolv.conf")?;
-        cleanup_root(&td).unwrap();
-        assert!(td.symlink_metadata("etc/resolv.conf")?.is_symlink());
-        td.remove_file("etc/resolv.conf")?;
-        td.write("etc/resolv.conf", b"")?;
-        cleanup_root(&td).unwrap();
-        assert!(!td.try_exists("etc/resolv.conf")?);
+        assert!(!usretc.try_exists("resolv.conf")?);
 
         Ok(())
     }
