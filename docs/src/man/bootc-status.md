@@ -59,4 +59,4 @@ not \`null\`.
 
 # VERSION
 
-v1.1.4
+v1.1.6
