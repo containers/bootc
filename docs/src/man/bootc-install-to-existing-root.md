@@ -146,4 +146,4 @@ cleaned up if desired when rebooted into the new root.
 
 # VERSION
 
-v1.1.4
+v1.1.6

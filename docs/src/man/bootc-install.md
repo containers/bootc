@@ -48,6 +48,11 @@ bootc-install-to-existing-root(8)
 
 :   Install to the host root filesystem
 
+bootc-install-finalize(8)
+
+:   Execute this as the penultimate step of an installation using
+    \`install to-filesystem\`
+
 bootc-install-ensure-completion(8)
 
 :   Intended for use in environments that are performing an ostree-based
@@ -66,4 +71,4 @@ bootc-install-help(8)
 
 # VERSION
 
-v1.1.4
+v1.1.6

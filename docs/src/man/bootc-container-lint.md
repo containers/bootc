@@ -6,7 +6,7 @@ checks as part of a container build
 # SYNOPSIS
 
 **bootc container lint** \[**\--rootfs**\] \[**\--fatal-warnings**\]
-\[**\--list**\] \[**-h**\|**\--help**\]
+\[**\--list**\] \[**\--skip**\] \[**-h**\|**\--help**\]
 
 # DESCRIPTION
 
@@ -33,10 +33,17 @@ part of a build process; it will error if any problems are detected.
     reasonably human friendly. However, there is no commitment to
     maintaining this exact format; do not parse it via code or scripts
 
+**\--skip**=*SKIP*
+
+:   Skip checking the targeted lints, by name. Use \`\--list\` to
+    discover the set of available lints.
+
+    Example: \--skip nonempty-boot \--skip baseimage-root
+
 **-h**, **\--help**
 
 :   Print help (see a summary with -h)
 
 # VERSION
 
-v1.1.4
+v1.1.6

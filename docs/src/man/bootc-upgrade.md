@@ -53,4 +53,4 @@ the update in addition.
 
 # VERSION
 
-v1.1.4
+v1.1.6
