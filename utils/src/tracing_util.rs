@@ -49,6 +49,6 @@ pub fn update_tracing_log_level(log_level: Level) {
             eprintln!("Failed to update log level: {}", e);
         }
     } else {
-        eprintln!("Logging system not initialized yet.");
+        panic!("Fatal error: Logging system not initialized. Ensure initialize_tracing() is called first.");
     }
 }
