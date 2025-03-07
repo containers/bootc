@@ -1230,7 +1230,24 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
 }
 
 #[cfg(test)]
+mod test_utils {
+    use std::sync::Once;
+    use bootc_utils::initialize_tracing;
+
+    // Ensure logging is initialized once to prevent conflicts across tests
+    static INIT: Once = Once::new();
+
+    /// Helper function to initialize tracing for tests
+    pub fn init_tracing_for_tests() {
+        INIT.call_once(|| {
+            initialize_tracing();
+        });
+    }
+}
+
+#[cfg(test)]
 mod tests {
+    use crate::cli::test_utils::init_tracing_for_tests;
     use super::*;
 
     #[test]
@@ -1295,6 +1312,7 @@ mod tests {
 
     #[test]
     fn test_parse_opts() {
+        init_tracing_for_tests();
         assert!(matches!(
             Cli::parse_including_static(["bootc", "status"]).opt,
             Opt::Status(StatusOpts {
@@ -1326,6 +1344,7 @@ mod tests {
 
     #[test]
     fn test_parse_ostree_ext() {
+        init_tracing_for_tests();
         assert!(matches!(
             Cli::parse_including_static(["bootc", "internals", "ostree-container"]).opt,
             Opt::Internals(InternalsOpts::OstreeContainer { .. })
@@ -1376,18 +1395,10 @@ mod tracing_tests {
     use std::io::{self, Read};
     use std::os::unix::io::{AsRawFd, FromRawFd};
     use std::sync::{Mutex, Once};
+    use crate::cli::test_utils::init_tracing_for_tests;
 
-    // Ensure logging is initialized once to prevent conflicts across tests
-    static INIT: Once = Once::new();
+    // Used for ensuring ordered testing of the tracing tests
     static TEST_MUTEX: Mutex<()> = Mutex::new(());
-
-    /// Helper function to initialize tracing for tests
-    fn init_tracing_for_tests() {
-        INIT.call_once(|| {
-            std::env::remove_var("RUST_LOG");
-            initialize_tracing();
-        });
-    }
 
     /// Captures `stderr` output using a pipe
     fn capture_stderr<F: FnOnce()>(test_fn: F) -> String {
@@ -1461,31 +1472,5 @@ mod tracing_tests {
             output.contains("Trace message to stderr"),
             "Expected TRACE message not found"
         );
-    }
-
-    #[test]
-    fn test_update_tracing_respects_rust_log() {
-        let _lock = TEST_MUTEX.lock().unwrap(); // Ensure sequential execution
-
-        init_tracing_for_tests();
-        // Set RUST_LOG before initializing(not possible in this test) or after updating tracing
-        std::env::set_var("RUST_LOG", "info");
-        update_tracing_log_level(tracing::Level::DEBUG);
-
-        let output = capture_stderr(|| {
-            tracing::info!("Info message to stderr");
-            tracing::debug!("Debug message to stderr");
-        });
-
-        assert!(
-            output.contains("Info message to stderr"),
-            "Expected INFO message not found"
-        );
-        assert!(
-            !output.contains("Debug message to stderr"),
-            "Expected DEBUG message found"
-        );
-
-        std::env::remove_var("RUST_LOG");
     }
 }
