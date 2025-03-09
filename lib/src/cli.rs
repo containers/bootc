@@ -423,6 +423,8 @@ pub(crate) enum InternalsOpts {
     },
     #[clap(subcommand)]
     Fsverity(FsverityOpts),
+    /// Perform consistency checking.
+    Fsck,
     /// Perform cleanup actions
     Cleanup,
     /// Proxy frontend for the `ostree-ext` CLI.
@@ -1173,6 +1175,11 @@ async fn run_from_opt(opt: Opt) -> Result<()> {
                     Ok(())
                 }
             },
+            InternalsOpts::Fsck => {
+                let sysroot = &get_storage().await?;
+                crate::fsck::fsck(&sysroot, std::io::stdout().lock()).await?;
+                Ok(())
+            }
             InternalsOpts::FixupEtcFstab => crate::deploy::fixup_etc_fstab(&root),
             InternalsOpts::PrintJsonSchema { of } => {
                 let schema = match of {
