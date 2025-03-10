@@ -1057,8 +1057,8 @@ fn ensure_var() -> Result<()> {
 /// will traverse the link.
 #[context("Linking tmp mounts to host")]
 pub(crate) fn setup_tmp_mounts() -> Result<()> {
-    let st = rustix::fs::statfs("/tmp")?;
-    if st.f_type == libc::TMPFS_MAGIC {
+    let slash_tmp_statfs = rustix::fs::statfs("/tmp")?;
+    if slash_tmp_statfs.f_type == libc::TMPFS_MAGIC {
         tracing::trace!("Already have tmpfs /tmp")
     } else {
         // Note we explicitly also don't want a "nosuid" tmp, because that
@@ -1759,7 +1759,13 @@ pub(crate) async fn install_to_filesystem(
             tokio::task::spawn_blocking(move || remove_all_in_dir_no_xdev(&rootfs_fd, true))
                 .await??;
         }
-        Some(ReplaceMode::Alongside) => clean_boot_directories(&rootfs_fd)?,
+        Some(ReplaceMode::Alongside) => {
+            let target_dir =
+                Dir::open_ambient_dir(ALONGSIDE_ROOT_MOUNT, cap_std::ambient_authority())
+                    .context(format!("Opening {ALONGSIDE_ROOT_MOUNT}"))?;
+
+            clean_boot_directories(&target_dir)?
+        }
         None => require_empty_rootdir(&rootfs_fd)?,
     }
 
