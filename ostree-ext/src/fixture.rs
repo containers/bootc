@@ -950,7 +950,7 @@ pub struct NonOstreeFixture {
     _tempdir: tempfile::TempDir,
     pub dir: Arc<Dir>,
     pub path: Utf8PathBuf,
-    src_oci: ocidir::OciDir,
+    pub src_oci: ocidir::OciDir,
     destrepo: ostree::Repo,
 
     pub bootable: bool,

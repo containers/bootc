@@ -1334,6 +1334,20 @@ async fn test_non_ostree() -> Result<()> {
 
     let imgref = fixture.export_container().await.unwrap().0;
     let imp = fixture.must_import(&imgref).await?;
+    if imp.manifest_digest != src_digest {
+        let src_manifest: oci_image::ImageManifest = {
+            let idx = fixture.src_oci.read_index()?.unwrap();
+            let manifest = idx
+                .manifests()
+                .iter()
+                .find(|m| m.digest() == &src_digest)
+                .unwrap();
+            fixture.src_oci.read_json_blob(manifest)?
+        };
+        let src_manifest = serde_json::to_string_pretty(&src_manifest).unwrap();
+        let dest_manifest = serde_json::to_string_pretty(&imp.manifest).unwrap();
+        similar_asserts::assert_eq!(&src_manifest, &dest_manifest);
+    }
     assert_eq!(imp.manifest_digest, src_digest);
     Ok(())
 }
