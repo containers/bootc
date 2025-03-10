@@ -379,7 +379,13 @@ fn human_render_imagestatus(
     let digest = &image.image_digest;
     writeln!(out, "{digest}")?;
 
-    let timestamp = image.timestamp.as_ref();
+    // Format the timestamp without nanoseconds since those are just irrelevant noise for human
+    // consumption - that time scale should basically never matter for container builds.
+    let timestamp = image
+        .timestamp
+        .as_ref()
+        // This format is the same as RFC3339, just without nanos.
+        .map(|t| t.to_utc().format("%Y-%m-%dT%H:%M:%SZ"));
     // If we have a version, combine with timestamp
     if let Some(version) = image.version.as_deref() {
         write_row_name(&mut out, "Version", prefix_len)?;
@@ -466,11 +472,11 @@ mod tests {
         let expected = indoc::indoc! { r"
             Staged image: quay.io/example/someimage:latest
                   Digest: sha256:16dc2b6256b4ff0d2ec18d2dbfb06d117904010c8cf9732cdb022818cf7a7566
-                 Version: nightly (2023-10-14 19:22:15 UTC)
+                 Version: nightly (2023-10-14T19:22:15Z)
         
           ● Booted image: quay.io/example/someimage:latest
                   Digest: sha256:736b359467c9437c1ac915acaae952aad854e07eb4a16a94999a48af08c83c34
-                 Version: nightly (2023-09-30 19:22:16 UTC)
+                 Version: nightly (2023-09-30T19:22:16Z)
         "};
         similar_asserts::assert_eq!(w, expected);
     }
