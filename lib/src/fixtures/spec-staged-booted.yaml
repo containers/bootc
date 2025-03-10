@@ -15,7 +15,8 @@ status:
         transport: registry
         signature: insecure
       version: nightly
-      timestamp: 2023-10-14T19:22:15Z
+      # This one has nanoseconds, which should be dropped for human consumption
+      timestamp: 2023-10-14T19:22:15.42Z
       imageDigest: sha256:16dc2b6256b4ff0d2ec18d2dbfb06d117904010c8cf9732cdb022818cf7a7566
     incompatible: false
     pinned: false
