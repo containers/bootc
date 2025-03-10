@@ -1759,7 +1759,13 @@ pub(crate) async fn install_to_filesystem(
             tokio::task::spawn_blocking(move || remove_all_in_dir_no_xdev(&rootfs_fd, true))
                 .await??;
         }
-        Some(ReplaceMode::Alongside) => clean_boot_directories(&rootfs_fd)?,
+        Some(ReplaceMode::Alongside) => {
+            let target_dir =
+                Dir::open_ambient_dir(ALONGSIDE_ROOT_MOUNT, cap_std::ambient_authority())
+                    .context(format!("Opening {ALONGSIDE_ROOT_MOUNT}"))?;
+
+            clean_boot_directories(&target_dir)?
+        }
         None => require_empty_rootdir(&rootfs_fd)?,
     }
 

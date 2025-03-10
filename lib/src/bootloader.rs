@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
+use cap_std_ext::cap_std::{self, fs::Dir};
 use fn_error_context::context;
 
 use crate::task::Task;
@@ -52,7 +53,9 @@ pub(crate) fn install_via_bootupd(
         .into_iter()
         .chain(verbose)
         .chain(bootupd_opts.iter().copied().flatten())
-        .chain(["--device", devpath.as_str(), rootfs.as_str()]);
+        // TODO: hardcoded /target because the original "/target/sysroot" does make sense, as its
+        // /boot is not the boot partition
+        .chain(["--device", devpath.as_str(), "/target"]);
     Task::new("Running bootupctl to install bootloader", "bootupctl")
         .args(args)
         .verbose()
